@@ -28,7 +28,6 @@ type alias GroupState =
     { members : Dict Member.Id MemberState
     , entries : Dict Entry.Id EntryState
     , groupMeta : GroupMetadata
-    , replacedBy : Dict Member.Id Member.Id
     , rejectedEntries : List ( Entry.Entry, RejectionReason )
     }
 
@@ -97,7 +96,6 @@ empty =
         , description = Nothing
         , links = []
         }
-    , replacedBy = Dict.empty
     , rejectedEntries = []
     }
 
@@ -265,8 +263,6 @@ applyMemberReplaced data state =
                                     state.members
                                         |> Dict.insert data.previousId updatedPrev
                                         |> Dict.insert data.newId updatedNew
-                                , replacedBy =
-                                    Dict.insert data.previousId data.newId state.replacedBy
                             }
 
 
