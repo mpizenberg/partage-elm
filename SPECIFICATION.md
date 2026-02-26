@@ -129,7 +129,7 @@ Members are managed through an **immutable event log**. The current state of eac
 | `member_renamed` | A member's display name is changed. Records old and new names. |
 | `member_retired` | A member is marked as departed/inactive. They no longer appear in new entry forms but their historical data is preserved. |
 | `member_unretired` | A retired member is reactivated. |
-| `member_replaced` | A member's identity is claimed by a new real member (see [Member Aliases](#44-member-aliases)). Any member type (virtual or real) can be claimed. This is one of the recovery mechanisms for lost identities, and is safe given the group's trust assumptions. |
+| `member_replaced` | A new real member claims an existing member's identity (see [Member Aliases](#44-member-aliases)). Records the new member's ID and the claimed member's ID (stored as `previousId` on the new member). Any member type (virtual or real) can be claimed. This is one of the recovery mechanisms for lost identities, and is safe given the group's trust assumptions. |
 | `member_metadata_updated` | A member's contact or payment information is updated. |
 
 ### 4.3 Computed Member State
@@ -143,16 +143,15 @@ From the event log, each member has a computed state:
 | `isActive` | True if not retired and not replaced. |
 | `isRetired` | True if the latest lifecycle event is `member_retired`. |
 | `isReplaced` | True if the member has been claimed by another member. |
-| `replacedById` | The ID of the member who claimed this identity. |
 
 ### 4.4 Member Aliases (Identity Claiming)
 
 When a real user joins a group, they can **claim the identity of any existing group member** (virtual or real):
 
-- The claimed member's ID is linked to the new member's ID via a `member_replaced` event.
+- A `member_replaced` event records the link between the new member and the claimed member. The new member stores a **backward pointer** (`previousId`) to the member it replaced.
 - The new member inherits the **rootId** of the claimed member. This links the entire replacement chain to a single stable identifier — the rootId — which is always the ID of the **first member** in the chain.
 - This is analogous to how entry version chains work: each entry version has its own ID, but the chain is identified by the `rootId` of the original entry.
-- **Example:** If member A (rootId=A) is replaced by B, then B.rootId=A. If B is later replaced by C, then C.rootId=A. All three share the same rootId.
+- **Example:** If member A (rootId=A) is replaced by B, then B.rootId=A and B.previousId=A. If B is later replaced by C, then C.rootId=A and C.previousId=B. All three share the same rootId. Whether A or B is replaced is computed by checking if any member's `previousId` points to them.
 - The rootId is used throughout the application as the **stable identifier** for a member chain: balance calculations, activity feeds, entry displays, and settlement plans all aggregate by rootId.
 - **Name resolution:** Although the rootId identifies the chain, the **display name** is always resolved to the newest active (non-replaced) member's current name in the chain. For example, if virtual member "Alice" (rootId=A) was claimed by real member "Alice R." (rootId=A), the display name everywhere is "Alice R." — even for historical entries originally involving the virtual member.
 - In the join UI, claiming a **virtual member** is the primary path (prominently displayed). Claiming a **real member** is available in a collapsed section, intended for device migration or identity recovery scenarios.
