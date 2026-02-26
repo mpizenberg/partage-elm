@@ -39,7 +39,7 @@ type alias Entry =
 -}
 replace : Metadata -> Id -> Kind -> Entry
 replace previousMetadata newId modified =
-    { meta = { previousMetadata | id = newId, previousVersionId = Just previousMetadata.id }
+    { meta = { previousMetadata | id = newId, previousVersionId = Just previousMetadata.id, depth = previousMetadata.depth + 1 }
     , kind = modified
     }
 
@@ -51,6 +51,7 @@ type alias Metadata =
     { id : Id
     , rootId : Id
     , previousVersionId : Maybe Id
+    , depth : Int
     , isDeleted : Bool
     , createdBy : Member.Id
     , createdAt : Time.Posix
@@ -65,6 +66,7 @@ newMetadata id memberId creationTime =
     { id = id
     , rootId = id
     , previousVersionId = Nothing
+    , depth = 0
     , isDeleted = False
     , createdBy = memberId
     , createdAt = creationTime

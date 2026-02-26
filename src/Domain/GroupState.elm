@@ -16,7 +16,6 @@ module Domain.GroupState exposing
 
 import Dict exposing (Dict)
 import Domain.Entry as Entry exposing (Entry)
-import Set
 import Domain.Event as Event exposing (Envelope, Payload(..))
 import Domain.Group as Group
 import Domain.Member as Member
@@ -294,7 +293,7 @@ applyEntryModified entry state =
     in
     case Dict.get rootId state.entries of
         Nothing ->
-            -- Root entry doesn't exist, ignore
+            -- Root entry doesn't exist, silently ignore
             state
 
         Just entryState ->
@@ -302,17 +301,37 @@ applyEntryModified entry state =
                 updatedVersions =
                     Dict.insert entry.meta.id entry entryState.allVersions
 
-                resolved =
-                    resolveCurrentVersion entry updatedVersions
+                current =
+                    pickVersion entryState.currentVersion entry
 
                 updatedEntryState =
                     { entryState
                         | allVersions = updatedVersions
-                        , currentVersion = resolved
-                        , isDeleted = resolved.meta.isDeleted
+                        , currentVersion = current
+                        , isDeleted = current.meta.isDeleted
                     }
             in
             { state | entries = Dict.insert rootId updatedEntryState state.entries }
+
+
+{-| Pick the winning version between two entries.
+Deeper version (longer replacement chain) wins. Entry id breaks ties.
+-}
+pickVersion : Entry -> Entry -> Entry
+pickVersion a b =
+    case compare a.meta.depth b.meta.depth of
+        GT ->
+            a
+
+        LT ->
+            b
+
+        EQ ->
+            if a.meta.id >= b.meta.id then
+                a
+
+            else
+                b
 
 
 applyEntryDeleted : { rootId : Entry.Id } -> GroupState -> GroupState
@@ -341,87 +360,6 @@ applyEntryUndeleted data state =
                     { entryState | isDeleted = False }
             in
             { state | entries = Dict.insert data.rootId updated state.entries }
-
-
-{-| Among all versions for a rootId, pick the one with the longest
-previousVersionId chain (deepest in the DAG). Entry id breaks ties.
-Takes a fallback entry for the impossible empty case.
-
-Finds leaf entries (not referenced as previousVersionId by any other entry)
-in a single pass. In the common single-chain case, there is exactly one leaf.
-For concurrent modifications with multiple leaves, falls back to depth comparison.
--}
-resolveCurrentVersion : Entry -> Dict Entry.Id Entry -> Entry
-resolveCurrentVersion fallback versions =
-    let
-        -- Collect all IDs that are referenced as previousVersionId
-        parentIds =
-            Dict.foldl
-                (\_ entry acc ->
-                    case entry.meta.previousVersionId of
-                        Nothing ->
-                            acc
-
-                        Just prevId ->
-                            Set.insert prevId acc
-                )
-                Set.empty
-                versions
-
-        -- Leaves are entries whose id is not referenced by any other entry
-        leaves =
-            Dict.values versions
-                |> List.filter (\e -> not (Set.member e.meta.id parentIds))
-    in
-    case leaves of
-        [] ->
-            fallback
-
-        [ single ] ->
-            single
-
-        first :: rest ->
-            -- Multiple leaves (concurrent modifications): pick deepest, id as tiebreaker
-            List.foldl
-                (\b a ->
-                    let
-                        da =
-                            versionDepthHelp versions a 0
-
-                        db =
-                            versionDepthHelp versions b 0
-                    in
-                    case compare da db of
-                        GT ->
-                            a
-
-                        LT ->
-                            b
-
-                        EQ ->
-                            if a.meta.id >= b.meta.id then
-                                a
-
-                            else
-                                b
-                )
-                first
-                rest
-
-
-versionDepthHelp : Dict Entry.Id Entry -> Entry -> Int -> Int
-versionDepthHelp versions entry acc =
-    case entry.meta.previousVersionId of
-        Nothing ->
-            acc
-
-        Just prevId ->
-            case Dict.get prevId versions of
-                Nothing ->
-                    acc
-
-                Just prev ->
-                    versionDepthHelp versions prev (acc + 1)
 
 
 
