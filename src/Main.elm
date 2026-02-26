@@ -11,6 +11,7 @@ import Page.NewGroup
 import Page.NotFound
 import Page.Setup
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
+import SampleData
 import UI.Shell
 import UI.Theme as Theme
 import Ui
@@ -153,24 +154,36 @@ viewPage model =
         NewGroup ->
             UI.Shell.appShell { title = "New Group", content = Page.NewGroup.view }
 
-        GroupRoute _ (Tab tab) ->
-            Page.Group.view tab SwitchTab
+        GroupRoute groupId (Tab tab) ->
+            if groupId == SampleData.groupId then
+                Page.Group.view tab SwitchTab
 
-        GroupRoute _ (Join _) ->
-            UI.Shell.appShell
-                { title = "Join Group"
-                , content =
-                    Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                        (Ui.text "Join group — coming in Phase 5.")
-                }
+            else
+                UI.Shell.appShell { title = "Partage", content = Page.NotFound.view }
 
-        GroupRoute _ NewEntry ->
-            UI.Shell.appShell
-                { title = "New Entry"
-                , content =
-                    Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                        (Ui.text "New entry form — coming in Phase 5.")
-                }
+        GroupRoute groupId (Join _) ->
+            if groupId == SampleData.groupId then
+                UI.Shell.appShell
+                    { title = "Join Group"
+                    , content =
+                        Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
+                            (Ui.text "Join group — coming in Phase 5.")
+                    }
+
+            else
+                UI.Shell.appShell { title = "Partage", content = Page.NotFound.view }
+
+        GroupRoute groupId NewEntry ->
+            if groupId == SampleData.groupId then
+                UI.Shell.appShell
+                    { title = "New Entry"
+                    , content =
+                        Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
+                            (Ui.text "New entry form — coming in Phase 5.")
+                    }
+
+            else
+                UI.Shell.appShell { title = "Partage", content = Page.NotFound.view }
 
         About ->
             UI.Shell.appShell { title = "Partage", content = Page.About.view }
