@@ -16,6 +16,7 @@ module Domain.GroupState exposing
 -}
 
 import Dict exposing (Dict)
+import Domain.Balance as Balance exposing (MemberBalance)
 import Domain.Entry as Entry exposing (Entry)
 import Domain.Event as Event exposing (Envelope, Payload(..))
 import Domain.Group as Group
@@ -27,6 +28,7 @@ import Domain.Member as Member
 type alias GroupState =
     { members : Dict Member.Id MemberState
     , entries : Dict Entry.Id EntryState
+    , balances : Dict Member.Id MemberBalance
     , groupMeta : GroupMetadata
     , rejectedEntries : List ( Entry.Entry, RejectionReason )
     }
@@ -90,6 +92,7 @@ empty : GroupState
 empty =
     { members = Dict.empty
     , entries = Dict.empty
+    , balances = Dict.empty
     , groupMeta =
         { name = ""
         , subtitle = Nothing
@@ -133,18 +136,27 @@ applyEvent envelope state =
 
         EntryAdded entry ->
             applyEntryUpsert entry state
+                |> recomputeBalances
 
         EntryModified entry ->
             applyEntryUpsert entry state
+                |> recomputeBalances
 
         EntryDeleted data ->
             applyEntryDeleted data state
+                |> recomputeBalances
 
         EntryUndeleted data ->
             applyEntryUndeleted data state
+                |> recomputeBalances
 
         GroupMetadataUpdated change ->
             applyGroupMetadataUpdated change state
+
+
+recomputeBalances : GroupState -> GroupState
+recomputeBalances state =
+    { state | balances = Balance.computeBalances (resolveMemberRootId state) (activeEntries state) }
 
 
 
