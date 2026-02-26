@@ -373,24 +373,24 @@ resolveCurrentVersion fallback versions =
 
         first :: rest ->
             List.foldl pickDeepest
-                ( versionDepth versions first, first )
-                (List.map (\e -> ( versionDepth versions e, e )) rest)
+                ( versionDepthHelp versions first 0, first )
+                (List.map (\e -> ( versionDepthHelp versions e 0, e )) rest)
                 |> Tuple.second
 
 
-versionDepth : Dict Entry.Id Entry -> Entry -> Int
-versionDepth versions entry =
+versionDepthHelp : Dict Entry.Id Entry -> Entry -> Int -> Int
+versionDepthHelp versions entry acc =
     case entry.meta.previousVersionId of
         Nothing ->
-            0
+            acc
 
         Just prevId ->
             case Dict.get prevId versions of
                 Nothing ->
-                    0
+                    acc
 
                 Just prev ->
-                    1 + versionDepth versions prev
+                    versionDepthHelp versions prev (acc + 1)
 
 
 

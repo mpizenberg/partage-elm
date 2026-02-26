@@ -253,7 +253,21 @@ computeSharesSplit resolveRootId totalAmount beneficiaries =
         []
 
     else
-        distributeRemainder remainder sorted
+        distributeRemainder remainder sorted []
+
+
+distributeRemainder : Int -> List ( Member.Id, Int, Int ) -> List ( Member.Id, Int ) -> List ( Member.Id, Int )
+distributeRemainder rem items acc =
+    case items of
+        [] ->
+            List.reverse acc
+
+        ( mid, shares, amt ) :: rest ->
+            let
+                extra =
+                    min shares rem
+            in
+            distributeRemainder (rem - extra) rest (( mid, amt + extra ) :: acc)
 
 
 {-| Distribute totalAmount proportionally among items, with remainder distribution.
@@ -277,32 +291,18 @@ distributeProportionally resolveRootId totalAmount items itemTotal =
         sorted =
             List.sortBy Tuple.first baseAllocated
     in
-    distributeExtra remainder sorted
+    distributeExtra remainder sorted []
 
 
-distributeRemainder : Int -> List ( Member.Id, Int, Int ) -> List ( Member.Id, Int )
-distributeRemainder rem items =
-    case items of
-        [] ->
-            []
-
-        ( mid, shares, amt ) :: rest ->
-            let
-                extra =
-                    min shares rem
-            in
-            ( mid, amt + extra ) :: distributeRemainder (rem - extra) rest
-
-
-distributeExtra : Int -> List ( Member.Id, Int ) -> List ( Member.Id, Int )
-distributeExtra rem xs =
+distributeExtra : Int -> List ( Member.Id, Int ) -> List ( Member.Id, Int ) -> List ( Member.Id, Int )
+distributeExtra rem xs acc =
     case xs of
         [] ->
-            []
+            List.reverse acc
 
         ( mid, amt ) :: rest ->
             if rem > 0 then
-                ( mid, amt + 1 ) :: distributeExtra (rem - 1) rest
+                distributeExtra (rem - 1) rest (( mid, amt + 1 ) :: acc)
 
             else
-                ( mid, amt ) :: distributeExtra 0 rest
+                distributeExtra 0 rest (( mid, amt ) :: acc)
