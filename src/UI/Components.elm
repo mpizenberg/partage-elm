@@ -66,7 +66,7 @@ balanceCard config =
             , Ui.el [ Ui.alignRight, Ui.Font.color fgColor, Ui.Font.bold, Ui.Font.size Theme.fontSize.lg ]
                 (Ui.text (Format.formatCents (abs config.balance.netBalance)))
             ]
-        , Ui.el [ Ui.Font.size Theme.fontSize.xs, Ui.Font.color Theme.neutral700 ]
+        , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral700 ]
             (Ui.text statusText)
         ]
 
@@ -86,7 +86,7 @@ entryCard config =
                 ]
                 [ Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.xs ]
                     [ Ui.el [ Ui.Font.bold ] (Ui.text data.description)
-                    , Ui.el [ Ui.Font.size Theme.fontSize.xs, Ui.Font.color Theme.neutral500 ]
+                    , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
                         (Ui.text (payerSummary config.resolveName data.payers))
                     ]
                 , Ui.el [ Ui.alignRight, Ui.Font.bold ]
@@ -103,7 +103,7 @@ entryCard config =
                 ]
                 [ Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.xs ]
                     [ Ui.el [ Ui.Font.bold ] (Ui.text "Transfer")
-                    , Ui.el [ Ui.Font.size Theme.fontSize.xs, Ui.Font.color Theme.neutral500 ]
+                    , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
                         (Ui.text (config.resolveName data.from ++ " -> " ++ config.resolveName data.to))
                     ]
                 , Ui.el [ Ui.alignRight, Ui.Font.bold ]
@@ -152,7 +152,7 @@ memberRow config =
         , Ui.spacing Theme.spacing.sm
         ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.md ] (Ui.text nameLabel)
-        , Ui.el [ Ui.Font.size Theme.fontSize.xs, Ui.Font.color Theme.neutral500 ] (Ui.text typeLabel)
+        , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ] (Ui.text typeLabel)
         ]
 
 

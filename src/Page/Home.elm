@@ -15,7 +15,7 @@ import Ui.Font
 view : (Route -> msg) -> Ui.Element msg
 view onNavigate =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.xxl, Ui.Font.bold ] (Ui.text "Your Groups")
+        [ Ui.el [ Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text "Your Groups")
         , groupCard onNavigate
         ]
 
@@ -71,7 +71,7 @@ groupCard onNavigate =
             Nothing ->
                 Ui.none
         , Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
-            [ Ui.el [ Ui.Font.size Theme.fontSize.xs, Ui.Font.color Theme.neutral500 ]
+            [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
                 (Ui.text (String.fromInt memberCount ++ " members"))
             , Ui.el [ Ui.alignRight, Ui.Font.bold, Ui.Font.color balanceCol ]
                 (Ui.text balanceText)

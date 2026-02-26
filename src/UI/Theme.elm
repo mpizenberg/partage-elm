@@ -61,14 +61,12 @@ borderWidth =
 
 {-| Font size scale.
 -}
-fontSize : { xs : Int, sm : Int, md : Int, lg : Int, xl : Int, xxl : Int, hero : Int }
+fontSize : { sm : Int, md : Int, lg : Int, xl : Int, hero : Int }
 fontSize =
-    { xs = 13
-    , sm = 14
+    { sm = 14
     , md = 16
     , lg = 18
-    , xl = 20
-    , xxl = 22
+    , xl = 22
     , hero = 28
     }
 
