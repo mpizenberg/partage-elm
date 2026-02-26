@@ -3,6 +3,7 @@ module Domain.GroupState exposing
     , GroupMetadata
     , GroupState
     , MemberState
+    , RejectionReason(..)
     , activeEntries
     , activeMembers
     , applyEvent
@@ -28,7 +29,24 @@ type alias GroupState =
     , entries : Dict Entry.Id EntryState
     , groupMeta : GroupMetadata
     , replacedBy : Dict Member.Id Member.Id
+    , rejectedEntries : List ( Entry.Entry, RejectionReason )
     }
+
+
+{-| Reason why an entry was rejected during event replay.
+-}
+type RejectionReason
+    = NewEntryHasPreviousVersion
+    | DuplicateEntryId
+    | RootEntryNotFound
+    | ModificationMissingPreviousVersion
+    | SelfReferencingPreviousVersion
+    | DuplicateVersionId
+    | PreviousVersionNotFound
+    | InvalidDepth
+    | IsDeletedMismatch
+    | CreatedByMismatch
+    | CreatedAtMismatch
 
 
 {-| A member's computed state after applying all events,
@@ -80,6 +98,7 @@ empty =
         , links = []
         }
     , replacedBy = Dict.empty
+    , rejectedEntries = []
     }
 
 
@@ -274,13 +293,17 @@ Invalid entries are silently ignored.
 -}
 applyEntryUpsert : Entry -> GroupState -> GroupState
 applyEntryUpsert ({ meta } as entry) state =
+    let
+        reject reason =
+            { state | rejectedEntries = ( entry, reason ) :: state.rejectedEntries }
+    in
     if meta.rootId == meta.id then
         -- New entry: previousVersionId must be Nothing
         if meta.previousVersionId /= Nothing then
-            state
+            reject NewEntryHasPreviousVersion
 
         else if Dict.member meta.id state.entries then
-            state
+            reject DuplicateEntryId
 
         else
             let
@@ -297,37 +320,37 @@ applyEntryUpsert ({ meta } as entry) state =
         -- Modification: validate against existing entry state
         case Dict.get meta.rootId state.entries of
             Nothing ->
-                state
+                reject RootEntryNotFound
 
             Just entryState ->
                 case meta.previousVersionId of
                     Nothing ->
-                        state
+                        reject ModificationMissingPreviousVersion
 
                     Just prevId ->
                         if prevId == meta.id then
-                            state
+                            reject SelfReferencingPreviousVersion
 
                         else if Dict.member meta.id entryState.allVersions then
-                            state
+                            reject DuplicateVersionId
 
                         else
                             case Dict.get prevId entryState.allVersions of
                                 Nothing ->
-                                    state
+                                    reject PreviousVersionNotFound
 
                                 Just prev ->
                                     if meta.depth /= prev.meta.depth + 1 then
-                                        state
+                                        reject InvalidDepth
 
                                     else if meta.isDeleted /= prev.meta.isDeleted then
-                                        state
+                                        reject IsDeletedMismatch
 
                                     else if meta.createdBy /= prev.meta.createdBy then
-                                        state
+                                        reject CreatedByMismatch
 
                                     else if meta.createdAt /= prev.meta.createdAt then
-                                        state
+                                        reject CreatedAtMismatch
 
                                     else
                                         let

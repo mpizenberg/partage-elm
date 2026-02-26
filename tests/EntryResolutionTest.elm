@@ -3,7 +3,7 @@ module EntryResolutionTest exposing (..)
 import Dict
 import Domain.Entry as Entry exposing (Beneficiary(..), Kind(..))
 import Domain.Event as Event exposing (Payload(..))
-import Domain.GroupState as GroupState
+import Domain.GroupState as GroupState exposing (RejectionReason(..))
 import Expect
 import Test exposing (..)
 import TestHelpers exposing (..)
@@ -16,6 +16,7 @@ suite =
         , modificationTests
         , deletionTests
         , concurrentModificationTests
+        , rejectionTests
         ]
 
 
@@ -221,4 +222,115 @@ concurrentModificationTests =
                 Dict.get "entry1" state.entries
                     |> Maybe.map (.currentVersion >> .meta >> .id)
                     |> Expect.equal (Just "v-zzz")
+        ]
+
+
+rejectionTests : Test
+rejectionTests =
+    describe "Rejection tracking"
+        [ test "duplicate entry id is rejected with reason" <|
+            \_ ->
+                let
+                    entry =
+                        makeExpenseEntry "entry1" 1000 defaultExpenseData
+
+                    state =
+                        GroupState.applyEvents
+                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
+                            , makeEnvelope "e2" 2000 "admin" (EntryAdded entry)
+                            ]
+                in
+                state.rejectedEntries
+                    |> List.map Tuple.second
+                    |> Expect.equal [ DuplicateEntryId ]
+        , test "new entry with previousVersionId is rejected" <|
+            \_ ->
+                let
+                    entry =
+                        makeExpenseEntry "entry1" 1000 defaultExpenseData
+                            |> (\e ->
+                                    let
+                                        meta =
+                                            e.meta
+                                    in
+                                    { e | meta = { meta | previousVersionId = Just "other" } }
+                               )
+
+                    state =
+                        GroupState.applyEvents
+                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry) ]
+                in
+                state.rejectedEntries
+                    |> List.map Tuple.second
+                    |> Expect.equal [ NewEntryHasPreviousVersion ]
+        , test "modification of non-existent root is rejected" <|
+            \_ ->
+                let
+                    orphanEntry =
+                        makeExpenseEntry "entry2" 2000 defaultExpenseData
+                            |> (\e ->
+                                    let
+                                        meta =
+                                            e.meta
+                                    in
+                                    { e | meta = { meta | rootId = "entry1" } }
+                               )
+
+                    state =
+                        GroupState.applyEvents
+                            [ makeEnvelope "e1" 2000 "admin" (EntryModified orphanEntry) ]
+                in
+                state.rejectedEntries
+                    |> List.map Tuple.second
+                    |> Expect.equal [ RootEntryNotFound ]
+        , test "valid entries produce no rejections" <|
+            \_ ->
+                let
+                    entry =
+                        makeExpenseEntry "entry1" 1000 defaultExpenseData
+
+                    modified =
+                        Entry.replace entry.meta "entry2" (Expense { defaultExpenseData | description = "Modified" })
+
+                    state =
+                        GroupState.applyEvents
+                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
+                            , makeEnvelope "e2" 2000 "admin" (EntryModified modified)
+                            ]
+                in
+                Expect.equal [] state.rejectedEntries
+        , test "multiple rejections are accumulated" <|
+            \_ ->
+                let
+                    entry =
+                        makeExpenseEntry "entry1" 1000 defaultExpenseData
+
+                    orphan1 =
+                        makeExpenseEntry "orphan1" 2000 defaultExpenseData
+                            |> (\e ->
+                                    let
+                                        meta =
+                                            e.meta
+                                    in
+                                    { e | meta = { meta | rootId = "ghost1" } }
+                               )
+
+                    orphan2 =
+                        makeExpenseEntry "orphan2" 3000 defaultExpenseData
+                            |> (\e ->
+                                    let
+                                        meta =
+                                            e.meta
+                                    in
+                                    { e | meta = { meta | rootId = "ghost2" } }
+                               )
+
+                    state =
+                        GroupState.applyEvents
+                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
+                            , makeEnvelope "e2" 2000 "admin" (EntryModified orphan1)
+                            , makeEnvelope "e3" 3000 "admin" (EntryModified orphan2)
+                            ]
+                in
+                Expect.equal 2 (List.length state.rejectedEntries)
         ]
