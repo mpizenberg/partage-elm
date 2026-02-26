@@ -40,7 +40,6 @@ type alias Metadata =
     { id : Id
     , rootId : Id
     , previousVersionId : Maybe Id
-    , notes : Maybe String
     , isDeleted : Bool
     , createdBy : Member.Id
     , createdAt : Time.Posix
@@ -52,7 +51,6 @@ newMetadata id memberId creationTime =
     { id = id
     , rootId = id
     , previousVersionId = Nothing
-    , notes = Nothing
     , isDeleted = False
     , createdBy = memberId
     , createdAt = creationTime
@@ -74,6 +72,7 @@ type alias ExpenseData =
     , beneficiaries : List Beneficiary
     , category : Maybe Category
     , location : Maybe String
+    , notes : Maybe String
     }
 
 
@@ -84,6 +83,7 @@ type alias TransferData =
     , date : Date
     , from : Member.Id
     , to : Member.Id
+    , notes : Maybe String
     }
 
 
