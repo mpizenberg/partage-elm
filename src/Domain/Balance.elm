@@ -1,11 +1,17 @@
 module Domain.Balance exposing (MemberBalance, Status(..), computeBalances, status)
 
+{-| Balance computation from ledger entries with integer arithmetic.
+-}
+
 import Dict exposing (Dict)
 import Domain.Entry as Entry exposing (Beneficiary(..), Entry, Kind(..))
 import Domain.Member as Member
 import Time
 
 
+{-| Accumulated balance for a member (identified by rootId),
+with total paid, total owed, and net balance in the group's default currency.
+-}
 type alias MemberBalance =
     { memberRootId : Member.Id
     , totalPaid : Int
@@ -14,12 +20,16 @@ type alias MemberBalance =
     }
 
 
+{-| Whether a member is owed money, owes money, or is settled.
+-}
 type Status
     = Creditor
     | Debtor
     | Settled
 
 
+{-| Determine the balance status of a member from their net balance.
+-}
 status : MemberBalance -> Status
 status balance =
     if balance.netBalance > 0 then

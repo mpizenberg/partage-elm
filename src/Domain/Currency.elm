@@ -1,6 +1,11 @@
 module Domain.Currency exposing (Currency(..), precision)
 
+{-| Supported currencies and their precision.
+-}
 
+
+{-| Supported currencies for expenses and transfers.
+-}
 type Currency
     = USD
     | EUR
@@ -8,6 +13,8 @@ type Currency
     | CHF
 
 
+{-| Number of decimal digits for a currency (e.g. 2 for cents).
+-}
 precision : Currency -> Int
 precision currency =
     case currency of

@@ -1,5 +1,8 @@
 module Main exposing (main)
 
+{-| Application entry point.
+-}
+
 import Browser
 import Html exposing (Html, text)
 

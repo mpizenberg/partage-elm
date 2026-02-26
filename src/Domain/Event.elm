@@ -1,15 +1,22 @@
 module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), compareEnvelopes, sortEvents)
 
+{-| Event types and ordering for the event-sourced state machine.
+-}
+
 import Domain.Entry as Entry exposing (Entry)
 import Domain.Group as Group
 import Domain.Member as Member
 import Time
 
 
+{-| Unique identifier for an event.
+-}
 type alias Id =
     String
 
 
+{-| A timestamped event envelope wrapping a payload with authorship info.
+-}
 type alias Envelope =
     { id : Id
     , clientTimestamp : Time.Posix
@@ -18,6 +25,8 @@ type alias Envelope =
     }
 
 
+{-| All possible event types in the system.
+-}
 type Payload
     = MemberCreated { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id }
     | MemberRenamed { memberId : Member.Id, oldName : String, newName : String }
@@ -32,6 +41,9 @@ type Payload
     | GroupMetadataUpdated GroupMetadataChange
 
 
+{-| A partial update to group metadata. Nothing fields are left unchanged,
+and `Maybe (Maybe String)` fields use the outer Maybe to indicate presence.
+-}
 type alias GroupMetadataChange =
     { name : Maybe String
     , subtitle : Maybe (Maybe String)
@@ -40,6 +52,8 @@ type alias GroupMetadataChange =
     }
 
 
+{-| Compare two envelopes by clientTimestamp, using event id as tiebreaker.
+-}
 compareEnvelopes : Envelope -> Envelope -> Order
 compareEnvelopes a b =
     let
@@ -57,6 +71,8 @@ compareEnvelopes a b =
             order
 
 
+{-| Sort events in deterministic chronological order.
+-}
 sortEvents : List Envelope -> List Envelope
 sortEvents =
     List.sortWith compareEnvelopes

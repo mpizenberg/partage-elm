@@ -1,15 +1,26 @@
 module Domain.Member exposing (Id, Member, Metadata, PaymentInfo, Type(..), emptyMetadata, emptyPaymentInfo)
 
+{-| Group members, their lifecycle, and contact metadata.
+-}
 
+
+{-| Unique identifier for a member within a group.
+-}
 type alias Id =
     String
 
 
+{-| Whether a member is a real person or a virtual placeholder
+(e.g. for someone not yet registered).
+-}
 type Type
     = Real
     | Virtual
 
 
+{-| A group member with identity, lifecycle state, and contact metadata.
+Members form replacement chains via rootId/previousId.
+-}
 type alias Member =
     { id : Id
     , rootId : Id
@@ -23,6 +34,8 @@ type alias Member =
     }
 
 
+{-| Optional contact and payment information for a member.
+-}
 type alias Metadata =
     { phone : Maybe String
     , email : Maybe String
@@ -31,6 +44,8 @@ type alias Metadata =
     }
 
 
+{-| Payment method details a member can share for receiving settlements.
+-}
 type alias PaymentInfo =
     { iban : Maybe String
     , wero : Maybe String
@@ -43,6 +58,8 @@ type alias PaymentInfo =
     }
 
 
+{-| A Metadata with all fields set to Nothing.
+-}
 emptyMetadata : Metadata
 emptyMetadata =
     { phone = Nothing
@@ -52,6 +69,8 @@ emptyMetadata =
     }
 
 
+{-| A PaymentInfo with all fields set to Nothing.
+-}
 emptyPaymentInfo : PaymentInfo
 emptyPaymentInfo =
     { iban = Nothing

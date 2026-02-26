@@ -11,6 +11,9 @@ module Domain.GroupState exposing
     , resolveMemberRootId
     )
 
+{-| Event replay engine that builds group state from a list of events.
+-}
+
 import Dict exposing (Dict)
 import Domain.Entry as Entry exposing (Entry)
 import Domain.Event as Event exposing (Envelope, Payload(..))
@@ -19,6 +22,8 @@ import Domain.Member as Member
 import Time
 
 
+{-| The full state of a group, computed by replaying events.
+-}
 type alias GroupState =
     { members : Dict Member.Id MemberState
     , entries : Dict Entry.Id EntryState
@@ -27,6 +32,9 @@ type alias GroupState =
     }
 
 
+{-| A member's computed state after applying all events,
+including lifecycle flags and replacement chain info.
+-}
 type alias MemberState =
     { id : Member.Id
     , rootId : Member.Id
@@ -40,6 +48,8 @@ type alias MemberState =
     }
 
 
+{-| An entry's computed state, tracking all versions and deletion status.
+-}
 type alias EntryState =
     { rootId : Entry.Id
     , currentVersion : Entry
@@ -48,6 +58,8 @@ type alias EntryState =
     }
 
 
+{-| Descriptive metadata for a group (name, subtitle, description, links).
+-}
 type alias GroupMetadata =
     { name : String
     , subtitle : Maybe String
@@ -56,6 +68,8 @@ type alias GroupMetadata =
     }
 
 
+{-| An empty group state with no members, entries, or metadata.
+-}
 empty : GroupState
 empty =
     { members = Dict.empty
@@ -70,11 +84,16 @@ empty =
     }
 
 
+{-| Build a GroupState by sorting and replaying a list of events from scratch.
+-}
 applyEvents : List Envelope -> GroupState
 applyEvents events =
     List.foldl applyEvent empty (Event.sortEvents events)
 
 
+{-| Apply a single event to the group state.
+Invalid or duplicate events are silently ignored.
+-}
 applyEvent : Envelope -> GroupState -> GroupState
 applyEvent envelope state =
     case envelope.payload of

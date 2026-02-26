@@ -1,9 +1,14 @@
 module Domain.Settlement exposing (Preference, Transaction, computeSettlement)
 
+{-| Settlement algorithm that computes who pays whom to settle debts.
+-}
+
 import Domain.Balance exposing (MemberBalance, Status(..))
 import Domain.Member as Member
 
 
+{-| A settlement payment from one member to another.
+-}
 type alias Transaction =
     { from : Member.Id
     , to : Member.Id
@@ -11,6 +16,9 @@ type alias Transaction =
     }
 
 
+{-| A member's preferred recipients for settlement payments,
+tried in priority order before falling back to the greedy algorithm.
+-}
 type alias Preference =
     { memberRootId : Member.Id
     , preferredRecipients : List Member.Id
