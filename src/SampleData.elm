@@ -1,7 +1,8 @@
 module SampleData exposing (currentUserId, groupId, groupState, resolveName)
 
 {-| Hardcoded sample data for Phase 2 static UI development.
-4 members (Alice, Bob, Carol, Dave) with expenses and a transfer.
+5 members (Alice, Bob, Carol, Dave, Eve) with expenses and a transfer.
+Eve is retired.
 -}
 
 import Dict
@@ -82,6 +83,15 @@ sampleEvents =
             , memberType = Member.Real
             , addedBy = "member-alice"
             }
+    , envelope "evt-05b" 1005 currentUserId <|
+        MemberCreated
+            { memberId = "member-eve"
+            , name = "Eve"
+            , memberType = Member.Real
+            , addedBy = "member-alice"
+            }
+    , envelope "evt-05c" 1006 currentUserId <|
+        MemberRetired { memberId = "member-eve" }
 
     -- Expense 1: Dinner - Alice paid 8000 cents (80.00 EUR), split 4 ways
     , envelope "evt-06" 2000 currentUserId <|
