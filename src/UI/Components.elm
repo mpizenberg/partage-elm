@@ -38,14 +38,20 @@ balanceCard i18n config =
             Theme.balanceColor balanceStatus
 
         statusText =
-            case balanceStatus of
-                Balance.Creditor ->
+            case ( balanceStatus, config.isCurrentUser ) of
+                ( Balance.Creditor, True ) ->
+                    T.balanceIsOwedYou i18n
+
+                ( Balance.Creditor, False ) ->
                     T.balanceIsOwed i18n
 
-                Balance.Debtor ->
+                ( Balance.Debtor, True ) ->
+                    T.balanceOwesYou i18n
+
+                ( Balance.Debtor, False ) ->
                     T.balanceOwes i18n
 
-                Balance.Settled ->
+                ( Balance.Settled, _ ) ->
                     T.balanceSettled i18n
 
         nameLabel =
