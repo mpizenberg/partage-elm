@@ -1,79 +1,51 @@
 module Page.Group exposing (view)
 
-import AppUrl exposing (AppUrl)
-import Domain.Group as Group
-import Html exposing (Html, a, div, h1, li, nav, p, text, ul)
-import Html.Attributes exposing (href, style)
-import Html.Events
-import Json.Decode
+{-| Group page shell with tab routing, using sample data for Phase 2.
+-}
+
+import Domain.GroupState exposing (GroupState)
+import Domain.Member as Member
+import Page.Group.ActivitiesTab
+import Page.Group.BalanceTab
+import Page.Group.EntriesTab
+import Page.Group.MembersTab
 import Route exposing (GroupTab(..))
+import SampleData
+import UI.Shell
+import Ui
 
 
-view : Group.Id -> GroupTab -> (AppUrl -> msg) -> Html msg
-view groupId activeTab onNavigate =
-    div []
-        [ h1 [] [ text ("Group: " ++ groupId) ]
-        , nav []
-            [ ul [ style "display" "flex", style "gap" "1rem", style "list-style" "none", style "padding" "0" ]
-                [ tabLink onNavigate groupId BalanceTab activeTab "Balance"
-                , tabLink onNavigate groupId EntriesTab activeTab "Entries"
-                , tabLink onNavigate groupId MembersTab activeTab "Members"
-                , tabLink onNavigate groupId ActivitiesTab activeTab "Activities"
-                ]
-            ]
-        , tabContent activeTab
-        ]
-
-
-tabLink : (AppUrl -> msg) -> Group.Id -> GroupTab -> GroupTab -> String -> Html msg
-tabLink onNavigate groupId tab activeTab label =
+view : GroupTab -> (GroupTab -> msg) -> Ui.Element msg
+view activeTab onTabClick =
     let
-        isActive =
-            tab == activeTab
+        state =
+            SampleData.groupState
 
-        route =
-            Route.GroupRoute groupId (Route.Tab tab)
+        currentUser =
+            SampleData.currentUserId
 
-        path =
-            Route.toPath route
+        resolveName =
+            SampleData.resolveName
     in
-    li []
-        [ a
-            [ href path
-            , onClickPreventDefault (onNavigate (Route.toAppUrl route))
-            , style "font-weight"
-                (if isActive then
-                    "bold"
-
-                 else
-                    "normal"
-                )
-            ]
-            [ text label ]
-        ]
+    UI.Shell.groupShell
+        { groupName = state.groupMeta.name
+        , activeTab = activeTab
+        , onTabClick = onTabClick
+        , content = tabContent activeTab state currentUser resolveName
+        }
 
 
-onClickPreventDefault : msg -> Html.Attribute msg
-onClickPreventDefault msg =
-    Html.Events.preventDefaultOn "click"
-        (Json.Decode.succeed ( msg, True ))
-
-
-tabContent : GroupTab -> Html msg
-tabContent tab =
+tabContent : GroupTab -> GroupState -> Member.Id -> (Member.Id -> String) -> Ui.Element msg
+tabContent tab state currentUser resolveName =
     case tab of
         BalanceTab ->
-            div []
-                [ p [] [ text "Balance overview will appear here." ] ]
+            Page.Group.BalanceTab.view state currentUser resolveName
 
         EntriesTab ->
-            div []
-                [ p [] [ text "Entry list will appear here." ] ]
+            Page.Group.EntriesTab.view state resolveName
 
         MembersTab ->
-            div []
-                [ p [] [ text "Member list will appear here." ] ]
+            Page.Group.MembersTab.view state currentUser
 
         ActivitiesTab ->
-            div []
-                [ p [] [ text "Activity feed will appear here." ] ]
+            Page.Group.ActivitiesTab.view

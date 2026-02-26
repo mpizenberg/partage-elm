@@ -1,12 +1,16 @@
 module Page.Setup exposing (view)
 
-import Html exposing (Html, div, h1, p, text)
+import UI.Theme as Theme
+import Ui
+import Ui.Font
 
 
-view : Html msg
+view : Ui.Element msg
 view =
-    div []
-        [ h1 [] [ text "Welcome to Partage" ]
-        , p [] [ text "Your privacy-first bill splitting app." ]
-        , p [] [ text "Identity generation will be available in Phase 3." ]
+    Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.xl ]
+        [ Ui.el [ Ui.Font.size 28, Ui.Font.bold, Ui.centerX ] (Ui.text "Welcome to Partage")
+        , Ui.el [ Ui.Font.size 16, Ui.Font.color Theme.neutral700, Ui.centerX, Ui.Font.center ]
+            (Ui.text "Your privacy-first, encrypted bill splitting app.")
+        , Ui.el [ Ui.Font.size 14, Ui.Font.color Theme.neutral500, Ui.centerX, Ui.Font.center ]
+            (Ui.text "Identity generation will be available in Phase 3.")
         ]

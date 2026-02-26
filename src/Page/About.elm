@@ -1,11 +1,16 @@
 module Page.About exposing (view)
 
-import Html exposing (Html, div, h1, p, text)
+import UI.Theme as Theme
+import Ui
+import Ui.Font
 
 
-view : Html msg
+view : Ui.Element msg
 view =
-    div []
-        [ h1 [] [ text "About Partage" ]
-        , p [] [ text "A fully encrypted, local-first bill-splitting application." ]
+    Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.md ]
+        [ Ui.el [ Ui.Font.size 22, Ui.Font.bold ] (Ui.text "About Partage")
+        , Ui.el [ Ui.Font.size 15, Ui.Font.color Theme.neutral700 ]
+            (Ui.text "A fully encrypted, local-first bill-splitting application for trusted groups.")
+        , Ui.el [ Ui.Font.size 15, Ui.Font.color Theme.neutral700 ]
+            (Ui.text "Your data never leaves your device unencrypted.")
         ]

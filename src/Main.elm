@@ -2,10 +2,7 @@ port module Main exposing (main)
 
 import AppUrl exposing (AppUrl)
 import Browser
-import Html exposing (Html, a, div, nav, text, ul)
-import Html.Attributes exposing (href, style)
-import Html.Events
-import Json.Decode
+import Html exposing (Html)
 import Navigation
 import Page.About
 import Page.Group
@@ -14,6 +11,10 @@ import Page.NewGroup
 import Page.NotFound
 import Page.Setup
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
+import UI.Shell
+import UI.Theme as Theme
+import Ui
+import Ui.Font
 import Url
 
 
@@ -36,7 +37,8 @@ type alias Model =
 
 type Msg
     = OnNavEvent Navigation.Event
-    | NavigateTo AppUrl
+    | NavigateTo Route
+    | SwitchTab GroupTab
 
 
 main : Program Flags Model Msg
@@ -85,8 +87,22 @@ update msg model =
             in
             ( { model | route = guardedRoute }, cmd )
 
-        NavigateTo appUrl ->
-            ( model, Navigation.pushUrl navCmd appUrl )
+        NavigateTo route ->
+            ( model, Navigation.pushUrl navCmd (Route.toAppUrl route) )
+
+        SwitchTab tab ->
+            case model.route of
+                GroupRoute groupId _ ->
+                    let
+                        newRoute =
+                            GroupRoute groupId (Tab tab)
+                    in
+                    ( { model | route = newRoute }
+                    , Navigation.replaceUrl navCmd (Route.toAppUrl newRoute)
+                    )
+
+                _ ->
+                    ( model, Cmd.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -122,84 +138,42 @@ applyRouteGuard identity route =
 
 view : Model -> Html Msg
 view model =
-    div [ style "max-width" "768px", style "margin" "0 auto", style "padding" "1rem" ]
-        [ headerNav model.route
-        , viewPage model
-        ]
+    Ui.layout Ui.default [ Ui.height Ui.fill ] (viewPage model)
 
 
-headerNav : Route -> Html Msg
-headerNav currentRoute =
-    nav [ style "margin-bottom" "1rem", style "padding-bottom" "0.5rem", style "border-bottom" "1px solid #ccc" ]
-        [ ul [ style "display" "flex", style "gap" "1rem", style "list-style" "none", style "padding" "0", style "margin" "0" ]
-            [ navLink currentRoute Home "Home"
-            , navLink currentRoute (GroupRoute "test-id" (Tab BalanceTab)) "Test Group"
-            , navLink currentRoute About "About"
-            ]
-        ]
-
-
-navLink : Route -> Route -> String -> Html Msg
-navLink currentRoute targetRoute label =
-    let
-        isActive =
-            routePrefix currentRoute == routePrefix targetRoute
-    in
-    Html.li []
-        [ a
-            [ href (Route.toPath targetRoute)
-            , onClickPreventDefault (NavigateTo (Route.toAppUrl targetRoute))
-            , style "font-weight"
-                (if isActive then
-                    "bold"
-
-                 else
-                    "normal"
-                )
-            ]
-            [ text label ]
-        ]
-
-
-routePrefix : Route -> String
-routePrefix route =
-    case route of
-        GroupRoute id _ ->
-            "group:" ++ id
-
-        _ ->
-            Route.toPath route
-
-
-onClickPreventDefault : msg -> Html.Attribute msg
-onClickPreventDefault msg =
-    Html.Events.preventDefaultOn "click"
-        (Json.Decode.succeed ( msg, True ))
-
-
-viewPage : Model -> Html Msg
+viewPage : Model -> Ui.Element Msg
 viewPage model =
     case model.route of
         Setup ->
-            Page.Setup.view
+            UI.Shell.appShell { title = "Partage", content = Page.Setup.view }
 
         Home ->
-            Page.Home.view
+            UI.Shell.appShell { title = "Partage", content = Page.Home.view NavigateTo }
 
         NewGroup ->
-            Page.NewGroup.view
+            UI.Shell.appShell { title = "New Group", content = Page.NewGroup.view }
 
-        GroupRoute groupId (Tab tab) ->
-            Page.Group.view groupId tab NavigateTo
+        GroupRoute _ (Tab tab) ->
+            Page.Group.view tab SwitchTab
 
         GroupRoute _ (Join _) ->
-            div [] [ text "Join group — coming in Phase 5." ]
+            UI.Shell.appShell
+                { title = "Join Group"
+                , content =
+                    Ui.el [ Ui.Font.size 14, Ui.Font.color Theme.neutral500 ]
+                        (Ui.text "Join group — coming in Phase 5.")
+                }
 
         GroupRoute _ NewEntry ->
-            div [] [ text "New entry form — coming in Phase 5." ]
+            UI.Shell.appShell
+                { title = "New Entry"
+                , content =
+                    Ui.el [ Ui.Font.size 14, Ui.Font.color Theme.neutral500 ]
+                        (Ui.text "New entry form — coming in Phase 5.")
+                }
 
         About ->
-            Page.About.view
+            UI.Shell.appShell { title = "Partage", content = Page.About.view }
 
         NotFound ->
-            Page.NotFound.view
+            UI.Shell.appShell { title = "Partage", content = Page.NotFound.view }
