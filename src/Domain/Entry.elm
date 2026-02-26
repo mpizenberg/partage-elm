@@ -16,8 +16,8 @@ import Domain.Member as Member
 import Time
 
 
-type Id
-    = Id String
+type alias Id =
+    String
 
 
 type alias Entry =

@@ -1,4 +1,4 @@
-module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..))
+module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), compareEnvelopes, sortEvents)
 
 import Domain.Entry as Entry exposing (Entry)
 import Domain.Group as Group
@@ -6,8 +6,8 @@ import Domain.Member as Member
 import Time
 
 
-type Id
-    = Id String
+type alias Id =
+    String
 
 
 type alias Envelope =
@@ -38,3 +38,25 @@ type alias GroupMetadataChange =
     , description : Maybe (Maybe String)
     , links : Maybe (List Group.Link)
     }
+
+
+compareEnvelopes : Envelope -> Envelope -> Order
+compareEnvelopes a b =
+    let
+        ta =
+            Time.posixToMillis a.clientTimestamp
+
+        tb =
+            Time.posixToMillis b.clientTimestamp
+    in
+    case compare ta tb of
+        EQ ->
+            compare a.id b.id
+
+        order ->
+            order
+
+
+sortEvents : List Envelope -> List Envelope
+sortEvents =
+    List.sortWith compareEnvelopes

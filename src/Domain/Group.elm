@@ -4,8 +4,8 @@ import Domain.Currency exposing (Currency)
 import Time
 
 
-type Id
-    = Id String
+type alias Id =
+    String
 
 
 type alias UserId =

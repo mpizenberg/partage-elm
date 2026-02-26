@@ -1,8 +1,8 @@
-module Domain.Member exposing (Id, Member, Metadata, PaymentInfo, Type(..))
+module Domain.Member exposing (Id, Member, Metadata, PaymentInfo, Type(..), emptyMetadata, emptyPaymentInfo)
 
 
-type Id
-    = Id String
+type alias Id =
+    String
 
 
 type Type
@@ -40,4 +40,26 @@ type alias PaymentInfo =
     , venmo : Maybe String
     , btcAddress : Maybe String
     , adaAddress : Maybe String
+    }
+
+
+emptyMetadata : Metadata
+emptyMetadata =
+    { phone = Nothing
+    , email = Nothing
+    , payment = Nothing
+    , notes = Nothing
+    }
+
+
+emptyPaymentInfo : PaymentInfo
+emptyPaymentInfo =
+    { iban = Nothing
+    , wero = Nothing
+    , lydia = Nothing
+    , revolut = Nothing
+    , paypal = Nothing
+    , venmo = Nothing
+    , btcAddress = Nothing
+    , adaAddress = Nothing
     }
