@@ -38,37 +38,25 @@ Two-pass algorithm:
 computeSettlement : Dict Member.Id MemberBalance -> List Preference -> List Transaction
 computeSettlement balances preferences =
     let
-        balanceList =
-            Dict.values balances
-
         -- Build debtor/creditor lists (amounts are absolute values)
-        debtors =
-            balanceList
-                |> List.filterMap
-                    (\b ->
-                        if b.netBalance < 0 then
-                            Just ( b.memberRootId, abs b.netBalance )
+        ( debtors, creditors ) =
+            Dict.foldl
+                (\_ b ( ds, cs ) ->
+                    if b.netBalance < 0 then
+                        ( ( b.memberRootId, abs b.netBalance ) :: ds, cs )
 
-                        else
-                            Nothing
-                    )
+                    else if b.netBalance > 0 then
+                        ( ds, ( b.memberRootId, b.netBalance ) :: cs )
 
-        creditors =
-            balanceList
-                |> List.filterMap
-                    (\b ->
-                        if b.netBalance > 0 then
-                            Just ( b.memberRootId, b.netBalance )
-
-                        else
-                            Nothing
-                    )
+                    else
+                        ( ds, cs )
+                )
+                ( [], [] )
+                balances
 
         prefMap =
             List.foldl
-                (\p acc ->
-                    ( p.memberRootId, p.preferredRecipients ) :: acc
-                )
+                (\p acc -> ( p.memberRootId, p.preferredRecipients ) :: acc)
                 []
                 preferences
 
