@@ -42,7 +42,6 @@ statusTests =
 equalSplitEntry : Entry.Entry
 equalSplitEntry =
     makeExpenseEntry "entry1"
-        "entry1"
         1000
         { defaultExpenseData
             | amount = 1000
@@ -104,7 +103,6 @@ simpleSplitTests =
                 let
                     entry =
                         makeExpenseEntry "entry1"
-                            "entry1"
                             1000
                             { defaultExpenseData
                                 | amount = 1000
@@ -125,7 +123,6 @@ simpleSplitTests =
             (let
                 entry =
                     makeExpenseEntry "entry1"
-                        "entry1"
                         1000
                         { defaultExpenseData
                             | amount = 1000
@@ -170,7 +167,6 @@ sharesRemainderTests =
                 let
                     entry =
                         makeExpenseEntry "entry1"
-                            "entry1"
                             1000
                             { defaultExpenseData
                                 | amount = 1000
@@ -194,7 +190,6 @@ sharesRemainderTests =
                 let
                     entry =
                         makeExpenseEntry "entry1"
-                            "entry1"
                             1000
                             { defaultExpenseData
                                 | amount = 1000
@@ -220,7 +215,6 @@ transferTests =
     let
         entry =
             makeTransferEntry "t1"
-                "t1"
                 1000
                 { defaultTransferData
                     | amount = 500
@@ -252,7 +246,6 @@ multiCurrencyTests =
             (let
                 entry =
                     makeExpenseEntry "entry1"
-                        "entry1"
                         1000
                         { defaultExpenseData
                             | amount = 1000
@@ -285,7 +278,6 @@ multiCurrencyTests =
                 let
                     entry =
                         makeTransferEntry "t1"
-                            "t1"
                             1000
                             { defaultTransferData
                                 | amount = 100
@@ -312,7 +304,6 @@ invariantTests =
                 let
                     entry =
                         makeExpenseEntry "entry1"
-                            "entry1"
                             1000
                             { defaultExpenseData
                                 | amount = amount
@@ -336,7 +327,6 @@ invariantTests =
                 let
                     entry =
                         makeExpenseEntry "entry1"
-                            "entry1"
                             1000
                             { defaultExpenseData
                                 | amount = amount
@@ -359,7 +349,6 @@ invariantTests =
                 let
                     entry =
                         makeExpenseEntry "entry1"
-                            "entry1"
                             1000
                             { defaultExpenseData
                                 | amount = amount

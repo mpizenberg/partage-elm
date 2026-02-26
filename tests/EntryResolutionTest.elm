@@ -23,91 +23,94 @@ suite =
 singleVersionTests : Test
 singleVersionTests =
     describe "Single version"
-        [ test "added entry becomes current version" <|
-            \_ ->
-                let
-                    entry =
-                        makeExpenseEntry "entry1" "entry1" 1000 defaultExpenseData
+        [ describe "added entry becomes current version" <|
+            let
+                entry =
+                    makeExpenseEntry "entry1" 1000 defaultExpenseData
 
-                    events =
-                        [ makeEnvelope "e1"
-                            1000
-                            "admin"
-                            (EntryAdded entry)
-                        ]
-
-                    state =
-                        GroupState.applyEvents events
-                in
-                case Dict.get "entry1" state.entries of
-                    Just entryState ->
-                        Expect.all
-                            [ \es -> Expect.equal "entry1" es.currentVersion.meta.id
-                            , \es -> Expect.equal False es.isDeleted
-                            , \es -> Expect.equal 1 (Dict.size es.allVersions)
-                            ]
-                            entryState
-
-                    Nothing ->
-                        Expect.fail "Entry should exist"
+                state =
+                    GroupState.applyEvents
+                        [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry) ]
+            in
+            [ test "current version id matches" <|
+                \_ ->
+                    Dict.get "entry1" state.entries
+                        |> Maybe.map (.currentVersion >> .meta >> .id)
+                        |> Expect.equal (Just "entry1")
+            , test "entry is not deleted" <|
+                \_ ->
+                    Dict.get "entry1" state.entries
+                        |> Maybe.map .isDeleted
+                        |> Expect.equal (Just False)
+            , test "has exactly one version" <|
+                \_ ->
+                    Dict.get "entry1" state.entries
+                        |> Maybe.map (.allVersions >> Dict.size)
+                        |> Expect.equal (Just 1)
+            ]
         ]
 
 
 modificationTests : Test
 modificationTests =
+    let
+        originalEntry =
+            makeExpenseEntry "entry1" 1000 defaultExpenseData
+
+        modifiedData =
+            { defaultExpenseData | description = "Modified expense", amount = 2000 }
+
+        modifiedEntry =
+            makeExpenseEntry "entry2" 2000 modifiedData
+                |> (\e ->
+                        let
+                            meta =
+                                e.meta
+                        in
+                        { e | meta = { meta | rootId = "entry1", previousVersionId = Just "entry1" } }
+                   )
+    in
     describe "Modifications"
-        [ test "modified entry updates current version" <|
+        [ test "current version updates to modified entry" <|
             \_ ->
                 let
-                    originalEntry =
-                        makeExpenseEntry "entry1" "entry1" 1000 defaultExpenseData
-
-                    modifiedData =
-                        { defaultExpenseData | description = "Modified expense", amount = 2000 }
-
-                    modifiedEntry =
-                        { meta =
-                            { id = "entry2"
-                            , rootId = "entry1"
-                            , previousVersionId = Just "entry1"
-                            , notes = Nothing
-                            , isDeleted = False
-                            , createdBy = "admin"
-                            , createdAt = Time.millisToPosix 2000
-                            }
-                        , kind = Expense modifiedData
-                        }
-
-                    events =
-                        [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
-                        , makeEnvelope "e2" 2000 "admin" (EntryModified modifiedEntry)
-                        ]
-
                     state =
-                        GroupState.applyEvents events
-                in
-                case Dict.get "entry1" state.entries of
-                    Just entryState ->
-                        Expect.all
-                            [ \es -> Expect.equal "entry2" es.currentVersion.meta.id
-                            , \es -> Expect.equal 2 (Dict.size es.allVersions)
+                        GroupState.applyEvents
+                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
+                            , makeEnvelope "e2" 2000 "admin" (EntryModified modifiedEntry)
                             ]
-                            entryState
-
-                    Nothing ->
-                        Expect.fail "Entry should exist"
+                in
+                Dict.get "entry1" state.entries
+                    |> Maybe.map (.currentVersion >> .meta >> .id)
+                    |> Expect.equal (Just "entry2")
+        , test "all versions are tracked" <|
+            \_ ->
+                let
+                    state =
+                        GroupState.applyEvents
+                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
+                            , makeEnvelope "e2" 2000 "admin" (EntryModified modifiedEntry)
+                            ]
+                in
+                Dict.get "entry1" state.entries
+                    |> Maybe.map (.allVersions >> Dict.size)
+                    |> Expect.equal (Just 2)
         , test "modification of non-existent entry is ignored" <|
             \_ ->
                 let
-                    modifiedEntry =
-                        makeExpenseEntry "entry2" "entry1" 2000 defaultExpenseData
-
-                    events =
-                        [ makeEnvelope "e1" 2000 "admin" (EntryModified modifiedEntry)
-                        ]
+                    orphanEntry =
+                        makeExpenseEntry "entry2" 2000 defaultExpenseData
+                            |> (\e ->
+                                    let
+                                        meta =
+                                            e.meta
+                                    in
+                                    { e | meta = { meta | rootId = "entry1" } }
+                               )
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents
+                            [ makeEnvelope "e1" 2000 "admin" (EntryModified orphanEntry) ]
                 in
                 Expect.equal 0 (Dict.size state.entries)
         ]
@@ -120,77 +123,71 @@ deletionTests =
             \_ ->
                 let
                     entry =
-                        makeExpenseEntry "entry1" "entry1" 1000 defaultExpenseData
-
-                    events =
-                        [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
-                        , makeEnvelope "e2" 2000 "admin" (EntryDeleted { rootId = "entry1" })
-                        ]
+                        makeExpenseEntry "entry1" 1000 defaultExpenseData
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents
+                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
+                            , makeEnvelope "e2" 2000 "admin" (EntryDeleted { rootId = "entry1" })
+                            ]
                 in
-                case Dict.get "entry1" state.entries of
-                    Just entryState ->
-                        Expect.equal True entryState.isDeleted
-
-                    Nothing ->
-                        Expect.fail "Entry should exist"
+                Dict.get "entry1" state.entries
+                    |> Maybe.map .isDeleted
+                    |> Expect.equal (Just True)
         , test "undeleted entry is restored" <|
             \_ ->
                 let
                     entry =
-                        makeExpenseEntry "entry1" "entry1" 1000 defaultExpenseData
-
-                    events =
-                        [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
-                        , makeEnvelope "e2" 2000 "admin" (EntryDeleted { rootId = "entry1" })
-                        , makeEnvelope "e3" 3000 "admin" (EntryUndeleted { rootId = "entry1" })
-                        ]
+                        makeExpenseEntry "entry1" 1000 defaultExpenseData
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents
+                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
+                            , makeEnvelope "e2" 2000 "admin" (EntryDeleted { rootId = "entry1" })
+                            , makeEnvelope "e3" 3000 "admin" (EntryUndeleted { rootId = "entry1" })
+                            ]
                 in
-                case Dict.get "entry1" state.entries of
-                    Just entryState ->
-                        Expect.equal False entryState.isDeleted
-
-                    Nothing ->
-                        Expect.fail "Entry should exist"
+                Dict.get "entry1" state.entries
+                    |> Maybe.map .isDeleted
+                    |> Expect.equal (Just False)
         , test "deleted entries excluded from active entries" <|
             \_ ->
                 let
                     entry1 =
-                        makeExpenseEntry "entry1" "entry1" 1000 defaultExpenseData
+                        makeExpenseEntry "entry1" 1000 defaultExpenseData
 
                     entry2 =
-                        makeExpenseEntry "entry2" "entry2" 1001 defaultExpenseData
-
-                    events =
-                        [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry1)
-                        , makeEnvelope "e2" 1001 "admin" (EntryAdded entry2)
-                        , makeEnvelope "e3" 2000 "admin" (EntryDeleted { rootId = "entry1" })
-                        ]
+                        makeExpenseEntry "entry2" 1001 defaultExpenseData
 
                     state =
-                        GroupState.applyEvents events
-
-                    active =
-                        GroupState.activeEntries state
+                        GroupState.applyEvents
+                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry1)
+                            , makeEnvelope "e2" 1001 "admin" (EntryAdded entry2)
+                            , makeEnvelope "e3" 2000 "admin" (EntryDeleted { rootId = "entry1" })
+                            ]
                 in
-                Expect.equal 1 (List.length active)
+                Expect.equal 1 (List.length (GroupState.activeEntries state))
         , test "delete non-existent entry is ignored" <|
             \_ ->
                 let
-                    events =
-                        [ makeEnvelope "e1" 1000 "admin" (EntryDeleted { rootId = "ghost" })
-                        ]
-
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents
+                            [ makeEnvelope "e1" 1000 "admin" (EntryDeleted { rootId = "ghost" }) ]
                 in
                 Expect.equal 0 (Dict.size state.entries)
         ]
+
+
+makeModification : String -> Int -> String -> Entry.ExpenseData -> Entry.Entry
+makeModification versionId timestamp rootId expenseData =
+    makeExpenseEntry versionId timestamp expenseData
+        |> (\e ->
+                let
+                    meta =
+                        e.meta
+                in
+                { e | meta = { meta | rootId = rootId, previousVersionId = Just rootId } }
+           )
 
 
 concurrentModificationTests : Test
@@ -200,107 +197,57 @@ concurrentModificationTests =
             \_ ->
                 let
                     originalEntry =
-                        makeExpenseEntry "entry1" "entry1" 1000 defaultExpenseData
-
-                    mod1Data =
-                        { defaultExpenseData | description = "Mod by Alice" }
+                        makeExpenseEntry "entry1" 1000 defaultExpenseData
 
                     mod1 =
-                        { meta =
-                            { id = "v2"
-                            , rootId = "entry1"
-                            , previousVersionId = Just "entry1"
-                            , notes = Nothing
-                            , isDeleted = False
-                            , createdBy = "alice"
-                            , createdAt = Time.millisToPosix 2000
-                            }
-                        , kind = Expense mod1Data
-                        }
-
-                    mod2Data =
-                        { defaultExpenseData | description = "Mod by Bob" }
+                        makeModification "v2"
+                            2000
+                            "entry1"
+                            { defaultExpenseData | description = "Mod by Alice" }
 
                     mod2 =
-                        { meta =
-                            { id = "v3"
-                            , rootId = "entry1"
-                            , previousVersionId = Just "entry1"
-                            , notes = Nothing
-                            , isDeleted = False
-                            , createdBy = "bob"
-                            , createdAt = Time.millisToPosix 3000
-                            }
-                        , kind = Expense mod2Data
-                        }
-
-                    events =
-                        [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
-                        , makeEnvelope "e2" 2000 "alice" (EntryModified mod1)
-                        , makeEnvelope "e3" 3000 "bob" (EntryModified mod2)
-                        ]
+                        makeModification "v3"
+                            3000
+                            "entry1"
+                            { defaultExpenseData | description = "Mod by Bob" }
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents
+                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
+                            , makeEnvelope "e2" 2000 "alice" (EntryModified mod1)
+                            , makeEnvelope "e3" 3000 "bob" (EntryModified mod2)
+                            ]
                 in
-                case Dict.get "entry1" state.entries of
-                    Just entryState ->
-                        Expect.equal "v3" entryState.currentVersion.meta.id
-
-                    Nothing ->
-                        Expect.fail "Entry should exist"
+                Dict.get "entry1" state.entries
+                    |> Maybe.map (.currentVersion >> .meta >> .id)
+                    |> Expect.equal (Just "v3")
         , test "id breaks timestamp tie" <|
             \_ ->
                 let
                     originalEntry =
-                        makeExpenseEntry "entry1" "entry1" 1000 defaultExpenseData
-
-                    mod1Data =
-                        { defaultExpenseData | description = "Mod A" }
+                        makeExpenseEntry "entry1" 1000 defaultExpenseData
 
                     mod1 =
-                        { meta =
-                            { id = "v-aaa"
-                            , rootId = "entry1"
-                            , previousVersionId = Just "entry1"
-                            , notes = Nothing
-                            , isDeleted = False
-                            , createdBy = "alice"
-                            , createdAt = Time.millisToPosix 2000
-                            }
-                        , kind = Expense mod1Data
-                        }
-
-                    mod2Data =
-                        { defaultExpenseData | description = "Mod B" }
+                        makeModification "v-aaa"
+                            2000
+                            "entry1"
+                            { defaultExpenseData | description = "Mod A" }
 
                     mod2 =
-                        { meta =
-                            { id = "v-zzz"
-                            , rootId = "entry1"
-                            , previousVersionId = Just "entry1"
-                            , notes = Nothing
-                            , isDeleted = False
-                            , createdBy = "bob"
-                            , createdAt = Time.millisToPosix 2000
-                            }
-                        , kind = Expense mod2Data
-                        }
-
-                    events =
-                        [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
-                        , makeEnvelope "e2" 2000 "alice" (EntryModified mod1)
-                        , makeEnvelope "e3" 2000 "bob" (EntryModified mod2)
-                        ]
+                        makeModification "v-zzz"
+                            2000
+                            "entry1"
+                            { defaultExpenseData | description = "Mod B" }
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents
+                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
+                            , makeEnvelope "e2" 2000 "alice" (EntryModified mod1)
+                            , makeEnvelope "e3" 2000 "bob" (EntryModified mod2)
+                            ]
                 in
-                case Dict.get "entry1" state.entries of
-                    Just entryState ->
-                        -- "v-zzz" > "v-aaa" lexicographically, so v-zzz wins
-                        Expect.equal "v-zzz" entryState.currentVersion.meta.id
-
-                    Nothing ->
-                        Expect.fail "Entry should exist"
+                -- "v-zzz" > "v-aaa" lexicographically, so v-zzz wins
+                Dict.get "entry1" state.entries
+                    |> Maybe.map (.currentVersion >> .meta >> .id)
+                    |> Expect.equal (Just "v-zzz")
         ]

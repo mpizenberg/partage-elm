@@ -37,16 +37,9 @@ makeEnvelope eventId timestamp triggeredBy payload =
     }
 
 
-makeEntryMeta : String -> String -> Int -> Entry.Metadata
-makeEntryMeta entryId rootId timestamp =
-    { id = entryId
-    , rootId = rootId
-    , previousVersionId = Nothing
-    , notes = Nothing
-    , isDeleted = False
-    , createdBy = "creator"
-    , createdAt = Time.millisToPosix timestamp
-    }
+makeEntryMeta : String -> Int -> Entry.Metadata
+makeEntryMeta entryId timestamp =
+    Entry.newMetadata entryId "creator" (Time.millisToPosix timestamp)
 
 
 defaultExpenseData : Entry.ExpenseData
@@ -82,15 +75,15 @@ makeEntry meta kind =
     { meta = meta, kind = kind }
 
 
-makeExpenseEntry : String -> String -> Int -> Entry.ExpenseData -> Entry
-makeExpenseEntry entryId rootId timestamp expenseData =
-    { meta = makeEntryMeta entryId rootId timestamp
+makeExpenseEntry : String -> Int -> Entry.ExpenseData -> Entry
+makeExpenseEntry entryId timestamp expenseData =
+    { meta = makeEntryMeta entryId timestamp
     , kind = Expense expenseData
     }
 
 
-makeTransferEntry : String -> String -> Int -> Entry.TransferData -> Entry
-makeTransferEntry entryId rootId timestamp transferData =
-    { meta = makeEntryMeta entryId rootId timestamp
+makeTransferEntry : String -> Int -> Entry.TransferData -> Entry
+makeTransferEntry entryId timestamp transferData =
+    { meta = makeEntryMeta entryId timestamp
     , kind = Transfer transferData
     }
