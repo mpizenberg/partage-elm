@@ -6,7 +6,6 @@ module Domain.GroupState exposing
     , RejectionReason(..)
     , activeEntries
     , activeMembers
-    , applyEvent
     , applyEvents
     , empty
     , resolveMemberRootId
@@ -104,14 +103,24 @@ empty =
 
 
 {-| Build a GroupState by sorting and replaying a list of events from scratch.
+Balances are computed once after all events have been applied.
 -}
 applyEvents : List Envelope -> GroupState
 applyEvents events =
     List.foldl applyEvent empty (Event.sortEvents events)
+        |> recomputeBalances
 
 
-{-| Apply a single event to the group state.
+{-| Recompute all member balances from the current active entries.
+-}
+recomputeBalances : GroupState -> GroupState
+recomputeBalances state =
+    { state | balances = Balance.computeBalances (resolveMemberRootId state) (activeEntries state) }
+
+
+{-| Apply a single event to the group state, without recomputing balances.
 Invalid or duplicate events are silently ignored.
+Not exposed — use `applyEvents` which recomputes balances after all events.
 -}
 applyEvent : Envelope -> GroupState -> GroupState
 applyEvent envelope state =
@@ -136,27 +145,18 @@ applyEvent envelope state =
 
         EntryAdded entry ->
             applyEntryUpsert entry state
-                |> recomputeBalances
 
         EntryModified entry ->
             applyEntryUpsert entry state
-                |> recomputeBalances
 
         EntryDeleted data ->
             applyEntryDeleted data state
-                |> recomputeBalances
 
         EntryUndeleted data ->
             applyEntryUndeleted data state
-                |> recomputeBalances
 
         GroupMetadataUpdated change ->
             applyGroupMetadataUpdated change state
-
-
-recomputeBalances : GroupState -> GroupState
-recomputeBalances state =
-    { state | balances = Balance.computeBalances (resolveMemberRootId state) (activeEntries state) }
 
 
 
