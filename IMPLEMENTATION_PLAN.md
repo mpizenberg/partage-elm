@@ -2,7 +2,7 @@
 
 ## Context
 
-Domain logic is complete (GroupState, Balance, Settlement) with 158 passing tests. `Main.elm` is a placeholder. We need to build the frontend following FEASIBILITY.md (minus elm-safe-virtual-dom), getting to a functional local bill-splitter by Phase 5.
+Domain logic is complete (GroupState, Balance, Settlement) with 158 passing tests. We are building the frontend following FEASIBILITY.md (minus elm-safe-virtual-dom), getting to a functional local bill-splitter by Phase 5.
 
 ## Library Sources
 
@@ -19,160 +19,166 @@ Domain logic is complete (GroupState, Balance, Settlement) with 158 passing test
 - `andrewMacmurray/elm-concurrent-task`
 - Submodule transitive deps: `avh4/elm-color`, `mdgriffith/elm-bezier`, `TSFoster/elm-bytes-extra`, `TSFoster/elm-md5`, `TSFoster/elm-sha1`
 
-**pnpm** (from Phase 3): `elm-concurrent-task` JS runner, `elm-url-navigation-port` JS module
+**pnpm** (from Phase 2): `elm-url-navigation-port` JS module, `elm-watch` for dev/build, `travelm-agency` for i18n
 
 ---
 
-## Phase 1: Build Tooling + Navigation
+## Phase 1: Build Tooling + Navigation ✅
 
 **Goal:** SPA routing with port-based navigation, stub pages with elm/html.
 
-### New dependencies
-```sh
-elm install mpizenberg/elm-url-navigation-port
+**Status: COMPLETE**
+
+### What was done
+
+- Installed `mpizenberg/elm-url-navigation-port` (pulls in `lydell/elm-app-url` and `elm/url`)
+- Created `public/index.html` and `public/index.js` (HTML shell + navigation port wiring)
+- Used `pnpm` + `elm-watch` for build tooling instead of a Makefile
+- Rewrote `src/Main.elm` as `port module` with `Browser.element`, navigation ports, route parsing, and route guards
+- Extended `src/Route.elm` with `fromAppUrl`/`toAppUrl` URL parsing/serialization
+- Created stub page modules: `Page.Setup`, `Page.Home`, `Page.About`, `Page.NotFound`, `Page.NewGroup`, `Page.Group`
+- Dev workaround: hardcoded `identity = Just "dev"` to bypass guards during Phase 1
+
+### Route table
 ```
-(This pulls in `lydell/elm-app-url` and `elm/url` transitively.)
-
-### Files
-
-**`index.html`** (new) -- HTML shell:
-- `<div id="app"></div>`
-- Load `elm.js`
-- Init with flags: `{ initialUrl: location.href, currentTime: Date.now(), languages: navigator.languages }`
-- Wire navigation ports via the `elm-url-navigation-port` JS module:
-  ```js
-  import * as Navigation from "elm-url-navigation-port";
-  Navigation.init({ navCmd: app.ports.navCmd, onNavEvent: app.ports.onNavEvent });
-  ```
-
-**`Makefile`** (new):
-- `build`: `elm make src/Main.elm --output=elm.js`
-- `test`: `pnpx elm-test`
-
-**`src/Main.elm`** (rewrite) -- `port module`, `Browser.element`:
-```elm
-port module Main exposing (main)
-
--- Navigation ports (elm-url-navigation-port)
-port navCmd : Nav.CommandPort msg
-port onNavEvent : Nav.EventPort msg
-
-type alias Model =
-    { route : Route, navKey : Nav.Key, identity : Maybe String }
-
-type Msg
-    = OnNavEvent Nav.Event
-    | NavigateTo Route
+[]                           -> Home
+["setup"]                    -> Setup
+["groups", "new"]            -> NewGroup
+["join", id]                 -> GroupRoute id (Join (fragment or ""))
+["groups", id]               -> GroupRoute id (Tab BalanceTab)
+["groups", id, "entries"]    -> GroupRoute id (Tab EntriesTab)
+["groups", id, "members"]    -> GroupRoute id (Tab MembersTab)
+["groups", id, "activities"] -> GroupRoute id (Tab ActivitiesTab)
+["groups", id, "new-entry"]  -> GroupRoute id NewEntry
+["about"]                    -> About
+_                            -> NotFound
 ```
-- `init`: parse `flags.initialUrl` via `Nav.init` to get `Nav.Key` + initial `Nav.Event`, derive Route
-- `update`: `OnNavEvent` extracts `AppUrl` from event, converts to Route; `NavigateTo` uses `Nav.pushUrl`
-- `view`: dispatch to page module based on `model.route`
-- `subscriptions`: `Nav.onNavEvent onNavEvent OnNavEvent`
-- Route guard: if no identity and route requires auth, redirect to `/setup`
-- Dev workaround: hardcode `identity = Just "dev"` to bypass guards during Phase 1
-
-**`src/Route.elm`** (extend) -- add URL parsing/serialization:
-- `fromAppUrl : AppUrl -> Route` -- pattern-matches on `appUrl.path`
-- `toPath : Route -> String` -- serializes each route variant to a URL string
-- Route table:
-  ```
-  []                         -> Home
-  ["setup"]                  -> Setup
-  ["groups", "new"]          -> NewGroup
-  ["join", id]               -> GroupRoute id (Join (fragment or ""))
-  ["groups", id]             -> GroupRoute id (Tab BalanceTab)
-  ["groups", id, "entries"]  -> GroupRoute id (Tab EntriesTab)
-  ["groups", id, "members"]  -> GroupRoute id (Tab MembersTab)
-  ["groups", id, "activities"] -> GroupRoute id (Tab ActivitiesTab)
-  ["groups", id, "new-entry"] -> GroupRoute id NewEntry
-  ["about"]                  -> About
-  _                          -> NotFound
-  ```
-
-**Stub page modules** (new, each exposes `view`):
-- `src/Page/Setup.elm` -- "Welcome to Partage"
-- `src/Page/Home.elm` -- "Your groups"
-- `src/Page/About.elm` -- "About Partage"
-- `src/Page/NotFound.elm` -- "Page not found"
-- `src/Page/NewGroup.elm` -- "Create a group"
-- `src/Page/Group.elm` -- shows current tab name, links to switch tabs
-
-### Verification
-- `make build` succeeds, `make test` passes 158 tests
-- Open `index.html`: navigate via URL bar to `/`, `/setup`, `/about`, `/groups/test-id`, `/groups/test-id/entries`
-- Back button works via `Nav.back`
-- Internal links navigate without page reload
 
 ---
 
-## Phase 2: Static UI with elm-ui v2
+## Phase 2: Static UI with elm-ui v2 ✅
 
-**Goal:** Visually complete prototype rendering hardcoded domain data.
+**Goal:** Visually complete prototype rendering hardcoded domain data, with i18n support.
 
-### New dependencies
+**Status: COMPLETE**
 
-Submodules:
-```sh
-git submodule add -b 2.0 https://github.com/mdgriffith/elm-ui vendor/elm-ui
-git submodule add -b v2 https://github.com/mdgriffith/elm-animator vendor/elm-animator
+### What was done
+
+#### Dependencies
+- Added git submodules: `elm-ui` (branch `2.0`), `elm-animator` (branch `v2`)
+- Installed: `elmcraft/core-extra`, `avh4/elm-color`, `mdgriffith/elm-bezier`
+- Updated elm.json `source-directories`: `["src", "vendor/elm-ui/src", "vendor/elm-animator/src"]`
+- Added pnpm devDependencies: `elm-watch` (2.0.0-beta.12), `run-pty`, `travelm-agency` (^3.8.0), `rimraf`, `shx`
+
+#### Build tooling
+- `pnpm dev`: runs `elm-watch hot` + public file watcher + i18n watcher via `run-pty`
+- `pnpm build`: `pnpm prebuild && elm-watch make --optimize`
+- `pnpm prebuild`: `pnpm i18n && pnpm prepare:dist`
+- `pnpm i18n`: `travelm-agency translations --elm_path=src/Translations.elm --inline`
+
+#### Design tokens (`src/UI/Theme.elm`)
+```elm
+fontSize = { sm = 14, md = 16, lg = 18, xl = 22, hero = 28 }  -- 5 levels
+spacing  = { xs = 4, sm = 8, md = 16, lg = 24, xl = 32 }
+rounding = { sm = 6, md = 8 }
+borderWidth = { sm = 1, md = 2 }
 ```
-
-Published:
-```sh
-elm install elmcraft/core-extra
-elm install avh4/elm-color
-elm install mdgriffith/elm-bezier
-```
-
-Update elm.json `source-directories`: `["src", "vendor/elm-ui/src", "vendor/elm-animator/src"]`
-
-### Files
-
-**`src/UI/Theme.elm`** (new) -- design tokens:
-- Colors: `primary` (#2563eb), `success` (green), `danger` (red), `neutral` (grays)
+- Colors: `primary` (#2563eb), `primaryLight`, `success`, `successLight`, `danger`, `dangerLight`, `white`, neutral scale (200, 300, 500, 700, 900)
 - `balanceColor : Balance.Status -> Ui.Color`
-- Spacing constants, font sizes, max content width (768px)
+- `contentMaxWidth = 768`
 
-**`src/UI/Layout.elm`** (new) -- app shell:
-- `appShell : { title : String, content : Ui.Element msg } -> Ui.Element msg` -- header + content + max-width
-- `groupShell : { groupName : String, activeTab : GroupTab, content : Ui.Element msg, onTabClick : GroupTab -> msg } -> Ui.Element msg` -- adds bottom tab bar
+#### Application shells (`src/UI/Shell.elm`)
+- `appShell : { title : String, headerExtra : Ui.Element msg, content : Ui.Element msg } -> Ui.Element msg`
+- `groupShell : { groupName, headerExtra, activeTab, content, onTabClick, tabLabels } -> Ui.Element msg`
+- `TabLabels` type alias for translated tab labels
+- Header renders title left, `headerExtra` (language selector) right
+- Tab bar at bottom with active/inactive styling
 
-**`src/UI/Components.elm`** (new) -- reusable view components:
-- `balanceCard : { name : String, balance : MemberBalance, isCurrentUser : Bool } -> Ui.Element msg`
-- `entryCard : { entry : Entry, resolveName : Member.Id -> String } -> Ui.Element msg`
-- `memberRow : { member : MemberState, isCurrentUser : Bool } -> Ui.Element msg`
-- `settlementRow : { transaction : Transaction, resolveName : Member.Id -> String } -> Ui.Element msg`
-- `tabBar : { active : GroupTab, onSelect : GroupTab -> msg } -> Ui.Element msg`
+#### Reusable components (`src/UI/Components.elm`)
+- `balanceCard : I18n -> { name, balance, isCurrentUser } -> Ui.Element msg` — color-coded, personalized status text
+- `entryCard : I18n -> { entry, resolveName } -> Ui.Element msg` — expense and transfer cards
+- `memberRow : I18n -> { member, isCurrentUser } -> Ui.Element msg` — with "(you)" suffix and "virtual" label
+- `settlementRow : I18n -> { transaction, resolveName } -> Ui.Element msg`
+- `languageSelector : Language -> (Language -> msg) -> Ui.Element msg` — flag-based (🇬🇧/🇫🇷) with opacity
 
-**`src/Format.elm`** (new):
-- `formatCents : Int -> String` -- e.g., 1050 -> "10.50"
-- `formatCentsWithCurrency : Int -> Currency -> String` -- e.g., "10.50 EUR"
+#### i18n with travelm-agency
+- Translation files: `translations/messages.en.json`, `translations/messages.fr.json` (44 keys each)
+- Generated `src/Translations.elm` (gitignored) — inline mode, no HTTP needed
+- `I18n` and `Language` types threaded through all view functions as first parameter
+- All UI strings replaced with `T.*` calls (imported as `Translations as T`)
+- Interpolated keys: `homeMemberCount` ({count}), `nameYouSuffix` ({name}), `entryPaidBySingle` ({name}), `entryPaidByMultiple` ({names}), `entryTransferDirection` ({from}, {to})
+- Personalized balance text: `balanceIsOwedYou`/`balanceOwesYou` for current user vs `balanceIsOwed`/`balanceOwes` for others
+- Language selector in header, language stored in Model, `SwitchLanguage` msg re-inits I18n
+- `Flags` includes `language : String` (from `navigator.language`)
 
-**`src/SampleData.elm`** (new) -- hardcoded events for 4 members (Alice, Bob, Carol, Dave) with several expenses and a transfer, producing realistic balances via `GroupState.applyEvents`
+#### Sample data (`src/SampleData.elm`)
+- 5 members: Alice (Real, current user), Bob (Real), Carol (Virtual), Dave (Real), Eve (Real, retired)
+- 4 expenses + 1 transfer producing realistic balances
+- Exposes `currentUserId`, `currentUserRootId`, `groupId`, `groupState`, `resolveName`
+- `currentUserRootId` resolved via `GroupState.resolveMemberRootId`
 
-**Page modules** (rewrite to use elm-ui):
-- **`src/Page/Group.elm`** -- tab-switching shell using `UI.Layout.groupShell`
-- **`src/Page/Group/BalanceTab.elm`** (new) -- balance cards from `GroupState.balances` + settlement from `Settlement.computeSettlement`
-- **`src/Page/Group/EntriesTab.elm`** (new) -- entry cards from `GroupState.activeEntries`
-- **`src/Page/Group/MembersTab.elm`** (new) -- active members sorted alphabetically, retired in separate section
-- **`src/Page/Group/ActivitiesTab.elm`** (new) -- placeholder "Coming soon"
-- **`src/Page/Home.elm`** -- group list card showing sample group
-- **`src/Page/Setup.elm`** -- welcome screen with "Generate Identity" button (non-functional yet)
+#### Page modules (all use `Ui.Element msg`)
+- `Main.elm`: `Model` has `route`, `identity`, `i18n`, `language`; `Msg` has `OnNavEvent`, `NavigateTo`, `SwitchTab`, `SwitchLanguage`; unknown group IDs show 404
+- `Page.Group`: passes `I18n`, `headerExtra`, `activeTab`, `onTabClick` to `groupShell`; builds `tabLabels` from translations
+- `Page.Group.BalanceTab`: balance cards + settlement plan from real domain computation
+- `Page.Group.EntriesTab`: entry cards from `GroupState.activeEntries`
+- `Page.Group.MembersTab`: active members sorted alphabetically + "Departed" section; uses `rootId` for member comparisons
+- `Page.Group.ActivitiesTab`: placeholder "Coming soon"
+- `Page.Home`: group list card with sample group
+- `Page.Setup`, `Page.About`, `Page.NewGroup`, `Page.NotFound`: simple content pages
 
-All page modules use `Ui.Element msg`. `Main.elm` view uses `Ui.layout` as the top-level renderer.
+#### Key decisions made during Phase 2
+- Named the shell module `UI/Shell.elm` (not `UI/Layout.elm` as originally planned)
+- Tab bar lives in `UI/Shell.elm` (not `UI/Components.elm`)
+- Reduced font sizes from 7 to 5 levels (merged xs into sm, merged xl/xxl into xl)
+- Added rounding and borderWidth scales to Theme (not in original plan)
+- Added i18n in Phase 2 (originally not planned until later) to catch architectural issues early
+- Member comparisons use `rootId` (not `id`) throughout views, anticipating member replacement chains
+- Language selector in `UI/Components.elm` (generic, not tied to Main's Msg type)
 
-### Verification
-- App renders balance cards with green/red/neutral color coding
-- Tab switching shows different content on each tab
-- Entry list shows expense and transfer cards with formatted amounts
-- Member list shows active members; sample data produces non-zero balances
-- Layout respects 768px max width
+### Current file structure
+```
+public/
+  index.html              -- HTML shell
+  index.js                -- Elm init + navigation port wiring + language flag
+translations/
+  messages.en.json        -- English translations (44 keys)
+  messages.fr.json        -- French translations (44 keys)
+package.json              -- pnpm scripts + devDependencies
+elm.json                  -- Elm config with vendor source dirs
+.gitignore                -- includes src/Translations.elm
+src/
+  Main.elm                -- App entry, ports, Model, Msg, update, view, i18n
+  Route.elm               -- Route types + URL parsing/serialization
+  Format.elm              -- Currency/amount formatting
+  SampleData.elm          -- Hardcoded events for 5 members
+  Translations.elm        -- (generated, gitignored) i18n module
+  Domain/                 -- (unchanged domain logic)
+  Page/
+    Setup.elm             -- Welcome screen (non-functional identity button)
+    Home.elm              -- Group list with sample group
+    About.elm             -- App info
+    NotFound.elm          -- 404
+    NewGroup.elm          -- Placeholder for group creation
+    Group.elm             -- Group page shell with tab routing
+    Group/
+      BalanceTab.elm      -- Balance cards + settlement plan
+      EntriesTab.elm      -- Entry cards (expenses + transfers)
+      MembersTab.elm      -- Active + departed members
+      ActivitiesTab.elm   -- Placeholder "coming soon"
+  UI/
+    Theme.elm             -- Design tokens (colors, spacing, typography, rounding, borders)
+    Shell.elm             -- App shell + group shell + tab bar
+    Components.elm        -- Reusable view components + language selector
+```
 
 ---
 
 ## Phase 3: Async Backbone + Identity
 
 **Goal:** Real cryptographic identity generation via elm-concurrent-task + elm-webcrypto.
+
+**Status: NOT STARTED**
 
 ### New dependencies
 
@@ -192,7 +198,6 @@ elm install TSFoster/elm-sha1
 
 pnpm:
 ```sh
-pnpm init
 pnpm add elm-concurrent-task
 ```
 
@@ -208,8 +213,9 @@ port receiveTask : (Json.Decode.Value -> msg) -> Sub msg
 
 type alias Model =
     { route : Route
-    , navKey : Nav.Key
     , identity : Maybe Identity
+    , i18n : I18n
+    , language : Language
     , pool : ConcurrentTask.Pool Msg
     , currentTime : Time.Posix
     , randomSeed : Random.Seed
@@ -240,13 +246,11 @@ decoder : Json.Decode.Decoder Identity
 - Shows spinner during generation
 - On success: store identity in Model, navigate to `/`
 
-**`index.html`** (update) -- add elm-concurrent-task JS runner:
+**`public/index.js`** (update) -- add elm-concurrent-task JS runner:
 - Import runner from `node_modules/elm-concurrent-task`
 - Register elm-webcrypto task definitions
 - Wire `sendTask`/`receiveTask` ports
 - Add `randomSeed` to flags: `Array.from(crypto.getRandomValues(new Uint32Array(4)))`
-
-**`package.json`** (new via `pnpm init`) -- JS dependencies
 
 ### Key patterns
 
@@ -265,13 +269,15 @@ Route guards now work for real: `identity == Nothing` redirects to `/setup`.
 - Spinner shows, then identity is created and stored in Model
 - Redirected to `/` (Home)
 - Navigating to any auth route works; navigating to `/setup` when identity exists redirects to `/`
-- `make test` still passes 158 tests
+- `pnpm test` still passes 158 tests
 
 ---
 
 ## Phase 4: Persistent Storage (IndexedDB)
 
 **Goal:** Identity and group data survive page reloads.
+
+**Status: NOT STARTED**
 
 ### New dependencies
 
@@ -281,7 +287,7 @@ git submodule add https://github.com/mpizenberg/elm-indexeddb vendor/elm-indexed
 ```
 
 Update elm.json `source-directories` to add `vendor/elm-indexeddb/src`.
-Update `index.html` JS runner to register elm-indexeddb task definitions.
+Update `public/index.js` JS runner to register elm-indexeddb task definitions.
 
 ### Files
 
@@ -328,7 +334,7 @@ loadGroupEvents : Db -> Group.Id -> ConcurrentTask Error (List Json.Decode.Value
 
 ### Verification
 - Generate identity on `/setup`, reload page -> stays logged in (goes to `/` not `/setup`)
-- `make test` still passes 158 tests
+- `pnpm test` still passes 158 tests
 - Open browser DevTools > Application > IndexedDB: see "partage" database with stores
 
 ---
@@ -336,6 +342,8 @@ loadGroupEvents : Db -> Group.Id -> ConcurrentTask Error (List Json.Decode.Value
 ## Phase 5: Local Group Management
 
 **Goal:** Create groups locally, add entries, view real computed state. First functional bill-splitter.
+
+**Status: NOT STARTED**
 
 ### No new dependencies
 
@@ -415,38 +423,6 @@ Entry creation:
 6. **JSON codecs colocated** -- each domain module has its own encode/decode functions
 7. **GroupState computed on demand** from events via `applyEvents` (caching later if needed)
 8. **UUID v7** for event IDs (time-sortable), **UUID v4** for entity IDs (members, entries, groups)
-
-## Target File Structure (after Phase 5)
-
-```
-index.html
-Makefile
-package.json
-elm.json
-.gitmodules
-vendor/  elm-ui/ elm-animator/ elm-webcrypto/ elm-indexeddb/ elm-uuid/
-src/
-  Main.elm          -- App entry, ports, Model, Msg, update, subscriptions
-  Route.elm         -- Route types + URL parsing/serialization
-  Identity.elm      -- Keypair type, generation task, JSON codecs
-  Storage.elm       -- IndexedDB schema and CRUD operations
-  Format.elm        -- Currency/amount formatting
-  Domain/           -- (existing + JSON codecs added to each module)
-  Page/
-    Setup.elm       -- Identity generation screen
-    Home.elm        -- Group list
-    About.elm       -- App info
-    NotFound.elm    -- 404
-    NewGroup.elm    -- Group creation form
-    Group.elm       -- Group page shell with tab routing + FAB
-    Group/
-      BalanceTab.elm
-      EntriesTab.elm
-      MembersTab.elm
-      ActivitiesTab.elm
-      NewEntry.elm
-  UI/
-    Theme.elm       -- Colors, spacing, typography
-    Layout.elm      -- App shell, group shell
-    Components.elm  -- Reusable view components
-```
+9. **I18n via travelm-agency** (inline mode) -- `I18n` passed explicitly as first param to all view functions, `Translations` aliased as `T`
+10. **Member identity via `rootId`** -- views compare `rootId` (not `id`) to handle member replacement chains
+11. **Build tooling via elm-watch + pnpm** -- no Makefile, `run-pty` for parallel dev processes
