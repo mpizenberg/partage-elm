@@ -1,4 +1,4 @@
-module UI.Components exposing (balanceCard, entryCard, memberRow, settlementRow)
+module UI.Components exposing (balanceCard, entryCard, languageSelector, memberRow, settlementRow)
 
 {-| Reusable view components for group data display.
 -}
@@ -9,9 +9,10 @@ import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Domain.Settlement as Settlement
 import Format
-import Translations as T exposing (I18n)
+import Translations as T exposing (I18n, Language(..))
 import UI.Theme as Theme
 import Ui
+import Ui.Events
 import Ui.Font
 
 
@@ -187,3 +188,36 @@ settlementRow i18n config =
         , Ui.el [ Ui.alignRight, Ui.Font.bold, Ui.Font.size Theme.fontSize.sm ]
             (Ui.text (Format.formatCents t.amount))
         ]
+
+
+{-| Flag-based language selector. Active language is full opacity, others dimmed.
+-}
+languageSelector : Language -> (Language -> msg) -> Ui.Element msg
+languageSelector current onSwitch =
+    Ui.row [ Ui.spacing Theme.spacing.xs ]
+        (List.map
+            (\lang ->
+                Ui.el
+                    [ Ui.pointer
+                    , Ui.Font.size Theme.fontSize.lg
+                    , Ui.Events.onClick (onSwitch lang)
+                    , if lang == current then
+                        Ui.opacity 1.0
+
+                      else
+                        Ui.opacity 0.5
+                    ]
+                    (Ui.text (languageFlag lang))
+            )
+            T.languages
+        )
+
+
+languageFlag : Language -> String
+languageFlag lang =
+    case lang of
+        En ->
+            "🇬🇧"
+
+        Fr ->
+            "🇫🇷"

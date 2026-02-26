@@ -11,7 +11,7 @@
     "prebuild": "pnpm i18n && pnpm prepare:dist",
     "build": "pnpm prebuild && elm-watch make --optimize",
     "test": "elm-test",
-    "format": "elm-format --yes ."
+    "format": "elm-format --yes src/"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

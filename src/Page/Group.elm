@@ -16,8 +16,8 @@ import UI.Shell
 import Ui
 
 
-view : I18n -> GroupTab -> (GroupTab -> msg) -> Ui.Element msg
-view i18n activeTab onTabClick =
+view : I18n -> Ui.Element msg -> GroupTab -> (GroupTab -> msg) -> Ui.Element msg
+view i18n headerExtra activeTab onTabClick =
     let
         state =
             SampleData.groupState
@@ -30,6 +30,7 @@ view i18n activeTab onTabClick =
     in
     UI.Shell.groupShell
         { groupName = state.groupMeta.name
+        , headerExtra = headerExtra
         , activeTab = activeTab
         , onTabClick = onTabClick
         , content = tabContent i18n activeTab state currentUserRootId resolveName

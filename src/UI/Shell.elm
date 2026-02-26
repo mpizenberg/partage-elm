@@ -20,13 +20,13 @@ type alias TabLabels =
 
 {-| Top-level app shell with a header and max-width content area.
 -}
-appShell : { title : String, content : Ui.Element msg } -> Ui.Element msg
+appShell : { title : String, headerExtra : Ui.Element msg, content : Ui.Element msg } -> Ui.Element msg
 appShell config =
     Ui.column
         [ Ui.width Ui.fill
         , Ui.height Ui.fill
         ]
-        [ header config.title
+        [ header config.title config.headerExtra
         , Ui.el
             [ Ui.width Ui.fill
             , Ui.widthMax Theme.contentMaxWidth
@@ -37,19 +37,21 @@ appShell config =
         ]
 
 
-header : String -> Ui.Element msg
-header title =
+header : String -> Ui.Element msg -> Ui.Element msg
+header title extra =
     Ui.el
         [ Ui.width Ui.fill
         , Ui.background Theme.primary
         , Ui.paddingXY Theme.spacing.md Theme.spacing.sm
         ]
-        (Ui.el
+        (Ui.row
             [ Ui.width Ui.fill
             , Ui.widthMax Theme.contentMaxWidth
             , Ui.centerX
             ]
-            (Ui.el [ Ui.Font.color Theme.white, Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text title))
+            [ Ui.el [ Ui.Font.color Theme.white, Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text title)
+            , Ui.el [ Ui.alignRight ] extra
+            ]
         )
 
 
@@ -57,6 +59,7 @@ header title =
 -}
 groupShell :
     { groupName : String
+    , headerExtra : Ui.Element msg
     , activeTab : GroupTab
     , content : Ui.Element msg
     , onTabClick : GroupTab -> msg
@@ -68,7 +71,7 @@ groupShell config =
         [ Ui.width Ui.fill
         , Ui.height Ui.fill
         ]
-        [ header config.groupName
+        [ header config.groupName config.headerExtra
         , Ui.el
             [ Ui.width Ui.fill
             , Ui.widthMax Theme.contentMaxWidth

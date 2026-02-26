@@ -13,6 +13,7 @@ import Page.Setup
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import SampleData
 import Translations as T exposing (I18n, Language(..))
+import UI.Components
 import UI.Shell
 import UI.Theme as Theme
 import Ui
@@ -167,50 +168,55 @@ viewPage model =
     let
         i18n =
             model.i18n
+
+        langSelector =
+            UI.Components.languageSelector model.language SwitchLanguage
     in
     case model.route of
         Setup ->
-            UI.Shell.appShell { title = T.shellPartage i18n, content = Page.Setup.view i18n }
+            UI.Shell.appShell { title = T.shellPartage i18n, headerExtra = langSelector, content = Page.Setup.view i18n }
 
         Home ->
-            UI.Shell.appShell { title = T.shellPartage i18n, content = Page.Home.view i18n NavigateTo }
+            UI.Shell.appShell { title = T.shellPartage i18n, headerExtra = langSelector, content = Page.Home.view i18n NavigateTo }
 
         NewGroup ->
-            UI.Shell.appShell { title = T.shellNewGroup i18n, content = Page.NewGroup.view i18n }
+            UI.Shell.appShell { title = T.shellNewGroup i18n, headerExtra = langSelector, content = Page.NewGroup.view i18n }
 
         GroupRoute groupId (Tab tab) ->
             if groupId == SampleData.groupId then
-                Page.Group.view i18n tab SwitchTab
+                Page.Group.view i18n langSelector tab SwitchTab
 
             else
-                UI.Shell.appShell { title = T.shellPartage i18n, content = Page.NotFound.view i18n }
+                UI.Shell.appShell { title = T.shellPartage i18n, headerExtra = langSelector, content = Page.NotFound.view i18n }
 
         GroupRoute groupId (Join _) ->
             if groupId == SampleData.groupId then
                 UI.Shell.appShell
                     { title = T.shellJoinGroup i18n
+                    , headerExtra = langSelector
                     , content =
                         Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
                             (Ui.text (T.joinGroupComingSoon i18n))
                     }
 
             else
-                UI.Shell.appShell { title = T.shellPartage i18n, content = Page.NotFound.view i18n }
+                UI.Shell.appShell { title = T.shellPartage i18n, headerExtra = langSelector, content = Page.NotFound.view i18n }
 
         GroupRoute groupId NewEntry ->
             if groupId == SampleData.groupId then
                 UI.Shell.appShell
                     { title = T.shellNewEntry i18n
+                    , headerExtra = langSelector
                     , content =
                         Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
                             (Ui.text (T.newEntryComingSoon i18n))
                     }
 
             else
-                UI.Shell.appShell { title = T.shellPartage i18n, content = Page.NotFound.view i18n }
+                UI.Shell.appShell { title = T.shellPartage i18n, headerExtra = langSelector, content = Page.NotFound.view i18n }
 
         About ->
-            UI.Shell.appShell { title = T.shellPartage i18n, content = Page.About.view i18n }
+            UI.Shell.appShell { title = T.shellPartage i18n, headerExtra = langSelector, content = Page.About.view i18n }
 
         NotFound ->
-            UI.Shell.appShell { title = T.shellPartage i18n, content = Page.NotFound.view i18n }
+            UI.Shell.appShell { title = T.shellPartage i18n, headerExtra = langSelector, content = Page.NotFound.view i18n }
