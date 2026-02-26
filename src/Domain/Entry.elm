@@ -8,6 +8,7 @@ module Domain.Entry exposing
     , Metadata
     , Payer
     , TransferData
+    , newMetadata
     )
 
 import Domain.Currency exposing (Currency)
@@ -34,6 +35,18 @@ type alias Metadata =
     , isDeleted : Bool
     , createdBy : Member.Id
     , createdAt : Time.Posix
+    }
+
+
+newMetadata : Id -> Member.Id -> Time.Posix -> Metadata
+newMetadata id memberId creationTime =
+    { id = id
+    , rootId = id
+    , previousVersionId = Nothing
+    , notes = Nothing
+    , isDeleted = False
+    , createdBy = memberId
+    , createdAt = creationTime
     }
 
 

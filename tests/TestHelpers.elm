@@ -11,9 +11,8 @@ module TestHelpers exposing
     )
 
 import Domain.Currency exposing (Currency(..))
-import Domain.Date exposing (Date)
-import Domain.Entry as Entry exposing (Beneficiary(..), Category(..), Entry, Kind(..), Payer)
-import Domain.Event as Event exposing (Envelope, Payload(..))
+import Domain.Entry as Entry exposing (Beneficiary(..), Category(..), Entry, Kind(..))
+import Domain.Event exposing (Envelope, Payload(..))
 import Domain.Member as Member
 import Fuzz exposing (Fuzzer)
 import Time

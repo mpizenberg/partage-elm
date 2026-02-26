@@ -4,10 +4,9 @@ import Domain.Balance as Balance exposing (MemberBalance, Status(..))
 import Domain.Currency exposing (Currency(..))
 import Domain.Entry as Entry exposing (Beneficiary(..), Kind(..))
 import Expect
-import Fuzz exposing (Fuzzer)
+import Fuzz
 import Test exposing (..)
 import TestHelpers exposing (..)
-import Time
 
 
 suite : Test
