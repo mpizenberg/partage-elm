@@ -16,6 +16,7 @@ module Domain.GroupState exposing
 
 import Dict exposing (Dict)
 import Domain.Entry as Entry exposing (Entry)
+import Set
 import Domain.Event as Event exposing (Envelope, Payload(..))
 import Domain.Group as Group
 import Domain.Member as Member
@@ -345,37 +346,67 @@ applyEntryUndeleted data state =
 {-| Among all versions for a rootId, pick the one with the longest
 previousVersionId chain (deepest in the DAG). Entry id breaks ties.
 Takes a fallback entry for the impossible empty case.
+
+Finds leaf entries (not referenced as previousVersionId by any other entry)
+in a single pass. In the common single-chain case, there is exactly one leaf.
+For concurrent modifications with multiple leaves, falls back to depth comparison.
 -}
 resolveCurrentVersion : Entry -> Dict Entry.Id Entry -> Entry
 resolveCurrentVersion fallback versions =
     let
-        pickDeepest ( da, a ) ( db, b ) =
-            case compare da db of
-                GT ->
-                    ( da, a )
+        -- Collect all IDs that are referenced as previousVersionId
+        parentIds =
+            Dict.foldl
+                (\_ entry acc ->
+                    case entry.meta.previousVersionId of
+                        Nothing ->
+                            acc
 
-                LT ->
-                    ( db, b )
+                        Just prevId ->
+                            Set.insert prevId acc
+                )
+                Set.empty
+                versions
 
-                EQ ->
-                    if a.meta.id >= b.meta.id then
-                        ( da, a )
-
-                    else
-                        ( db, b )
-
-        entries =
+        -- Leaves are entries whose id is not referenced by any other entry
+        leaves =
             Dict.values versions
+                |> List.filter (\e -> not (Set.member e.meta.id parentIds))
     in
-    case entries of
+    case leaves of
         [] ->
             fallback
 
+        [ single ] ->
+            single
+
         first :: rest ->
-            List.foldl pickDeepest
-                ( versionDepthHelp versions first 0, first )
-                (List.map (\e -> ( versionDepthHelp versions e 0, e )) rest)
-                |> Tuple.second
+            -- Multiple leaves (concurrent modifications): pick deepest, id as tiebreaker
+            List.foldl
+                (\b a ->
+                    let
+                        da =
+                            versionDepthHelp versions a 0
+
+                        db =
+                            versionDepthHelp versions b 0
+                    in
+                    case compare da db of
+                        GT ->
+                            a
+
+                        LT ->
+                            b
+
+                        EQ ->
+                            if a.meta.id >= b.meta.id then
+                                a
+
+                            else
+                                b
+                )
+                first
+                rest
 
 
 versionDepthHelp : Dict Entry.Id Entry -> Entry -> Int -> Int
