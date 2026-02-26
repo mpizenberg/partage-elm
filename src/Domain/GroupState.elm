@@ -19,7 +19,6 @@ import Domain.Entry as Entry exposing (Entry)
 import Domain.Event as Event exposing (Envelope, Payload(..))
 import Domain.Group as Group
 import Domain.Member as Member
-import Time
 
 
 {-| The full state of a group, computed by replaying events.
@@ -343,53 +342,54 @@ applyEntryUndeleted data state =
             { state | entries = Dict.insert data.rootId updated state.entries }
 
 
-{-| Among all versions for a rootId, pick non-deleted with latest timestamp
-(entry id as tiebreaker). Takes a fallback entry for the impossible empty case.
+{-| Among all versions for a rootId, pick the one with the longest
+previousVersionId chain (deepest in the DAG). Entry id breaks ties.
+Takes a fallback entry for the impossible empty case.
 -}
 resolveCurrentVersion : Entry -> Dict Entry.Id Entry -> Entry
 resolveCurrentVersion fallback versions =
     let
-        allEntries =
-            Dict.values versions
+        depth : Entry -> Int
+        depth entry =
+            case entry.meta.previousVersionId of
+                Nothing ->
+                    0
 
-        nonDeleted =
-            List.filter (\e -> not e.meta.isDeleted) allEntries
+                Just prevId ->
+                    case Dict.get prevId versions of
+                        Nothing ->
+                            0
 
-        candidates =
-            if List.isEmpty nonDeleted then
-                allEntries
+                        Just prev ->
+                            1 + depth prev
 
-            else
-                nonDeleted
-
-        pickLatest a b =
-            let
-                ta =
-                    Time.posixToMillis a.meta.createdAt
-
-                tb =
-                    Time.posixToMillis b.meta.createdAt
-            in
-            case compare ta tb of
+        pickDeepest ( da, a ) ( db, b ) =
+            case compare da db of
                 GT ->
-                    a
+                    ( da, a )
 
                 LT ->
-                    b
+                    ( db, b )
 
                 EQ ->
                     if a.meta.id >= b.meta.id then
-                        a
+                        ( da, a )
 
                     else
-                        b
+                        ( db, b )
+
+        entries =
+            Dict.values versions
     in
-    case candidates of
+    case entries of
         [] ->
             fallback
 
         first :: rest ->
-            List.foldl pickLatest first rest
+            List.foldl pickDeepest
+                ( depth first, first )
+                (List.map (\e -> ( depth e, e )) rest)
+                |> Tuple.second
 
 
 

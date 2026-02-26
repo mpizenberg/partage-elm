@@ -7,7 +7,6 @@ import Domain.GroupState as GroupState
 import Expect
 import Test exposing (..)
 import TestHelpers exposing (..)
-import Time
 
 
 suite : Test
@@ -61,14 +60,7 @@ modificationTests =
             { defaultExpenseData | description = "Modified expense", amount = 2000 }
 
         modifiedEntry =
-            makeExpenseEntry "entry2" 2000 modifiedData
-                |> (\e ->
-                        let
-                            meta =
-                                e.meta
-                        in
-                        { e | meta = { meta | rootId = "entry1", previousVersionId = Just "entry1" } }
-                   )
+            Entry.replace originalEntry.meta "entry2" (Expense modifiedData)
     in
     describe "Modifications"
         [ test "current version updates to modified entry" <|
@@ -178,38 +170,22 @@ deletionTests =
         ]
 
 
-makeModification : String -> Int -> String -> Entry.ExpenseData -> Entry.Entry
-makeModification versionId timestamp rootId expenseData =
-    makeExpenseEntry versionId timestamp expenseData
-        |> (\e ->
-                let
-                    meta =
-                        e.meta
-                in
-                { e | meta = { meta | rootId = rootId, previousVersionId = Just rootId } }
-           )
-
-
 concurrentModificationTests : Test
 concurrentModificationTests =
     describe "Concurrent modification resolution"
-        [ test "later timestamp wins" <|
+        [ test "deeper chain wins over shallower" <|
             \_ ->
                 let
                     originalEntry =
                         makeExpenseEntry "entry1" 1000 defaultExpenseData
 
+                    -- depth 1: entry1 -> v2
                     mod1 =
-                        makeModification "v2"
-                            2000
-                            "entry1"
-                            { defaultExpenseData | description = "Mod by Alice" }
+                        Entry.replace originalEntry.meta "v2" (Expense { defaultExpenseData | description = "Mod by Alice" })
 
+                    -- depth 2: entry1 -> v2 -> v3
                     mod2 =
-                        makeModification "v3"
-                            3000
-                            "entry1"
-                            { defaultExpenseData | description = "Mod by Bob" }
+                        Entry.replace mod1.meta "v3" (Expense { defaultExpenseData | description = "Mod by Bob" })
 
                     state =
                         GroupState.applyEvents
@@ -221,23 +197,18 @@ concurrentModificationTests =
                 Dict.get "entry1" state.entries
                     |> Maybe.map (.currentVersion >> .meta >> .id)
                     |> Expect.equal (Just "v3")
-        , test "id breaks timestamp tie" <|
+        , test "id breaks tie at same depth" <|
             \_ ->
                 let
                     originalEntry =
                         makeExpenseEntry "entry1" 1000 defaultExpenseData
 
+                    -- Both at depth 1 (concurrent edits of the same parent)
                     mod1 =
-                        makeModification "v-aaa"
-                            2000
-                            "entry1"
-                            { defaultExpenseData | description = "Mod A" }
+                        Entry.replace originalEntry.meta "v-aaa" (Expense { defaultExpenseData | description = "Mod A" })
 
                     mod2 =
-                        makeModification "v-zzz"
-                            2000
-                            "entry1"
-                            { defaultExpenseData | description = "Mod B" }
+                        Entry.replace originalEntry.meta "v-zzz" (Expense { defaultExpenseData | description = "Mod Z" })
 
                     state =
                         GroupState.applyEvents
