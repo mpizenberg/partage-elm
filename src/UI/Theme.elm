@@ -1,5 +1,6 @@
 module UI.Theme exposing
     ( balanceColor
+    , borderWidth
     , contentMaxWidth
     , danger
     , dangerLight
@@ -11,6 +12,7 @@ module UI.Theme exposing
     , neutral900
     , primary
     , primaryLight
+    , rounding
     , spacing
     , success
     , successLight
@@ -41,6 +43,20 @@ spacing =
     , lg = 24
     , xl = 32
     }
+
+
+{-| Border radius scale.
+-}
+rounding : { sm : Int, md : Int }
+rounding =
+    { sm = 6, md = 8 }
+
+
+{-| Border width scale.
+-}
+borderWidth : { sm : Int, md : Int }
+borderWidth =
+    { sm = 1, md = 2 }
 
 
 {-| Font size scale.

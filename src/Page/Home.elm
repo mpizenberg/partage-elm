@@ -54,8 +54,8 @@ groupCard onNavigate =
     Ui.column
         [ Ui.width Ui.fill
         , Ui.padding Theme.spacing.md
-        , Ui.rounded 8
-        , Ui.border 1
+        , Ui.rounded Theme.rounding.md
+        , Ui.border Theme.borderWidth.sm
         , Ui.borderColor Theme.neutral200
         , Ui.spacing Theme.spacing.sm
         , Ui.pointer

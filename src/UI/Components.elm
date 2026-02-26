@@ -57,7 +57,7 @@ balanceCard config =
     Ui.column
         [ Ui.width Ui.fill
         , Ui.background bgColor
-        , Ui.rounded 8
+        , Ui.rounded Theme.rounding.md
         , Ui.padding Theme.spacing.md
         , Ui.spacing Theme.spacing.xs
         ]
@@ -80,7 +80,7 @@ entryCard config =
             Ui.row
                 [ Ui.width Ui.fill
                 , Ui.padding Theme.spacing.md
-                , Ui.borderWith { bottom = 1, top = 0, left = 0, right = 0 }
+                , Ui.borderWith { bottom = Theme.borderWidth.sm, top = 0, left = 0, right = 0 }
                 , Ui.borderColor Theme.neutral200
                 , Ui.spacing Theme.spacing.md
                 ]
@@ -97,7 +97,7 @@ entryCard config =
             Ui.row
                 [ Ui.width Ui.fill
                 , Ui.padding Theme.spacing.md
-                , Ui.borderWith { bottom = 1, top = 0, left = 0, right = 0 }
+                , Ui.borderWith { bottom = Theme.borderWidth.sm, top = 0, left = 0, right = 0 }
                 , Ui.borderColor Theme.neutral200
                 , Ui.spacing Theme.spacing.md
                 ]
@@ -147,7 +147,7 @@ memberRow config =
     Ui.row
         [ Ui.width Ui.fill
         , Ui.padding Theme.spacing.md
-        , Ui.borderWith { bottom = 1, top = 0, left = 0, right = 0 }
+        , Ui.borderWith { bottom = Theme.borderWidth.sm, top = 0, left = 0, right = 0 }
         , Ui.borderColor Theme.neutral200
         , Ui.spacing Theme.spacing.sm
         ]
@@ -169,7 +169,7 @@ settlementRow config =
         , Ui.padding Theme.spacing.sm
         , Ui.spacing Theme.spacing.sm
         , Ui.background Theme.neutral200
-        , Ui.rounded 6
+        , Ui.rounded Theme.rounding.sm
         ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.sm ]
             (Ui.text (config.resolveName t.from))

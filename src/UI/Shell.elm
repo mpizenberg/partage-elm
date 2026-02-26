@@ -77,7 +77,7 @@ tabBar : GroupTab -> (GroupTab -> msg) -> Ui.Element msg
 tabBar activeTab onTabClick =
     Ui.row
         [ Ui.width Ui.fill
-        , Ui.borderWith { top = 1, bottom = 0, left = 0, right = 0 }
+        , Ui.borderWith { top = Theme.borderWidth.sm, bottom = 0, left = 0, right = 0 }
         , Ui.borderColor Theme.neutral200
         ]
         [ tab activeTab onTabClick BalanceTab "Balance"
@@ -111,7 +111,7 @@ tab activeTab onTabClick thisTab label =
           else
             Ui.noAttr
         , if isActive then
-            Ui.borderWith { top = 0, bottom = 2, left = 0, right = 0 }
+            Ui.borderWith { top = 0, bottom = Theme.borderWidth.md, left = 0, right = 0 }
 
           else
             Ui.noAttr
