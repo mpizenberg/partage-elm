@@ -18,9 +18,9 @@ view state resolveName =
             GroupState.activeEntries state
     in
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size 18, Ui.Font.bold ] (Ui.text "Entries")
+        [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text "Entries")
         , if List.isEmpty entries then
-            Ui.el [ Ui.Font.size 14, Ui.Font.color Theme.neutral500 ]
+            Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
                 (Ui.text "No entries yet.")
 
           else

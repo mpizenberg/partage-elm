@@ -160,7 +160,7 @@ viewPage model =
             UI.Shell.appShell
                 { title = "Join Group"
                 , content =
-                    Ui.el [ Ui.Font.size 14, Ui.Font.color Theme.neutral500 ]
+                    Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
                         (Ui.text "Join group — coming in Phase 5.")
                 }
 
@@ -168,7 +168,7 @@ viewPage model =
             UI.Shell.appShell
                 { title = "New Entry"
                 , content =
-                    Ui.el [ Ui.Font.size 14, Ui.Font.color Theme.neutral500 ]
+                    Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
                         (Ui.text "New entry form — coming in Phase 5.")
                 }
 

@@ -41,7 +41,7 @@ balancesSection state currentUser resolveName =
                 0
     in
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size 18, Ui.Font.bold ] (Ui.text "Balances")
+        [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text "Balances")
         , Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
             (List.map
                 (\b ->
@@ -63,9 +63,9 @@ settlementSection state resolveName =
             Settlement.computeSettlement state.balances []
     in
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size 18, Ui.Font.bold ] (Ui.text "Settlement Plan")
+        [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text "Settlement Plan")
         , if List.isEmpty transactions then
-            Ui.el [ Ui.Font.size 14, Ui.Font.color Theme.neutral500 ]
+            Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
                 (Ui.text "All settled up!")
 
           else

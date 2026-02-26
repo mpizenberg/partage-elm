@@ -41,7 +41,7 @@ header title =
             , Ui.widthMax Theme.contentMaxWidth
             , Ui.centerX
             ]
-            (Ui.el [ Ui.Font.color Theme.white, Ui.Font.size 20, Ui.Font.bold ] (Ui.text title))
+            (Ui.el [ Ui.Font.color Theme.white, Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text title))
         )
 
 
@@ -99,7 +99,7 @@ tab activeTab onTabClick thisTab label =
         , Ui.pointer
         , Ui.Events.onClick (onTabClick thisTab)
         , Ui.Font.center
-        , Ui.Font.size 14
+        , Ui.Font.size Theme.fontSize.sm
         , if isActive then
             Ui.Font.color Theme.primary
 

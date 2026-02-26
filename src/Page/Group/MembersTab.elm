@@ -29,7 +29,7 @@ view state currentUser =
                 |> List.sortBy (\m -> String.toLower m.name)
     in
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size 18, Ui.Font.bold ] (Ui.text "Members")
+        [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text "Members")
         , Ui.column [ Ui.width Ui.fill ]
             (List.map
                 (\m ->
@@ -42,7 +42,7 @@ view state currentUser =
             )
         , if not (List.isEmpty retired) then
             Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-                [ Ui.el [ Ui.Font.size 16, Ui.Font.bold, Ui.Font.color Theme.neutral500 ]
+                [ Ui.el [ Ui.Font.size Theme.fontSize.md, Ui.Font.bold, Ui.Font.color Theme.neutral500 ]
                     (Ui.text "Departed")
                 , Ui.column [ Ui.width Ui.fill ]
                     (List.map
