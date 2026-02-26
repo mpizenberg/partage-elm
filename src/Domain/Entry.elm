@@ -27,6 +27,15 @@ type alias Entry =
     }
 
 
+{-| Helper function to link a new entry to the previous one it replaces.
+-}
+replace : Entry -> Id -> Kind -> Entry
+replace { meta, kind } newId modified =
+    { meta = { meta | id = newId, previousVersionId = Just meta.id }
+    , kind = modified
+    }
+
+
 type alias Metadata =
     { id : Id
     , rootId : Id
