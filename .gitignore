@@ -4,3 +4,4 @@ main.js
 docs.json
 node_modules
 dist
+src/Translations.elm

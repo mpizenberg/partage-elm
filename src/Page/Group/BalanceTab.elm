@@ -7,22 +7,23 @@ import Dict
 import Domain.GroupState exposing (GroupState)
 import Domain.Member as Member
 import Domain.Settlement as Settlement
+import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
 import Ui
 import Ui.Font
 
 
-view : GroupState -> Member.Id -> (Member.Id -> String) -> Ui.Element msg
-view state currentUserRootId resolveName =
+view : I18n -> GroupState -> Member.Id -> (Member.Id -> String) -> Ui.Element msg
+view i18n state currentUserRootId resolveName =
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
-        [ balancesSection state currentUserRootId resolveName
-        , settlementSection state resolveName
+        [ balancesSection i18n state currentUserRootId resolveName
+        , settlementSection i18n state resolveName
         ]
 
 
-balancesSection : GroupState -> Member.Id -> (Member.Id -> String) -> Ui.Element msg
-balancesSection state currentUserRootId resolveName =
+balancesSection : I18n -> GroupState -> Member.Id -> (Member.Id -> String) -> Ui.Element msg
+balancesSection i18n state currentUserRootId resolveName =
     let
         balances =
             Dict.values state.balances
@@ -41,11 +42,11 @@ balancesSection state currentUserRootId resolveName =
                 0
     in
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text "Balances")
+        [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.balanceTabTitle i18n))
         , Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
             (List.map
                 (\b ->
-                    UI.Components.balanceCard
+                    UI.Components.balanceCard i18n
                         { name = resolveName b.memberRootId
                         , balance = b
                         , isCurrentUser = b.memberRootId == currentUserRootId
@@ -56,22 +57,22 @@ balancesSection state currentUserRootId resolveName =
         ]
 
 
-settlementSection : GroupState -> (Member.Id -> String) -> Ui.Element msg
-settlementSection state resolveName =
+settlementSection : I18n -> GroupState -> (Member.Id -> String) -> Ui.Element msg
+settlementSection i18n state resolveName =
     let
         transactions =
             Settlement.computeSettlement state.balances []
     in
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text "Settlement Plan")
+        [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.balanceSettlementPlan i18n))
         , if List.isEmpty transactions then
             Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                (Ui.text "All settled up!")
+                (Ui.text (T.balanceAllSettled i18n))
 
           else
             let
                 settleTx tx =
-                    UI.Components.settlementRow { transaction = tx, resolveName = resolveName }
+                    UI.Components.settlementRow i18n { transaction = tx, resolveName = resolveName }
             in
             Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
                 (List.map settleTx transactions)

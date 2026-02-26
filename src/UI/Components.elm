@@ -9,6 +9,7 @@ import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Domain.Settlement as Settlement
 import Format
+import Translations as T exposing (I18n)
 import UI.Theme as Theme
 import Ui
 import Ui.Font
@@ -16,8 +17,8 @@ import Ui.Font
 
 {-| A card showing a member's balance with color coding.
 -}
-balanceCard : { name : String, balance : MemberBalance, isCurrentUser : Bool } -> Ui.Element msg
-balanceCard config =
+balanceCard : I18n -> { name : String, balance : MemberBalance, isCurrentUser : Bool } -> Ui.Element msg
+balanceCard i18n config =
     let
         balanceStatus =
             Balance.status config.balance
@@ -39,17 +40,17 @@ balanceCard config =
         statusText =
             case balanceStatus of
                 Balance.Creditor ->
-                    "is owed"
+                    T.balanceIsOwed i18n
 
                 Balance.Debtor ->
-                    "owes"
+                    T.balanceOwes i18n
 
                 Balance.Settled ->
-                    "settled"
+                    T.balanceSettled i18n
 
         nameLabel =
             if config.isCurrentUser then
-                config.name ++ " (you)"
+                T.nameYouSuffix config.name i18n
 
             else
                 config.name
@@ -73,8 +74,8 @@ balanceCard config =
 
 {-| A card displaying an entry (expense or transfer).
 -}
-entryCard : { entry : Entry, resolveName : Member.Id -> String } -> Ui.Element msg
-entryCard config =
+entryCard : I18n -> { entry : Entry, resolveName : Member.Id -> String } -> Ui.Element msg
+entryCard i18n config =
     case config.entry.kind of
         Expense data ->
             Ui.row
@@ -87,7 +88,7 @@ entryCard config =
                 [ Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.xs ]
                     [ Ui.el [ Ui.Font.bold ] (Ui.text data.description)
                     , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                        (Ui.text (payerSummary config.resolveName data.payers))
+                        (Ui.text (payerSummary i18n config.resolveName data.payers))
                     ]
                 , Ui.el [ Ui.alignRight, Ui.Font.bold ]
                     (Ui.text (Format.formatCentsWithCurrency data.amount data.currency))
@@ -102,36 +103,36 @@ entryCard config =
                 , Ui.spacing Theme.spacing.md
                 ]
                 [ Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.xs ]
-                    [ Ui.el [ Ui.Font.bold ] (Ui.text "Transfer")
+                    [ Ui.el [ Ui.Font.bold ] (Ui.text (T.entryTransfer i18n))
                     , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                        (Ui.text (config.resolveName data.from ++ " -> " ++ config.resolveName data.to))
+                        (Ui.text (T.entryTransferDirection { from = config.resolveName data.from, to = config.resolveName data.to } i18n))
                     ]
                 , Ui.el [ Ui.alignRight, Ui.Font.bold ]
                     (Ui.text (Format.formatCentsWithCurrency data.amount data.currency))
                 ]
 
 
-payerSummary : (Member.Id -> String) -> List Entry.Payer -> String
-payerSummary resolveName payers =
+payerSummary : I18n -> (Member.Id -> String) -> List Entry.Payer -> String
+payerSummary i18n resolveName payers =
     case payers of
         [] ->
             ""
 
         [ single ] ->
-            "Paid by " ++ resolveName single.memberId
+            T.entryPaidBySingle (resolveName single.memberId) i18n
 
         multiple ->
-            "Paid by " ++ String.join ", " (List.map (.memberId >> resolveName) multiple)
+            T.entryPaidByMultiple (String.join ", " (List.map (.memberId >> resolveName) multiple)) i18n
 
 
 {-| A row displaying a member in the member list.
 -}
-memberRow : { member : GroupState.MemberState, isCurrentUser : Bool } -> Ui.Element msg
-memberRow config =
+memberRow : I18n -> { member : GroupState.MemberState, isCurrentUser : Bool } -> Ui.Element msg
+memberRow i18n config =
     let
         nameLabel =
             if config.isCurrentUser then
-                config.member.name ++ " (you)"
+                T.nameYouSuffix config.member.name i18n
 
             else
                 config.member.name
@@ -139,7 +140,7 @@ memberRow config =
         typeLabel =
             case config.member.memberType of
                 Member.Virtual ->
-                    " - virtual"
+                    T.memberVirtualLabel i18n
 
                 Member.Real ->
                     ""
@@ -158,8 +159,8 @@ memberRow config =
 
 {-| A row displaying a settlement transaction.
 -}
-settlementRow : { transaction : Settlement.Transaction, resolveName : Member.Id -> String } -> Ui.Element msg
-settlementRow config =
+settlementRow : I18n -> { transaction : Settlement.Transaction, resolveName : Member.Id -> String } -> Ui.Element msg
+settlementRow i18n config =
     let
         t =
             config.transaction
@@ -174,7 +175,7 @@ settlementRow config =
         [ Ui.el [ Ui.Font.size Theme.fontSize.sm ]
             (Ui.text (config.resolveName t.from))
         , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-            (Ui.text "pays")
+            (Ui.text (T.settlementPays i18n))
         , Ui.el [ Ui.Font.size Theme.fontSize.sm ]
             (Ui.text (config.resolveName t.to))
         , Ui.el [ Ui.alignRight, Ui.Font.bold, Ui.Font.size Theme.fontSize.sm ]

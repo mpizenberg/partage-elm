@@ -1,4 +1,4 @@
-module UI.Shell exposing (appShell, groupShell)
+module UI.Shell exposing (TabLabels, appShell, groupShell)
 
 {-| Application shell layouts.
 -}
@@ -8,6 +8,14 @@ import UI.Theme as Theme
 import Ui
 import Ui.Events
 import Ui.Font
+
+
+type alias TabLabels =
+    { balance : String
+    , entries : String
+    , members : String
+    , activities : String
+    }
 
 
 {-| Top-level app shell with a header and max-width content area.
@@ -52,6 +60,7 @@ groupShell :
     , activeTab : GroupTab
     , content : Ui.Element msg
     , onTabClick : GroupTab -> msg
+    , tabLabels : TabLabels
     }
     -> Ui.Element msg
 groupShell config =
@@ -69,21 +78,21 @@ groupShell config =
             , Ui.scrollable
             ]
             config.content
-        , tabBar config.activeTab config.onTabClick
+        , tabBar config.tabLabels config.activeTab config.onTabClick
         ]
 
 
-tabBar : GroupTab -> (GroupTab -> msg) -> Ui.Element msg
-tabBar activeTab onTabClick =
+tabBar : TabLabels -> GroupTab -> (GroupTab -> msg) -> Ui.Element msg
+tabBar labels activeTab onTabClick =
     Ui.row
         [ Ui.width Ui.fill
         , Ui.borderWith { top = Theme.borderWidth.sm, bottom = 0, left = 0, right = 0 }
         , Ui.borderColor Theme.neutral200
         ]
-        [ tab activeTab onTabClick BalanceTab "Balance"
-        , tab activeTab onTabClick EntriesTab "Entries"
-        , tab activeTab onTabClick MembersTab "Members"
-        , tab activeTab onTabClick ActivitiesTab "Activities"
+        [ tab activeTab onTabClick BalanceTab labels.balance
+        , tab activeTab onTabClick EntriesTab labels.entries
+        , tab activeTab onTabClick MembersTab labels.members
+        , tab activeTab onTabClick ActivitiesTab labels.activities
         ]
 
 

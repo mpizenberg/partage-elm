@@ -11,12 +11,13 @@ import Page.Group.EntriesTab
 import Page.Group.MembersTab
 import Route exposing (GroupTab(..))
 import SampleData
+import Translations as T exposing (I18n)
 import UI.Shell
 import Ui
 
 
-view : GroupTab -> (GroupTab -> msg) -> Ui.Element msg
-view activeTab onTabClick =
+view : I18n -> GroupTab -> (GroupTab -> msg) -> Ui.Element msg
+view i18n activeTab onTabClick =
     let
         state =
             SampleData.groupState
@@ -31,21 +32,27 @@ view activeTab onTabClick =
         { groupName = state.groupMeta.name
         , activeTab = activeTab
         , onTabClick = onTabClick
-        , content = tabContent activeTab state currentUserRootId resolveName
+        , content = tabContent i18n activeTab state currentUserRootId resolveName
+        , tabLabels =
+            { balance = T.tabBalance i18n
+            , entries = T.tabEntries i18n
+            , members = T.tabMembers i18n
+            , activities = T.tabActivities i18n
+            }
         }
 
 
-tabContent : GroupTab -> GroupState -> Member.Id -> (Member.Id -> String) -> Ui.Element msg
-tabContent tab state currentUserRootId resolveName =
+tabContent : I18n -> GroupTab -> GroupState -> Member.Id -> (Member.Id -> String) -> Ui.Element msg
+tabContent i18n tab state currentUserRootId resolveName =
     case tab of
         BalanceTab ->
-            Page.Group.BalanceTab.view state currentUserRootId resolveName
+            Page.Group.BalanceTab.view i18n state currentUserRootId resolveName
 
         EntriesTab ->
-            Page.Group.EntriesTab.view state resolveName
+            Page.Group.EntriesTab.view i18n state resolveName
 
         MembersTab ->
-            Page.Group.MembersTab.view state currentUserRootId
+            Page.Group.MembersTab.view i18n state currentUserRootId
 
         ActivitiesTab ->
-            Page.Group.ActivitiesTab.view
+            Page.Group.ActivitiesTab.view i18n

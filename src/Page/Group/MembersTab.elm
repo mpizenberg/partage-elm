@@ -6,14 +6,15 @@ module Page.Group.MembersTab exposing (view)
 import Dict
 import Domain.GroupState exposing (GroupState)
 import Domain.Member as Member
+import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
 import Ui
 import Ui.Font
 
 
-view : GroupState -> Member.Id -> Ui.Element msg
-view state currentUserRootId =
+view : I18n -> GroupState -> Member.Id -> Ui.Element msg
+view i18n state currentUserRootId =
     let
         allMembers =
             Dict.values state.members
@@ -29,19 +30,19 @@ view state currentUserRootId =
                 |> List.sortBy (\m -> String.toLower m.name)
 
         viewMember member =
-            UI.Components.memberRow
+            UI.Components.memberRow i18n
                 { member = member
                 , isCurrentUser = member.rootId == currentUserRootId
                 }
     in
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text "Members")
+        [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.membersTabTitle i18n))
         , Ui.column [ Ui.width Ui.fill ]
             (List.map viewMember active)
         , if not (List.isEmpty retired) then
             Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
                 [ Ui.el [ Ui.Font.size Theme.fontSize.md, Ui.Font.bold, Ui.Font.color Theme.neutral500 ]
-                    (Ui.text "Departed")
+                    (Ui.text (T.membersDeparted i18n))
                 , Ui.column [ Ui.width Ui.fill ]
                     (List.map viewMember retired)
                 ]

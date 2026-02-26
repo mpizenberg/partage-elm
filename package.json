@@ -2,11 +2,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "i18n": "travelm-agency translations --elm_path=src/Translations.elm --inline",
     "cleandist": "mkdir -p dist && rm -rf dist/* && pnpm run copydist",
     "copydist": "cp -r public/* dist/",
-    "dev": "pnpm run cleandist && run-pty % elm-watch hot % watchexec -w public/ -- pnpm run copydist",
-    "build": "pnpm run cleandist && elm-watch make --optimize",
-    "test": "elm-test",
+    "dev": "pnpm run i18n && pnpm run cleandist && run-pty % elm-watch hot % watchexec -w public/ -- pnpm run copydist % watchexec -w translations/ -- pnpm run i18n",
+    "build": "pnpm run i18n && pnpm run cleandist && elm-watch make --optimize",
+    "test": "pnpm run i18n && elm-test",
     "format": "elm-format --yes src/**/*.elm"
   },
   "pnpm": {
@@ -19,6 +20,7 @@
     "elm-format": "^0.8.8",
     "elm-test": "^0.19.1-revision17",
     "elm-watch": "2.0.0-beta.12",
-    "run-pty": "^6.0.2"
+    "run-pty": "^6.0.2",
+    "travelm-agency": "^3.8.0"
   }
 }

@@ -6,22 +6,23 @@ import Format
 import Json.Decode
 import Route exposing (Route)
 import SampleData
+import Translations as T exposing (I18n)
 import UI.Theme as Theme
 import Ui
 import Ui.Events
 import Ui.Font
 
 
-view : (Route -> msg) -> Ui.Element msg
-view onNavigate =
+view : I18n -> (Route -> msg) -> Ui.Element msg
+view i18n onNavigate =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text "Your Groups")
-        , groupCard onNavigate
+        [ Ui.el [ Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text (T.homeYourGroups i18n))
+        , groupCard i18n onNavigate
         ]
 
 
-groupCard : (Route -> msg) -> Ui.Element msg
-groupCard onNavigate =
+groupCard : I18n -> (Route -> msg) -> Ui.Element msg
+groupCard i18n onNavigate =
     let
         state =
             SampleData.groupState
@@ -72,7 +73,7 @@ groupCard onNavigate =
                 Ui.none
         , Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
             [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                (Ui.text (String.fromInt memberCount ++ " members"))
+                (Ui.text (T.homeMemberCount (String.fromInt memberCount) i18n))
             , Ui.el [ Ui.alignRight, Ui.Font.bold, Ui.Font.color balanceCol ]
                 (Ui.text balanceText)
             ]

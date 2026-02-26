@@ -32,6 +32,8 @@ var app = Elm.Main.init({
   node: document.getElementById("app"),
   flags: {
     initialUrl: location.href,
+    // language: navigator.language || "en",
+    language: "fr",
   },
 });
 
