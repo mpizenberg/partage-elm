@@ -2,3 +2,5 @@ elm-stuff
 elm.js
 main.js
 docs.json
+node_modules
+dist
