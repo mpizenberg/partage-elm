@@ -17,6 +17,8 @@ type alias Member =
     , name : String
     , memberType : Type
     , isRetired : Bool
+    , isReplaced : Bool
+    , isActive : Bool
     , metadata : Metadata
     }
 
