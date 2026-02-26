@@ -115,10 +115,10 @@ applyEvent envelope state =
             applyMemberMetadataUpdated data state
 
         EntryAdded entry ->
-            applyEntryAdded entry state
+            applyEntryUpsert entry state
 
         EntryModified entry ->
-            applyEntryModified entry state
+            applyEntryUpsert entry state
 
         EntryDeleted data ->
             applyEntryDeleted data state
@@ -269,49 +269,82 @@ applyMemberMetadataUpdated data state =
 -- ENTRY HANDLERS
 
 
-applyEntryAdded : Entry -> GroupState -> GroupState
-applyEntryAdded entry state =
-    let
-        rootId =
-            entry.meta.rootId
-
-        entryState =
-            { rootId = rootId
-            , currentVersion = entry
-            , isDeleted = entry.meta.isDeleted
-            , allVersions = Dict.singleton entry.meta.id entry
-            }
-    in
-    { state | entries = Dict.insert rootId entryState state.entries }
-
-
-applyEntryModified : Entry -> GroupState -> GroupState
-applyEntryModified entry state =
-    let
-        rootId =
-            entry.meta.rootId
-    in
-    case Dict.get rootId state.entries of
-        Nothing ->
-            -- Root entry doesn't exist, silently ignore
+{-| Validate and insert an entry (new or modification) into the group state.
+Invalid entries are silently ignored.
+-}
+applyEntryUpsert : Entry -> GroupState -> GroupState
+applyEntryUpsert ({ meta } as entry) state =
+    if meta.rootId == meta.id then
+        -- New entry: previousVersionId must be Nothing
+        if meta.previousVersionId /= Nothing then
             state
 
-        Just entryState ->
+        else if Dict.member meta.id state.entries then
+            state
+
+        else
             let
-                updatedVersions =
-                    Dict.insert entry.meta.id entry entryState.allVersions
-
-                current =
-                    pickVersion entryState.currentVersion entry
-
-                updatedEntryState =
-                    { entryState
-                        | allVersions = updatedVersions
-                        , currentVersion = current
-                        , isDeleted = current.meta.isDeleted
+                entryState =
+                    { rootId = meta.id
+                    , currentVersion = entry
+                    , isDeleted = meta.isDeleted
+                    , allVersions = Dict.singleton meta.id entry
                     }
             in
-            { state | entries = Dict.insert rootId updatedEntryState state.entries }
+            { state | entries = Dict.insert meta.id entryState state.entries }
+
+    else
+        -- Modification: validate against existing entry state
+        case Dict.get meta.rootId state.entries of
+            Nothing ->
+                state
+
+            Just entryState ->
+                case meta.previousVersionId of
+                    Nothing ->
+                        state
+
+                    Just prevId ->
+                        if prevId == meta.id then
+                            state
+
+                        else if Dict.member meta.id entryState.allVersions then
+                            state
+
+                        else
+                            case Dict.get prevId entryState.allVersions of
+                                Nothing ->
+                                    state
+
+                                Just prev ->
+                                    if meta.depth /= prev.meta.depth + 1 then
+                                        state
+
+                                    else if meta.isDeleted /= prev.meta.isDeleted then
+                                        state
+
+                                    else if meta.createdBy /= prev.meta.createdBy then
+                                        state
+
+                                    else if meta.createdAt /= prev.meta.createdAt then
+                                        state
+
+                                    else
+                                        let
+                                            updatedVersions =
+                                                Dict.insert meta.id entry entryState.allVersions
+
+                                            current =
+                                                pickVersion entryState.currentVersion entry
+
+                                            updatedEntryState =
+                                                { entryState
+                                                    | allVersions = updatedVersions
+                                                    , currentVersion = current
+                                                    , isDeleted = current.meta.isDeleted
+                                                }
+                                        in
+                                        { state | entries = Dict.insert meta.rootId updatedEntryState state.entries }
 
 
 {-| Pick the winning version between two entries.
