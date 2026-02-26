@@ -30,7 +30,7 @@ groupCard onNavigate =
             Dict.size state.members
 
         userBalance =
-            Dict.get SampleData.currentUserId state.balances
+            Dict.get SampleData.currentUserRootId state.balances
 
         balanceText =
             case userBalance of

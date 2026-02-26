@@ -13,7 +13,7 @@ import Ui.Font
 
 
 view : GroupState -> Member.Id -> Ui.Element msg
-view state currentUser =
+view state currentUserRootId =
     let
         allMembers =
             Dict.values state.members
@@ -21,7 +21,7 @@ view state currentUser =
         active =
             allMembers
                 |> List.filter .isActive
-                |> List.sortBy (\m -> ( boolToInt (m.id /= currentUser), String.toLower m.name ))
+                |> List.sortBy (\m -> ( boolToInt (m.rootId /= currentUserRootId), String.toLower m.name ))
 
         retired =
             allMembers
@@ -31,7 +31,7 @@ view state currentUser =
         viewMember member =
             UI.Components.memberRow
                 { member = member
-                , isCurrentUser = member.id == currentUser
+                , isCurrentUser = member.rootId == currentUserRootId
                 }
     in
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]

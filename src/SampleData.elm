@@ -1,4 +1,4 @@
-module SampleData exposing (currentUserId, groupId, groupState, resolveName)
+module SampleData exposing (currentUserId, currentUserRootId, groupId, groupState, resolveName)
 
 {-| Hardcoded sample data for Phase 2 static UI development.
 5 members (Alice, Bob, Carol, Dave, Eve) with expenses and a transfer.
@@ -22,6 +22,11 @@ groupId =
 currentUserId : Member.Id
 currentUserId =
     "member-alice"
+
+
+currentUserRootId : Member.Id
+currentUserRootId =
+    GroupState.resolveMemberRootId groupState currentUserId
 
 
 groupState : GroupState

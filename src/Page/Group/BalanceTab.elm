@@ -14,15 +14,15 @@ import Ui.Font
 
 
 view : GroupState -> Member.Id -> (Member.Id -> String) -> Ui.Element msg
-view state currentUser resolveName =
+view state currentUserRootId resolveName =
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
-        [ balancesSection state currentUser resolveName
+        [ balancesSection state currentUserRootId resolveName
         , settlementSection state resolveName
         ]
 
 
 balancesSection : GroupState -> Member.Id -> (Member.Id -> String) -> Ui.Element msg
-balancesSection state currentUser resolveName =
+balancesSection state currentUserRootId resolveName =
     let
         balances =
             Dict.values state.balances
@@ -30,7 +30,7 @@ balancesSection state currentUser resolveName =
         -- Current user first, then sorted by name
         sorted =
             balances
-                |> List.sortBy (\b -> ( boolToInt (b.memberRootId /= currentUser), resolveName b.memberRootId ))
+                |> List.sortBy (\b -> ( boolToInt (b.memberRootId /= currentUserRootId), resolveName b.memberRootId ))
 
         boolToInt : Bool -> Int
         boolToInt b =
@@ -48,7 +48,7 @@ balancesSection state currentUser resolveName =
                     UI.Components.balanceCard
                         { name = resolveName b.memberRootId
                         , balance = b
-                        , isCurrentUser = b.memberRootId == currentUser
+                        , isCurrentUser = b.memberRootId == currentUserRootId
                         }
                 )
                 sorted

@@ -21,8 +21,8 @@ view activeTab onTabClick =
         state =
             SampleData.groupState
 
-        currentUser =
-            SampleData.currentUserId
+        currentUserRootId =
+            SampleData.currentUserRootId
 
         resolveName =
             SampleData.resolveName
@@ -31,21 +31,21 @@ view activeTab onTabClick =
         { groupName = state.groupMeta.name
         , activeTab = activeTab
         , onTabClick = onTabClick
-        , content = tabContent activeTab state currentUser resolveName
+        , content = tabContent activeTab state currentUserRootId resolveName
         }
 
 
 tabContent : GroupTab -> GroupState -> Member.Id -> (Member.Id -> String) -> Ui.Element msg
-tabContent tab state currentUser resolveName =
+tabContent tab state currentUserRootId resolveName =
     case tab of
         BalanceTab ->
-            Page.Group.BalanceTab.view state currentUser resolveName
+            Page.Group.BalanceTab.view state currentUserRootId resolveName
 
         EntriesTab ->
             Page.Group.EntriesTab.view state resolveName
 
         MembersTab ->
-            Page.Group.MembersTab.view state currentUser
+            Page.Group.MembersTab.view state currentUserRootId
 
         ActivitiesTab ->
             Page.Group.ActivitiesTab.view
