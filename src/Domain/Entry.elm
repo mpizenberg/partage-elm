@@ -9,6 +9,7 @@ module Domain.Entry exposing
     , Payer
     , TransferData
     , newMetadata
+    , replace
     )
 
 {-| Ledger entries (expenses and transfers) with versioning metadata.
@@ -36,9 +37,9 @@ type alias Entry =
 
 {-| Helper function to link a new entry to the previous one it replaces.
 -}
-replace : Entry -> Id -> Kind -> Entry
-replace { meta, kind } newId modified =
-    { meta = { meta | id = newId, previousVersionId = Just meta.id }
+replace : Metadata -> Id -> Kind -> Entry
+replace previousMetadata newId modified =
+    { meta = { previousMetadata | id = newId, previousVersionId = Just previousMetadata.id }
     , kind = modified
     }
 
