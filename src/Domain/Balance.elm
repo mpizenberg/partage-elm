@@ -45,7 +45,7 @@ status balance =
 {-| Compute balances for all members from active entries.
 Takes a rootId resolver (member id -> root id) and a list of active entries.
 -}
-computeBalances : (Member.Id -> Member.Id) -> List Entry -> List MemberBalance
+computeBalances : (Member.Id -> Member.Id) -> List Entry -> Dict Member.Id MemberBalance
 computeBalances resolveRootId entries =
     let
         emptyAccum =
@@ -89,15 +89,15 @@ computeBalances resolveRootId entries =
         accumulated =
             List.foldl accumulate Dict.empty entries
     in
-    Dict.toList accumulated
-        |> List.map
-            (\( memberId, { paid, owed } ) ->
-                { memberRootId = memberId
-                , totalPaid = paid
-                , totalOwed = owed
-                , netBalance = paid - owed
-                }
-            )
+    Dict.map
+        (\memberId { paid, owed } ->
+            { memberRootId = memberId
+            , totalPaid = paid
+            , totalOwed = owed
+            , netBalance = paid - owed
+            }
+        )
+        accumulated
 
 
 {-| Compute what each member paid for an entry, resolved to root IDs.

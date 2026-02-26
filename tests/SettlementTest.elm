@@ -1,6 +1,8 @@
 module SettlementTest exposing (..)
 
+import Dict exposing (Dict)
 import Domain.Balance exposing (MemberBalance)
+import Domain.Member as Member
 import Domain.Settlement as Settlement exposing (Preference, Transaction)
 import Expect
 import Fuzz exposing (Fuzzer)
@@ -23,9 +25,10 @@ simpleTests =
             \_ ->
                 let
                     balances =
-                        [ { memberRootId = "alice", totalPaid = 500, totalOwed = 500, netBalance = 0 }
-                        , { memberRootId = "bob", totalPaid = 500, totalOwed = 500, netBalance = 0 }
-                        ]
+                        balancesFromList
+                            [ { memberRootId = "alice", totalPaid = 500, totalOwed = 500, netBalance = 0 }
+                            , { memberRootId = "bob", totalPaid = 500, totalOwed = 500, netBalance = 0 }
+                            ]
 
                     transactions =
                         Settlement.computeSettlement balances []
@@ -35,9 +38,10 @@ simpleTests =
             \_ ->
                 let
                     balances =
-                        [ { memberRootId = "alice", totalPaid = 1000, totalOwed = 500, netBalance = 500 }
-                        , { memberRootId = "bob", totalPaid = 0, totalOwed = 500, netBalance = -500 }
-                        ]
+                        balancesFromList
+                            [ { memberRootId = "alice", totalPaid = 1000, totalOwed = 500, netBalance = 500 }
+                            , { memberRootId = "bob", totalPaid = 0, totalOwed = 500, netBalance = -500 }
+                            ]
 
                     transactions =
                         Settlement.computeSettlement balances []
@@ -49,10 +53,11 @@ simpleTests =
             \_ ->
                 let
                     balances =
-                        [ { memberRootId = "alice", totalPaid = 900, totalOwed = 300, netBalance = 600 }
-                        , { memberRootId = "bob", totalPaid = 0, totalOwed = 300, netBalance = -300 }
-                        , { memberRootId = "carol", totalPaid = 0, totalOwed = 300, netBalance = -300 }
-                        ]
+                        balancesFromList
+                            [ { memberRootId = "alice", totalPaid = 900, totalOwed = 300, netBalance = 600 }
+                            , { memberRootId = "bob", totalPaid = 0, totalOwed = 300, netBalance = -300 }
+                            , { memberRootId = "carol", totalPaid = 0, totalOwed = 300, netBalance = -300 }
+                            ]
 
                     transactions =
                         Settlement.computeSettlement balances []
@@ -72,10 +77,11 @@ preferenceTests =
             \_ ->
                 let
                     balances =
-                        [ { memberRootId = "alice", totalPaid = 600, totalOwed = 200, netBalance = 400 }
-                        , { memberRootId = "bob", totalPaid = 400, totalOwed = 200, netBalance = 200 }
-                        , { memberRootId = "carol", totalPaid = 0, totalOwed = 600, netBalance = -600 }
-                        ]
+                        balancesFromList
+                            [ { memberRootId = "alice", totalPaid = 600, totalOwed = 200, netBalance = 400 }
+                            , { memberRootId = "bob", totalPaid = 400, totalOwed = 200, netBalance = 200 }
+                            , { memberRootId = "carol", totalPaid = 0, totalOwed = 600, netBalance = -600 }
+                            ]
 
                     preferences =
                         [ { memberRootId = "carol", preferredRecipients = [ "bob", "alice" ] } ]
@@ -104,10 +110,11 @@ invariantTests =
             \_ ->
                 let
                     balances =
-                        [ { memberRootId = "alice", totalPaid = 1000, totalOwed = 333, netBalance = 667 }
-                        , { memberRootId = "bob", totalPaid = 0, totalOwed = 334, netBalance = -334 }
-                        , { memberRootId = "carol", totalPaid = 0, totalOwed = 333, netBalance = -333 }
-                        ]
+                        balancesFromList
+                            [ { memberRootId = "alice", totalPaid = 1000, totalOwed = 333, netBalance = 667 }
+                            , { memberRootId = "bob", totalPaid = 0, totalOwed = 334, netBalance = -334 }
+                            , { memberRootId = "carol", totalPaid = 0, totalOwed = 333, netBalance = -333 }
+                            ]
 
                     transactions =
                         Settlement.computeSettlement balances []
@@ -120,11 +127,12 @@ invariantTests =
             \_ ->
                 let
                     balances =
-                        [ { memberRootId = "alice", totalPaid = 1000, totalOwed = 250, netBalance = 750 }
-                        , { memberRootId = "bob", totalPaid = 0, totalOwed = 250, netBalance = -250 }
-                        , { memberRootId = "carol", totalPaid = 0, totalOwed = 250, netBalance = -250 }
-                        , { memberRootId = "dave", totalPaid = 0, totalOwed = 250, netBalance = -250 }
-                        ]
+                        balancesFromList
+                            [ { memberRootId = "alice", totalPaid = 1000, totalOwed = 250, netBalance = 750 }
+                            , { memberRootId = "bob", totalPaid = 0, totalOwed = 250, netBalance = -250 }
+                            , { memberRootId = "carol", totalPaid = 0, totalOwed = 250, netBalance = -250 }
+                            , { memberRootId = "dave", totalPaid = 0, totalOwed = 250, netBalance = -250 }
+                            ]
 
                     transactions =
                         Settlement.computeSettlement balances []
@@ -133,7 +141,7 @@ invariantTests =
                         List.foldl (\t acc -> acc + t.amount) 0 transactions
 
                     totalDebt =
-                        balances
+                        Dict.values balances
                             |> List.filter (\b -> b.netBalance < 0)
                             |> List.foldl (\b acc -> acc + abs b.netBalance) 0
                 in
@@ -148,7 +156,7 @@ invariantTests =
                         List.foldl (\t acc -> acc + t.amount) 0 transactions
 
                     totalDebt =
-                        balances
+                        Dict.values balances
                             |> List.filter (\b -> b.netBalance < 0)
                             |> List.foldl (\b acc -> acc + abs b.netBalance) 0
                 in
@@ -166,11 +174,18 @@ invariantTests =
         ]
 
 
+balancesFromList : List MemberBalance -> Dict Member.Id MemberBalance
+balancesFromList balances =
+    balances
+        |> List.map (\b -> ( b.memberRootId, b ))
+        |> Dict.fromList
+
+
 {-| Fuzzer that generates balanced member balances (sum of nets = 0).
 Generates 2-4 members with random paid/owed amounts, then adjusts the last
 member so that total net = 0.
 -}
-balancesFuzzer : Fuzzer (List MemberBalance)
+balancesFuzzer : Fuzzer (Dict Member.Id MemberBalance)
 balancesFuzzer =
     Fuzz.map3
         (\a b c ->
@@ -194,11 +209,12 @@ balancesFuzzer =
                     else
                         { memberRootId = id, totalPaid = 0, totalOwed = abs net, netBalance = net }
             in
-            [ makeBalance "alice" aliceNet
-            , makeBalance "bob" bobNet
-            , makeBalance "carol" carolNet
-            , makeBalance "dave" daveNet
-            ]
+            balancesFromList
+                [ makeBalance "alice" aliceNet
+                , makeBalance "bob" bobNet
+                , makeBalance "carol" carolNet
+                , makeBalance "dave" daveNet
+                ]
         )
         (Fuzz.intRange -500 500)
         (Fuzz.intRange -500 500)

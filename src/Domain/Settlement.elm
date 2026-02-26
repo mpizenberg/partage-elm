@@ -3,6 +3,7 @@ module Domain.Settlement exposing (Preference, Transaction, computeSettlement)
 {-| Settlement algorithm that computes who pays whom to settle debts.
 -}
 
+import Dict exposing (Dict)
 import Domain.Balance exposing (MemberBalance, Status(..))
 import Domain.Member as Member
 
@@ -34,12 +35,15 @@ Two-pass algorithm:
     matched to creditors greedily.
 
 -}
-computeSettlement : List MemberBalance -> List Preference -> List Transaction
+computeSettlement : Dict Member.Id MemberBalance -> List Preference -> List Transaction
 computeSettlement balances preferences =
     let
+        balanceList =
+            Dict.values balances
+
         -- Build debtor/creditor lists (amounts are absolute values)
         debtors =
-            balances
+            balanceList
                 |> List.filterMap
                     (\b ->
                         if b.netBalance < 0 then
@@ -50,7 +54,7 @@ computeSettlement balances preferences =
                     )
 
         creditors =
-            balances
+            balanceList
                 |> List.filterMap
                     (\b ->
                         if b.netBalance > 0 then

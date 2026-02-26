@@ -1,5 +1,6 @@
 module BalanceTest exposing (..)
 
+import Dict
 import Domain.Balance as Balance exposing (MemberBalance, Status(..))
 import Domain.Currency exposing (Currency(..))
 import Domain.Entry as Entry exposing (Beneficiary(..), Kind(..))
@@ -53,14 +54,9 @@ equalSplitEntry =
         }
 
 
-equalSplitBalances : List MemberBalance
+equalSplitBalances : Dict.Dict String MemberBalance
 equalSplitBalances =
     Balance.computeBalances identity [ equalSplitEntry ]
-
-
-findBalance : String -> List MemberBalance -> Maybe MemberBalance
-findBalance memberId =
-    List.filter (\b -> b.memberRootId == memberId) >> List.head
 
 
 simpleSplitTests : Test
@@ -69,32 +65,32 @@ simpleSplitTests =
         [ describe "equal split between two members"
             [ test "alice paid 1000" <|
                 \_ ->
-                    findBalance "alice" equalSplitBalances
+                    Dict.get "alice" equalSplitBalances
                         |> Maybe.map .totalPaid
                         |> Expect.equal (Just 1000)
             , test "alice owes 500" <|
                 \_ ->
-                    findBalance "alice" equalSplitBalances
+                    Dict.get "alice" equalSplitBalances
                         |> Maybe.map .totalOwed
                         |> Expect.equal (Just 500)
             , test "alice net balance is 500" <|
                 \_ ->
-                    findBalance "alice" equalSplitBalances
+                    Dict.get "alice" equalSplitBalances
                         |> Maybe.map .netBalance
                         |> Expect.equal (Just 500)
             , test "bob paid 0" <|
                 \_ ->
-                    findBalance "bob" equalSplitBalances
+                    Dict.get "bob" equalSplitBalances
                         |> Maybe.map .totalPaid
                         |> Expect.equal (Just 0)
             , test "bob owes 500" <|
                 \_ ->
-                    findBalance "bob" equalSplitBalances
+                    Dict.get "bob" equalSplitBalances
                         |> Maybe.map .totalOwed
                         |> Expect.equal (Just 500)
             , test "bob net balance is -500" <|
                 \_ ->
-                    findBalance "bob" equalSplitBalances
+                    Dict.get "bob" equalSplitBalances
                         |> Maybe.map .netBalance
                         |> Expect.equal (Just -500)
             ]
@@ -116,7 +112,7 @@ simpleSplitTests =
                     balances =
                         Balance.computeBalances identity [ entry ]
                 in
-                findBalance "bob" balances
+                Dict.get "bob" balances
                     |> Maybe.map .totalOwed
                     |> Expect.equal (Just 700)
         , describe "multiple payers"
@@ -141,17 +137,17 @@ simpleSplitTests =
              in
              [ test "alice paid 600" <|
                 \_ ->
-                    findBalance "alice" balances
+                    Dict.get "alice" balances
                         |> Maybe.map .totalPaid
                         |> Expect.equal (Just 600)
              , test "alice owes 500" <|
                 \_ ->
-                    findBalance "alice" balances
+                    Dict.get "alice" balances
                         |> Maybe.map .totalOwed
                         |> Expect.equal (Just 500)
              , test "alice net balance is 100" <|
                 \_ ->
-                    findBalance "alice" balances
+                    Dict.get "alice" balances
                         |> Maybe.map .netBalance
                         |> Expect.equal (Just 100)
              ]
@@ -182,7 +178,7 @@ sharesRemainderTests =
                         Balance.computeBalances identity [ entry ]
 
                     totalOwed =
-                        List.foldl (\b acc -> acc + b.totalOwed) 0 balances
+                        Dict.foldl (\_ b acc -> acc + b.totalOwed) 0 balances
                 in
                 Expect.equal 1000 totalOwed
         , test "total owed equals total amount with unequal shares" <|
@@ -204,7 +200,7 @@ sharesRemainderTests =
                         Balance.computeBalances identity [ entry ]
 
                     totalOwed =
-                        List.foldl (\b acc -> acc + b.totalOwed) 0 balances
+                        Dict.foldl (\_ b acc -> acc + b.totalOwed) 0 balances
                 in
                 Expect.equal 1000 totalOwed
         ]
@@ -228,12 +224,12 @@ transferTests =
     describe "Transfers"
         [ test "sender has positive net balance" <|
             \_ ->
-                findBalance "alice" balances
+                Dict.get "alice" balances
                     |> Maybe.map .netBalance
                     |> Expect.equal (Just 500)
         , test "receiver has negative net balance" <|
             \_ ->
-                findBalance "bob" balances
+                Dict.get "bob" balances
                     |> Maybe.map .netBalance
                     |> Expect.equal (Just -500)
         ]
@@ -263,12 +259,12 @@ multiCurrencyTests =
              in
              [ test "payer amount is converted to default currency" <|
                 \_ ->
-                    findBalance "alice" balances
+                    Dict.get "alice" balances
                         |> Maybe.map .totalPaid
                         |> Expect.equal (Just 1200)
              , test "owed amount uses default currency total" <|
                 \_ ->
-                    findBalance "alice" balances
+                    Dict.get "alice" balances
                         |> Maybe.map .totalOwed
                         |> Expect.equal (Just 600)
              ]
@@ -290,7 +286,7 @@ multiCurrencyTests =
                     balances =
                         Balance.computeBalances identity [ entry ]
                 in
-                findBalance "alice" balances
+                Dict.get "alice" balances
                     |> Maybe.map .totalPaid
                     |> Expect.equal (Just 120)
         ]
@@ -319,7 +315,7 @@ invariantTests =
                         Balance.computeBalances identity [ entry ]
 
                     totalNet =
-                        List.foldl (\b acc -> acc + b.netBalance) 0 balances
+                        Dict.foldl (\_ b acc -> acc + b.netBalance) 0 balances
                 in
                 Expect.equal 0 totalNet
         , fuzz (Fuzz.intRange 1 10000) "netBalance equals totalPaid minus totalOwed for each member" <|
@@ -341,7 +337,8 @@ invariantTests =
                         Balance.computeBalances identity [ entry ]
 
                     allCorrect =
-                        List.all (\b -> b.netBalance == b.totalPaid - b.totalOwed) balances
+                        Dict.values balances
+                            |> List.all (\b -> b.netBalance == b.totalPaid - b.totalOwed)
                 in
                 Expect.equal True allCorrect
         , fuzz (Fuzz.intRange 1 10000) "total paid equals total owed" <|
@@ -364,10 +361,10 @@ invariantTests =
                         Balance.computeBalances identity [ entry ]
 
                     totalPaid =
-                        List.foldl (\b acc -> acc + b.totalPaid) 0 balances
+                        Dict.foldl (\_ b acc -> acc + b.totalPaid) 0 balances
 
                     totalOwed =
-                        List.foldl (\b acc -> acc + b.totalOwed) 0 balances
+                        Dict.foldl (\_ b acc -> acc + b.totalOwed) 0 balances
                 in
                 Expect.equal totalPaid totalOwed
         ]
