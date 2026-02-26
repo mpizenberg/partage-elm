@@ -248,20 +248,6 @@ computeSharesSplit resolveRootId totalAmount beneficiaries =
         -- Sort by rootId for deterministic remainder distribution
         sorted =
             List.sortBy (\( mid, _, _ ) -> mid) baseAllocated
-
-        -- Distribute remainder: each member can receive up to N extra cents (N = shares)
-        distributeRemainder : Int -> List ( Member.Id, Int, Int ) -> List ( Member.Id, Int )
-        distributeRemainder rem items =
-            case items of
-                [] ->
-                    []
-
-                ( mid, shares, amt ) :: rest ->
-                    let
-                        extra =
-                            min shares rem
-                    in
-                    ( mid, amt + extra ) :: distributeRemainder (rem - extra) rest
     in
     if totalShares == 0 then
         []
@@ -290,18 +276,33 @@ distributeProportionally resolveRootId totalAmount items itemTotal =
 
         sorted =
             List.sortBy Tuple.first baseAllocated
-
-        distribute : Int -> List ( Member.Id, Int ) -> List ( Member.Id, Int )
-        distribute rem xs =
-            case xs of
-                [] ->
-                    []
-
-                ( mid, amt ) :: rest ->
-                    if rem > 0 then
-                        ( mid, amt + 1 ) :: distribute (rem - 1) rest
-
-                    else
-                        ( mid, amt ) :: distribute 0 rest
     in
-    distribute remainder sorted
+    distributeExtra remainder sorted
+
+
+distributeRemainder : Int -> List ( Member.Id, Int, Int ) -> List ( Member.Id, Int )
+distributeRemainder rem items =
+    case items of
+        [] ->
+            []
+
+        ( mid, shares, amt ) :: rest ->
+            let
+                extra =
+                    min shares rem
+            in
+            ( mid, amt + extra ) :: distributeRemainder (rem - extra) rest
+
+
+distributeExtra : Int -> List ( Member.Id, Int ) -> List ( Member.Id, Int )
+distributeExtra rem xs =
+    case xs of
+        [] ->
+            []
+
+        ( mid, amt ) :: rest ->
+            if rem > 0 then
+                ( mid, amt + 1 ) :: distributeExtra (rem - 1) rest
+
+            else
+                ( mid, amt ) :: distributeExtra 0 rest

@@ -349,20 +349,6 @@ Takes a fallback entry for the impossible empty case.
 resolveCurrentVersion : Entry -> Dict Entry.Id Entry -> Entry
 resolveCurrentVersion fallback versions =
     let
-        depth : Entry -> Int
-        depth entry =
-            case entry.meta.previousVersionId of
-                Nothing ->
-                    0
-
-                Just prevId ->
-                    case Dict.get prevId versions of
-                        Nothing ->
-                            0
-
-                        Just prev ->
-                            1 + depth prev
-
         pickDeepest ( da, a ) ( db, b ) =
             case compare da db of
                 GT ->
@@ -387,9 +373,24 @@ resolveCurrentVersion fallback versions =
 
         first :: rest ->
             List.foldl pickDeepest
-                ( depth first, first )
-                (List.map (\e -> ( depth e, e )) rest)
+                ( versionDepth versions first, first )
+                (List.map (\e -> ( versionDepth versions e, e )) rest)
                 |> Tuple.second
+
+
+versionDepth : Dict Entry.Id Entry -> Entry -> Int
+versionDepth versions entry =
+    case entry.meta.previousVersionId of
+        Nothing ->
+            0
+
+        Just prevId ->
+            case Dict.get prevId versions of
+                Nothing ->
+                    0
+
+                Just prev ->
+                    1 + versionDepth versions prev
 
 
 
