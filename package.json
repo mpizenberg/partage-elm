@@ -1,11 +1,24 @@
 {
   "private": true,
+  "type": "module",
   "scripts": {
-    "build": "mkdir -p dist && rm -rf dist/* && cp -r public/* dist/ && elm make src/Main.elm --output=dist/elm.js",
-    "test": "elm-test"
+    "cleandist": "mkdir -p dist && rm -rf dist/* && pnpm run copydist",
+    "copydist": "cp -r public/* dist/",
+    "dev": "pnpm run cleandist && run-pty % elm-watch hot % watchexec -w public/ -- pnpm run copydist",
+    "build": "pnpm run cleandist && elm-watch make --optimize",
+    "test": "elm-test",
+    "format": "elm-format --yes src/**/*.elm"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   },
   "devDependencies": {
     "elm": "^0.19.1-6",
-    "elm-test": "^0.19.1-revision17"
+    "elm-format": "^0.8.8",
+    "elm-test": "^0.19.1-revision17",
+    "elm-watch": "2.0.0-beta.12",
+    "run-pty": "^6.0.2"
   }
 }

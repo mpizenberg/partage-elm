@@ -1,0 +1,9 @@
+{
+  "serve": "./dist/",
+  "targets": {
+    "Main": {
+      "inputs": ["src/Main.elm"],
+      "output": "dist/elm.js"
+    }
+  }
+}
