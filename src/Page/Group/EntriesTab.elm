@@ -24,14 +24,10 @@ view state resolveName =
                 (Ui.text "No entries yet.")
 
           else
+            let
+                card entry =
+                    UI.Components.entryCard { entry = entry, resolveName = resolveName }
+            in
             Ui.column [ Ui.width Ui.fill ]
-                (List.map
-                    (\entry ->
-                        UI.Components.entryCard
-                            { entry = entry
-                            , resolveName = resolveName
-                            }
-                    )
-                    entries
-                )
+                (List.map card entries)
         ]

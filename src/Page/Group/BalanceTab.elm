@@ -69,14 +69,10 @@ settlementSection state resolveName =
                 (Ui.text "All settled up!")
 
           else
+            let
+                settleTx tx =
+                    UI.Components.settlementRow { transaction = tx, resolveName = resolveName }
+            in
             Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-                (List.map
-                    (\t ->
-                        UI.Components.settlementRow
-                            { transaction = t
-                            , resolveName = resolveName
-                            }
-                    )
-                    transactions
-                )
+                (List.map settleTx transactions)
         ]

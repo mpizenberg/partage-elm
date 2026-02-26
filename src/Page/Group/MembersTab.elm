@@ -27,33 +27,23 @@ view state currentUser =
             allMembers
                 |> List.filter .isRetired
                 |> List.sortBy (\m -> String.toLower m.name)
+
+        viewMember member =
+            UI.Components.memberRow
+                { member = member
+                , isCurrentUser = member.id == currentUser
+                }
     in
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text "Members")
         , Ui.column [ Ui.width Ui.fill ]
-            (List.map
-                (\m ->
-                    UI.Components.memberRow
-                        { member = m
-                        , isCurrentUser = m.id == currentUser
-                        }
-                )
-                active
-            )
+            (List.map viewMember active)
         , if not (List.isEmpty retired) then
             Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
                 [ Ui.el [ Ui.Font.size Theme.fontSize.md, Ui.Font.bold, Ui.Font.color Theme.neutral500 ]
                     (Ui.text "Departed")
                 , Ui.column [ Ui.width Ui.fill ]
-                    (List.map
-                        (\m ->
-                            UI.Components.memberRow
-                                { member = m
-                                , isCurrentUser = False
-                                }
-                        )
-                        retired
-                    )
+                    (List.map viewMember retired)
                 ]
 
           else
