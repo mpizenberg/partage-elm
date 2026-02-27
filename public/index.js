@@ -1,5 +1,6 @@
 import * as ConcurrentTask from "@andrewmacmurray/elm-concurrent-task";
-import { createTasks } from "../vendor/elm-webcrypto/js/src/index.js";
+import { createTasks as createWebCryptoTasks } from "../vendor/elm-webcrypto/js/src/index.js";
+import { createTasks as createIndexedDbTasks } from "../vendor/elm-indexeddb/js/src/index.js";
 
 // elm-url-navigation-port JS companion
 function initNavigation(ports) {
@@ -47,7 +48,7 @@ initNavigation({
 });
 
 ConcurrentTask.register({
-  tasks: createTasks(),
+  tasks: { ...createWebCryptoTasks(), ...createIndexedDbTasks() },
   ports: {
     send: app.ports.sendTask,
     receive: app.ports.receiveTask,

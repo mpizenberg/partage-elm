@@ -5,18 +5,22 @@ import Browser
 import ConcurrentTask
 import Html exposing (Html)
 import Identity exposing (Identity)
+import IndexedDb as Idb
 import Json.Decode
 import Json.Encode
 import Navigation
 import Page.About
 import Page.Group
 import Page.Home
+import Page.InitError
+import Page.Loading
 import Page.NewGroup
 import Page.NotFound
 import Page.Setup
 import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import SampleData
+import Storage exposing (GroupSummary)
 import Translations as T exposing (I18n, Language(..))
 import UI.Components
 import UI.Shell
@@ -50,13 +54,19 @@ type alias Flags =
 
 type alias Model =
     { route : Route
-    , identity : Maybe Identity
+    , appState : AppState
     , generatingIdentity : Bool
     , i18n : I18n
     , language : Language
     , pool : ConcurrentTask.Pool Msg
     , uuidState : UUID.V7State
     }
+
+
+type AppState
+    = Loading
+    | Ready Storage.InitData
+    | InitError String
 
 
 type Msg
@@ -67,6 +77,8 @@ type Msg
     | GenerateIdentity
     | OnTaskProgress ( ConcurrentTask.Pool Msg, Cmd Msg )
     | OnIdentityGenerated (ConcurrentTask.Response WebCrypto.Error Identity)
+    | OnInitComplete (ConcurrentTask.Response Idb.Error Storage.InitData)
+    | OnIdentitySaved (ConcurrentTask.Response Idb.Error ())
 
 
 subscriptions : Model -> Sub Msg
@@ -118,15 +130,20 @@ init flags =
         ( uuidState, _ ) =
             Random.step UUID.initialV7State initialSeed
 
-        ( guardedRoute, cmd ) =
-            applyRouteGuard Nothing route
+        ( pool, cmd ) =
+            ConcurrentTask.attempt
+                { pool = ConcurrentTask.pool
+                , send = sendTask
+                , onComplete = OnInitComplete
+                }
+                (Storage.open |> ConcurrentTask.andThen Storage.init)
     in
-    ( { route = guardedRoute
-      , identity = Nothing
+    ( { route = route
+      , appState = Loading
       , generatingIdentity = False
       , i18n = i18n
       , language = language
-      , pool = ConcurrentTask.pool
+      , pool = pool
       , uuidState = uuidState
       }
     , cmd
@@ -142,7 +159,12 @@ update msg model =
                     Route.fromAppUrl event.appUrl
 
                 ( guardedRoute, cmd ) =
-                    applyRouteGuard model.identity route
+                    case model.appState of
+                        Ready data ->
+                            applyRouteGuard data.identity route
+
+                        _ ->
+                            applyRouteGuard Nothing route
             in
             ( { model | route = guardedRoute }, cmd )
 
@@ -184,14 +206,58 @@ update msg model =
             ( { model | pool = pool }, cmd )
 
         OnIdentityGenerated (ConcurrentTask.Success identity) ->
-            let
-                ( guardedRoute, cmd ) =
-                    applyRouteGuard (Just identity) model.route
-            in
-            ( { model | identity = Just identity, generatingIdentity = False, route = guardedRoute }, cmd )
+            case model.appState of
+                Ready readyData ->
+                    let
+                        updatedReadyData =
+                            { readyData | identity = Just identity }
+
+                        ( guardedRoute, navCmd_ ) =
+                            applyRouteGuard (Just identity) model.route
+
+                        ( pool, taskCmd ) =
+                            ConcurrentTask.attempt
+                                { pool = model.pool
+                                , send = sendTask
+                                , onComplete = OnIdentitySaved
+                                }
+                                (Storage.saveIdentity readyData.db identity)
+                    in
+                    ( { model
+                        | appState = Ready updatedReadyData
+                        , generatingIdentity = False
+                        , route = guardedRoute
+                        , pool = pool
+                      }
+                    , Cmd.batch [ navCmd_, taskCmd ]
+                    )
+
+                _ ->
+                    ( { model | generatingIdentity = False }, Cmd.none )
 
         OnIdentityGenerated _ ->
             ( { model | generatingIdentity = False }, Cmd.none )
+
+        OnInitComplete (ConcurrentTask.Success readyData) ->
+            let
+                ( guardedRoute, cmd ) =
+                    applyRouteGuard readyData.identity model.route
+            in
+            ( { model
+                | appState = Ready readyData
+                , route = guardedRoute
+              }
+            , cmd
+            )
+
+        OnInitComplete (ConcurrentTask.Error err) ->
+            ( { model | appState = InitError (Storage.errorToString err) }, Cmd.none )
+
+        OnInitComplete (ConcurrentTask.UnexpectedError _) ->
+            ( { model | appState = InitError "Unexpected error during initialization" }, Cmd.none )
+
+        OnIdentitySaved _ ->
+            ( model, Cmd.none )
 
 
 applyRouteGuard : Maybe Identity -> Route -> ( Route, Cmd Msg )
@@ -227,6 +293,23 @@ view model =
 
 viewPage : Model -> Ui.Element Msg
 viewPage model =
+    case model.appState of
+        Loading ->
+            Page.Loading.view model.i18n
+
+        InitError errorMsg ->
+            UI.Shell.appShell
+                { title = T.shellPartage model.i18n
+                , headerExtra = Ui.none
+                , content = Page.InitError.view errorMsg
+                }
+
+        Ready _ ->
+            viewReady model
+
+
+viewReady : Model -> Ui.Element Msg
+viewReady model =
     let
         i18n =
             model.i18n

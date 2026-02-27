@@ -7,6 +7,7 @@
   "tabEntries": "Entries",
   "tabMembers": "Members",
   "tabActivities": "Activities",
+  "loadingApp": "Loading...",
   "setupWelcome": "Welcome to Partage",
   "setupTagline": "Your privacy-first, encrypted bill splitting app.",
   "setupGenerateButton": "Generate Identity",

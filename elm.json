@@ -5,7 +5,8 @@
         "vendor/elm-ui/src",
         "vendor/elm-animator/src",
         "vendor/elm-webcrypto/src",
-        "vendor/elm-uuid/src"
+        "vendor/elm-uuid/src",
+        "vendor/elm-indexeddb/src"
     ],
     "elm-version": "0.19.1",
     "dependencies": {

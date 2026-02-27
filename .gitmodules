@@ -13,3 +13,6 @@
 	path = vendor/elm-uuid
 	url = https://github.com/mpizenberg/elm-uuid
 	branch = v7
+[submodule "vendor/elm-indexeddb"]
+	path = vendor/elm-indexeddb
+	url = https://github.com/mpizenberg/elm-indexeddb
