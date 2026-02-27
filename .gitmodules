@@ -6,3 +6,10 @@
 	path = vendor/elm-animator
 	url = https://github.com/mdgriffith/elm-animator
 	branch = v2
+[submodule "vendor/elm-webcrypto"]
+	path = vendor/elm-webcrypto
+	url = https://github.com/mpizenberg/elm-webcrypto
+[submodule "vendor/elm-uuid"]
+	path = vendor/elm-uuid
+	url = https://github.com/mpizenberg/elm-uuid
+	branch = v7

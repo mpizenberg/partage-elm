@@ -2,7 +2,11 @@ port module Main exposing (main)
 
 import AppUrl exposing (AppUrl)
 import Browser
+import ConcurrentTask
 import Html exposing (Html)
+import Identity exposing (Identity)
+import Json.Decode
+import Json.Encode
 import Navigation
 import Page.About
 import Page.Group
@@ -10,15 +14,18 @@ import Page.Home
 import Page.NewGroup
 import Page.NotFound
 import Page.Setup
+import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import SampleData
 import Translations as T exposing (I18n, Language(..))
 import UI.Components
 import UI.Shell
 import UI.Theme as Theme
+import UUID
 import Ui
 import Ui.Font
 import Url
+import WebCrypto
 
 
 port navCmd : Navigation.CommandPort msg
@@ -27,17 +34,28 @@ port navCmd : Navigation.CommandPort msg
 port onNavEvent : Navigation.EventPort msg
 
 
+port sendTask : Json.Encode.Value -> Cmd msg
+
+
+port receiveTask : (Json.Decode.Value -> msg) -> Sub msg
+
+
 type alias Flags =
     { initialUrl : String
     , language : String
+    , randomSeed : List Int
+    , currentTime : Int
     }
 
 
 type alias Model =
     { route : Route
-    , identity : Maybe String
+    , identity : Maybe Identity
+    , generatingIdentity : Bool
     , i18n : I18n
     , language : Language
+    , pool : ConcurrentTask.Pool Msg
+    , uuidState : UUID.V7State
     }
 
 
@@ -46,6 +64,22 @@ type Msg
     | NavigateTo Route
     | SwitchTab GroupTab
     | SwitchLanguage Language
+    | GenerateIdentity
+    | OnTaskProgress ( ConcurrentTask.Pool Msg, Cmd Msg )
+    | OnIdentityGenerated (ConcurrentTask.Response WebCrypto.Error Identity)
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.batch
+        [ Navigation.onEvent onNavEvent OnNavEvent
+        , ConcurrentTask.onProgress
+            { send = sendTask
+            , receive = receiveTask
+            , onProgress = OnTaskProgress
+            }
+            model.pool
+        ]
 
 
 main : Program Flags Model Msg
@@ -67,10 +101,6 @@ init flags =
                 |> Maybe.map (AppUrl.fromUrl >> Route.fromAppUrl)
                 |> Maybe.withDefault NotFound
 
-        -- Dev workaround: hardcode identity to bypass guards during Phase 1
-        identity =
-            Just "dev"
-
         language =
             flags.language
                 |> T.languageFromString
@@ -79,13 +109,25 @@ init flags =
         i18n =
             T.init language
 
+        initialSeed =
+            List.foldl
+                (\n acc -> Random.step (Random.int Random.minInt Random.maxInt) acc |> Tuple.second)
+                (Random.initialSeed (List.sum flags.randomSeed))
+                flags.randomSeed
+
+        ( uuidState, _ ) =
+            Random.step UUID.initialV7State initialSeed
+
         ( guardedRoute, cmd ) =
-            applyRouteGuard identity route
+            applyRouteGuard Nothing route
     in
     ( { route = guardedRoute
-      , identity = identity
+      , identity = Nothing
+      , generatingIdentity = False
       , i18n = i18n
       , language = language
+      , pool = ConcurrentTask.pool
+      , uuidState = uuidState
       }
     , cmd
     )
@@ -126,13 +168,33 @@ update msg model =
             , Cmd.none
             )
 
+        GenerateIdentity ->
+            let
+                ( pool, cmd ) =
+                    ConcurrentTask.attempt
+                        { pool = model.pool
+                        , send = sendTask
+                        , onComplete = OnIdentityGenerated
+                        }
+                        Identity.generate
+            in
+            ( { model | pool = pool, generatingIdentity = True }, cmd )
 
-subscriptions : Model -> Sub Msg
-subscriptions _ =
-    Navigation.onEvent onNavEvent OnNavEvent
+        OnTaskProgress ( pool, cmd ) ->
+            ( { model | pool = pool }, cmd )
+
+        OnIdentityGenerated (ConcurrentTask.Success identity) ->
+            let
+                ( guardedRoute, cmd ) =
+                    applyRouteGuard (Just identity) model.route
+            in
+            ( { model | identity = Just identity, generatingIdentity = False, route = guardedRoute }, cmd )
+
+        OnIdentityGenerated _ ->
+            ( { model | generatingIdentity = False }, Cmd.none )
 
 
-applyRouteGuard : Maybe String -> Route -> ( Route, Cmd Msg )
+applyRouteGuard : Maybe Identity -> Route -> ( Route, Cmd Msg )
 applyRouteGuard identity route =
     case identity of
         Nothing ->
@@ -174,7 +236,11 @@ viewPage model =
     in
     case model.route of
         Setup ->
-            UI.Shell.appShell { title = T.shellPartage i18n, headerExtra = langSelector, content = Page.Setup.view i18n }
+            UI.Shell.appShell
+                { title = T.shellPartage i18n
+                , headerExtra = langSelector
+                , content = Page.Setup.view i18n { onGenerate = GenerateIdentity, isGenerating = model.generatingIdentity }
+                }
 
         Home ->
             UI.Shell.appShell { title = T.shellPartage i18n, headerExtra = langSelector, content = Page.Home.view i18n NavigateTo }

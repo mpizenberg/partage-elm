@@ -1,3 +1,6 @@
+import * as ConcurrentTask from "@andrewmacmurray/elm-concurrent-task";
+import { createTasks } from "../vendor/elm-webcrypto/js/src/index.js";
+
 // elm-url-navigation-port JS companion
 function initNavigation(ports) {
   function sendNavigation(state) {
@@ -33,10 +36,20 @@ var app = Elm.Main.init({
   flags: {
     initialUrl: location.href,
     language: navigator.language || "en",
+    randomSeed: Array.from(crypto.getRandomValues(new Uint32Array(4))),
+    currentTime: Date.now(),
   },
 });
 
 initNavigation({
   navCmd: app.ports.navCmd,
   onNavEvent: app.ports.onNavEvent,
+});
+
+ConcurrentTask.register({
+  tasks: createTasks(),
+  ports: {
+    send: app.ports.sendTask,
+    receive: app.ports.receiveTask,
+  },
 });
