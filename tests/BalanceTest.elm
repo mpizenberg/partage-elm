@@ -1,4 +1,4 @@
-module BalanceTest exposing (..)
+module BalanceTest exposing (suite)
 
 import Dict
 import Domain.Balance as Balance exposing (MemberBalance, Status(..))

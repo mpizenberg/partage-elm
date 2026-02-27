@@ -1,4 +1,4 @@
-module SettlementTest exposing (..)
+module SettlementTest exposing (suite)
 
 import Dict exposing (Dict)
 import Domain.Balance exposing (MemberBalance)

@@ -1,4 +1,4 @@
-module GroupStateTest exposing (..)
+module GroupStateTest exposing (suite)
 
 import Dict
 import Domain.Entry as Entry exposing (Beneficiary(..), Kind(..))

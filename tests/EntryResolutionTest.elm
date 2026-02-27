@@ -1,4 +1,4 @@
-module EntryResolutionTest exposing (..)
+module EntryResolutionTest exposing (suite)
 
 import Dict
 import Domain.Entry as Entry exposing (Beneficiary(..), Kind(..))
