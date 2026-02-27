@@ -1,4 +1,4 @@
-# Plan: Frontend Implementation (Phases 1-5)
+# Plan: Frontend Implementation
 
 ## Context
 
@@ -329,157 +329,330 @@ errorToString : Idb.Error -> String
 - Custom `Fuzzer` for each domain type (Currency, Date, Link, Member.Type, PaymentInfo, Member.Metadata, Category, Payer, Beneficiary, Entry.Metadata, TransferData, ExpenseData, Kind, Entry, GroupMetadataChange, Payload, Envelope)
 - Also fixed all test modules to `exposing (suite)` instead of `exposing (..)` to prevent duplicate test runs
 
+---
+
+## Phase 5: Local Group Management ✅
+
+**Goal:** Create groups locally, add basic expense entries, view real computed state. First functional bill-splitter.
+
+**Status: COMPLETE**
+
+### What was done
+
+#### Dependencies
+
+- Installed `dwayne/elm-form`, `dwayne/elm-field`, `dwayne/elm-validation` (published packages for form management)
+
+#### Domain additions
+
+- **`src/Domain/Date.elm`** — Added `posixToDate : Time.Posix -> Date` (converts UTC Posix to calendar date) with internal `monthToInt` helper
+- **`src/Domain/GroupState.elm`** — Added `resolveMemberName : GroupState -> Member.Id -> String` (canonical name resolution, falls back to raw ID)
+
+#### Form modules (new, using `dwayne/elm-form`)
+
+**`src/Form/NewGroup.elm`** — Group creation form:
+
+- State: `name : Field String`, `creatorName : Field String`, `currency : Field Currency` (default EUR), `virtualMembers : Forms VirtualMemberForm`
+- Validation: all fields non-blank, currency from enum (USD, EUR, GBP, CHF)
+- Output: `{ name : String, creatorName : String, currency : Currency, virtualMembers : List String }`
+- Virtual member sub-form inline (single `name : Field String` per member)
+- Dynamic member list via `Form.List` (add/remove accessors)
+
+**`src/Form/NewEntry.elm`** — Entry creation form:
+
+- State: `description : Field String`, `amount : Field Int` (parsed from decimal string to cents, e.g. "12.50" → 1250)
+- Validation: description non-blank, amount > 0
+- Output: `{ description : String, amountCents : Int }`
+
+#### Page modules
+
+**`src/Page/Home.elm`** (rewritten):
+
+- Signature: `view : I18n -> (Route -> msg) -> List GroupSummary -> Ui.Element msg`
+- Empty state message when no groups
+- Group cards (name only, clickable → `GroupRoute id (Tab BalanceTab)`)
+- "+ New Group" button navigating to `Route.NewGroup`
+- Removed `SampleData` dependency
+
+**`src/Page/NewGroup.elm`** (rewritten):
+
+- Signature: `view : I18n -> Callbacks msg -> Form -> Ui.Element msg`
+- `Callbacks msg` type alias with 7 callbacks (name, creator name, currency, virtual member CRUD, submit)
+- Renders: title, name field, creator name field, currency radio buttons, virtual members section (dynamic list with add/remove), submit button
+- Labels, placeholders, and hints on all fields
+- Inline error display (dirty + invalid → "This field is required")
+
+**`src/Page/NewEntry.elm`** (new):
+
+- Signature: `view : I18n -> Callbacks msg -> Form -> Ui.Element msg`
+- `Callbacks msg` type alias with 3 callbacks (description, amount, submit)
+- Renders: title, description field, amount field, split note ("equally among all members"), submit button
+- Labels, placeholders, and hints on all fields
+
+**`src/Page/Group.elm`** (rewritten):
+
+- `Context msg` type alias: `{ i18n, onTabClick, onNewEntry, currentUserRootId }`
+- Signature: `view : Context msg -> Ui.Element msg -> GroupState -> GroupTab -> Ui.Element msg`
+- `tabContent` routes to tab-specific views (3 args: Context, GroupState, GroupTab)
+- Removed `SampleData` dependency
+
+**`src/Page/Group/BalanceTab.elm`** (updated):
+
+- Signature: `view : I18n -> Member.Id -> GroupState -> Ui.Element msg`
+- Empty state: shows dedicated "No expenses yet" message when `Dict.isEmpty state.entries`
+- Name resolution via `GroupState.resolveMemberName` (no `resolveName` parameter)
+- Partial application: `settleTx = UI.Components.settlementRow i18n resolveName`
+
+**`src/Page/Group/EntriesTab.elm`** (updated):
+
+- Signature: `view : I18n -> msg -> GroupState -> Ui.Element msg`
+- Added "New Entry" button at the bottom (primary, full-width)
+- Name resolution via `GroupState.resolveMemberName` (no `resolveName` parameter)
+
+**`src/Page/Group/MembersTab.elm`** (updated):
+
+- Signature: `view : I18n -> Member.Id -> GroupState -> Ui.Element msg`
+
+**`src/UI/Components.elm`** (updated signatures):
+
+- `entryCard : I18n -> (Member.Id -> String) -> Entry -> Ui.Element msg`
+- `settlementRow : I18n -> (Member.Id -> String) -> Settlement.Transaction -> Ui.Element msg`
+- `languageSelector : (Language -> msg) -> Language -> Ui.Element msg`
+- Argument ordering: stable/config first, data last (enables partial application)
+
+#### Main.elm changes
+
+**Model additions:**
+
+- `randomSeed : Random.Seed` — threaded through UUID generation
+- `currentTime : Time.Posix` — used for event timestamps and date derivation
+- `newGroupForm : Form.NewGroup.Form`
+- `newEntryForm : Form.NewEntry.Form`
+- `loadedGroup : Maybe LoadedGroup`
+- `LoadedGroup` type: `{ groupId, events, groupState, summary }`
+
+**New Msg variants:**
+
+- Group form: `InputNewGroupName`, `InputNewGroupCreatorName`, `InputNewGroupCurrency`, `InputVirtualMemberName`, `AddVirtualMember`, `RemoveVirtualMember`, `SubmitNewGroup`, `OnGroupCreated`
+- Entry form: `InputEntryDescription`, `InputEntryAmount`, `SubmitNewEntry`, `OnEntrySaved`
+- Group loading: `OnGroupEventsLoaded`
+
+**Form update handlers:** Use `Form.modify .accessor (Field.setFromString s) form` pattern.
+
+**`submitNewGroup`**: Validates form → generates group ID (v4), creator uses `identity.publicKeyHash` as member ID directly (no UUID), virtual members get v4 UUIDs, event IDs are v7 → builds `GroupMetadataUpdated` + `MemberCreated` events → saves summary + events to IndexedDB → on success: navigates to group, resets form, appends to groups list.
+
+**`submitNewEntry`**: Validates form → generates entry ID (v4), event ID (v7) → builds `Expense` entry (single payer = current user, equal `ShareBeneficiary` for all active members, 1 share each) → saves event → on success: recomputes group state, resets form, navigates to entries tab.
+
+**`ensureGroupLoaded`**: Triggered on `OnNavEvent` for `GroupRoute`. Checks if already loaded for this group, otherwise kicks off `Storage.loadGroupEvents`. On success: `GroupState.applyEvents` + store in `loadedGroup`.
+
+**`viewReady`**: Routes to page views, passes form state and callbacks. Derives `currentUserRootId` from `Dict.get identity.publicKeyHash groupState.members`.
+
+**Removed:** `SampleData.elm` deleted, all `import SampleData` removed.
+
+#### Translations
+
+~30 new keys added (EN + FR) for form labels, placeholders, hints, empty states, and button text across both forms.
+
+#### Key implementation details
+
+**Group creation event sequence** (all share same `clientTimestamp`, monotonic UUID v7 for ordering):
+
+```
+Event 1: GroupMetadataUpdated { name = Just name, subtitle = Nothing, ... }
+Event 2: MemberCreated { memberId = publicKeyHash, name = creatorName, memberType = Real, addedBy = publicKeyHash }
+Event 3+: MemberCreated { memberId = randomUUID, name = vmName, memberType = Virtual, addedBy = publicKeyHash }
+```
+
+**Member identity model:** Real members use `identity.publicKeyHash` as their member ID directly (no separate UUID). Virtual members get UUID v4 IDs. This means `Dict.get publicKeyHash state.members` finds the current user without any linear scan or extra field.
+
+**Entry creation:** `Entry.newMetadata` with `rootId = id`, `previousVersionId = Nothing`, `depth = 0`. Date derived from `currentTime` via `Date.posixToDate`. No date picker yet.
+
+**Argument ordering convention:** All view functions follow stable/config args first, frequently-changing data last. This enables partial application and future `Ui.lazy` usage. Example: `BalanceTab.view : I18n -> Member.Id -> GroupState -> Ui.Element msg`.
+
+#### Key decisions made during Phase 5
+
+- **`dwayne/elm-form`** for form management — provides `Form.get`, `Form.modify`, `Form.toState`, `Form.List` for dynamic lists
+- **`Callbacks msg` pattern** — page views define a type alias for their callback records, exposed from the module
+- **`Context msg` pattern** — `Page.Group` bundles stable callbacks and config into a single record
+- **`GroupState.resolveMemberName`** as canonical name resolution — eliminates threading a `resolveName` function through the module hierarchy
+- **Public key hash as member ID** — real members identified by their hash directly (no UUID indirection), simplifying current-user lookup
+- **`GroupSummary` minimal** — only `{ id, name, defaultCurrency }` (no `creatorMemberId`); current user derived from identity + group state at runtime
+- **No group symmetric key generation** — skipped for now (no sync yet), will be needed in the sync phase
+- **Expense-only entries** — transfer entry type deferred (form + submission logic)
+- **Equal-share split only** — no multi-payer, no exact-amount split yet
+
 ### Current file structure
 
 ```
-public/
-  index.html                -- HTML shell
-  index.js                  -- ES imports, Elm init, nav ports, merged ConcurrentTask registration
-translations/
-  messages.en.json          -- English translations (46 keys)
-  messages.fr.json          -- French translations (46 keys)
-package.json                -- pnpm scripts + dependencies
-elm.json                    -- Elm config with 6 vendor source dirs
-.gitmodules                 -- 5 submodules (elm-ui, elm-animator, elm-webcrypto, elm-uuid, elm-indexeddb)
-vendor/
-  elm-ui/                   -- elm-ui v2
-  elm-animator/             -- elm-animator v2
-  elm-webcrypto/            -- WebCrypto API via ConcurrentTask
-  elm-uuid/                 -- UUID v4/v7 generation
-  elm-indexeddb/            -- IndexedDB via ConcurrentTask
 src/
-  Main.elm                  -- App entry, 4 ports, AppState lifecycle, async init chain
+  Main.elm                  -- App entry, 4 ports, AppState lifecycle, form state, submit handlers
   Route.elm                 -- Route types + URL parsing/serialization
   Format.elm                -- Currency/amount formatting
   Identity.elm              -- Identity type, crypto generation, JSON codecs
   Storage.elm               -- IndexedDB schema (4 stores), InitData, GroupSummary, CRUD operations
-  SampleData.elm            -- Hardcoded events for 5 members
   Translations.elm          -- (generated, gitignored) i18n module
   Domain/
     Currency.elm            -- Currency type + JSON codecs
-    Date.elm                -- Date type + JSON codecs
+    Date.elm                -- Date type + JSON codecs + posixToDate
     Group.elm               -- Group/Link types + Link JSON codecs
     Member.elm              -- Member types + JSON codecs (Type, Metadata, PaymentInfo)
-    Entry.elm               -- Entry types + full JSON codecs (10+ encode/decode pairs)
-    Event.elm               -- Event types + JSON codecs (Envelope, 11-variant Payload, GroupMetadataChange)
-    GroupState.elm           -- Event-sourced state machine
+    Entry.elm               -- Entry types + full JSON codecs
+    Event.elm               -- Event types + JSON codecs (Envelope, 11-variant Payload)
+    GroupState.elm           -- Event-sourced state machine + resolveMemberName
     Balance.elm              -- Balance computation
     Settlement.elm           -- Settlement plan computation
     Activity.elm             -- Activity feed types
+  Form/
+    NewGroup.elm            -- Group creation form (dwayne/elm-form)
+    NewEntry.elm            -- Entry creation form (dwayne/elm-form)
   Page/
     Loading.elm             -- "Loading..." centered text
     InitError.elm           -- Error display
     Setup.elm               -- Generate Identity button with loading state
-    Home.elm                -- Group list with sample group
+    Home.elm                -- Group list from storage, "+ New Group" button
     About.elm               -- App info
     NotFound.elm            -- 404
-    NewGroup.elm            -- Placeholder for group creation
-    Group.elm               -- Group page shell with tab routing
+    NewGroup.elm            -- Group creation form view (Callbacks msg pattern)
+    NewEntry.elm            -- Entry creation form view (Callbacks msg pattern)
+    Group.elm               -- Group page shell (Context msg pattern) + tab routing
     Group/
-      BalanceTab.elm        -- Balance cards + settlement plan
-      EntriesTab.elm        -- Entry cards (expenses + transfers)
+      BalanceTab.elm        -- Balance cards + settlement plan + empty state
+      EntriesTab.elm        -- Entry cards + new entry button
       MembersTab.elm        -- Active + departed members
       ActivitiesTab.elm     -- Placeholder "coming soon"
   UI/
     Theme.elm               -- Design tokens
     Shell.elm               -- App shell + group shell + tab bar
     Components.elm          -- Reusable view components + language selector
-tests/
-  CodecTest.elm             -- 17 fuzz roundtrip tests for all JSON codecs
-  GroupStateTest.elm         -- GroupState event processing tests
-  EntryResolutionTest.elm    -- Entry version resolution tests
-  BalanceTest.elm            -- Balance computation tests
-  SettlementTest.elm         -- Settlement plan tests
-  TestHelpers.elm            -- Shared test utilities and fuzzers
 ```
 
 ---
 
-## Phase 5: Local Group Management
+## Phase 5.5: Complete Local Group Management
 
-**Goal:** Create groups locally, add entries, view real computed state. First functional bill-splitter.
+**Goal:** Complete the local bill-splitting experience by adding the remaining features from the specification that don't require server sync. Also clean up `Main.elm` by extracting form logic into page modules.
 
 **Status: NOT STARTED**
 
-### Prerequisites from Phase 4
+### Step 0: Main.elm cleanup
 
-- `Storage.elm` provides `saveGroupSummary`, `saveGroupKey`, `saveEvents`, `loadGroupEvents` — all ready to use
-- `Storage.InitData` carries `db`, `identity`, `groups` — available via `model.appState` in Main
-- All domain JSON codecs are complete (Event, Entry, Member, Currency, Date, Group)
-- `UUID.V7State` in Model for event ID generation
+`Main.elm` currently holds all form state, form update handlers, and submission logic for both group creation and entry creation. This should be extracted to keep Main focused on routing, app lifecycle, and orchestration.
 
-### No new dependencies
+**Evaluate and extract into `Page.NewGroup` and `Page.NewEntry`:**
 
-### Files
+- **Form state ownership**: Move `newGroupForm` and `newEntryForm` out of the top-level Model. Each page module could own its form state via an opaque `Model` type.
+- **Form update logic**: The `InputNewGroup*`, `AddVirtualMember`, `RemoveVirtualMember` handlers (and their `InputEntry*` equivalents) are pure `Form.modify` calls that belong in the page module.
+- **Submission logic**: `submitNewGroup` and `submitNewEntry` build domain events and IndexedDB tasks. These could live in the page module or a dedicated module, returning `( Model, ConcurrentTask )` for Main to dispatch.
+- **Msg consolidation**: Replace the ~10 fine-grained form Msg variants with something like `NewGroupMsg Page.NewGroup.Msg` and `NewEntryMsg Page.NewEntry.Msg`, forwarded in Main via a single branch each.
 
-**`src/Page/NewGroup.elm`** (rewrite) -- real group creation form:
+The goal is that Main's update function has at most 2 branches per form page (one for form updates, one for async responses), rather than the current ~10.
 
-- Fields: group name (required), creator display name (required), default currency (dropdown)
-- Optional: subtitle, description
-- "Add virtual member" button + list of virtual member names
-- On submit:
-  1. Generate group ID (UUID v4), member IDs (UUID v4), group symmetric key (`WebCrypto.Symmetric.generateKey`)
-  2. Create events: `GroupMetadataUpdated` + `MemberCreated` for creator + `MemberCreated` for each virtual member
-  3. Each event gets a UUID v7 event ID and current timestamp
-  4. Save to IndexedDB via `Storage.saveGroupSummary`, `Storage.saveGroupKey`, `Storage.saveEvents`
-  5. Navigate to `/groups/:id`
+### Step 1: Transfer entries
 
-**`src/Page/Home.elm`** (rewrite) -- real group list:
+**Spec ref:** Section 5.1, 5.3
 
-- Read group summaries from `Storage.InitData.groups` (already loaded during init)
-- Group card: name, member count, user's net balance
-- "+" button navigates to `/groups/new`
-- Click group card navigates to `/groups/:id`
+The entry creation form currently only supports expenses. Add transfer entry type.
 
-**`src/Page/Group.elm`** (rewrite) -- real data:
+- **Form**: New `Form.NewTransfer.elm` (or extend `Form.NewEntry.elm` with a type toggle)
+  - Fields: amount (required, > 0), from member (required), to member (required, different from "from")
+  - Currency: group default currency
+  - Date: auto-derived from `currentTime`
+- **Page**: Entry creation view with expense/transfer toggle
+- **Submission**: Build `Transfer` kind instead of `Expense`, with `from`, `to`, `amount`, `currency`, `date`
+- **Route**: Same `/groups/:id/new-entry` route, form state determines which kind
 
-- On mount: load events via `Storage.loadGroupEvents`, compute `GroupState.applyEvents`
-- Build name resolver: `resolveName : Member.Id -> String` from `GroupState.members`
-- Pass GroupState to tab sub-pages
-- Remove SampleData dependency
+### Step 2: Richer expense form fields
 
-**`src/Page/Group/BalanceTab.elm`** (update) -- wire to real GroupState
-**`src/Page/Group/EntriesTab.elm`** (update) -- wire to real GroupState
-**`src/Page/Group/MembersTab.elm`** (update) -- wire to real GroupState
+**Spec ref:** Sections 5.2, 5.4, 5.5
 
-**`src/Page/Group/NewEntry.elm`** (new) -- basic entry creation:
+Incrementally add fields the domain already supports but the form doesn't expose:
 
-- Toggle: Expense / Transfer
-- Expense: description, amount, single payer (current user), equal shares among all active members
-- Transfer: amount, from, to
-- Validation: amount > 0, description non-empty
-- On submit: create `Entry` + `EntryAdded` event, save to IndexedDB via `Storage.saveEvents`, navigate back to entries tab
-- (Advanced form features like multi-payer, exact split deferred to Phase 6)
+- **Category** (optional): Dropdown with 9 options (food, transport, accommodation, etc.). Maps to `Entry.Category`.
+- **Notes** (optional): Free-text textarea.
+- **Date**: Date picker instead of auto-derived. Default to today, allow override.
+- **Payer selection**: Currently hardcoded to current user. Add a member dropdown (single payer, full amount).
+- **Multiple payers**: Toggle to split the paid amount among multiple payers, each with their portion. Sum must equal total.
+- **Beneficiary selection**: Currently all active members with equal shares. Allow selecting a subset of members.
+- **Exact amount split**: Toggle between shares-based (default) and exact-amount split. For exact split, each beneficiary specifies their amount; sum must equal total.
 
-**FAB** in Group.elm: floating "+" button navigating to `/groups/:id/new-entry`
+Suggested sub-steps (each independently useful):
 
-### Key implementation details
+1. Category + notes + date picker
+2. Payer selection (single, any member)
+3. Beneficiary selection (subset of members, equal shares)
+4. Multiple payers
+5. Exact amount split
 
-Group creation event sequence (all share the same `clientTimestamp`, monotonic UUID v7 for ordering):
+### Step 3: Entry modification and deletion
 
-```
-Event 1: GroupMetadataUpdated { name, subtitle, description, links }
-Event 2: MemberCreated { memberId: creatorId, name: creatorName, memberType: Real, addedBy: creatorId }
-Event 3+: MemberCreated { memberId: virtualId, name: virtualName, memberType: Virtual, addedBy: creatorId }
-```
+**Spec ref:** Sections 5.6, 5.7
 
-Entry creation:
+- **View entry details**: Clicking an entry card opens a detail view (or navigates to a detail route)
+- **Edit entry**: Pre-populate the form with existing entry data. On submit, create a new entry version linked via `previousVersionId` and same `rootId`. Emit `EntryAdded` event with the new version.
+- **Delete entry**: Soft-delete via `EntryDeleted` event. Entry hidden from lists by default.
+- **Restore entry**: Undo soft-delete via `EntryUndeleted` event.
+- **Toggle deleted entries**: Show/hide deleted entries in the entries tab.
 
-- `Entry.newMetadata` creates metadata with `rootId = id`, `previousVersionId = Nothing`, `depth = 0`
-- Wrap in `EntryAdded` payload, then in `Event.Envelope`
-- After saving, reload events and recompute GroupState
+### Step 4: Member management within a group
 
-### Verification
+**Spec ref:** Sections 4.2, 4.5, 4.6
 
-- Create a group with name "Trip to Paris" and 2 virtual members
-- See it in the group list on Home
-- Open the group: see 3 members (creator + 2 virtual) in Members tab
-- Add an expense: "Dinner" for 6000 cents split 3 ways
-- Balance tab shows correct balances (creator: +4000, others: -2000 each)
-- Settlement tab shows 2 transactions
-- Add a transfer from one member to creator
-- Balances update correctly
-- Reload page: all data persists
+Currently members are only created at group creation time. Add in-group member management:
+
+- **Add virtual member**: Button in Members tab to add a new virtual member (emit `MemberCreated` event)
+- **Rename member**: Edit a member's display name (emit `MemberRenamed` event)
+- **Retire member**: Mark a member as departed (emit `MemberRetired` event). Retired members no longer appear in entry forms but historical data preserved.
+- **Unretire member**: Reactivate a retired member (emit `MemberUnretired` event)
+- **Member metadata**: View/edit contact info and payment methods (emit `MemberMetadataUpdated` event). Payment details displayed as copiable text.
+
+### Step 5: Group metadata editing
+
+**Spec ref:** Sections 3.2, 3.3
+
+- **Edit group metadata**: Edit group name, subtitle, description, links (emit `GroupMetadataUpdated` event). Default currency cannot be changed after creation.
+- **Display group info**: Show subtitle, description, and links on the Members tab (as specified in Section 18.4).
+- **Remove group locally**: Delete a group from the local device (remove from IndexedDB). Does not affect server or other members. Requires confirmation dialog.
+
+### Step 6: Settlement actions
+
+**Spec ref:** Section 7.3
+
+- **"Mark as Paid" button**: On each settlement row, clicking creates a `Transfer` entry recording the payment.
+- **Highlight current user**: Settlement transactions involving the current user are visually highlighted.
+
+### Files modified/created (estimated)
+
+| File                            | Action             | Description                                             |
+| ------------------------------- | ------------------ | ------------------------------------------------------- |
+| `src/Main.elm`                  | Modified           | Slimmed down: delegates form logic to page modules      |
+| `src/Page/NewGroup.elm`         | Modified           | Owns form state + update logic (opaque Model/Msg)       |
+| `src/Page/NewEntry.elm`         | Modified           | Owns form state + update logic, expense/transfer toggle |
+| `src/Form/NewGroup.elm`         | Unchanged or minor | Already complete for current fields                     |
+| `src/Form/NewEntry.elm`         | Modified           | Add category, notes, date, payer/beneficiary selection  |
+| `src/Form/NewTransfer.elm`      | New                | Transfer entry form (amount, from, to)                  |
+| `src/Page/Group/EntriesTab.elm` | Modified           | Entry click → detail, deleted toggle                    |
+| `src/Page/Group/MembersTab.elm` | Modified           | Add/rename/retire member UI, metadata display           |
+| `src/Page/Group/BalanceTab.elm` | Modified           | "Mark as Paid" button, current user highlighting        |
+| `src/Page/EntryDetail.elm`      | New                | Entry detail view with edit/delete actions              |
+| `translations/messages.en.json` | Modified           | ~30-40 new keys                                         |
+| `translations/messages.fr.json` | Modified           | ~30-40 new keys                                         |
+
+### Implementation order
+
+Step 0 (Main.elm cleanup) should come first — it makes all subsequent steps easier by establishing the pattern for page-owned form state. Steps 1-6 can then be done in order, each independently shippable.
+
+### Not in scope (deferred to later phases)
+
+These features from the specification require server sync, complex infrastructure, or are independent enough to warrant their own phase:
+
+- **Multi-currency entries** (Spec Section 10): Requires `defaultCurrencyAmount` field + manual exchange rate entry. Complex UX.
+- **Invitation & joining flow** (Spec Section 12): Requires group symmetric key generation, server authentication, invite link generation/sharing, join UI with member claiming.
+- **Activity feed** (Spec Section 8): Requires `Domain.Activity` to be fully wired. Complex diff computation for entry modifications.
+- **Filtering & sorting** (Spec Section 9): Entry filters by person, category, currency, date range. Activity filters. Useful but not core.
+- **Settlement preferences** (Spec Section 7.2): Per-member preferred payment recipients. Requires preference storage + UI.
+- **Import / Export** (Spec Section 13): JSON export/import with merge analysis.
+- **PoW challenge** (Spec Section 3.1): Server-side feature for group creation anti-spam.
+- **PWA & service worker** (Spec Section 15): Installation, offline caching, auto-update.
 
 ---
 
@@ -488,8 +661,8 @@ Entry creation:
 1. **`Browser.element`** with **`elm-url-navigation-port`** for SPA navigation
 2. **All ports in `Main.elm`** -- nav ports (`navCmd`/`onNavEvent`) + task ports (`sendTask`/`receiveTask`)
 3. **Single `ConcurrentTask.Pool`** in top-level Model, shared by webcrypto/indexeddb
-4. **Flat page structure** -- pages expose `view` functions taking relevant data, not nested TEA
-5. **Domain modules unchanged** -- frontend wraps them, doesn't modify them (except adding JSON codecs)
+4. **Flat page structure** -- pages expose `view` functions taking relevant data, not nested TEA (Phase 5.5 Step 0 will introduce page-owned state for form pages)
+5. **Domain modules unchanged** -- frontend wraps them, doesn't modify them (except adding JSON codecs and helpers like `resolveMemberName`)
 6. **JSON codecs colocated** -- each domain module has its own encode/decode functions
 7. **GroupState computed on demand** from events via `applyEvents` (caching later if needed)
 8. **UUID v7** for event IDs (time-sortable), **UUID v4** for entity IDs (members, entries, groups)
@@ -499,3 +672,9 @@ Entry creation:
 12. **JS bundling via esbuild** -- `public/index.js` uses ES imports, esbuild bundles to `dist/index.js` (iife format)
 13. **`AppState` union type** -- `Loading | Ready InitData | InitError String` makes impossible states unrepresentable; `db` only accessible inside `Ready`
 14. **Property-based codec tests** -- fuzz roundtrip tests (`decode(encode(x)) == x`) for every domain codec, using `Fuzz` combinators up to `andMap` for 10-field types
+15. **Public key hash as member ID** -- real members use `identity.publicKeyHash` directly as their member ID (no UUID indirection); virtual members get UUID v4 IDs
+16. **`dwayne/elm-form` for forms** -- `Form.get`, `Form.modify`, `Form.toState`, `Form.List` for dynamic lists; `dwayne/elm-field` for field types with validation; `dwayne/elm-validation` for applicative validation pipelines
+17. **`Callbacks msg` pattern** -- page form views define a `type alias Callbacks msg` for their callback records, exposed from the module
+18. **`Context msg` pattern** -- `Page.Group` bundles stable callbacks and config into a single `Context msg` record, reducing argument count
+19. **Argument ordering convention** -- stable/config args first, frequently-changing data last; enables partial application and future `Ui.lazy` usage
+20. **`GroupState.resolveMemberName`** as canonical name resolution -- eliminates threading a `resolveName` function; each tab view derives it locally from the `GroupState` it receives
