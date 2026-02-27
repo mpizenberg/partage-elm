@@ -2,7 +2,7 @@
 
 ## Context
 
-Domain logic is complete (GroupState, Balance, Settlement) with 158 passing tests. We are building the frontend following FEASIBILITY.md (minus elm-safe-virtual-dom), getting to a functional local bill-splitter by Phase 5.
+Domain logic is complete (GroupState, Balance, Settlement) with 79 domain tests + 17 codec roundtrip tests (96 total). We are building the frontend following FEASIBILITY.md (minus elm-safe-virtual-dom), getting to a functional local bill-splitter by Phase 5.
 
 ## Library Sources
 
@@ -233,32 +233,142 @@ decoder : Decode.Decoder Identity
 - Pure generation via `UUID.stepV7 : Time.Posix -> V7State -> (UUID, V7State)` — no tasks needed
 - Ready to use for event ID generation in Phase 5
 
+---
+
+## Phase 4: Persistent Storage (IndexedDB) ✅
+
+**Goal:** Identity and group data survive page reloads.
+
+**Status: COMPLETE**
+
+### What was done
+
+#### Dependencies
+
+- Added git submodule: `elm-indexeddb` (`https://github.com/mpizenberg/elm-indexeddb`)
+- Updated elm.json `source-directories` to include `vendor/elm-indexeddb/src`
+
+#### JS task registration (`public/index.js`)
+
+- Qualified imports: `createWebCryptoTasks` from elm-webcrypto, `createIndexedDbTasks` from elm-indexeddb
+- Merged with object spread into single `ConcurrentTask.register()` call:
+  ```js
+  tasks: { ...createWebCryptoTasks(), ...createIndexedDbTasks() }
+  ```
+
+#### JSON codecs added to domain modules
+
+All codecs follow the pattern: `encode*` returns `Encode.Value`, `*Decoder` returns `Decode.Decoder`. No existing behavior changed.
+
+- **`src/Domain/Currency.elm`** — `encodeCurrency` / `currencyDecoder` (lowercase string tags: `"usd"`, `"eur"`, etc.)
+- **`src/Domain/Date.elm`** — `encodeDate` / `dateDecoder` (`{ year, month, day }` object)
+- **`src/Domain/Group.elm`** — `encodeLink` / `linkDecoder` (`{ label, url }` object)
+- **`src/Domain/Member.elm`** — `encodeType` / `typeDecoder` (`"real"` / `"virtual"` strings), `encodePaymentInfo` / `paymentInfoDecoder` (8 optional string fields, omit `Nothing`s), `encodeMetadata` / `metadataDecoder`
+- **`src/Domain/Entry.elm`** — Full codec suite:
+  - `encodeCategory` / `categoryDecoder` — 9-variant enum as lowercase strings
+  - `encodePayer` / `payerDecoder`, `encodeBeneficiary` / `beneficiaryDecoder` (tagged union: `"share"` / `"exact"`)
+  - `encodeMetadata` / `entryMetadataDecoder` — 7 fields, `Time.Posix` as millis int
+  - `encodeExpenseData` / `expenseDataDecoder` — 10 fields, uses local `andMap` helper (applicative pattern) since `Decode.map8` only covers 8
+  - `encodeTransferData` / `transferDataDecoder` — 7 fields via `Decode.map7`
+  - `encodeKind` / `kindDecoder` — tagged union with nested `data` field
+  - `encodeEntry` / `entryDecoder`
+- **`src/Domain/Event.elm`** — `encodeEnvelope` / `envelopeDecoder`, `encodePayload` / `payloadDecoder` (11-variant tagged union with `"type"` discriminator), `encodeGroupMetadataChange` / `groupMetadataChangeDecoder` (handles `Maybe (Maybe String)`: absent = unchanged, `null` = cleared, string = set)
+
+#### Storage module (`src/Storage.elm`)
+
+New module encapsulating IndexedDB schema and all CRUD operations.
+
+Schema (database `"partage"`, version 1):
+
+| Store       | Key type    | KeyPath/Index                                    | Purpose                             |
+| ----------- | ----------- | ------------------------------------------------ | ----------------------------------- |
+| `identity`  | ExplicitKey | single record at `StringKey "default"`           | User identity                       |
+| `groups`    | InlineKey   | keyPath `"id"`                                   | Group summaries for Home page       |
+| `groupKeys` | ExplicitKey | `StringKey groupId`                              | Symmetric encryption keys per group |
+| `events`    | InlineKey   | keyPath `"id"`, index `byGroupId` on `"groupId"` | All event envelopes                 |
+
+Types:
+
+- `InitData` — `{ db : Idb.Db, identity : Maybe Identity, groups : List GroupSummary }` (loaded during app init)
+- `GroupSummary` — `{ id : Group.Id, name : String, defaultCurrency : Currency }`
+
+Operations:
+
+```elm
+open : ConcurrentTask Idb.Error Idb.Db
+init : Idb.Db -> ConcurrentTask Idb.Error InitData  -- loads identity + groups in parallel via map2
+saveIdentity / loadIdentity
+saveGroupSummary / loadAllGroups
+saveGroupKey / loadGroupKey
+saveEvents / loadGroupEvents  -- events stored with extra "groupId" field for index
+errorToString : Idb.Error -> String
+```
+
+#### App state lifecycle (`src/Main.elm`)
+
+- New `AppState` union type: `Loading` | `Ready Storage.InitData` | `InitError String`
+- `Model.identity` replaced by `Model.appState`
+- `init`: kicks off async chain `Storage.open |> andThen Storage.init` → `OnInitComplete`; route guard deferred until init completes
+- `OnInitComplete Success`: stores `InitData`, applies route guard
+- `OnInitComplete Error`: shows error page
+- `OnIdentityGenerated Success`: now also saves identity to IndexedDB via `Storage.saveIdentity` → `OnIdentitySaved` (fire-and-forget)
+- `OnNavEvent`: extracts identity from `appState` for route guard
+
+#### New page modules
+
+- **`src/Page/Loading.elm`** — centered "Loading..." text (translated)
+- **`src/Page/InitError.elm`** — error title + message
+
+#### Translations
+
+- Added: `loadingApp` ("Loading..." / "Chargement...")
+
+#### Property-based roundtrip tests (`tests/CodecTest.elm`)
+
+- 17 fuzz tests verifying `decode(encode(x)) == x` for every codec pair
+- Custom `Fuzzer` for each domain type (Currency, Date, Link, Member.Type, PaymentInfo, Member.Metadata, Category, Payer, Beneficiary, Entry.Metadata, TransferData, ExpenseData, Kind, Entry, GroupMetadataChange, Payload, Envelope)
+- Also fixed all test modules to `exposing (suite)` instead of `exposing (..)` to prevent duplicate test runs
+
 ### Current file structure
 
 ```
 public/
   index.html                -- HTML shell
-  index.js                  -- ES imports, Elm init, nav ports, ConcurrentTask registration
+  index.js                  -- ES imports, Elm init, nav ports, merged ConcurrentTask registration
 translations/
-  messages.en.json          -- English translations (44 keys)
-  messages.fr.json          -- French translations (44 keys)
+  messages.en.json          -- English translations (46 keys)
+  messages.fr.json          -- French translations (46 keys)
 package.json                -- pnpm scripts + dependencies
-elm.json                    -- Elm config with 5 vendor source dirs
-.gitmodules                 -- 4 submodules (elm-ui, elm-animator, elm-webcrypto, elm-uuid)
+elm.json                    -- Elm config with 6 vendor source dirs
+.gitmodules                 -- 5 submodules (elm-ui, elm-animator, elm-webcrypto, elm-uuid, elm-indexeddb)
 vendor/
   elm-ui/                   -- elm-ui v2
   elm-animator/             -- elm-animator v2
   elm-webcrypto/            -- WebCrypto API via ConcurrentTask
   elm-uuid/                 -- UUID v4/v7 generation
+  elm-indexeddb/            -- IndexedDB via ConcurrentTask
 src/
-  Main.elm                  -- App entry, 4 ports, ConcurrentTask pool, identity flow
+  Main.elm                  -- App entry, 4 ports, AppState lifecycle, async init chain
   Route.elm                 -- Route types + URL parsing/serialization
   Format.elm                -- Currency/amount formatting
   Identity.elm              -- Identity type, crypto generation, JSON codecs
+  Storage.elm               -- IndexedDB schema (4 stores), InitData, GroupSummary, CRUD operations
   SampleData.elm            -- Hardcoded events for 5 members
   Translations.elm          -- (generated, gitignored) i18n module
-  Domain/                   -- (unchanged domain logic)
+  Domain/
+    Currency.elm            -- Currency type + JSON codecs
+    Date.elm                -- Date type + JSON codecs
+    Group.elm               -- Group/Link types + Link JSON codecs
+    Member.elm              -- Member types + JSON codecs (Type, Metadata, PaymentInfo)
+    Entry.elm               -- Entry types + full JSON codecs (10+ encode/decode pairs)
+    Event.elm               -- Event types + JSON codecs (Envelope, 11-variant Payload, GroupMetadataChange)
+    GroupState.elm           -- Event-sourced state machine
+    Balance.elm              -- Balance computation
+    Settlement.elm           -- Settlement plan computation
+    Activity.elm             -- Activity feed types
   Page/
+    Loading.elm             -- "Loading..." centered text
+    InitError.elm           -- Error display
     Setup.elm               -- Generate Identity button with loading state
     Home.elm                -- Group list with sample group
     About.elm               -- App info
@@ -274,79 +384,14 @@ src/
     Theme.elm               -- Design tokens
     Shell.elm               -- App shell + group shell + tab bar
     Components.elm          -- Reusable view components + language selector
+tests/
+  CodecTest.elm             -- 17 fuzz roundtrip tests for all JSON codecs
+  GroupStateTest.elm         -- GroupState event processing tests
+  EntryResolutionTest.elm    -- Entry version resolution tests
+  BalanceTest.elm            -- Balance computation tests
+  SettlementTest.elm         -- Settlement plan tests
+  TestHelpers.elm            -- Shared test utilities and fuzzers
 ```
-
----
-
-## Phase 4: Persistent Storage (IndexedDB)
-
-**Goal:** Identity and group data survive page reloads.
-
-**Status: NOT STARTED**
-
-### New dependencies
-
-Submodule:
-
-```sh
-git submodule add https://github.com/mpizenberg/elm-indexeddb vendor/elm-indexeddb
-```
-
-Update elm.json `source-directories` to add `vendor/elm-indexeddb/src`.
-Update `public/index.js` JS runner to register elm-indexeddb task definitions.
-
-### Files
-
-**`src/Storage.elm`** (new) -- IndexedDB schema + operations:
-
-Schema (version 1):
-
-```elm
-dbSchema : IndexedDB.Schema
--- Stores:
---   "identity"   (ExplicitKey) -- single record at StringKey "default"
---   "groupKeys"  (ExplicitKey) -- keyed by StringKey groupId
---   "groups"     (InlineKey, keyPath "id") -- group metadata records
---   "events"     (InlineKey, keyPath "id") -- all events
---                  index "byGroupId" on "groupId"
-```
-
-Operations (all return `ConcurrentTask Storage.Error a`):
-
-```elm
-open : ConcurrentTask Error Db
-saveIdentity : Db -> Identity -> ConcurrentTask Error ()
-loadIdentity : Db -> ConcurrentTask Error (Maybe Identity)
-saveGroupMeta : Db -> { id : String, name : String, defaultCurrency : Currency } -> ConcurrentTask Error ()
-loadAllGroups : Db -> ConcurrentTask Error (List GroupSummary)
-saveGroupKey : Db -> Group.Id -> String -> ConcurrentTask Error ()
-loadGroupKey : Db -> Group.Id -> ConcurrentTask Error (Maybe String)
-saveEvents : Db -> List Json.Encode.Value -> ConcurrentTask Error ()
-loadGroupEvents : Db -> Group.Id -> ConcurrentTask Error (List Json.Decode.Value)
-```
-
-**JSON codecs colocated in domain modules** (add encode/decode to each):
-
-- **`src/Domain/Event.elm`** -- `encodeEnvelope`, `envelopeDecoder`, `encodePayload`, `payloadDecoder` (11 payload variants)
-- **`src/Domain/Entry.elm`** -- `encodeEntry`, `entryDecoder`, `encodeMetadata`, `metadataDecoder`, `encodeExpenseData`, `encodeTransferData`, etc.
-- **`src/Domain/Member.elm`** -- `encodeMemberType`, `memberTypeDecoder`, `encodeMetadata`, `metadataDecoder`, `encodePaymentInfo`, `paymentInfoDecoder`
-- **`src/Domain/Currency.elm`** -- `encodeCurrency`, `currencyDecoder`
-- **`src/Domain/Date.elm`** -- `encodeDate`, `dateDecoder`
-- **`src/Domain/Group.elm`** -- `encodeLink`, `linkDecoder`
-- **`src/Identity.elm`** -- already has `encode`/`decoder` from Phase 3
-
-**`src/Main.elm`** (update):
-
-- `Model` gains `db : Maybe IndexedDB.Db` and `groups : List GroupSummary`
-- `init` chain: open DB -> load identity -> load group list -> set route
-- Show loading spinner during init
-- `Page.Setup` saves identity to IndexedDB after generating it
-
-### Verification
-
-- Generate identity on `/setup`, reload page -> stays logged in (goes to `/` not `/setup`)
-- `pnpm test` still passes 158 tests
-- Open browser DevTools > Application > IndexedDB: see "partage" database with stores
 
 ---
 
@@ -355,6 +400,13 @@ loadGroupEvents : Db -> Group.Id -> ConcurrentTask Error (List Json.Decode.Value
 **Goal:** Create groups locally, add entries, view real computed state. First functional bill-splitter.
 
 **Status: NOT STARTED**
+
+### Prerequisites from Phase 4
+
+- `Storage.elm` provides `saveGroupSummary`, `saveGroupKey`, `saveEvents`, `loadGroupEvents` — all ready to use
+- `Storage.InitData` carries `db`, `identity`, `groups` — available via `model.appState` in Main
+- All domain JSON codecs are complete (Event, Entry, Member, Currency, Date, Group)
+- `UUID.V7State` in Model for event ID generation
 
 ### No new dependencies
 
@@ -369,19 +421,19 @@ loadGroupEvents : Db -> Group.Id -> ConcurrentTask Error (List Json.Decode.Value
   1. Generate group ID (UUID v4), member IDs (UUID v4), group symmetric key (`WebCrypto.Symmetric.generateKey`)
   2. Create events: `GroupMetadataUpdated` + `MemberCreated` for creator + `MemberCreated` for each virtual member
   3. Each event gets a UUID v7 event ID and current timestamp
-  4. Save to IndexedDB: group metadata, group key, events
+  4. Save to IndexedDB via `Storage.saveGroupSummary`, `Storage.saveGroupKey`, `Storage.saveEvents`
   5. Navigate to `/groups/:id`
 
 **`src/Page/Home.elm`** (rewrite) -- real group list:
 
-- On mount: load group summaries from IndexedDB (already in Model from init)
+- Read group summaries from `Storage.InitData.groups` (already loaded during init)
 - Group card: name, member count, user's net balance
 - "+" button navigates to `/groups/new`
 - Click group card navigates to `/groups/:id`
 
 **`src/Page/Group.elm`** (rewrite) -- real data:
 
-- On mount: load events from IndexedDB for this group ID, compute `GroupState.applyEvents`
+- On mount: load events via `Storage.loadGroupEvents`, compute `GroupState.applyEvents`
 - Build name resolver: `resolveName : Member.Id -> String` from `GroupState.members`
 - Pass GroupState to tab sub-pages
 - Remove SampleData dependency
@@ -396,7 +448,7 @@ loadGroupEvents : Db -> Group.Id -> ConcurrentTask Error (List Json.Decode.Value
 - Expense: description, amount, single payer (current user), equal shares among all active members
 - Transfer: amount, from, to
 - Validation: amount > 0, description non-empty
-- On submit: create `Entry` + `EntryAdded` event, save to IndexedDB, navigate back to entries tab
+- On submit: create `Entry` + `EntryAdded` event, save to IndexedDB via `Storage.saveEvents`, navigate back to entries tab
 - (Advanced form features like multi-payer, exact split deferred to Phase 6)
 
 **FAB** in Group.elm: floating "+" button navigating to `/groups/:id/new-entry`
@@ -445,3 +497,5 @@ Entry creation:
 10. **Member identity via `rootId`** -- views compare `rootId` (not `id`) to handle member replacement chains
 11. **Build tooling via elm-watch + pnpm** -- no Makefile, `run-pty` for parallel dev processes
 12. **JS bundling via esbuild** -- `public/index.js` uses ES imports, esbuild bundles to `dist/index.js` (iife format)
+13. **`AppState` union type** -- `Loading | Ready InitData | InitError String` makes impossible states unrepresentable; `db` only accessible inside `Ready`
+14. **Property-based codec tests** -- fuzz roundtrip tests (`decode(encode(x)) == x`) for every domain codec, using `Fuzz` combinators up to `andMap` for 10-field types
