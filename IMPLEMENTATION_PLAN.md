@@ -7,6 +7,7 @@ Domain logic is complete (GroupState, Balance, Settlement) with 158 passing test
 ## Library Sources
 
 **Git submodules** (into `vendor/`):
+
 - elm-ui: `https://github.com/mdgriffith/elm-ui` branch `2.0`
 - elm-animator: `https://github.com/mdgriffith/elm-animator` branch `v2`
 - elm-webcrypto: `https://github.com/mpizenberg/elm-webcrypto`
@@ -14,12 +15,16 @@ Domain logic is complete (GroupState, Balance, Settlement) with 158 passing test
 - elm-uuid: `https://github.com/mpizenberg/elm-uuid` branch `v7`
 
 **Published packages** (via `elm install`):
+
 - `mpizenberg/elm-url-navigation-port` (navigation, depends on `lydell/elm-app-url`)
 - `elmcraft/core-extra`
 - `andrewMacmurray/elm-concurrent-task`
 - Submodule transitive deps: `avh4/elm-color`, `mdgriffith/elm-bezier`, `TSFoster/elm-bytes-extra`, `TSFoster/elm-md5`, `TSFoster/elm-sha1`
 
-**pnpm** (from Phase 2): `elm-url-navigation-port` JS module, `elm-watch` for dev/build, `travelm-agency` for i18n
+**pnpm**:
+
+- `@andrewmacmurray/elm-concurrent-task` (runtime dependency, from Phase 3)
+- devDependencies: `elm-watch`, `run-pty`, `travelm-agency`, `esbuild`, `rimraf`, `shx`
 
 ---
 
@@ -40,6 +45,7 @@ Domain logic is complete (GroupState, Balance, Settlement) with 158 passing test
 - Dev workaround: hardcoded `identity = Just "dev"` to bypass guards during Phase 1
 
 ### Route table
+
 ```
 []                           -> Home
 ["setup"]                    -> Setup
@@ -65,29 +71,34 @@ _                            -> NotFound
 ### What was done
 
 #### Dependencies
+
 - Added git submodules: `elm-ui` (branch `2.0`), `elm-animator` (branch `v2`)
 - Installed: `elmcraft/core-extra`, `avh4/elm-color`, `mdgriffith/elm-bezier`
 - Updated elm.json `source-directories`: `["src", "vendor/elm-ui/src", "vendor/elm-animator/src"]`
 - Added pnpm devDependencies: `elm-watch` (2.0.0-beta.12), `run-pty`, `travelm-agency` (^3.8.0), `rimraf`, `shx`
 
 #### Build tooling
+
 - `pnpm dev`: runs `elm-watch hot` + public file watcher + i18n watcher via `run-pty`
 - `pnpm build`: `pnpm prebuild && elm-watch make --optimize`
 - `pnpm prebuild`: `pnpm i18n && pnpm prepare:dist`
 - `pnpm i18n`: `travelm-agency translations --elm_path=src/Translations.elm --inline`
 
 #### Design tokens (`src/UI/Theme.elm`)
+
 ```elm
 fontSize = { sm = 14, md = 16, lg = 18, xl = 22, hero = 28 }  -- 5 levels
 spacing  = { xs = 4, sm = 8, md = 16, lg = 24, xl = 32 }
 rounding = { sm = 6, md = 8 }
 borderWidth = { sm = 1, md = 2 }
 ```
+
 - Colors: `primary` (#2563eb), `primaryLight`, `success`, `successLight`, `danger`, `dangerLight`, `white`, neutral scale (200, 300, 500, 700, 900)
 - `balanceColor : Balance.Status -> Ui.Color`
 - `contentMaxWidth = 768`
 
 #### Application shells (`src/UI/Shell.elm`)
+
 - `appShell : { title : String, headerExtra : Ui.Element msg, content : Ui.Element msg } -> Ui.Element msg`
 - `groupShell : { groupName, headerExtra, activeTab, content, onTabClick, tabLabels } -> Ui.Element msg`
 - `TabLabels` type alias for translated tab labels
@@ -95,6 +106,7 @@ borderWidth = { sm = 1, md = 2 }
 - Tab bar at bottom with active/inactive styling
 
 #### Reusable components (`src/UI/Components.elm`)
+
 - `balanceCard : I18n -> { name, balance, isCurrentUser } -> Ui.Element msg` — color-coded, personalized status text
 - `entryCard : I18n -> { entry, resolveName } -> Ui.Element msg` — expense and transfer cards
 - `memberRow : I18n -> { member, isCurrentUser } -> Ui.Element msg` — with "(you)" suffix and "virtual" label
@@ -102,6 +114,7 @@ borderWidth = { sm = 1, md = 2 }
 - `languageSelector : Language -> (Language -> msg) -> Ui.Element msg` — flag-based (🇬🇧/🇫🇷) with opacity
 
 #### i18n with travelm-agency
+
 - Translation files: `translations/messages.en.json`, `translations/messages.fr.json` (44 keys each)
 - Generated `src/Translations.elm` (gitignored) — inline mode, no HTTP needed
 - `I18n` and `Language` types threaded through all view functions as first parameter
@@ -112,12 +125,14 @@ borderWidth = { sm = 1, md = 2 }
 - `Flags` includes `language : String` (from `navigator.language`)
 
 #### Sample data (`src/SampleData.elm`)
+
 - 5 members: Alice (Real, current user), Bob (Real), Carol (Virtual), Dave (Real), Eve (Real, retired)
 - 4 expenses + 1 transfer producing realistic balances
 - Exposes `currentUserId`, `currentUserRootId`, `groupId`, `groupState`, `resolveName`
 - `currentUserRootId` resolved via `GroupState.resolveMemberRootId`
 
 #### Page modules (all use `Ui.Element msg`)
+
 - `Main.elm`: `Model` has `route`, `identity`, `i18n`, `language`; `Msg` has `OnNavEvent`, `NavigateTo`, `SwitchTab`, `SwitchLanguage`; unknown group IDs show 404
 - `Page.Group`: passes `I18n`, `headerExtra`, `activeTab`, `onTabClick` to `groupShell`; builds `tabLabels` from translations
 - `Page.Group.BalanceTab`: balance cards + settlement plan from real domain computation
@@ -128,6 +143,7 @@ borderWidth = { sm = 1, md = 2 }
 - `Page.Setup`, `Page.About`, `Page.NewGroup`, `Page.NotFound`: simple content pages
 
 #### Key decisions made during Phase 2
+
 - Named the shell module `UI/Shell.elm` (not `UI/Layout.elm` as originally planned)
 - Tab bar lives in `UI/Shell.elm` (not `UI/Components.elm`)
 - Reduced font sizes from 7 to 5 levels (merged xs into sm, merged xl/xxl into xl)
@@ -136,140 +152,129 @@ borderWidth = { sm = 1, md = 2 }
 - Member comparisons use `rootId` (not `id`) throughout views, anticipating member replacement chains
 - Language selector in `UI/Components.elm` (generic, not tied to Main's Msg type)
 
-### Current file structure
-```
-public/
-  index.html              -- HTML shell
-  index.js                -- Elm init + navigation port wiring + language flag
-translations/
-  messages.en.json        -- English translations (44 keys)
-  messages.fr.json        -- French translations (44 keys)
-package.json              -- pnpm scripts + devDependencies
-elm.json                  -- Elm config with vendor source dirs
-.gitignore                -- includes src/Translations.elm
-src/
-  Main.elm                -- App entry, ports, Model, Msg, update, view, i18n
-  Route.elm               -- Route types + URL parsing/serialization
-  Format.elm              -- Currency/amount formatting
-  SampleData.elm          -- Hardcoded events for 5 members
-  Translations.elm        -- (generated, gitignored) i18n module
-  Domain/                 -- (unchanged domain logic)
-  Page/
-    Setup.elm             -- Welcome screen (non-functional identity button)
-    Home.elm              -- Group list with sample group
-    About.elm             -- App info
-    NotFound.elm          -- 404
-    NewGroup.elm          -- Placeholder for group creation
-    Group.elm             -- Group page shell with tab routing
-    Group/
-      BalanceTab.elm      -- Balance cards + settlement plan
-      EntriesTab.elm      -- Entry cards (expenses + transfers)
-      MembersTab.elm      -- Active + departed members
-      ActivitiesTab.elm   -- Placeholder "coming soon"
-  UI/
-    Theme.elm             -- Design tokens (colors, spacing, typography, rounding, borders)
-    Shell.elm             -- App shell + group shell + tab bar
-    Components.elm        -- Reusable view components + language selector
-```
-
 ---
 
-## Phase 3: Async Backbone + Identity
+## Phase 3: Async Backbone + Identity ✅
 
-**Goal:** Real cryptographic identity generation via elm-concurrent-task + elm-webcrypto.
+**Goal:** Real cryptographic identity generation via elm-concurrent-task + elm-webcrypto, plus UUID infrastructure.
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
-### New dependencies
+### What was done
 
-Submodules:
-```sh
-git submodule add https://github.com/mpizenberg/elm-webcrypto vendor/elm-webcrypto
-git submodule add -b v7 https://github.com/mpizenberg/elm-uuid vendor/elm-uuid
-```
+#### Dependencies
 
-Published:
-```sh
-elm install andrewMacmurray/elm-concurrent-task
-elm install TSFoster/elm-bytes-extra
-elm install TSFoster/elm-md5
-elm install TSFoster/elm-sha1
-```
+- Added git submodules: `elm-webcrypto`, `elm-uuid` (branch `v7`)
+- Updated elm.json `source-directories` to include `vendor/elm-webcrypto/src` and `vendor/elm-uuid/src`
+- Installed Elm packages: `andrewMacmurray/elm-concurrent-task`, `TSFoster/elm-bytes-extra`, `TSFoster/elm-md5`, `TSFoster/elm-sha1`, `elm/random`, `elm/bytes` (as direct deps)
+- Installed pnpm: `@andrewmacmurray/elm-concurrent-task` (runtime), `esbuild` (JS bundling)
 
-pnpm:
-```sh
-pnpm add elm-concurrent-task
-```
+#### JS bundling with esbuild
 
-Update elm.json `source-directories` to add `vendor/elm-webcrypto/src` and `vendor/elm-uuid/src`.
+- `public/index.js` now uses ES imports for ConcurrentTask runtime and elm-webcrypto task definitions
+- esbuild bundles `public/index.js` → `dist/index.js` (iife format)
+- Build scripts updated:
+  - `bundle:js`: esbuild one-shot bundle
+  - `watch:js`: esbuild watch mode for dev
+  - `bundle:html` / `watch:html`: separate HTML copying (replaces old `copydist`/`watch:public`)
+  - `prebuild`: `pnpm i18n && pnpm prepare:dist && pnpm bundle:js`
+  - `dev`: runs `elm-watch hot` + `watch:html` + `watch:js` + `watch:i18n` via `run-pty`
 
-### Files
+#### ConcurrentTask integration (`src/Main.elm`)
 
-**`src/Main.elm`** (update) -- add task ports and pool:
-```elm
--- New ports (added alongside existing nav ports)
-port sendTask : Json.Encode.Value -> Cmd msg
-port receiveTask : (Json.Decode.Value -> msg) -> Sub msg
+- New ports: `sendTask` / `receiveTask` for elm-concurrent-task communication
+- `Flags` extended: `randomSeed : List Int` (from `crypto.getRandomValues`), `currentTime : Int` (from `Date.now()`)
+- `Model` extended: `identity : Maybe Identity`, `generatingIdentity : Bool`, `pool : ConcurrentTask.Pool Msg`, `uuidState : UUID.V7State`
+- `Msg` extended: `GenerateIdentity`, `OnTaskProgress`, `OnIdentityGenerated`
+- Removed hardcoded `identity = Just "dev"` — app starts with `Nothing`, route guard redirects to `/setup`
+- `init`: seeds `Random.Seed` from flags, initializes `UUID.V7State`, creates empty `ConcurrentTask.pool`
+- `subscriptions`: `ConcurrentTask.onProgress` alongside existing nav subscription
+- `applyRouteGuard` now takes `Maybe Identity` instead of `Maybe String`
 
-type alias Model =
-    { route : Route
-    , identity : Maybe Identity
-    , i18n : I18n
-    , language : Language
-    , pool : ConcurrentTask.Pool Msg
-    , currentTime : Time.Posix
-    , randomSeed : Random.Seed
-    , uuidState : UUID.V7State
-    }
-```
-- `init`: receive `flags.randomSeed` (list of ints from `crypto.getRandomValues`), seed `Random.Seed`, initialize `UUID.V7State`
-- `subscriptions`: add `ConcurrentTask.onProgress` via `receiveTask`
-- `update`: handle `OnTaskProgress` and `OnTaskComplete` messages
+#### Identity module (`src/Identity.elm`)
 
-**`src/Identity.elm`** (new):
 ```elm
 type alias Identity =
     { publicKeyHash : String
-    , signingKeyPair : WebCrypto.Signature.SerializedSigningKeyPair
+    , signingKeyPair : Signature.SerializedSigningKeyPair
     }
 
 generate : ConcurrentTask WebCrypto.Error Identity
--- generateSigningKeyPair |> andThen (export + sha256 publicKey)
+-- generateSigningKeyPair |> mapError never |> andThen (export + sha256 publicKey)
 
--- JSON codecs (colocated with the type)
-encode : Identity -> Json.Encode.Value
-decoder : Json.Decode.Decoder Identity
+encode : Identity -> Encode.Value
+decoder : Decode.Decoder Identity
 ```
 
-**`src/Page/Setup.elm`** (update) -- functional:
-- "Generate Identity" button triggers `Identity.generate` task
-- Shows spinner during generation
-- On success: store identity in Model, navigate to `/`
+- `generate` chains: `generateSigningKeyPair` (error: `Never`) → `mapError never` → `exportSigningKeyPair` (pure) → `sha256 publicKey` → map to `Identity`
+- JSON codecs reuse `Signature.encodeSerializedSigningKeyPair` / `serializedSigningKeyPairDecoder`
 
-**`public/index.js`** (update) -- add elm-concurrent-task JS runner:
-- Import runner from `node_modules/elm-concurrent-task`
-- Register elm-webcrypto task definitions
-- Wire `sendTask`/`receiveTask` ports
-- Add `randomSeed` to flags: `Array.from(crypto.getRandomValues(new Uint32Array(4)))`
+#### Setup page (`src/Page/Setup.elm`)
 
-### Key patterns
+- Signature: `view : I18n -> { onGenerate : msg, isGenerating : Bool } -> Ui.Element msg`
+- "Generate Identity" button (primary bg, white text)
+- When generating: button disabled (neutral bg), shows "Generating..." text
+- Removed old `setupIdentityNote` placeholder text
 
-UUID generation (pure, no task needed):
-```elm
-nextUUID : Time.Posix -> Model -> ( String, Model )
-nextUUID time model =
-    let ( uuid, newState ) = UUID.stepV7 time model.uuidState
-    in ( UUID.toString uuid, { model | uuidState = newState } )
+#### JS initialization (`public/index.js`)
+
+- ES imports: `@andrewmacmurray/elm-concurrent-task`, `vendor/elm-webcrypto/js/src/index.js`
+- `ConcurrentTask.register()` with `createTasks()` from elm-webcrypto
+- Flags include `randomSeed` and `currentTime`
+
+#### Translations
+
+- Added: `setupGenerateButton` ("Generate Identity" / "Générer une identité"), `setupGenerating` ("Generating..." / "Génération...")
+- Removed: `setupIdentityNote`
+
+#### UUID infrastructure (for Phase 5)
+
+- `UUID.V7State` stored in Model, initialized from crypto-random seed
+- Pure generation via `UUID.stepV7 : Time.Posix -> V7State -> (UUID, V7State)` — no tasks needed
+- Ready to use for event ID generation in Phase 5
+
+### Current file structure
+
 ```
-
-Route guards now work for real: `identity == Nothing` redirects to `/setup`.
-
-### Verification
-- Visit `/setup`, click "Generate Identity"
-- Spinner shows, then identity is created and stored in Model
-- Redirected to `/` (Home)
-- Navigating to any auth route works; navigating to `/setup` when identity exists redirects to `/`
-- `pnpm test` still passes 158 tests
+public/
+  index.html                -- HTML shell
+  index.js                  -- ES imports, Elm init, nav ports, ConcurrentTask registration
+translations/
+  messages.en.json          -- English translations (44 keys)
+  messages.fr.json          -- French translations (44 keys)
+package.json                -- pnpm scripts + dependencies
+elm.json                    -- Elm config with 5 vendor source dirs
+.gitmodules                 -- 4 submodules (elm-ui, elm-animator, elm-webcrypto, elm-uuid)
+vendor/
+  elm-ui/                   -- elm-ui v2
+  elm-animator/             -- elm-animator v2
+  elm-webcrypto/            -- WebCrypto API via ConcurrentTask
+  elm-uuid/                 -- UUID v4/v7 generation
+src/
+  Main.elm                  -- App entry, 4 ports, ConcurrentTask pool, identity flow
+  Route.elm                 -- Route types + URL parsing/serialization
+  Format.elm                -- Currency/amount formatting
+  Identity.elm              -- Identity type, crypto generation, JSON codecs
+  SampleData.elm            -- Hardcoded events for 5 members
+  Translations.elm          -- (generated, gitignored) i18n module
+  Domain/                   -- (unchanged domain logic)
+  Page/
+    Setup.elm               -- Generate Identity button with loading state
+    Home.elm                -- Group list with sample group
+    About.elm               -- App info
+    NotFound.elm            -- 404
+    NewGroup.elm            -- Placeholder for group creation
+    Group.elm               -- Group page shell with tab routing
+    Group/
+      BalanceTab.elm        -- Balance cards + settlement plan
+      EntriesTab.elm        -- Entry cards (expenses + transfers)
+      MembersTab.elm        -- Active + departed members
+      ActivitiesTab.elm     -- Placeholder "coming soon"
+  UI/
+    Theme.elm               -- Design tokens
+    Shell.elm               -- App shell + group shell + tab bar
+    Components.elm          -- Reusable view components + language selector
+```
 
 ---
 
@@ -282,6 +287,7 @@ Route guards now work for real: `identity == Nothing` redirects to `/setup`.
 ### New dependencies
 
 Submodule:
+
 ```sh
 git submodule add https://github.com/mpizenberg/elm-indexeddb vendor/elm-indexeddb
 ```
@@ -294,6 +300,7 @@ Update `public/index.js` JS runner to register elm-indexeddb task definitions.
 **`src/Storage.elm`** (new) -- IndexedDB schema + operations:
 
 Schema (version 1):
+
 ```elm
 dbSchema : IndexedDB.Schema
 -- Stores:
@@ -305,6 +312,7 @@ dbSchema : IndexedDB.Schema
 ```
 
 Operations (all return `ConcurrentTask Storage.Error a`):
+
 ```elm
 open : ConcurrentTask Error Db
 saveIdentity : Db -> Identity -> ConcurrentTask Error ()
@@ -318,6 +326,7 @@ loadGroupEvents : Db -> Group.Id -> ConcurrentTask Error (List Json.Decode.Value
 ```
 
 **JSON codecs colocated in domain modules** (add encode/decode to each):
+
 - **`src/Domain/Event.elm`** -- `encodeEnvelope`, `envelopeDecoder`, `encodePayload`, `payloadDecoder` (11 payload variants)
 - **`src/Domain/Entry.elm`** -- `encodeEntry`, `entryDecoder`, `encodeMetadata`, `metadataDecoder`, `encodeExpenseData`, `encodeTransferData`, etc.
 - **`src/Domain/Member.elm`** -- `encodeMemberType`, `memberTypeDecoder`, `encodeMetadata`, `metadataDecoder`, `encodePaymentInfo`, `paymentInfoDecoder`
@@ -327,12 +336,14 @@ loadGroupEvents : Db -> Group.Id -> ConcurrentTask Error (List Json.Decode.Value
 - **`src/Identity.elm`** -- already has `encode`/`decoder` from Phase 3
 
 **`src/Main.elm`** (update):
+
 - `Model` gains `db : Maybe IndexedDB.Db` and `groups : List GroupSummary`
 - `init` chain: open DB -> load identity -> load group list -> set route
 - Show loading spinner during init
 - `Page.Setup` saves identity to IndexedDB after generating it
 
 ### Verification
+
 - Generate identity on `/setup`, reload page -> stays logged in (goes to `/` not `/setup`)
 - `pnpm test` still passes 158 tests
 - Open browser DevTools > Application > IndexedDB: see "partage" database with stores
@@ -350,6 +361,7 @@ loadGroupEvents : Db -> Group.Id -> ConcurrentTask Error (List Json.Decode.Value
 ### Files
 
 **`src/Page/NewGroup.elm`** (rewrite) -- real group creation form:
+
 - Fields: group name (required), creator display name (required), default currency (dropdown)
 - Optional: subtitle, description
 - "Add virtual member" button + list of virtual member names
@@ -361,12 +373,14 @@ loadGroupEvents : Db -> Group.Id -> ConcurrentTask Error (List Json.Decode.Value
   5. Navigate to `/groups/:id`
 
 **`src/Page/Home.elm`** (rewrite) -- real group list:
+
 - On mount: load group summaries from IndexedDB (already in Model from init)
 - Group card: name, member count, user's net balance
 - "+" button navigates to `/groups/new`
 - Click group card navigates to `/groups/:id`
 
 **`src/Page/Group.elm`** (rewrite) -- real data:
+
 - On mount: load events from IndexedDB for this group ID, compute `GroupState.applyEvents`
 - Build name resolver: `resolveName : Member.Id -> String` from `GroupState.members`
 - Pass GroupState to tab sub-pages
@@ -377,6 +391,7 @@ loadGroupEvents : Db -> Group.Id -> ConcurrentTask Error (List Json.Decode.Value
 **`src/Page/Group/MembersTab.elm`** (update) -- wire to real GroupState
 
 **`src/Page/Group/NewEntry.elm`** (new) -- basic entry creation:
+
 - Toggle: Expense / Transfer
 - Expense: description, amount, single payer (current user), equal shares among all active members
 - Transfer: amount, from, to
@@ -389,6 +404,7 @@ loadGroupEvents : Db -> Group.Id -> ConcurrentTask Error (List Json.Decode.Value
 ### Key implementation details
 
 Group creation event sequence (all share the same `clientTimestamp`, monotonic UUID v7 for ordering):
+
 ```
 Event 1: GroupMetadataUpdated { name, subtitle, description, links }
 Event 2: MemberCreated { memberId: creatorId, name: creatorName, memberType: Real, addedBy: creatorId }
@@ -396,11 +412,13 @@ Event 3+: MemberCreated { memberId: virtualId, name: virtualName, memberType: Vi
 ```
 
 Entry creation:
+
 - `Entry.newMetadata` creates metadata with `rootId = id`, `previousVersionId = Nothing`, `depth = 0`
 - Wrap in `EntryAdded` payload, then in `Event.Envelope`
 - After saving, reload events and recompute GroupState
 
 ### Verification
+
 - Create a group with name "Trip to Paris" and 2 virtual members
 - See it in the group list on Home
 - Open the group: see 3 members (creator + 2 virtual) in Members tab
@@ -426,3 +444,4 @@ Entry creation:
 9. **I18n via travelm-agency** (inline mode) -- `I18n` passed explicitly as first param to all view functions, `Translations` aliased as `T`
 10. **Member identity via `rootId`** -- views compare `rootId` (not `id`) to handle member replacement chains
 11. **Build tooling via elm-watch + pnpm** -- no Makefile, `run-pty` for parallel dev processes
+12. **JS bundling via esbuild** -- `public/index.js` uses ES imports, esbuild bundles to `dist/index.js` (iife format)
