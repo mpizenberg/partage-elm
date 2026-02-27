@@ -1,6 +1,6 @@
-module Page.Group exposing (view)
+module Page.Group exposing (Context, view)
 
-{-| Group page shell with tab routing, using sample data for Phase 2.
+{-| Group page shell with tab routing, using real group data.
 -}
 
 import Domain.GroupState exposing (GroupState)
@@ -10,50 +10,49 @@ import Page.Group.BalanceTab
 import Page.Group.EntriesTab
 import Page.Group.MembersTab
 import Route exposing (GroupTab(..))
-import SampleData
 import Translations as T exposing (I18n)
 import UI.Shell
 import Ui
 
 
-view : I18n -> Ui.Element msg -> GroupTab -> (GroupTab -> msg) -> Ui.Element msg
-view i18n headerExtra activeTab onTabClick =
-    let
-        state =
-            SampleData.groupState
+{-| Rarely changing context provided by parent callers.
+-}
+type alias Context msg =
+    { i18n : I18n
+    , onTabClick : GroupTab -> msg
+    , onNewEntry : msg
+    , currentUserRootId : Member.Id
+    }
 
-        currentUserRootId =
-            SampleData.currentUserRootId
 
-        resolveName =
-            SampleData.resolveName
-    in
+view : Context msg -> Ui.Element msg -> GroupState -> GroupTab -> Ui.Element msg
+view ctx headerExtra groupState activeTab =
     UI.Shell.groupShell
-        { groupName = state.groupMeta.name
+        { groupName = groupState.groupMeta.name
         , headerExtra = headerExtra
         , activeTab = activeTab
-        , onTabClick = onTabClick
-        , content = tabContent i18n activeTab state currentUserRootId resolveName
+        , onTabClick = ctx.onTabClick
+        , content = tabContent ctx groupState activeTab
         , tabLabels =
-            { balance = T.tabBalance i18n
-            , entries = T.tabEntries i18n
-            , members = T.tabMembers i18n
-            , activities = T.tabActivities i18n
+            { balance = T.tabBalance ctx.i18n
+            , entries = T.tabEntries ctx.i18n
+            , members = T.tabMembers ctx.i18n
+            , activities = T.tabActivities ctx.i18n
             }
         }
 
 
-tabContent : I18n -> GroupTab -> GroupState -> Member.Id -> (Member.Id -> String) -> Ui.Element msg
-tabContent i18n tab state currentUserRootId resolveName =
+tabContent : Context msg -> GroupState -> GroupTab -> Ui.Element msg
+tabContent ctx state tab =
     case tab of
         BalanceTab ->
-            Page.Group.BalanceTab.view i18n state currentUserRootId resolveName
+            Page.Group.BalanceTab.view ctx.i18n ctx.currentUserRootId state
 
         EntriesTab ->
-            Page.Group.EntriesTab.view i18n state resolveName
+            Page.Group.EntriesTab.view ctx.i18n ctx.onNewEntry state
 
         MembersTab ->
-            Page.Group.MembersTab.view i18n state currentUserRootId
+            Page.Group.MembersTab.view ctx.i18n ctx.currentUserRootId state
 
         ActivitiesTab ->
-            Page.Group.ActivitiesTab.view i18n
+            Page.Group.ActivitiesTab.view ctx.i18n

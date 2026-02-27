@@ -13,8 +13,8 @@ import Ui
 import Ui.Font
 
 
-view : I18n -> GroupState -> Member.Id -> Ui.Element msg
-view i18n state currentUserRootId =
+view : I18n -> Member.Id -> GroupState -> Ui.Element msg
+view i18n currentUserRootId state =
     let
         allMembers =
             Dict.values state.members

@@ -81,9 +81,9 @@ balanceCard i18n config =
 
 {-| A card displaying an entry (expense or transfer).
 -}
-entryCard : I18n -> { entry : Entry, resolveName : Member.Id -> String } -> Ui.Element msg
-entryCard i18n config =
-    case config.entry.kind of
+entryCard : I18n -> (Member.Id -> String) -> Entry -> Ui.Element msg
+entryCard i18n resolveName entry =
+    case entry.kind of
         Expense data ->
             Ui.row
                 [ Ui.width Ui.fill
@@ -95,7 +95,7 @@ entryCard i18n config =
                 [ Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.xs ]
                     [ Ui.el [ Ui.Font.bold ] (Ui.text data.description)
                     , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                        (Ui.text (payerSummary i18n config.resolveName data.payers))
+                        (Ui.text (payerSummary i18n resolveName data.payers))
                     ]
                 , Ui.el [ Ui.alignRight, Ui.Font.bold ]
                     (Ui.text (Format.formatCentsWithCurrency data.amount data.currency))
@@ -112,7 +112,7 @@ entryCard i18n config =
                 [ Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.xs ]
                     [ Ui.el [ Ui.Font.bold ] (Ui.text (T.entryTransfer i18n))
                     , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                        (Ui.text (T.entryTransferDirection { from = config.resolveName data.from, to = config.resolveName data.to } i18n))
+                        (Ui.text (T.entryTransferDirection { from = resolveName data.from, to = resolveName data.to } i18n))
                     ]
                 , Ui.el [ Ui.alignRight, Ui.Font.bold ]
                     (Ui.text (Format.formatCentsWithCurrency data.amount data.currency))
@@ -166,12 +166,8 @@ memberRow i18n config =
 
 {-| A row displaying a settlement transaction.
 -}
-settlementRow : I18n -> { transaction : Settlement.Transaction, resolveName : Member.Id -> String } -> Ui.Element msg
-settlementRow i18n config =
-    let
-        t =
-            config.transaction
-    in
+settlementRow : I18n -> (Member.Id -> String) -> Settlement.Transaction -> Ui.Element msg
+settlementRow i18n resolveName t =
     Ui.row
         [ Ui.width Ui.fill
         , Ui.padding Theme.spacing.sm
@@ -180,11 +176,11 @@ settlementRow i18n config =
         , Ui.rounded Theme.rounding.sm
         ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.sm ]
-            (Ui.text (config.resolveName t.from))
+            (Ui.text (resolveName t.from))
         , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
             (Ui.text (T.settlementPays i18n))
         , Ui.el [ Ui.Font.size Theme.fontSize.sm ]
-            (Ui.text (config.resolveName t.to))
+            (Ui.text (resolveName t.to))
         , Ui.el [ Ui.alignRight, Ui.Font.bold, Ui.Font.size Theme.fontSize.sm ]
             (Ui.text (Format.formatCents t.amount))
         ]
@@ -192,8 +188,8 @@ settlementRow i18n config =
 
 {-| Flag-based language selector. Active language is full opacity, others dimmed.
 -}
-languageSelector : Language -> (Language -> msg) -> Ui.Element msg
-languageSelector current onSwitch =
+languageSelector : (Language -> msg) -> Language -> Ui.Element msg
+languageSelector onSwitch current =
     Ui.row [ Ui.spacing Theme.spacing.xs ]
         (List.map
             (\lang ->

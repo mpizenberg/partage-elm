@@ -4,7 +4,7 @@ module Page.Group.BalanceTab exposing (view)
 -}
 
 import Dict
-import Domain.GroupState exposing (GroupState)
+import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
 import Domain.Settlement as Settlement
 import Translations as T exposing (I18n)
@@ -14,17 +14,28 @@ import Ui
 import Ui.Font
 
 
-view : I18n -> GroupState -> Member.Id -> (Member.Id -> String) -> Ui.Element msg
-view i18n state currentUserRootId resolveName =
-    Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
-        [ balancesSection i18n state currentUserRootId resolveName
-        , settlementSection i18n state resolveName
-        ]
+view : I18n -> Member.Id -> GroupState -> Ui.Element msg
+view i18n currentUserRootId state =
+    if Dict.isEmpty state.entries then
+        Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
+            [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.balanceTabTitle i18n))
+            , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
+                (Ui.text (T.balanceNoEntries i18n))
+            ]
+
+    else
+        Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
+            [ balancesSection i18n state currentUserRootId
+            , settlementSection i18n state
+            ]
 
 
-balancesSection : I18n -> GroupState -> Member.Id -> (Member.Id -> String) -> Ui.Element msg
-balancesSection i18n state currentUserRootId resolveName =
+balancesSection : I18n -> GroupState -> Member.Id -> Ui.Element msg
+balancesSection i18n state currentUserRootId =
     let
+        resolveName =
+            GroupState.resolveMemberName state
+
         balances =
             Dict.values state.balances
 
@@ -57,9 +68,12 @@ balancesSection i18n state currentUserRootId resolveName =
         ]
 
 
-settlementSection : I18n -> GroupState -> (Member.Id -> String) -> Ui.Element msg
-settlementSection i18n state resolveName =
+settlementSection : I18n -> GroupState -> Ui.Element msg
+settlementSection i18n state =
     let
+        resolveName =
+            GroupState.resolveMemberName state
+
         transactions =
             Settlement.computeSettlement state.balances []
     in
@@ -71,8 +85,8 @@ settlementSection i18n state resolveName =
 
           else
             let
-                settleTx tx =
-                    UI.Components.settlementRow i18n { transaction = tx, resolveName = resolveName }
+                settleTx =
+                    UI.Components.settlementRow i18n resolveName
             in
             Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
                 (List.map settleTx transactions)

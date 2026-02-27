@@ -4,17 +4,20 @@ module Page.Group.EntriesTab exposing (view)
 -}
 
 import Domain.GroupState as GroupState exposing (GroupState)
-import Domain.Member as Member
 import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
 import Ui
 import Ui.Font
+import Ui.Input
 
 
-view : I18n -> GroupState -> (Member.Id -> String) -> Ui.Element msg
-view i18n state resolveName =
+view : I18n -> msg -> GroupState -> Ui.Element msg
+view i18n onNewEntry state =
     let
+        resolveName =
+            GroupState.resolveMemberName state
+
         entries =
             GroupState.activeEntries state
     in
@@ -26,9 +29,26 @@ view i18n state resolveName =
 
           else
             let
-                card entry =
-                    UI.Components.entryCard i18n { entry = entry, resolveName = resolveName }
+                card =
+                    UI.Components.entryCard i18n resolveName
             in
             Ui.column [ Ui.width Ui.fill ]
                 (List.map card entries)
+        , newEntryButton i18n onNewEntry
         ]
+
+
+newEntryButton : I18n -> msg -> Ui.Element msg
+newEntryButton i18n onNewEntry =
+    Ui.el
+        [ Ui.Input.button onNewEntry
+        , Ui.width Ui.fill
+        , Ui.padding Theme.spacing.md
+        , Ui.rounded Theme.rounding.md
+        , Ui.background Theme.primary
+        , Ui.Font.color Theme.white
+        , Ui.Font.center
+        , Ui.Font.bold
+        , Ui.pointer
+        ]
+        (Ui.text (T.shellNewEntry i18n))

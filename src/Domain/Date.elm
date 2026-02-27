@@ -1,10 +1,11 @@
-module Domain.Date exposing (Date, dateDecoder, encodeDate)
+module Domain.Date exposing (Date, dateDecoder, encodeDate, posixToDate)
 
 {-| Simple calendar date type for entries.
 -}
 
 import Json.Decode as Decode
 import Json.Encode as Encode
+import Time
 
 
 {-| A simple calendar date with year, month, and day components.
@@ -33,3 +34,51 @@ dateDecoder =
         (Decode.field "year" Decode.int)
         (Decode.field "month" Decode.int)
         (Decode.field "day" Decode.int)
+
+
+posixToDate : Time.Posix -> Date
+posixToDate posix =
+    { year = Time.toYear Time.utc posix
+    , month = monthToInt (Time.toMonth Time.utc posix)
+    , day = Time.toDay Time.utc posix
+    }
+
+
+monthToInt : Time.Month -> Int
+monthToInt month =
+    case month of
+        Time.Jan ->
+            1
+
+        Time.Feb ->
+            2
+
+        Time.Mar ->
+            3
+
+        Time.Apr ->
+            4
+
+        Time.May ->
+            5
+
+        Time.Jun ->
+            6
+
+        Time.Jul ->
+            7
+
+        Time.Aug ->
+            8
+
+        Time.Sep ->
+            9
+
+        Time.Oct ->
+            10
+
+        Time.Nov ->
+            11
+
+        Time.Dec ->
+            12

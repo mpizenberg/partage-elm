@@ -8,6 +8,7 @@ module Domain.GroupState exposing
     , activeMembers
     , applyEvents
     , empty
+    , resolveMemberName
     , resolveMemberRootId
     )
 
@@ -458,6 +459,18 @@ resolveMemberRootId state memberId =
     case Dict.get memberId state.members of
         Just member ->
             member.rootId
+
+        Nothing ->
+            memberId
+
+
+{-| Resolve a member ID to a display name. Falls back to the raw ID if not found.
+-}
+resolveMemberName : GroupState -> Member.Id -> String
+resolveMemberName state memberId =
+    case Dict.get memberId state.members of
+        Just member ->
+            member.name
 
         Nothing ->
             memberId
