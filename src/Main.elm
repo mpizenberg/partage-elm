@@ -33,6 +33,7 @@ import Page.Setup
 import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import Storage exposing (GroupSummary)
+import Submit exposing (LoadedGroup)
 import Time
 import Translations as T exposing (I18n, Language(..))
 import UI.Components
@@ -42,7 +43,6 @@ import UUID
 import Ui
 import Ui.Font
 import Url
-import UuidGen
 import WebCrypto
 
 
@@ -83,14 +83,6 @@ type alias Model =
     , editMemberMetadataModel : Page.EditMemberMetadata.Model
     , loadedGroup : Maybe LoadedGroup
     , showDeleted : Bool
-    }
-
-
-type alias LoadedGroup =
-    { groupId : Group.Id
-    , events : List Event.Envelope
-    , groupState : GroupState
-    , summary : GroupSummary
     }
 
 
@@ -401,10 +393,30 @@ update msg model =
             ( model, Cmd.none )
 
         DeleteEntry rootId ->
-            deleteOrRestoreEntry model Event.buildEntryDeletedEvent rootId
+            case ( model.appState, model.loadedGroup ) of
+                ( Ready readyData, Just loaded ) ->
+                    case submitContext (OnEntryActionSaved loaded.groupId) model readyData of
+                        Just ctx ->
+                            applySubmitResult model (Submit.deleteEntry ctx loaded rootId)
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
 
         RestoreEntry rootId ->
-            deleteOrRestoreEntry model Event.buildEntryUndeletedEvent rootId
+            case ( model.appState, model.loadedGroup ) of
+                ( Ready readyData, Just loaded ) ->
+                    case submitContext (OnEntryActionSaved loaded.groupId) model readyData of
+                        Just ctx ->
+                            applySubmitResult model (Submit.restoreEntry ctx loaded rootId)
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
 
         OnEntryActionSaved groupId (ConcurrentTask.Success envelope) ->
             ( appendEventAndRecompute model groupId envelope
@@ -520,224 +532,64 @@ update msg model =
             ( model, Cmd.none )
 
 
+submitContext : (ConcurrentTask.Response Idb.Error Event.Envelope -> Msg) -> Model -> Storage.InitData -> Maybe (Submit.Context Msg)
+submitContext onComplete model readyData =
+    readyData.identity
+        |> Maybe.map
+            (\identity ->
+                { pool = model.pool
+                , sendTask = sendTask
+                , onComplete = onComplete
+                , randomSeed = model.randomSeed
+                , uuidState = model.uuidState
+                , currentTime = model.currentTime
+                , db = readyData.db
+                , identity = identity
+                }
+            )
+
+
+applySubmitResult : Model -> ( Submit.State Msg, Cmd Msg ) -> ( Model, Cmd Msg )
+applySubmitResult model ( state, cmd ) =
+    ( { model
+        | pool = state.pool
+        , randomSeed = state.randomSeed
+        , uuidState = state.uuidState
+      }
+    , cmd
+    )
+
+
 submitNewGroup : Model -> Storage.InitData -> Form.NewGroup.Output -> ( Model, Cmd Msg )
 submitNewGroup model readyData output =
-    case readyData.identity of
+    case submitContext (OnEntrySaved "") model readyData of
+        Just ctx ->
+            -- newGroup takes its own onComplete (different response type)
+            applySubmitResult model (Submit.newGroup ctx OnGroupCreated output)
+
         Nothing ->
             ( model, Cmd.none )
-
-        Just identity ->
-            let
-                -- Generate group ID (v4)
-                ( groupId, seed1 ) =
-                    UuidGen.v4 model.randomSeed
-
-                -- Generate virtual member IDs (v4)
-                ( virtualMemberIds, seedAfter ) =
-                    UuidGen.v4batch (List.length output.virtualMembers) seed1
-
-                -- Generate event IDs (v7): 1 metadata + 1 creator + N virtual members
-                ( eventIds, uuidStateAfter ) =
-                    UuidGen.v7batch (2 + List.length output.virtualMembers) model.currentTime model.uuidState
-
-                allEvents =
-                    Event.buildGroupCreationEvents
-                        { creatorId = identity.publicKeyHash
-                        , groupName = output.name
-                        , creatorName = output.creatorName
-                        , virtualMembers = List.map2 Tuple.pair virtualMemberIds output.virtualMembers
-                        , eventIds = eventIds
-                        , currentTime = model.currentTime
-                        }
-
-                summary =
-                    { id = groupId
-                    , name = output.name
-                    , defaultCurrency = output.currency
-                    }
-
-                task =
-                    Storage.saveGroupSummary readyData.db summary
-                        |> ConcurrentTask.andThen (\_ -> Storage.saveEvents readyData.db groupId allEvents)
-                        |> ConcurrentTask.map (\_ -> summary)
-
-                ( pool, cmd ) =
-                    ConcurrentTask.attempt
-                        { pool = model.pool
-                        , send = sendTask
-                        , onComplete = OnGroupCreated
-                        }
-                        task
-            in
-            ( { model
-                | pool = pool
-                , randomSeed = seedAfter
-                , uuidState = uuidStateAfter
-              }
-            , cmd
-            )
 
 
 submitNewEntry : Model -> Storage.InitData -> LoadedGroup -> Page.NewEntry.Output -> ( Model, Cmd Msg )
 submitNewEntry model readyData loaded output =
-    case readyData.identity of
+    case submitContext (OnEntrySaved loaded.groupId) model readyData of
+        Just ctx ->
+            applySubmitResult model (Submit.newEntry ctx loaded output)
+
         Nothing ->
             ( model, Cmd.none )
-
-        Just identity ->
-            let
-                ( entryId, seedAfter ) =
-                    UuidGen.v4 model.randomSeed
-
-                ( eventId, uuidStateAfter ) =
-                    UuidGen.v7 model.currentTime model.uuidState
-
-                envelope =
-                    case output of
-                        Page.NewEntry.ExpenseOutput data ->
-                            Event.buildExpenseEvent
-                                { entryId = entryId
-                                , eventId = eventId
-                                , memberId = identity.publicKeyHash
-                                , currentTime = model.currentTime
-                                , currency = loaded.summary.defaultCurrency
-                                , payerId = data.payerId
-                                , beneficiaryIds = data.beneficiaryIds
-                                , description = data.description
-                                , amountCents = data.amountCents
-                                , category = data.category
-                                , notes = data.notes
-                                , date = data.date
-                                }
-
-                        Page.NewEntry.TransferOutput data ->
-                            Event.buildTransferEvent
-                                { entryId = entryId
-                                , eventId = eventId
-                                , memberId = identity.publicKeyHash
-                                , currentTime = model.currentTime
-                                , currency = loaded.summary.defaultCurrency
-                                , fromMemberId = data.fromMemberId
-                                , toMemberId = data.toMemberId
-                                , amountCents = data.amountCents
-                                , notes = data.notes
-                                , date = data.date
-                                }
-
-                task =
-                    Storage.saveEvents readyData.db loaded.groupId [ envelope ]
-                        |> ConcurrentTask.map (\_ -> envelope)
-
-                ( pool, cmd ) =
-                    ConcurrentTask.attempt
-                        { pool = model.pool
-                        , send = sendTask
-                        , onComplete = OnEntrySaved loaded.groupId
-                        }
-                        task
-            in
-            ( { model
-                | pool = pool
-                , randomSeed = seedAfter
-                , uuidState = uuidStateAfter
-              }
-            , cmd
-            )
 
 
 submitEditEntry : Model -> Storage.InitData -> LoadedGroup -> Entry.Id -> Page.NewEntry.Output -> ( Model, Cmd Msg )
 submitEditEntry model readyData loaded originalEntryId output =
-    case readyData.identity of
+    case submitContext (OnEntrySaved loaded.groupId) model readyData of
+        Just ctx ->
+            Submit.editEntry ctx loaded originalEntryId output
+                |> Maybe.map (applySubmitResult model)
+                |> Maybe.withDefault ( model, Cmd.none )
+
         Nothing ->
-            ( model, Cmd.none )
-
-        Just identity ->
-            case Dict.get originalEntryId loaded.groupState.entries of
-                Nothing ->
-                    ( model, Cmd.none )
-
-                Just entryState ->
-                    let
-                        ( newEntryId, seedAfter ) =
-                            UuidGen.v4 model.randomSeed
-
-                        ( eventId, uuidStateAfter ) =
-                            UuidGen.v7 model.currentTime model.uuidState
-
-                        newKind =
-                            Page.NewEntry.outputToKind loaded.summary.defaultCurrency output
-
-                        envelope =
-                            Event.buildEntryModifiedEvent
-                                { newEntryId = newEntryId
-                                , eventId = eventId
-                                , memberId = identity.publicKeyHash
-                                , currentTime = model.currentTime
-                                , previousEntry = entryState.currentVersion
-                                , newKind = newKind
-                                }
-
-                        task =
-                            Storage.saveEvents readyData.db loaded.groupId [ envelope ]
-                                |> ConcurrentTask.map (\_ -> envelope)
-
-                        ( pool, cmd ) =
-                            ConcurrentTask.attempt
-                                { pool = model.pool
-                                , send = sendTask
-                                , onComplete = OnEntrySaved loaded.groupId
-                                }
-                                task
-                    in
-                    ( { model
-                        | pool = pool
-                        , randomSeed = seedAfter
-                        , uuidState = uuidStateAfter
-                      }
-                    , cmd
-                    )
-
-
-deleteOrRestoreEntry :
-    Model
-    -> ({ eventId : Event.Id, memberId : Member.Id, currentTime : Time.Posix, rootId : Entry.Id } -> Event.Envelope)
-    -> Entry.Id
-    -> ( Model, Cmd Msg )
-deleteOrRestoreEntry model buildEvent rootId =
-    case ( model.appState, model.loadedGroup ) of
-        ( Ready readyData, Just loaded ) ->
-            case readyData.identity of
-                Just identity ->
-                    let
-                        ( eventId, uuidStateAfter ) =
-                            UuidGen.v7 model.currentTime model.uuidState
-
-                        envelope =
-                            buildEvent
-                                { eventId = eventId
-                                , memberId = identity.publicKeyHash
-                                , currentTime = model.currentTime
-                                , rootId = rootId
-                                }
-
-                        task =
-                            Storage.saveEvents readyData.db loaded.groupId [ envelope ]
-                                |> ConcurrentTask.map (\_ -> envelope)
-
-                        ( pool, cmd ) =
-                            ConcurrentTask.attempt
-                                { pool = model.pool
-                                , send = sendTask
-                                , onComplete = OnEntryActionSaved loaded.groupId
-                                }
-                                task
-                    in
-                    ( { model | pool = pool, uuidState = uuidStateAfter }, cmd )
-
-                Nothing ->
-                    ( model, Cmd.none )
-
-        _ ->
             ( model, Cmd.none )
 
 
@@ -903,70 +755,22 @@ handleMemberDetailOutput model readyData loaded output =
 
 submitMemberEvent : Model -> Storage.InitData -> LoadedGroup -> (Event.Id -> Identity -> Event.Envelope) -> ( Model, Cmd Msg )
 submitMemberEvent model readyData loaded buildEnvelope =
-    case readyData.identity of
+    case submitContext (OnMemberActionSaved loaded.groupId) model readyData of
+        Just ctx ->
+            applySubmitResult model (Submit.memberEvent ctx loaded buildEnvelope)
+
         Nothing ->
             ( model, Cmd.none )
-
-        Just identity ->
-            let
-                ( eventId, uuidStateAfter ) =
-                    UuidGen.v7 model.currentTime model.uuidState
-
-                envelope =
-                    buildEnvelope eventId identity
-
-                task =
-                    Storage.saveEvents readyData.db loaded.groupId [ envelope ]
-                        |> ConcurrentTask.map (\_ -> envelope)
-
-                ( pool, cmd ) =
-                    ConcurrentTask.attempt
-                        { pool = model.pool
-                        , send = sendTask
-                        , onComplete = OnMemberActionSaved loaded.groupId
-                        }
-                        task
-            in
-            ( { model | pool = pool, uuidState = uuidStateAfter }, cmd )
 
 
 submitAddMember : Model -> Storage.InitData -> LoadedGroup -> Page.AddMember.Output -> ( Model, Cmd Msg )
 submitAddMember model readyData loaded output =
-    case readyData.identity of
+    case submitContext (OnMemberActionSaved loaded.groupId) model readyData of
+        Just ctx ->
+            applySubmitResult model (Submit.addMember ctx loaded output)
+
         Nothing ->
             ( model, Cmd.none )
-
-        Just identity ->
-            let
-                ( newMemberId, seedAfter ) =
-                    UuidGen.v4 model.randomSeed
-
-                ( eventId, uuidStateAfter ) =
-                    UuidGen.v7 model.currentTime model.uuidState
-
-                envelope =
-                    Event.buildMemberCreatedEvent
-                        { eventId = eventId
-                        , memberId = identity.publicKeyHash
-                        , currentTime = model.currentTime
-                        , newMemberId = newMemberId
-                        , name = output.name
-                        , memberType = Member.Virtual
-                        }
-
-                task =
-                    Storage.saveEvents readyData.db loaded.groupId [ envelope ]
-                        |> ConcurrentTask.map (\_ -> envelope)
-
-                ( pool, cmd ) =
-                    ConcurrentTask.attempt
-                        { pool = model.pool
-                        , send = sendTask
-                        , onComplete = OnMemberActionSaved loaded.groupId
-                        }
-                        task
-            in
-            ( { model | pool = pool, randomSeed = seedAfter, uuidState = uuidStateAfter }, cmd )
 
 
 submitMemberMetadata : Model -> Storage.InitData -> LoadedGroup -> Page.EditMemberMetadata.Output -> ( Model, Cmd Msg )
