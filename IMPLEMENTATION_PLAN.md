@@ -532,7 +532,7 @@ src/
 
 **Goal:** Complete the local bill-splitting experience by adding the remaining features from the specification that don't require server sync. Also clean up `Main.elm` by extracting form logic into page modules.
 
-**Status: IN PROGRESS (Steps 0-2 complete)**
+**Status: IN PROGRESS (Steps 0-3 complete)**
 
 ### Step 0: Main.elm cleanup ✅
 
@@ -564,8 +564,8 @@ Extracted form state, update logic, and event building out of `Main.elm` into de
 - New `UuidGen` module (`src/UuidGen.elm`): `v4`, `v4batch`, `v7`, `v7batch` — extracted UUID generation helpers
 - `Domain.Event` extended with:
   - `buildGroupCreationEvents : { creatorId, groupName, creatorName, virtualMembers, eventIds, currentTime } -> List Envelope`
-  - `buildExpenseEvent : { entryId, eventId, currentUserRootId, currentTime, currency, payerId, beneficiaryIds, description, amountCents, category, notes, date } -> Envelope`
-  - `buildTransferEvent : { entryId, eventId, currentUserRootId, currentTime, currency, fromMemberId, toMemberId, amountCents, notes, date } -> Envelope`
+  - `buildExpenseEvent : { entryId, eventId, memberId, currentTime, currency, payerId, beneficiaryIds, description, amountCents, category, notes, date } -> Envelope`
+  - `buildTransferEvent : { entryId, eventId, memberId, currentTime, currency, fromMemberId, toMemberId, amountCents, notes, date } -> Envelope`
 
 #### Key decisions
 
@@ -634,113 +634,58 @@ Transfer support integrated into `Page.NewEntry` (no separate `Form.NewTransfer.
 - **Exact amount split** — equal `ShareBeneficiary` only; would require per-beneficiary amount entry
 - **Unequal shares** — currently only 1 share per person
 
-### Step 3: Entry modification and deletion
+### Step 3: Entry modification and deletion ✅
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 **Spec ref:** Sections 5.6, 5.7
 
-#### Overview
+#### What was done
 
-Add the ability to view entry details, edit entries (creating new versions), and soft-delete/restore entries. The domain layer (`GroupState.applyEntryUpsert`, `applyEntryDeleted`, `applyEntryUndeleted`) and event types (`EntryModified`, `EntryDeleted`, `EntryUndeleted`) already fully support this. The `Entry.replace` helper links a new version to the previous one. What's needed is routing, UI, and wiring.
+**Routes:**
+- `EntryDetail Entry.Id` and `EditEntry Entry.Id` variants added to `GroupView` in `Route.elm`
+- URLs: `/groups/:id/entries/:entryId` and `/groups/:id/entries/:entryId/edit`
+- Full parsing in `fromAppUrl`, serialization in `toPathSegments`/`toPath`
 
-#### 3a. Route and navigation
+**Entry detail view (`src/Page/EntryDetail.elm`):**
+- `view : I18n -> Context msg -> EntryState -> Ui.Element msg`
+- `Context msg`: `{ onEdit, onDelete, onRestore, onBack, currentUserRootId, resolveName }`
+- Expense view: description, formatted amount + currency, date, payer(s), beneficiaries, category (if set), notes (if set)
+- Transfer view: formatted amount + currency, date, from → to, notes (if set)
+- Metadata footer using `Ui.none` for conditional "edited" indicator (depth > 0)
+- Deleted banner using `Ui.none` when not deleted
+- Action buttons: "Edit" (primary) + "Delete" (danger) or "Restore" (success)
 
-- Add `EntryDetail Entry.Id` variant to `GroupView` in `Route.elm`
-- URL: `/groups/:id/entries/:entryId`
-- Parse in `fromAppUrl`, serialize in `toAppUrl`/`toPathSegments`/`toPath`
-- In `Main.viewReady`, add a branch for `GroupRoute groupId (EntryDetail entryId)` that looks up the entry in `loadedGroup.groupState.entries`
+**Clickable entry cards:**
+- `UI.Components.entryCard` signature: `entryCard : I18n -> (Member.Id -> String) -> msg -> Entry -> Ui.Element msg`
+- `Page.Group.EntriesTab` exposes `Msg msg` type alias for view config: `{ onNewEntry, onEntryClick, showDeleted, onToggleDeleted }`
+- `Page.Group.Context` extended with `onEntryClick : Entry.Id -> msg` and `onToggleDeleted : msg`
+- `showDeleted : Bool` passed separately to `Page.Group.view` (not in `Context`)
 
-#### 3b. Entry detail view (`src/Page/EntryDetail.elm`)
+**Edit entry (re-uses `Page.NewEntry`):**
+- `initFromEntry : Config -> Entry -> Model` pre-populates all form fields from existing entry
+- `kindLocked : Bool` in `ModelData` — set to `True` by `initFromEntry`, hides the expense/transfer toggle during edit
+- `initEditEntryIfNeeded` in Main — parallel to `initNewEntryIfNeeded`
+- `Main.NewEntryMsg` handler checks `model.route`: `EditEntry` routes go to `submitEditEntry`, others to `submitNewEntry`
+- `submitEditEntry` looks up original entry, uses `outputToKind` + `Entry.replace` + `Event.buildEntryModifiedEvent`
 
-New module with signature: `view : I18n -> Context msg -> EntryState -> Ui.Element msg`
+**Delete and restore:**
+- `DeleteEntry Entry.Id` and `RestoreEntry Entry.Id` Msg variants in Main
+- `deleteOrRestoreEntry` helper parameterized by event builder function
+- `OnEntryActionSaved` handler recomputes group state on success
+- `buildEntryDeletedEvent` and `buildEntryUndeletedEvent` in `Domain.Event`
 
-Where `Context msg` bundles:
-- `onEdit : msg` — navigate to edit form
-- `onDelete : msg` — trigger soft-delete
-- `onRestore : msg` — trigger restore (only shown if deleted)
-- `onBack : msg` — navigate back to entries tab
-- `currentUserRootId : Member.Id`
-- `resolveName : Member.Id -> String`
+**Show/hide deleted entries:**
+- `showDeleted : Bool` in `Main.Model`, toggled by `ToggleShowDeleted` Msg
+- `EntriesTab` shows toggle link "Show deleted (N)" / "Hide deleted" when deleted count > 0
+- Deleted entries rendered at 50% opacity with "Deleted" badge
 
-Display fields:
-- **Expense**: description, formatted amount + currency, date, payer(s), beneficiaries with share/exact info, category (if set), notes (if set), location (if set)
-- **Transfer**: formatted amount + currency, date, from → to, notes (if set)
-- **Metadata footer**: created by, created at, version depth (if > 0 show "edited" indicator)
-- **Action buttons**: "Edit" (primary), "Delete" (danger) or "Restore" (if deleted)
-- **Deleted banner**: if `entryState.isDeleted`, show a prominent warning banner at the top
+**Event `triggeredBy` cleanup:**
+- Event builders use `memberId` (the actual identity, `publicKeyHash`) instead of `currentUserRootId`
+- Root ID resolution is now exclusively a group state / view concern, not an event concern
+- Removed TODO comment in `buildExpenseEvent` about this issue
 
-#### 3c. Entry cards become clickable
-
-- `UI.Components.entryCard` gains an `onClick` parameter: `entryCard : I18n -> (Member.Id -> String) -> msg -> Entry -> Ui.Element msg`
-- `EntriesTab.view` passes the navigation callback per entry: `NavigateTo (GroupRoute groupId (EntryDetail entry.meta.rootId))`
-- Requires threading a navigation callback through `Page.Group.Context`
-
-#### 3d. Edit entry (re-use `Page.NewEntry`)
-
-Editing reuses the existing `Page.NewEntry` module with a new initializer:
-
-- Add `initFromEntry : Config -> Entry -> Model` to `Page.NewEntry` — pre-populates all form fields from the existing entry
-- The `Output` types remain the same (`ExpenseOutput`, `TransferOutput`)
-- Add `EditEntry Entry.Id` variant to `GroupView` in `Route.elm` (URL: `/groups/:id/entries/:entryId/edit`)
-- In `Main.elm`:
-  - Add `initEditEntryIfNeeded` similar to `initNewEntryIfNeeded`, calling `Page.NewEntry.initFromEntry` with the existing entry data
-  - On submission from an edit route, use `Entry.replace previousMeta newId kind` to create a versioned entry, then emit `EntryModified` event (not `EntryAdded`)
-  - Add `buildEntryModifiedEvent` to `Domain.Event` (similar to `buildExpenseEvent`/`buildTransferEvent` but wraps in `EntryModified` payload and uses `Entry.replace` for version linking)
-
-#### 3e. Delete and restore entry
-
-- In `Main.elm`, add `Msg` variants:
-  - `DeleteEntry Entry.Id` — creates and saves an `EntryDeleted` event
-  - `RestoreEntry Entry.Id` — creates and saves an `EntryUndeleted` event
-  - `OnEntryDeletedOrRestored Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)` — updates loadedGroup on success
-- Event building: straightforward `EntryDeleted { rootId }` / `EntryUndeleted { rootId }` envelopes
-- After success: recompute `groupState` from updated events, stay on or navigate back to entries tab
-- Add `buildEntryDeletedEvent` and `buildEntryUndeletedEvent` helpers to `Domain.Event`
-
-#### 3f. Show/hide deleted entries in EntriesTab
-
-- Add `showDeleted : Bool` to `Main.Model` (or pass as parameter)
-- `EntriesTab.view` gets a new parameter: `showDeleted : Bool` and a toggle callback
-- When `showDeleted` is `True`, render all entries (active + deleted), with deleted entries styled differently (faded, strikethrough description, "Deleted" badge)
-- Toggle button/link at the top of entries list: "Show deleted (N)" / "Hide deleted"
-- Count of deleted entries: `Dict.values state.entries |> List.filter .isDeleted |> List.length`
-
-#### Files modified/created
-
-| File                            | Action   | Description                                                    |
-| ------------------------------- | -------- | -------------------------------------------------------------- |
-| `src/Route.elm`                 | Modified | Add `EntryDetail Entry.Id` and `EditEntry Entry.Id` to `GroupView` |
-| `src/Page/EntryDetail.elm`      | New      | Entry detail view with edit/delete/restore actions             |
-| `src/Page/NewEntry.elm`         | Modified | Add `initFromEntry` for edit pre-population                    |
-| `src/Page/Group/EntriesTab.elm` | Modified | Clickable entry cards, show/hide deleted toggle                |
-| `src/UI/Components.elm`         | Modified | `entryCard` gains `onClick` parameter                          |
-| `src/Page/Group.elm`            | Modified | Thread entry click callback through `Context`                  |
-| `src/Domain/Event.elm`          | Modified | Add `buildEntryModifiedEvent`, `buildEntryDeletedEvent`, `buildEntryUndeletedEvent` |
-| `src/Main.elm`                  | Modified | New Msg variants, edit/delete/restore handlers, route branches |
-| `translations/messages.en.json` | Modified | ~15-20 new keys for detail view, actions, deleted state        |
-| `translations/messages.fr.json` | Modified | ~15-20 new keys                                                |
-
-#### Translation keys needed (estimated)
-
-- `entryDetailTitle`: "Entry Details"
-- `entryDetailEditButton`: "Edit"
-- `entryDetailDeleteButton`: "Delete"
-- `entryDetailRestoreButton`: "Restore"
-- `entryDetailDeletedBanner`: "This entry has been deleted."
-- `entryDetailBack`: "Back to entries"
-- `entryDetailDate`: "Date"
-- `entryDetailPaidBy`: "Paid by"
-- `entryDetailSplitAmong`: "Split among"
-- `entryDetailCategory`: "Category"
-- `entryDetailNotes`: "Notes"
-- `entryDetailFrom`: "From"
-- `entryDetailTo`: "To"
-- `entryDetailEdited`: "Edited"
-- `entriesShowDeleted`: "Show deleted ({count})"
-- `entriesHideDeleted`: "Hide deleted"
-- `entryDeletedBadge`: "Deleted"
-- `editEntryTitle`: "Edit Entry"
+**20 translation keys added** (EN + FR) for detail view, actions, deleted state.
 
 ### Step 4: Member management within a group
 
@@ -748,13 +693,138 @@ Editing reuses the existing `Page.NewEntry` module with a new initializer:
 
 **Spec ref:** Sections 4.2, 4.5, 4.6
 
-Currently members are only created at group creation time. Add in-group member management:
+Currently members are only created at group creation time. The domain layer fully supports member lifecycle events (`MemberCreated`, `MemberRenamed`, `MemberRetired`, `MemberUnretired`, `MemberMetadataUpdated`). What's needed is event builders, UI, and wiring.
 
-- **Add virtual member**: Button in Members tab to add a new virtual member (emit `MemberCreated` event)
-- **Rename member**: Edit a member's display name (emit `MemberRenamed` event)
-- **Retire member**: Mark a member as departed (emit `MemberRetired` event). Retired members no longer appear in entry forms but historical data preserved.
-- **Unretire member**: Reactivate a retired member (emit `MemberUnretired` event)
-- **Member metadata**: View/edit contact info and payment methods (emit `MemberMetadataUpdated` event). Payment details displayed as copiable text.
+#### 4a. Event builders in `Domain.Event`
+
+Add simple envelope wrapper functions (same pattern as `buildEntryDeletedEvent`):
+
+- `buildMemberCreatedEvent : { eventId, memberId, currentTime, newMemberId, name, memberType, addedBy } -> Envelope`
+- `buildMemberRenamedEvent : { eventId, memberId, currentTime, targetMemberId, oldName, newName } -> Envelope`
+- `buildMemberRetiredEvent : { eventId, memberId, currentTime, targetMemberId } -> Envelope`
+- `buildMemberUnretiredEvent : { eventId, memberId, currentTime, targetMemberId } -> Envelope`
+- `buildMemberMetadataUpdatedEvent : { eventId, memberId, currentTime, targetMemberId, metadata } -> Envelope`
+
+Note: `memberId` is the identity performing the action (`triggeredBy`), `targetMemberId` is the member being acted upon.
+
+#### 4b. Member detail view (`src/Page/MemberDetail.elm`)
+
+New module following the `Page.EntryDetail` pattern:
+
+```elm
+type alias Context msg =
+    { onRename : msg
+    , onEditMetadata : msg
+    , onRetire : msg
+    , onUnretire : msg
+    , onBack : msg
+    , currentUserRootId : Member.Id
+    }
+
+view : I18n -> Context msg -> GroupState.MemberState -> Ui.Element msg
+```
+
+Display:
+- Member name (with "(you)" suffix if current user)
+- Member type label (Real / Virtual)
+- Status: Active / Retired
+- Metadata section: phone, email, notes (if any set)
+- Payment info section: each non-empty field displayed as a row (IBAN, Wero, Lydia, Revolut, PayPal, Venmo, BTC, ADA)
+- Action buttons:
+  - "Rename" (primary) — always available
+  - "Edit Contact Info" (primary) — always available
+  - "Retire" (danger) — only if active, cannot retire yourself
+  - "Reactivate" (success) — only if retired
+
+#### 4c. Clickable member rows + route
+
+- Add `MemberDetail Member.Id` variant to `GroupView` in `Route.elm`
+- URL: `/groups/:id/members/:memberId`
+- `UI.Components.memberRow` gains an `onClick` parameter (same pattern as `entryCard`)
+- `MembersTab.view` signature changes to accept message callbacks: `view : I18n -> Msg msg -> Member.Id -> GroupState -> Ui.Element msg`
+- `Msg msg` type alias: `{ onMemberClick : Member.Id -> msg, onAddMember : msg }`
+- Thread `onMemberClick` through `Page.Group.Context`
+
+#### 4d. Rename member (inline or modal)
+
+Simple approach — no separate page/form, use a prompt-like pattern:
+
+- On `MemberDetail`, "Rename" button triggers a `RenameMember Member.Id` Msg in Main
+- Main stores `renamingMember : Maybe { memberId : Member.Id, newName : String }` in Model
+- When set, `MemberDetail` view shows inline text input + "Save" / "Cancel" buttons instead of the name display
+- On save: build `MemberRenamed` event with old name from `MemberState.name` and new name from input
+- Alternatively, can use a simple text field directly in `MemberDetail` — the view can own its own local rename state without needing Main to track it
+
+Preferred approach: `Page.MemberDetail` is a page with `Model/Msg/init/update/view` exposing `Output`:
+- `Output` variants: `RenameOutput { memberId, oldName, newName }` | `RetireOutput Member.Id` | `UnretireOutput Member.Id`
+- Main delegates to `submitMemberAction` on `Just output`
+
+#### 4e. Add virtual member
+
+- "Add Member" button in `MembersTab` (below member list, similar to "New Entry" button)
+- Add `AddVirtualMember` route variant to `GroupView` — URL: `/groups/:id/members/new`
+- Simple form page (`Page.AddMember.elm` or inline): name text input + submit
+- On submit: generate member ID (UUID v4), emit `MemberCreated { memberId, name, memberType = Virtual, addedBy = identity.publicKeyHash }`
+- Navigate back to Members tab on success
+
+#### 4f. Retire / Unretire member
+
+- Buttons in `Page.MemberDetail` view (conditionally shown based on `isActive`/`isRetired`)
+- Cannot retire yourself (hide/disable button when `member.rootId == currentUserRootId`)
+- On click: emit `MemberRetired { memberId }` or `MemberUnretired { memberId }`
+- Recompute group state, stay on member detail (status updates)
+
+#### 4g. Member metadata editing (`src/Page/EditMemberMetadata.elm`)
+
+New page module for editing contact info and payment methods:
+
+- Route: `EditMemberMetadata Member.Id` in `GroupView` — URL: `/groups/:id/members/:memberId/edit`
+- Page with `Model/Msg/init/update/view` pattern:
+  - `init` pre-populates from existing `MemberState.metadata`
+  - Fields: phone, email, notes (text inputs), payment method fields (IBAN, Wero, Lydia, Revolut, PayPal, Venmo, BTC, ADA)
+  - All fields optional — empty strings treated as `Nothing`
+  - `Output`: `Member.Metadata` record
+- On submit: emit `MemberMetadataUpdated { memberId, metadata }` event
+- Navigate back to member detail on success
+
+#### 4h. Main.elm wiring
+
+New Msg variants:
+- `MemberDetailMsg Page.MemberDetail.Msg` — delegated to page update
+- `EditMemberMetadataMsg Page.EditMemberMetadata.Msg`
+- `OnMemberActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)`
+
+Model additions:
+- `memberDetailModel : Page.MemberDetail.Model`
+- `editMemberMetadataModel : Page.EditMemberMetadata.Model`
+
+Pattern follows existing `NewEntryMsg` / `submitNewEntry` flow:
+1. Page update returns `( Model, Maybe Output )`
+2. Main matches on `Just output` and calls `submitMemberAction`
+3. `submitMemberAction` generates event ID (v7), builds event, saves to IndexedDB
+4. `OnMemberActionSaved` recomputes group state
+
+#### Files modified/created
+
+| File | Action | Description |
+| --- | --- | --- |
+| `src/Domain/Event.elm` | Modified | Add 5 member event builder functions |
+| `src/Route.elm` | Modified | Add `MemberDetail`, `AddVirtualMember`, `EditMemberMetadata` to `GroupView` |
+| `src/Page/MemberDetail.elm` | New | Member detail view with rename/retire/unretire actions |
+| `src/Page/EditMemberMetadata.elm` | New | Metadata editing form (contact info + payment methods) |
+| `src/Page/Group/MembersTab.elm` | Modified | Clickable member rows, "Add Member" button, `Msg msg` type alias |
+| `src/UI/Components.elm` | Modified | `memberRow` gains `onClick` parameter |
+| `src/Page/Group.elm` | Modified | Add member callbacks to `Context` |
+| `src/Main.elm` | Modified | New Msg variants, member action handlers, route branches |
+| `translations/messages.en.json` | Modified | ~30 new keys |
+| `translations/messages.fr.json` | Modified | ~30 new keys |
+
+#### Translation keys needed (estimated)
+
+- Member detail: `memberDetailTitle`, `memberDetailType`, `memberDetailTypeReal`, `memberDetailTypeVirtual`, `memberDetailStatus`, `memberDetailStatusActive`, `memberDetailStatusRetired`, `memberDetailBack`
+- Actions: `memberRenameButton`, `memberEditMetadataButton`, `memberRetireButton`, `memberUnretireButton`, `memberRenameSave`, `memberRenameCancel`, `memberRenameLabel`
+- Add member: `memberAddButton`, `memberAddTitle`, `memberAddNameLabel`, `memberAddNamePlaceholder`, `memberAddSubmit`
+- Metadata: `memberMetadataTitle`, `memberMetadataPhone`, `memberMetadataEmail`, `memberMetadataNotes`, `memberMetadataPayment`, `memberMetadataIban`, `memberMetadataWero`, `memberMetadataLydia`, `memberMetadataRevolut`, `memberMetadataPaypal`, `memberMetadataVenmo`, `memberMetadataBtc`, `memberMetadataAda`, `memberMetadataSave`
 
 ### Step 5: Group metadata editing
 
@@ -762,9 +832,94 @@ Currently members are only created at group creation time. Add in-group member m
 
 **Spec ref:** Sections 3.2, 3.3
 
-- **Edit group metadata**: Edit group name, subtitle, description, links (emit `GroupMetadataUpdated` event). Default currency cannot be changed after creation.
-- **Display group info**: Show subtitle, description, and links on the Members tab (as specified in Section 18.4).
-- **Remove group locally**: Delete a group from the local device (remove from IndexedDB). Does not affect server or other members. Requires confirmation dialog.
+The domain layer fully supports `GroupMetadataUpdated` events with partial updates (`GroupMetadataChange` uses `Maybe` fields — `Nothing` = unchanged, `Just value` = set). The `GroupState.applyGroupMetadataUpdated` handler already processes these correctly. What's needed is an event builder, UI, and wiring.
+
+#### 5a. Event builder in `Domain.Event`
+
+- `buildGroupMetadataUpdatedEvent : { eventId, memberId, currentTime, change : GroupMetadataChange } -> Envelope`
+
+#### 5b. Group settings page (`src/Page/GroupSettings.elm`)
+
+New page module:
+
+```elm
+type alias Config =
+    { groupMeta : GroupState.GroupMetadata
+    , links : List Group.Link
+    }
+
+type Output
+    = MetadataOutput Event.GroupMetadataChange
+
+-- Model/Msg/init/update/view pattern
+init : Config -> Model
+view : I18n -> (Msg -> msg) -> Model -> Ui.Element msg
+update : Msg -> Model -> ( Model, Maybe Output )
+```
+
+Fields:
+- Group name (text input, required — `Field String`)
+- Subtitle (text input, optional — empty = clear)
+- Description (multiline text input, optional — empty = clear)
+- Links (dynamic list of `{ label, url }` pairs — add/remove, similar to virtual members in `NewGroup`)
+
+The `Output` produces a `GroupMetadataChange` that only sets fields that differ from the original values (to minimize event payload). Uses `Maybe (Maybe String)` encoding: `Nothing` = unchanged, `Just Nothing` = cleared, `Just (Just s)` = set to `s`.
+
+#### 5c. Route and navigation
+
+- Add `GroupSettings` variant to `GroupView` in `Route.elm`
+- URL: `/groups/:id/settings`
+- "Settings" button/link accessible from the group shell header or Members tab
+- Navigate back to group on save
+
+#### 5d. Display group info in Members tab
+
+- Show subtitle (if set) below group name in tab header
+- Show description (if set) as a text block
+- Show links (if any) as clickable items
+- Add "Edit Group" button linking to group settings page
+
+#### 5e. Remove group locally
+
+- "Remove Group" button in group settings page (danger styled, at the bottom)
+- Confirmation: show group name and ask user to confirm
+- On confirm: delete group summary and all group events from IndexedDB via `Storage.deleteGroup`
+- Add `deleteGroup : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error ()` to `Storage.elm`
+- Navigate to Home page on success, remove from `groups` list in model
+- Does not require a domain event (local-only action)
+
+#### 5f. Main.elm wiring
+
+New Msg variants:
+- `GroupSettingsMsg Page.GroupSettings.Msg`
+- `OnGroupMetadataSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)`
+- `RemoveGroup Group.Id`
+- `OnGroupRemoved (ConcurrentTask.Response Idb.Error ())`
+
+Model additions:
+- `groupSettingsModel : Page.GroupSettings.Model`
+- `initGroupSettingsIfNeeded` — similar to `initEditEntryIfNeeded`, pre-populates from `groupState.groupMeta`
+
+On metadata save: also update the `GroupSummary` in IndexedDB if group name changed (via `Storage.saveGroupSummary`), and update the `groups` list in model.
+
+#### Files modified/created
+
+| File | Action | Description |
+| --- | --- | --- |
+| `src/Domain/Event.elm` | Modified | Add `buildGroupMetadataUpdatedEvent` |
+| `src/Route.elm` | Modified | Add `GroupSettings` to `GroupView` |
+| `src/Page/GroupSettings.elm` | New | Group metadata editing form |
+| `src/Page/Group/MembersTab.elm` | Modified | Display group info, "Edit Group" button |
+| `src/Storage.elm` | Modified | Add `deleteGroup` operation |
+| `src/Page/Group.elm` | Modified | Add settings callback to `Context` |
+| `src/Main.elm` | Modified | New Msg variants, settings handlers, route branch |
+| `translations/messages.en.json` | Modified | ~15 new keys |
+| `translations/messages.fr.json` | Modified | ~15 new keys |
+
+#### Translation keys needed (estimated)
+
+- Settings page: `groupSettingsTitle`, `groupSettingsName`, `groupSettingsSubtitle`, `groupSettingsSubtitlePlaceholder`, `groupSettingsDescription`, `groupSettingsDescriptionPlaceholder`, `groupSettingsLinks`, `groupSettingsLinkLabel`, `groupSettingsLinkUrl`, `groupSettingsAddLink`, `groupSettingsRemoveLink`, `groupSettingsSave`
+- Remove group: `groupRemoveButton`, `groupRemoveConfirm`, `groupRemoveWarning`
 
 ### Step 6: Settlement actions
 
@@ -790,12 +945,12 @@ These features from the specification require server sync, complex infrastructur
 - **PoW challenge** (Spec Section 3.1): Server-side feature for group creation anti-spam.
 - **PWA & service worker** (Spec Section 15): Installation, offline caching, auto-update.
 
-### Current file structure (after Steps 0-2)
+### Current file structure (after Steps 0-3)
 
 ```
 src/
   Main.elm                  -- App entry, 4 ports, AppState lifecycle, delegates to page modules
-  Route.elm                 -- Route types + URL parsing/serialization
+  Route.elm                 -- Route types + URL parsing/serialization (EntryDetail, EditEntry routes)
   Format.elm                -- Currency/amount formatting
   Identity.elm              -- Identity type, crypto generation, JSON codecs
   Storage.elm               -- IndexedDB schema (4 stores), InitData, GroupSummary, CRUD operations
@@ -803,11 +958,11 @@ src/
   Translations.elm          -- (generated, gitignored) i18n module
   Domain/
     Currency.elm            -- Currency type + JSON codecs
-    Date.elm                -- Date type + JSON codecs + posixToDate
+    Date.elm                -- Date type + JSON codecs + posixToDate + toString
     Group.elm               -- Group/Link types + Link JSON codecs
     Member.elm              -- Member types + JSON codecs (Type, Metadata, PaymentInfo)
     Entry.elm               -- Entry types + full JSON codecs + replace helper
-    Event.elm               -- Event types + JSON codecs + build* helpers
+    Event.elm               -- Event types + JSON codecs + build* helpers (entry + member + group)
     GroupState.elm           -- Event-sourced state machine + resolveMemberName
     Balance.elm              -- Balance computation
     Settlement.elm           -- Settlement plan computation
@@ -823,11 +978,12 @@ src/
     About.elm               -- App info
     NotFound.elm            -- 404
     NewGroup.elm            -- Group creation: Model/Msg/init/update/view (opaque Model)
-    NewEntry.elm            -- Entry creation: Model/Msg/init/update/view, expense/transfer toggle, rich fields
+    NewEntry.elm            -- Entry creation/edit: Model/Msg/init/initFromEntry/update/view, kindLocked
+    EntryDetail.elm         -- Entry detail view: Context msg, expense/transfer content, actions
     Group.elm               -- Group page shell (Context msg pattern) + tab routing
     Group/
       BalanceTab.elm        -- Balance cards + settlement plan + empty state
-      EntriesTab.elm        -- Entry cards + new entry button
+      EntriesTab.elm        -- Clickable entry cards, show/hide deleted toggle, Msg msg type alias
       MembersTab.elm        -- Active + departed members
       ActivitiesTab.elm     -- Placeholder "coming soon"
   UI/
@@ -861,4 +1017,7 @@ src/
 19. **Argument ordering convention** -- stable/config args first, frequently-changing data last; enables partial application and future `Ui.lazy` usage
 20. **`GroupState.resolveMemberName`** as canonical name resolution -- eliminates threading a `resolveName` function; each tab view derives it locally from the `GroupState` it receives
 21. **`UuidGen` module** -- extracted UUID generation helpers (`v4`, `v4batch`, `v7`, `v7batch`); keeps Main and event builders focused on logic
-22. **Event builder functions in `Domain.Event`** -- `buildGroupCreationEvents`, `buildExpenseEvent`, `buildTransferEvent` encapsulate event construction; Main only provides config records
+22. **Event builder functions in `Domain.Event`** -- `buildGroupCreationEvents`, `buildExpenseEvent`, `buildTransferEvent`, `buildEntryModifiedEvent`, `buildEntryDeletedEvent`, `buildEntryUndeletedEvent` encapsulate event construction; Main only provides config records
+23. **Events use actual member IDs** -- `triggeredBy` and `createdBy` store the identity's `publicKeyHash` (the actual member ID), not a root ID; root ID resolution is a group state concern handled in views and form initialization
+24. **`kindLocked` prevents entry type change** -- when editing an entry via `initFromEntry`, `kindLocked = True` hides the expense/transfer toggle; new entries have `kindLocked = False`
+25. **`showDeleted` outside `Context`** -- ephemeral UI state like `showDeleted : Bool` is passed separately to `Page.Group.view`, not bundled into the `Context msg` record which holds stable callbacks
