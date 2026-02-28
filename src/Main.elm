@@ -363,9 +363,12 @@ update msg model =
                 Just loaded ->
                     if loaded.groupId == groupId then
                         let
+                            -- TODO later: reverse events order to ease aggregation
                             newEvents =
                                 loaded.events ++ [ envelope ]
 
+                            -- TODO later: do not re-build group state from scratch if possible,
+                            -- change applyEvents to: List Envelope -> GroupState -> GroupState
                             newGroupState =
                                 GroupState.applyEvents newEvents
 
@@ -815,17 +818,21 @@ viewLoadingGroup i18n langSelector =
 
 generateUuidV4 : Random.Seed -> ( String, Random.Seed )
 generateUuidV4 seed =
-    let
-        ( uuid, newSeed ) =
-            Random.step UUID.generator seed
-    in
-    ( UUID.toString uuid, newSeed )
+    -- TODO later: use UUID.step instead for better randomness
+    Tuple.mapFirst UUID.toString (Random.step UUID.generator seed)
 
 
 generateUuidV7 : Time.Posix -> UUID.V7State -> ( String, UUID.V7State )
 generateUuidV7 time state =
-    let
-        ( uuid, newState ) =
-            UUID.stepV7 time state
-    in
-    ( UUID.toString uuid, newState )
+    -- TODO later:
+    -- This function will lead to invalid UUIDs.
+    -- Because stepV7 always increment the counter, for a new time,
+    -- we may start with the counter very close to the wrapping limit,
+    -- and calling it again will wrap the counter to 0,
+    -- invalidating the monotonic order guarantees.
+    -- Maybe the V7State should keep the time,
+    -- and reset the counter to 0 if the stepV7 calls it with a new time.
+    -- In any case, let’s make sure our Time.Posix value don’t get stale for too long.
+    -- There are probably a few relevant places where we can bundle
+    -- ConcurrentTask.Time.now with another message to update the model time.
+    Tuple.mapFirst UUID.toString (UUID.stepV7 time state)
