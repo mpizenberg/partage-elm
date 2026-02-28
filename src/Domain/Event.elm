@@ -1,8 +1,10 @@
-module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), compareEnvelopes, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents)
+module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), buildExpenseEvent, buildGroupCreationEvents, compareEnvelopes, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents)
 
 {-| Event types and ordering for the event-sourced state machine.
 -}
 
+import Domain.Currency exposing (Currency)
+import Domain.Date as Date
 import Domain.Entry as Entry exposing (Entry)
 import Domain.Group as Group
 import Domain.Member as Member
@@ -78,6 +80,99 @@ compareEnvelopes a b =
 sortEvents : List Envelope -> List Envelope
 sortEvents =
     List.sortWith compareEnvelopes
+
+
+{-| Build the events for creating a new group:
+GroupMetadataUpdated + MemberCreated for the creator + MemberCreated for each virtual member.
+The eventIds list must have length >= 2 + length of virtualMembers.
+-}
+buildGroupCreationEvents :
+    { creatorId : Member.Id
+    , groupName : String
+    , creatorName : String
+    , virtualMembers : List ( Member.Id, String )
+    , eventIds : List Id
+    , currentTime : Time.Posix
+    }
+    -> List Envelope
+buildGroupCreationEvents config =
+    let
+        envelope eventId payload =
+            { id = eventId
+            , clientTimestamp = config.currentTime
+            , triggeredBy = config.creatorId
+            , payload = payload
+            }
+    in
+    List.map2 envelope
+        config.eventIds
+        (GroupMetadataUpdated
+            { name = Just config.groupName
+            , subtitle = Nothing
+            , description = Nothing
+            , links = Nothing
+            }
+            :: MemberCreated
+                { memberId = config.creatorId
+                , name = config.creatorName
+                , memberType = Member.Real
+                , addedBy = config.creatorId
+                }
+            :: List.map
+                (\( vmId, vmName ) ->
+                    MemberCreated
+                        { memberId = vmId
+                        , name = vmName
+                        , memberType = Member.Virtual
+                        , addedBy = config.creatorId
+                        }
+                )
+                config.virtualMembers
+        )
+
+
+{-| Build an expense entry event with equal shares among the given beneficiary member IDs.
+-}
+buildExpenseEvent :
+    { entryId : Entry.Id
+    , eventId : Id
+    , currentUserRootId : Member.Id
+    , currentTime : Time.Posix
+    , currency : Currency
+    , beneficiaryIds : List Member.Id
+    , description : String
+    , amountCents : Int
+    }
+    -> Envelope
+buildExpenseEvent config =
+    let
+        -- TODO later: actually, when creating new entry, we should record the actual member Id, not its rootId.
+        -- The rootId matching is someone else’s concern.
+        entry =
+            { meta = Entry.newMetadata config.entryId config.currentUserRootId config.currentTime
+            , kind =
+                Entry.Expense
+                    { description = config.description
+                    , amount = config.amountCents
+                    , currency = config.currency
+                    , defaultCurrencyAmount = Nothing
+                    , date = Date.posixToDate config.currentTime
+                    , payers = [ { memberId = config.currentUserRootId, amount = config.amountCents } ]
+                    , beneficiaries =
+                        List.map
+                            (\mid -> Entry.ShareBeneficiary { memberId = mid, shares = 1 })
+                            config.beneficiaryIds
+                    , category = Nothing
+                    , location = Nothing
+                    , notes = Nothing
+                    }
+            }
+    in
+    { id = config.eventId
+    , clientTimestamp = config.currentTime
+    , triggeredBy = config.currentUserRootId
+    , payload = EntryAdded entry
+    }
 
 
 encodeEnvelope : Envelope -> Encode.Value

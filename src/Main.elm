@@ -4,13 +4,9 @@ import AppUrl exposing (AppUrl)
 import Browser
 import ConcurrentTask
 import Dict
-import Domain.Currency exposing (Currency)
-import Domain.Date as Date
-import Domain.Entry as Entry exposing (Beneficiary(..), Kind(..))
-import Domain.Event as Event exposing (Payload(..))
+import Domain.Event as Event
 import Domain.Group as Group
 import Domain.GroupState as GroupState exposing (GroupState)
-import Domain.Member as Member
 import Form.NewEntry
 import Form.NewGroup
 import Html exposing (Html)
@@ -40,6 +36,7 @@ import UUID
 import Ui
 import Ui.Font
 import Url
+import UuidGen
 import WebCrypto
 
 
@@ -431,99 +428,27 @@ submitNewGroup model readyData output =
 
         Just identity ->
             let
-                creatorId =
-                    identity.publicKeyHash
-
                 -- Generate group ID (v4)
                 ( groupId, seed1 ) =
-                    generateUuidV4 model.randomSeed
+                    UuidGen.v4 model.randomSeed
 
                 -- Generate virtual member IDs (v4)
-                ( virtualMemberIds, seedAfterMembers ) =
-                    List.foldl
-                        (\_ ( ids, s ) ->
-                            let
-                                ( id, s2 ) =
-                                    generateUuidV4 s
-                            in
-                            ( ids ++ [ id ], s2 )
-                        )
-                        ( [], seed1 )
-                        output.virtualMembers
+                ( virtualMemberIds, seedAfter ) =
+                    UuidGen.v4batch (List.length output.virtualMembers) seed1
 
-                -- Generate event IDs (v7)
-                numEvents =
-                    2 + List.length output.virtualMembers
-
+                -- Generate event IDs (v7): 1 metadata + 1 creator + N virtual members
                 ( eventIds, uuidStateAfter ) =
-                    List.foldl
-                        (\_ ( ids, st ) ->
-                            let
-                                ( id, st2 ) =
-                                    generateUuidV7 model.currentTime st
-                            in
-                            ( ids ++ [ id ], st2 )
-                        )
-                        ( [], model.uuidState )
-                        (List.range 1 numEvents)
-
-                -- Build events
-                makeEnvelope eventId payload =
-                    { id = eventId
-                    , clientTimestamp = model.currentTime
-                    , triggeredBy = creatorId
-                    , payload = payload
-                    }
-
-                metadataEvent =
-                    case List.head eventIds of
-                        Just eid ->
-                            [ makeEnvelope eid
-                                (GroupMetadataUpdated
-                                    { name = Just output.name
-                                    , subtitle = Nothing
-                                    , description = Nothing
-                                    , links = Nothing
-                                    }
-                                )
-                            ]
-
-                        Nothing ->
-                            []
-
-                creatorEvent =
-                    case eventIds |> List.drop 1 |> List.head of
-                        Just eid ->
-                            [ makeEnvelope eid
-                                (MemberCreated
-                                    { memberId = creatorId
-                                    , name = output.creatorName
-                                    , memberType = Member.Real
-                                    , addedBy = creatorId
-                                    }
-                                )
-                            ]
-
-                        Nothing ->
-                            []
-
-                virtualMemberEvents =
-                    List.map2
-                        (\( vmId, vmName ) eid ->
-                            makeEnvelope eid
-                                (MemberCreated
-                                    { memberId = vmId
-                                    , name = vmName
-                                    , memberType = Member.Virtual
-                                    , addedBy = creatorId
-                                    }
-                                )
-                        )
-                        (List.map2 Tuple.pair virtualMemberIds output.virtualMembers)
-                        (List.drop 2 eventIds)
+                    UuidGen.v7batch (2 + List.length output.virtualMembers) model.currentTime model.uuidState
 
                 allEvents =
-                    metadataEvent ++ creatorEvent ++ virtualMemberEvents
+                    Event.buildGroupCreationEvents
+                        { creatorId = identity.publicKeyHash
+                        , groupName = output.name
+                        , creatorName = output.creatorName
+                        , virtualMembers = List.map2 Tuple.pair virtualMemberIds output.virtualMembers
+                        , eventIds = eventIds
+                        , currentTime = model.currentTime
+                        }
 
                 summary =
                     { id = groupId
@@ -546,7 +471,7 @@ submitNewGroup model readyData output =
             in
             ( { model
                 | pool = pool
-                , randomSeed = seedAfterMembers
+                , randomSeed = seedAfter
                 , uuidState = uuidStateAfter
               }
             , cmd
@@ -561,46 +486,23 @@ submitNewEntry model readyData loaded output =
 
         Just currentUserRootId ->
             let
-                -- Generate entry ID (v4)
-                ( entryId, newSeed ) =
-                    generateUuidV4 model.randomSeed
+                ( entryId, seedAfter ) =
+                    UuidGen.v4 model.randomSeed
 
-                -- Generate event ID (v7)
-                ( eventId, newUuidState ) =
-                    generateUuidV7 model.currentTime model.uuidState
-
-                -- Build beneficiaries: all active members with equal shares
-                activeMembers =
-                    GroupState.activeMembers loaded.groupState
-
-                beneficiaries =
-                    List.map
-                        (\m -> ShareBeneficiary { memberId = m.rootId, shares = 1 })
-                        activeMembers
-
-                entry =
-                    { meta = Entry.newMetadata entryId currentUserRootId model.currentTime
-                    , kind =
-                        Expense
-                            { description = output.description
-                            , amount = output.amountCents
-                            , currency = loaded.summary.defaultCurrency
-                            , defaultCurrencyAmount = Nothing
-                            , date = Date.posixToDate model.currentTime
-                            , payers = [ { memberId = currentUserRootId, amount = output.amountCents } ]
-                            , beneficiaries = beneficiaries
-                            , category = Nothing
-                            , location = Nothing
-                            , notes = Nothing
-                            }
-                    }
+                ( eventId, uuidStateAfter ) =
+                    UuidGen.v7 model.currentTime model.uuidState
 
                 envelope =
-                    { id = eventId
-                    , clientTimestamp = model.currentTime
-                    , triggeredBy = currentUserRootId
-                    , payload = EntryAdded entry
-                    }
+                    Event.buildExpenseEvent
+                        { entryId = entryId
+                        , eventId = eventId
+                        , currentUserRootId = currentUserRootId
+                        , currentTime = model.currentTime
+                        , currency = loaded.summary.defaultCurrency
+                        , beneficiaryIds = List.map .rootId (GroupState.activeMembers loaded.groupState)
+                        , description = output.description
+                        , amountCents = output.amountCents
+                        }
 
                 task =
                     Storage.saveEvents readyData.db loaded.groupId [ envelope ]
@@ -616,8 +518,8 @@ submitNewEntry model readyData loaded output =
             in
             ( { model
                 | pool = pool
-                , randomSeed = newSeed
-                , uuidState = newUuidState
+                , randomSeed = seedAfter
+                , uuidState = uuidStateAfter
               }
             , cmd
             )
@@ -814,25 +716,3 @@ viewLoadingGroup i18n langSelector =
             Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
                 (Ui.text (T.loadingGroup i18n))
         }
-
-
-generateUuidV4 : Random.Seed -> ( String, Random.Seed )
-generateUuidV4 seed =
-    -- TODO later: use UUID.step instead for better randomness
-    Tuple.mapFirst UUID.toString (Random.step UUID.generator seed)
-
-
-generateUuidV7 : Time.Posix -> UUID.V7State -> ( String, UUID.V7State )
-generateUuidV7 time state =
-    -- TODO later:
-    -- This function will lead to invalid UUIDs.
-    -- Because stepV7 always increment the counter, for a new time,
-    -- we may start with the counter very close to the wrapping limit,
-    -- and calling it again will wrap the counter to 0,
-    -- invalidating the monotonic order guarantees.
-    -- Maybe the V7State should keep the time,
-    -- and reset the counter to 0 if the stepV7 calls it with a new time.
-    -- In any case, let’s make sure our Time.Posix value don’t get stale for too long.
-    -- There are probably a few relevant places where we can bundle
-    -- ConcurrentTask.Time.now with another message to update the model time.
-    Tuple.mapFirst UUID.toString (UUID.stepV7 time state)
