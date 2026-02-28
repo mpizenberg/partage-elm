@@ -4,10 +4,13 @@ import AppUrl exposing (AppUrl)
 import Browser
 import ConcurrentTask
 import Dict
+import Domain.Currency
 import Domain.Date as Date
+import Domain.Entry as Entry
 import Domain.Event as Event
 import Domain.Group as Group
 import Domain.GroupState as GroupState exposing (GroupState)
+import Domain.Member as Member
 import Form.NewGroup
 import Html exposing (Html)
 import Identity exposing (Identity)
@@ -16,6 +19,7 @@ import Json.Decode
 import Json.Encode
 import Navigation
 import Page.About
+import Page.EntryDetail
 import Page.Group
 import Page.Home
 import Page.InitError
@@ -73,6 +77,7 @@ type alias Model =
     , newGroupModel : Page.NewGroup.Model
     , newEntryModel : Page.NewEntry.Model
     , loadedGroup : Maybe LoadedGroup
+    , showDeleted : Bool
     }
 
 
@@ -106,6 +111,11 @@ type Msg
       -- Form submission responses
     | OnGroupCreated (ConcurrentTask.Response Idb.Error GroupSummary)
     | OnEntrySaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
+      -- Entry actions
+    | DeleteEntry Entry.Id
+    | RestoreEntry Entry.Id
+    | OnEntryActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
+    | ToggleShowDeleted
       -- Group loading
     | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error (List Event.Envelope))
 
@@ -182,6 +192,7 @@ init flags =
       , newGroupModel = Page.NewGroup.init
       , newEntryModel = Page.NewEntry.init { currentUserRootId = "", activeMembers = [], today = Date.posixToDate currentTime }
       , loadedGroup = Nothing
+      , showDeleted = False
       }
     , cmd
     )
@@ -208,6 +219,7 @@ update msg model =
 
                 modelWithEntry =
                     initNewEntryIfNeeded modelAfterGuard guardedRoute
+                        |> (\m -> initEditEntryIfNeeded m guardedRoute)
             in
             ( modelWithEntry, Cmd.batch [ guardCmd, loadCmd ] )
 
@@ -333,7 +345,12 @@ update msg model =
             in
             case ( maybeOutput, model.appState, model.loadedGroup ) of
                 ( Just output, Ready readyData, Just loaded ) ->
-                    submitNewEntry modelWithForm readyData loaded output
+                    case model.route of
+                        GroupRoute _ (EditEntry entryId) ->
+                            submitEditEntry modelWithForm readyData loaded entryId output
+
+                        _ ->
+                            submitNewEntry modelWithForm readyData loaded output
 
                 _ ->
                     ( modelWithForm, Cmd.none )
@@ -395,6 +412,46 @@ update msg model =
         OnEntrySaved _ _ ->
             ( model, Cmd.none )
 
+        DeleteEntry rootId ->
+            deleteOrRestoreEntry model Event.buildEntryDeletedEvent rootId
+
+        RestoreEntry rootId ->
+            deleteOrRestoreEntry model Event.buildEntryUndeletedEvent rootId
+
+        OnEntryActionSaved groupId (ConcurrentTask.Success envelope) ->
+            case model.loadedGroup of
+                Just loaded ->
+                    if loaded.groupId == groupId then
+                        let
+                            newEvents =
+                                loaded.events ++ [ envelope ]
+
+                            newGroupState =
+                                GroupState.applyEvents newEvents
+                        in
+                        ( { model
+                            | loadedGroup =
+                                Just
+                                    { loaded
+                                        | events = newEvents
+                                        , groupState = newGroupState
+                                    }
+                          }
+                        , Cmd.none
+                        )
+
+                    else
+                        ( model, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        OnEntryActionSaved _ _ ->
+            ( model, Cmd.none )
+
+        ToggleShowDeleted ->
+            ( { model | showDeleted = not model.showDeleted }, Cmd.none )
+
         -- Group loading
         OnGroupEventsLoaded groupId (ConcurrentTask.Success events) ->
             case model.appState of
@@ -413,7 +470,9 @@ update msg model =
                                                 }
                                     }
                             in
-                            ( initNewEntryIfNeeded modelWithGroup model.route
+                            ( modelWithGroup
+                                |> (\m -> initNewEntryIfNeeded m model.route)
+                                |> (\m -> initEditEntryIfNeeded m model.route)
                             , Cmd.none
                             )
 
@@ -550,6 +609,167 @@ submitNewEntry model readyData loaded output =
               }
             , cmd
             )
+
+
+submitEditEntry : Model -> Storage.InitData -> LoadedGroup -> Entry.Id -> Page.NewEntry.Output -> ( Model, Cmd Msg )
+submitEditEntry model readyData loaded originalEntryId output =
+    case readyData.identity |> Maybe.andThen (\id -> Dict.get id.publicKeyHash loaded.groupState.members) |> Maybe.map .rootId of
+        Nothing ->
+            ( model, Cmd.none )
+
+        Just currentUserRootId ->
+            case Dict.get originalEntryId loaded.groupState.entries of
+                Nothing ->
+                    ( model, Cmd.none )
+
+                Just entryState ->
+                    let
+                        ( newEntryId, seedAfter ) =
+                            UuidGen.v4 model.randomSeed
+
+                        ( eventId, uuidStateAfter ) =
+                            UuidGen.v7 model.currentTime model.uuidState
+
+                        newKind =
+                            outputToKind loaded.summary.defaultCurrency output
+
+                        envelope =
+                            Event.buildEntryModifiedEvent
+                                { newEntryId = newEntryId
+                                , eventId = eventId
+                                , currentUserRootId = currentUserRootId
+                                , currentTime = model.currentTime
+                                , previousEntry = entryState.currentVersion
+                                , newKind = newKind
+                                }
+
+                        task =
+                            Storage.saveEvents readyData.db loaded.groupId [ envelope ]
+                                |> ConcurrentTask.map (\_ -> envelope)
+
+                        ( pool, cmd ) =
+                            ConcurrentTask.attempt
+                                { pool = model.pool
+                                , send = sendTask
+                                , onComplete = OnEntrySaved loaded.groupId
+                                }
+                                task
+                    in
+                    ( { model
+                        | pool = pool
+                        , randomSeed = seedAfter
+                        , uuidState = uuidStateAfter
+                      }
+                    , cmd
+                    )
+
+
+outputToKind : Domain.Currency.Currency -> Page.NewEntry.Output -> Entry.Kind
+outputToKind currency output =
+    case output of
+        Page.NewEntry.ExpenseOutput data ->
+            Entry.Expense
+                { description = data.description
+                , amount = data.amountCents
+                , currency = currency
+                , defaultCurrencyAmount = Nothing
+                , date = data.date
+                , payers = [ { memberId = data.payerId, amount = data.amountCents } ]
+                , beneficiaries =
+                    List.map
+                        (\mid -> Entry.ShareBeneficiary { memberId = mid, shares = 1 })
+                        data.beneficiaryIds
+                , category = data.category
+                , location = Nothing
+                , notes = data.notes
+                }
+
+        Page.NewEntry.TransferOutput data ->
+            Entry.Transfer
+                { amount = data.amountCents
+                , currency = currency
+                , defaultCurrencyAmount = Nothing
+                , date = data.date
+                , from = data.fromMemberId
+                , to = data.toMemberId
+                , notes = data.notes
+                }
+
+
+deleteOrRestoreEntry :
+    Model
+    -> ({ eventId : Event.Id, currentUserRootId : Member.Id, currentTime : Time.Posix, rootId : Entry.Id } -> Event.Envelope)
+    -> Entry.Id
+    -> ( Model, Cmd Msg )
+deleteOrRestoreEntry model buildEvent rootId =
+    case ( model.appState, model.loadedGroup ) of
+        ( Ready readyData, Just loaded ) ->
+            case readyData.identity |> Maybe.andThen (\id -> Dict.get id.publicKeyHash loaded.groupState.members) |> Maybe.map .rootId of
+                Just currentUserRootId ->
+                    let
+                        ( eventId, uuidStateAfter ) =
+                            UuidGen.v7 model.currentTime model.uuidState
+
+                        envelope =
+                            buildEvent
+                                { eventId = eventId
+                                , currentUserRootId = currentUserRootId
+                                , currentTime = model.currentTime
+                                , rootId = rootId
+                                }
+
+                        task =
+                            Storage.saveEvents readyData.db loaded.groupId [ envelope ]
+                                |> ConcurrentTask.map (\_ -> envelope)
+
+                        ( pool, cmd ) =
+                            ConcurrentTask.attempt
+                                { pool = model.pool
+                                , send = sendTask
+                                , onComplete = OnEntryActionSaved loaded.groupId
+                                }
+                                task
+                    in
+                    ( { model | pool = pool, uuidState = uuidStateAfter }, cmd )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        _ ->
+            ( model, Cmd.none )
+
+
+initEditEntryIfNeeded : Model -> Route -> Model
+initEditEntryIfNeeded model route =
+    case ( route, model.appState, model.loadedGroup ) of
+        ( GroupRoute _ (EditEntry entryId), Ready readyData, Just loaded ) ->
+            case Dict.get entryId loaded.groupState.entries of
+                Just entryState ->
+                    let
+                        currentUserRootId =
+                            readyData.identity
+                                |> Maybe.andThen (\id -> Dict.get id.publicKeyHash loaded.groupState.members)
+                                |> Maybe.map .rootId
+                                |> Maybe.withDefault ""
+
+                        activeMembers =
+                            GroupState.activeMembers loaded.groupState
+                    in
+                    { model
+                        | newEntryModel =
+                            Page.NewEntry.initFromEntry
+                                { currentUserRootId = currentUserRootId
+                                , activeMembers = List.map (\m -> { id = m.id, rootId = m.rootId }) activeMembers
+                                , today = Date.posixToDate model.currentTime
+                                }
+                                entryState.currentVersion
+                    }
+
+                Nothing ->
+                    model
+
+        _ ->
+            model
 
 
 initNewEntryIfNeeded : Model -> Route -> Model
@@ -717,8 +937,11 @@ viewReady model readyData =
                             { i18n = i18n
                             , onTabClick = SwitchTab
                             , onNewEntry = NavigateTo (GroupRoute groupId NewEntry)
+                            , onEntryClick = \entryId -> NavigateTo (GroupRoute groupId (EntryDetail entryId))
+                            , onToggleDeleted = ToggleShowDeleted
                             , currentUserRootId = currentUserRootId
                             }
+                            { showDeleted = model.showDeleted }
                             langSelector
                             loaded.groupState
                             tab
@@ -744,6 +967,64 @@ viewReady model readyData =
                     if loaded.groupId == groupId then
                         UI.Shell.appShell
                             { title = T.shellNewEntry i18n
+                            , headerExtra = langSelector
+                            , content =
+                                Page.NewEntry.view i18n
+                                    (GroupState.activeMembers loaded.groupState)
+                                    NewEntryMsg
+                                    model.newEntryModel
+                            }
+
+                    else
+                        viewLoadingGroup i18n langSelector
+
+                Nothing ->
+                    viewLoadingGroup i18n langSelector
+
+        GroupRoute groupId (EntryDetail entryId) ->
+            case model.loadedGroup of
+                Just loaded ->
+                    if loaded.groupId == groupId then
+                        case Dict.get entryId loaded.groupState.entries of
+                            Just entryState ->
+                                UI.Shell.appShell
+                                    { title = T.entryDetailTitle i18n
+                                    , headerExtra = langSelector
+                                    , content =
+                                        Page.EntryDetail.view i18n
+                                            { onEdit = NavigateTo (GroupRoute groupId (EditEntry entryId))
+                                            , onDelete = DeleteEntry entryId
+                                            , onRestore = RestoreEntry entryId
+                                            , onBack = NavigateTo (GroupRoute groupId (Tab EntriesTab))
+                                            , currentUserRootId =
+                                                readyData.identity
+                                                    |> Maybe.andThen (\id -> Dict.get id.publicKeyHash loaded.groupState.members)
+                                                    |> Maybe.map .rootId
+                                                    |> Maybe.withDefault ""
+                                            , resolveName = GroupState.resolveMemberName loaded.groupState
+                                            }
+                                            entryState
+                                    }
+
+                            Nothing ->
+                                UI.Shell.appShell
+                                    { title = T.shellPartage i18n
+                                    , headerExtra = langSelector
+                                    , content = Page.NotFound.view i18n
+                                    }
+
+                    else
+                        viewLoadingGroup i18n langSelector
+
+                Nothing ->
+                    viewLoadingGroup i18n langSelector
+
+        GroupRoute groupId (EditEntry _) ->
+            case model.loadedGroup of
+                Just loaded ->
+                    if loaded.groupId == groupId then
+                        UI.Shell.appShell
+                            { title = T.editEntryTitle i18n
                             , headerExtra = langSelector
                             , content =
                                 Page.NewEntry.view i18n

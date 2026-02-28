@@ -1,4 +1,4 @@
-module Domain.Date exposing (Date, dateDecoder, encodeDate, posixToDate)
+module Domain.Date exposing (Date, dateDecoder, encodeDate, posixToDate, toString)
 
 {-| Simple calendar date type for entries.
 -}
@@ -34,6 +34,17 @@ dateDecoder =
         (Decode.field "year" Decode.int)
         (Decode.field "month" Decode.int)
         (Decode.field "day" Decode.int)
+
+
+{-| Format a date as "YYYY-MM-DD".
+-}
+toString : Date -> String
+toString date =
+    String.fromInt date.year
+        ++ "-"
+        ++ String.padLeft 2 '0' (String.fromInt date.month)
+        ++ "-"
+        ++ String.padLeft 2 '0' (String.fromInt date.day)
 
 
 posixToDate : Time.Posix -> Date

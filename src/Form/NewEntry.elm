@@ -5,7 +5,9 @@ module Form.NewEntry exposing
     , Output
     , State
     , form
+    , initAmount
     , initDate
+    , initDescription
     )
 
 import Domain.Date as Date exposing (Date)
@@ -146,6 +148,20 @@ form =
 initDate : Date -> Form -> Form
 initDate date =
     Form.modify .date (Field.setFromString (dateToString date))
+
+
+{-| Initialize the description field.
+-}
+initDescription : String -> Form -> Form
+initDescription desc =
+    Form.modify .description (Field.setFromString desc)
+
+
+{-| Initialize the amount field from cents.
+-}
+initAmount : Int -> Form -> Form
+initAmount cents =
+    Form.modify .amount (Field.setFromString (amountToString cents))
 
 
 init : State

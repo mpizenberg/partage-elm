@@ -79,19 +79,24 @@ balanceCard i18n config =
         ]
 
 
-{-| A card displaying an entry (expense or transfer).
+{-| A card displaying an entry (expense or transfer). Clickable via onClick.
 -}
-entryCard : I18n -> (Member.Id -> String) -> Entry -> Ui.Element msg
-entryCard i18n resolveName entry =
+entryCard : I18n -> (Member.Id -> String) -> msg -> Entry -> Ui.Element msg
+entryCard i18n resolveName onClick entry =
+    let
+        rowAttrs =
+            [ Ui.width Ui.fill
+            , Ui.padding Theme.spacing.md
+            , Ui.borderWith { bottom = Theme.borderWidth.sm, top = 0, left = 0, right = 0 }
+            , Ui.borderColor Theme.neutral200
+            , Ui.spacing Theme.spacing.md
+            , Ui.pointer
+            , Ui.Events.onClick onClick
+            ]
+    in
     case entry.kind of
         Expense data ->
-            Ui.row
-                [ Ui.width Ui.fill
-                , Ui.padding Theme.spacing.md
-                , Ui.borderWith { bottom = Theme.borderWidth.sm, top = 0, left = 0, right = 0 }
-                , Ui.borderColor Theme.neutral200
-                , Ui.spacing Theme.spacing.md
-                ]
+            Ui.row rowAttrs
                 [ Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.xs ]
                     [ Ui.el [ Ui.Font.bold ] (Ui.text data.description)
                     , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
@@ -102,13 +107,7 @@ entryCard i18n resolveName entry =
                 ]
 
         Transfer data ->
-            Ui.row
-                [ Ui.width Ui.fill
-                , Ui.padding Theme.spacing.md
-                , Ui.borderWith { bottom = Theme.borderWidth.sm, top = 0, left = 0, right = 0 }
-                , Ui.borderColor Theme.neutral200
-                , Ui.spacing Theme.spacing.md
-                ]
+            Ui.row rowAttrs
                 [ Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.xs ]
                     [ Ui.el [ Ui.Font.bold ] (Ui.text (T.entryTransfer i18n))
                     , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]

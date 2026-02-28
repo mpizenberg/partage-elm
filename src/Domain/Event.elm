@@ -1,4 +1,4 @@
-module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), buildExpenseEvent, buildGroupCreationEvents, buildTransferEvent, compareEnvelopes, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents)
+module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), buildEntryDeletedEvent, buildEntryModifiedEvent, buildEntryUndeletedEvent, buildExpenseEvent, buildGroupCreationEvents, buildTransferEvent, compareEnvelopes, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents)
 
 {-| Event types and ordering for the event-sourced state machine.
 -}
@@ -214,6 +214,63 @@ buildTransferEvent config =
     , clientTimestamp = config.currentTime
     , triggeredBy = config.currentUserRootId
     , payload = EntryAdded entry
+    }
+
+
+{-| Build an entry modification event, linking the new version to the previous one.
+-}
+buildEntryModifiedEvent :
+    { newEntryId : Entry.Id
+    , eventId : Id
+    , currentUserRootId : Member.Id
+    , currentTime : Time.Posix
+    , previousEntry : Entry
+    , newKind : Entry.Kind
+    }
+    -> Envelope
+buildEntryModifiedEvent config =
+    let
+        entry =
+            Entry.replace config.previousEntry.meta config.newEntryId config.newKind
+    in
+    { id = config.eventId
+    , clientTimestamp = config.currentTime
+    , triggeredBy = config.currentUserRootId
+    , payload = EntryModified entry
+    }
+
+
+{-| Build an entry deletion event.
+-}
+buildEntryDeletedEvent :
+    { eventId : Id
+    , currentUserRootId : Member.Id
+    , currentTime : Time.Posix
+    , rootId : Entry.Id
+    }
+    -> Envelope
+buildEntryDeletedEvent config =
+    { id = config.eventId
+    , clientTimestamp = config.currentTime
+    , triggeredBy = config.currentUserRootId
+    , payload = EntryDeleted { rootId = config.rootId }
+    }
+
+
+{-| Build an entry restoration event.
+-}
+buildEntryUndeletedEvent :
+    { eventId : Id
+    , currentUserRootId : Member.Id
+    , currentTime : Time.Posix
+    , rootId : Entry.Id
+    }
+    -> Envelope
+buildEntryUndeletedEvent config =
+    { id = config.eventId
+    , clientTimestamp = config.currentTime
+    , triggeredBy = config.currentUserRootId
+    , payload = EntryUndeleted { rootId = config.rootId }
     }
 
 

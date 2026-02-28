@@ -3,6 +3,7 @@ module Page.Group exposing (Context, view)
 {-| Group page shell with tab routing, using real group data.
 -}
 
+import Domain.Entry as Entry
 import Domain.GroupState exposing (GroupState)
 import Domain.Member as Member
 import Page.Group.ActivitiesTab
@@ -21,18 +22,20 @@ type alias Context msg =
     { i18n : I18n
     , onTabClick : GroupTab -> msg
     , onNewEntry : msg
+    , onEntryClick : Entry.Id -> msg
+    , onToggleDeleted : msg
     , currentUserRootId : Member.Id
     }
 
 
-view : Context msg -> Ui.Element msg -> GroupState -> GroupTab -> Ui.Element msg
-view ctx headerExtra groupState activeTab =
+view : Context msg -> { showDeleted : Bool } -> Ui.Element msg -> GroupState -> GroupTab -> Ui.Element msg
+view ctx { showDeleted } headerExtra groupState activeTab =
     UI.Shell.groupShell
         { groupName = groupState.groupMeta.name
         , headerExtra = headerExtra
         , activeTab = activeTab
         , onTabClick = ctx.onTabClick
-        , content = tabContent ctx groupState activeTab
+        , content = tabContent ctx showDeleted groupState activeTab
         , tabLabels =
             { balance = T.tabBalance ctx.i18n
             , entries = T.tabEntries ctx.i18n
@@ -42,14 +45,20 @@ view ctx headerExtra groupState activeTab =
         }
 
 
-tabContent : Context msg -> GroupState -> GroupTab -> Ui.Element msg
-tabContent ctx state tab =
+tabContent : Context msg -> Bool -> GroupState -> GroupTab -> Ui.Element msg
+tabContent ctx showDeleted state tab =
     case tab of
         BalanceTab ->
             Page.Group.BalanceTab.view ctx.i18n ctx.currentUserRootId state
 
         EntriesTab ->
-            Page.Group.EntriesTab.view ctx.i18n ctx.onNewEntry state
+            Page.Group.EntriesTab.view ctx.i18n
+                { onNewEntry = ctx.onNewEntry
+                , onEntryClick = ctx.onEntryClick
+                , showDeleted = showDeleted
+                , onToggleDeleted = ctx.onToggleDeleted
+                }
+                state
 
         MembersTab ->
             Page.Group.MembersTab.view ctx.i18n ctx.currentUserRootId state

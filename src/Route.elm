@@ -1,10 +1,11 @@
-module Route exposing (GroupTab(..), GroupView(..), Route(..), fromAppUrl, toAppUrl, toPath)
+module Route exposing (GroupTab(..), GroupView(..), Route(..), fromAppUrl, toAppUrl, toPath, toPathSegments)
 
 {-| Application routing types with URL parsing and serialization.
 -}
 
 import AppUrl exposing (AppUrl)
 import Dict
+import Domain.Entry as Entry
 import Domain.Group as Group
 
 
@@ -25,6 +26,8 @@ type GroupView
     = Join String
     | Tab GroupTab
     | NewEntry
+    | EntryDetail Entry.Id
+    | EditEntry Entry.Id
 
 
 {-| The tabs available within a group's main view.
@@ -67,6 +70,12 @@ fromAppUrl appUrl =
 
         [ "groups", groupId, "new-entry" ] ->
             GroupRoute groupId NewEntry
+
+        [ "groups", groupId, "entries", entryId ] ->
+            GroupRoute groupId (EntryDetail entryId)
+
+        [ "groups", groupId, "entries", entryId, "edit" ] ->
+            GroupRoute groupId (EditEntry entryId)
 
         [ "about" ] ->
             About
@@ -120,6 +129,12 @@ toPathSegments route =
         GroupRoute groupId NewEntry ->
             [ "groups", groupId, "new-entry" ]
 
+        GroupRoute groupId (EntryDetail entryId) ->
+            [ "groups", groupId, "entries", entryId ]
+
+        GroupRoute groupId (EditEntry entryId) ->
+            [ "groups", groupId, "entries", entryId, "edit" ]
+
         About ->
             [ "about" ]
 
@@ -158,6 +173,12 @@ toPath route =
 
         GroupRoute groupId NewEntry ->
             "/groups/" ++ groupId ++ "/new-entry"
+
+        GroupRoute groupId (EntryDetail entryId) ->
+            "/groups/" ++ groupId ++ "/entries/" ++ entryId
+
+        GroupRoute groupId (EditEntry entryId) ->
+            "/groups/" ++ groupId ++ "/entries/" ++ entryId ++ "/edit"
 
         About ->
             "/about"

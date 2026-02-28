@@ -1,4 +1,4 @@
-module Page.NewEntry exposing (Config, EntryKind(..), Model, Msg, Output(..), init, update, view)
+module Page.NewEntry exposing (Config, EntryKind(..), Model, Msg, Output(..), init, initFromEntry, update, view)
 
 import Domain.Date as Date exposing (Date)
 import Domain.Entry as Entry
@@ -110,6 +110,66 @@ init config =
         , category = Nothing
         , notes = ""
         }
+
+
+{-| Initialize from an existing entry for editing.
+-}
+initFromEntry : Config -> Entry.Entry -> Model
+initFromEntry config entry =
+    case entry.kind of
+        Entry.Expense data ->
+            let
+                beneficiaryMemberIds =
+                    List.filterMap
+                        (\b ->
+                            case b of
+                                Entry.ShareBeneficiary s ->
+                                    Just s.memberId
+
+                                Entry.ExactBeneficiary e ->
+                                    Just e.memberId
+                        )
+                        data.beneficiaries
+
+                payerId =
+                    case data.payers of
+                        p :: _ ->
+                            p.memberId
+
+                        [] ->
+                            config.currentUserRootId
+            in
+            Model
+                { form =
+                    NewEntry.form
+                        |> NewEntry.initDescription data.description
+                        |> NewEntry.initAmount data.amount
+                        |> NewEntry.initDate data.date
+                , submitted = False
+                , kind = ExpenseKind
+                , payerId = payerId
+                , beneficiaryIds = Set.fromList beneficiaryMemberIds
+                , fromMemberId = config.currentUserRootId
+                , toMemberId = config.currentUserRootId
+                , category = data.category
+                , notes = Maybe.withDefault "" data.notes
+                }
+
+        Entry.Transfer data ->
+            Model
+                { form =
+                    NewEntry.form
+                        |> NewEntry.initAmount data.amount
+                        |> NewEntry.initDate data.date
+                , submitted = False
+                , kind = TransferKind
+                , payerId = config.currentUserRootId
+                , beneficiaryIds = Set.fromList (List.map .rootId config.activeMembers)
+                , fromMemberId = data.from
+                , toMemberId = data.to
+                , category = Nothing
+                , notes = Maybe.withDefault "" data.notes
+                }
 
 
 update : Msg -> Model -> ( Model, Maybe Output )
