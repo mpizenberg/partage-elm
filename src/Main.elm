@@ -11,9 +11,6 @@ import Domain.Event as Event exposing (Payload(..))
 import Domain.Group as Group
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
-import Field
-import Form
-import Form.List
 import Form.NewEntry
 import Form.NewGroup
 import Html exposing (Html)
@@ -76,8 +73,8 @@ type alias Model =
     , uuidState : UUID.V7State
     , randomSeed : Random.Seed
     , currentTime : Time.Posix
-    , newGroupForm : Form.NewGroup.Form
-    , newEntryForm : Form.NewEntry.Form
+    , newGroupModel : Page.NewGroup.Model
+    , newEntryModel : Page.NewEntry.Model
     , loadedGroup : Maybe LoadedGroup
     }
 
@@ -106,19 +103,11 @@ type Msg
     | OnIdentityGenerated (ConcurrentTask.Response WebCrypto.Error Identity)
     | OnInitComplete (ConcurrentTask.Response Idb.Error Storage.InitData)
     | OnIdentitySaved (ConcurrentTask.Response Idb.Error ())
-      -- New group form
-    | InputNewGroupName String
-    | InputNewGroupCreatorName String
-    | InputNewGroupCurrency String
-    | InputVirtualMemberName Form.List.Id String
-    | AddVirtualMember
-    | RemoveVirtualMember Form.List.Id
-    | SubmitNewGroup
+      -- Page form messages
+    | NewGroupMsg Page.NewGroup.Msg
+    | NewEntryMsg Page.NewEntry.Msg
+      -- Form submission responses
     | OnGroupCreated (ConcurrentTask.Response Idb.Error GroupSummary)
-      -- New entry form
-    | InputEntryDescription String
-    | InputEntryAmount String
-    | SubmitNewEntry Group.Id
     | OnEntrySaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
       -- Group loading
     | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error (List Event.Envelope))
@@ -193,8 +182,8 @@ init flags =
       , uuidState = uuidState
       , randomSeed = seedAfterV7
       , currentTime = currentTime
-      , newGroupForm = Form.NewGroup.form
-      , newEntryForm = Form.NewEntry.form
+      , newGroupModel = Page.NewGroup.init
+      , newEntryModel = Page.NewEntry.init
       , loadedGroup = Nothing
       }
     , cmd
@@ -318,37 +307,36 @@ update msg model =
         OnIdentitySaved _ ->
             ( model, Cmd.none )
 
-        -- New group form handlers
-        InputNewGroupName s ->
-            ( { model | newGroupForm = Form.modify .name (Field.setFromString s) model.newGroupForm }, Cmd.none )
+        -- Page form messages
+        NewGroupMsg subMsg ->
+            let
+                ( newGroupModel, maybeOutput ) =
+                    Page.NewGroup.update subMsg model.newGroupModel
 
-        InputNewGroupCreatorName s ->
-            ( { model | newGroupForm = Form.modify .creatorName (Field.setFromString s) model.newGroupForm }, Cmd.none )
-
-        InputNewGroupCurrency s ->
-            ( { model | newGroupForm = Form.modify .currency (Field.setFromString s) model.newGroupForm }, Cmd.none )
-
-        InputVirtualMemberName id s ->
-            ( { model | newGroupForm = Form.modify (\a -> a.virtualMemberName id) (Field.setFromString s) model.newGroupForm }, Cmd.none )
-
-        AddVirtualMember ->
-            ( { model | newGroupForm = Form.update .addVirtualMember model.newGroupForm }, Cmd.none )
-
-        RemoveVirtualMember id ->
-            ( { model | newGroupForm = Form.update (\a -> a.removeVirtualMember id) model.newGroupForm }, Cmd.none )
-
-        SubmitNewGroup ->
-            case model.appState of
-                Ready readyData ->
-                    case Form.validateAsMaybe model.newGroupForm of
-                        Just output ->
-                            submitNewGroup model readyData output
-
-                        Nothing ->
-                            ( model, Cmd.none )
+                modelWithForm =
+                    { model | newGroupModel = newGroupModel }
+            in
+            case ( maybeOutput, model.appState ) of
+                ( Just output, Ready readyData ) ->
+                    submitNewGroup modelWithForm readyData output
 
                 _ ->
-                    ( model, Cmd.none )
+                    ( modelWithForm, Cmd.none )
+
+        NewEntryMsg subMsg ->
+            let
+                ( newEntryModel, maybeOutput ) =
+                    Page.NewEntry.update subMsg model.newEntryModel
+
+                modelWithForm =
+                    { model | newEntryModel = newEntryModel }
+            in
+            case ( maybeOutput, model.appState, model.loadedGroup ) of
+                ( Just output, Ready readyData, Just loaded ) ->
+                    submitNewEntry modelWithForm readyData loaded output
+
+                _ ->
+                    ( modelWithForm, Cmd.none )
 
         OnGroupCreated (ConcurrentTask.Success summary) ->
             case model.appState of
@@ -359,7 +347,6 @@ update msg model =
                     in
                     ( { model
                         | appState = Ready { readyData | groups = readyData.groups ++ [ summary ] }
-                        , newGroupForm = Form.NewGroup.form
                         , loadedGroup = Nothing
                       }
                     , Navigation.pushUrl navCmd (Route.toAppUrl newRoute)
@@ -370,30 +357,6 @@ update msg model =
 
         OnGroupCreated _ ->
             ( model, Cmd.none )
-
-        -- New entry form handlers
-        InputEntryDescription s ->
-            ( { model | newEntryForm = Form.modify .description (Field.setFromString s) model.newEntryForm }, Cmd.none )
-
-        InputEntryAmount s ->
-            ( { model | newEntryForm = Form.modify .amount (Field.setFromString s) model.newEntryForm }, Cmd.none )
-
-        SubmitNewEntry groupId ->
-            case ( model.appState, model.loadedGroup ) of
-                ( Ready readyData, Just loaded ) ->
-                    if loaded.groupId == groupId then
-                        case Form.validateAsMaybe model.newEntryForm of
-                            Just output ->
-                                submitNewEntry model readyData loaded output
-
-                            Nothing ->
-                                ( model, Cmd.none )
-
-                    else
-                        ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
 
         OnEntrySaved groupId (ConcurrentTask.Success envelope) ->
             case model.loadedGroup of
@@ -416,7 +379,6 @@ update msg model =
                                         | events = newEvents
                                         , groupState = newGroupState
                                     }
-                            , newEntryForm = Form.NewEntry.form
                           }
                         , Navigation.pushUrl navCmd (Route.toAppUrl newRoute)
                         )
@@ -778,17 +740,7 @@ viewReady model readyData =
             UI.Shell.appShell
                 { title = T.shellNewGroup i18n
                 , headerExtra = langSelector
-                , content =
-                    Page.NewGroup.view i18n
-                        { onInputName = InputNewGroupName
-                        , onInputCreatorName = InputNewGroupCreatorName
-                        , onInputCurrency = InputNewGroupCurrency
-                        , onInputVirtualMemberName = InputVirtualMemberName
-                        , onAddVirtualMember = AddVirtualMember
-                        , onRemoveVirtualMember = RemoveVirtualMember
-                        , onSubmit = SubmitNewGroup
-                        }
-                        model.newGroupForm
+                , content = Page.NewGroup.view i18n NewGroupMsg model.newGroupModel
                 }
 
         GroupRoute groupId (Tab tab) ->
@@ -834,13 +786,7 @@ viewReady model readyData =
                         UI.Shell.appShell
                             { title = T.shellNewEntry i18n
                             , headerExtra = langSelector
-                            , content =
-                                Page.NewEntry.view i18n
-                                    { onInputDescription = InputEntryDescription
-                                    , onInputAmount = InputEntryAmount
-                                    , onSubmit = SubmitNewEntry groupId
-                                    }
-                                    model.newEntryForm
+                            , content = Page.NewEntry.view i18n NewEntryMsg model.newEntryModel
                             }
 
                     else

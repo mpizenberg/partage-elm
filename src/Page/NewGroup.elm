@@ -1,87 +1,139 @@
-module Page.NewGroup exposing (Callbacks, view)
+module Page.NewGroup exposing (Model, Msg, init, update, view)
 
 import Domain.Currency exposing (Currency(..))
 import Field
 import Form
 import Form.List
-import Form.NewGroup exposing (Form)
+import Form.NewGroup as NewGroup exposing (Output)
 import Translations as T exposing (I18n)
 import UI.Theme as Theme
 import Ui
 import Ui.Font
 import Ui.Input
+import Validation as V
 
 
-type alias Callbacks msg =
-    { onInputName : String -> msg
-    , onInputCreatorName : String -> msg
-    , onInputCurrency : String -> msg
-    , onInputVirtualMemberName : Form.List.Id -> String -> msg
-    , onAddVirtualMember : msg
-    , onRemoveVirtualMember : Form.List.Id -> msg
-    , onSubmit : msg
-    }
+type Model
+    = Model NewGroup.Form Bool
 
 
-view : I18n -> Callbacks msg -> Form -> Ui.Element msg
-view i18n callbacks formData =
+type Msg
+    = InputName String
+    | InputCreatorName String
+    | InputCurrency String
+    | InputVirtualMemberName Form.List.Id String
+    | AddVirtualMember
+    | RemoveVirtualMember Form.List.Id
+    | Submit
+
+
+init : Model
+init =
+    Model NewGroup.form False
+
+
+update : Msg -> Model -> ( Model, Maybe Output )
+update msg (Model form submitted) =
+    case msg of
+        InputName s ->
+            ( Model (Form.modify .name (Field.setFromString s) form) submitted
+            , Nothing
+            )
+
+        InputCreatorName s ->
+            ( Model (Form.modify .creatorName (Field.setFromString s) form) submitted
+            , Nothing
+            )
+
+        InputCurrency s ->
+            ( Model (Form.modify .currency (Field.setFromString s) form) submitted
+            , Nothing
+            )
+
+        InputVirtualMemberName id s ->
+            ( Model (Form.modify (\a -> a.virtualMemberName id) (Field.setFromString s) form) submitted
+            , Nothing
+            )
+
+        AddVirtualMember ->
+            ( Model (Form.update .addVirtualMember form) submitted
+            , Nothing
+            )
+
+        RemoveVirtualMember id ->
+            ( Model (Form.update (\a -> a.removeVirtualMember id) form) submitted
+            , Nothing
+            )
+
+        Submit ->
+            case Form.validate form |> V.toResult of
+                Ok output ->
+                    ( init, Just output )
+
+                Err _ ->
+                    ( Model form True, Nothing )
+
+
+view : I18n -> (Msg -> msg) -> Model -> Ui.Element msg
+view i18n toMsg (Model form submitted) =
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text (T.newGroupTitle i18n))
-        , nameField i18n callbacks.onInputName formData
-        , creatorNameField i18n callbacks.onInputCreatorName formData
-        , currencyField i18n callbacks.onInputCurrency formData
-        , virtualMembersSection i18n callbacks formData
-        , submitButton i18n callbacks.onSubmit
+        , nameField i18n submitted form
+        , creatorNameField i18n submitted form
+        , currencyField i18n form
+        , virtualMembersSection i18n form
+        , submitButton i18n
         ]
+        |> Ui.map toMsg
 
 
-nameField : I18n -> (String -> msg) -> Form -> Ui.Element msg
-nameField i18n onChange formData =
+nameField : I18n -> Bool -> NewGroup.Form -> Ui.Element Msg
+nameField i18n submitted form =
     let
         field =
-            Form.get .name formData
+            Form.get .name form
     in
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
             (Ui.text (T.newGroupNameLabel i18n))
         , Ui.Input.text [ Ui.width Ui.fill ]
-            { onChange = onChange
+            { onChange = InputName
             , text = Field.toRawString field
             , placeholder = Just (T.newGroupNamePlaceholder i18n)
             , label = Ui.Input.labelHidden (T.newGroupNameLabel i18n)
             }
         , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
             (Ui.text (T.newGroupNameHint i18n))
-        , fieldError i18n field
+        , fieldError i18n submitted field
         ]
 
 
-creatorNameField : I18n -> (String -> msg) -> Form -> Ui.Element msg
-creatorNameField i18n onChange formData =
+creatorNameField : I18n -> Bool -> NewGroup.Form -> Ui.Element Msg
+creatorNameField i18n submitted form =
     let
         field =
-            Form.get .creatorName formData
+            Form.get .creatorName form
     in
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
             (Ui.text (T.newGroupCreatorNameLabel i18n))
         , Ui.Input.text [ Ui.width Ui.fill ]
-            { onChange = onChange
+            { onChange = InputCreatorName
             , text = Field.toRawString field
             , placeholder = Just (T.newGroupCreatorNamePlaceholder i18n)
             , label = Ui.Input.labelHidden (T.newGroupCreatorNameLabel i18n)
             }
         , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
             (Ui.text (T.newGroupCreatorNameHint i18n))
-        , fieldError i18n field
+        , fieldError i18n submitted field
         ]
 
 
-currencyField : I18n -> (String -> msg) -> Form -> Ui.Element msg
-currencyField i18n onChange formData =
+currencyField : I18n -> NewGroup.Form -> Ui.Element Msg
+currencyField i18n form =
     let
         field =
-            Form.get .currency formData
+            Form.get .currency form
 
         selected =
             Field.toMaybe field
@@ -91,7 +143,7 @@ currencyField i18n onChange formData =
             (Ui.text (T.newGroupCurrencyLabel i18n))
         , Ui.Input.chooseOne Ui.row
             [ Ui.spacing Theme.spacing.sm ]
-            { onChange = onChange << currencyToString
+            { onChange = InputCurrency << currencyToString
             , options =
                 [ Ui.Input.option EUR (Ui.text "EUR")
                 , Ui.Input.option USD (Ui.text "USD")
@@ -122,11 +174,11 @@ currencyToString c =
             "chf"
 
 
-virtualMembersSection : I18n -> Callbacks msg -> Form -> Ui.Element msg
-virtualMembersSection i18n callbacks formData =
+virtualMembersSection : I18n -> NewGroup.Form -> Ui.Element Msg
+virtualMembersSection i18n form =
     let
         members =
-            Form.toState formData |> .virtualMembers |> Form.List.toList
+            Form.toState form |> .virtualMembers |> Form.List.toList
     in
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
         ([ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
@@ -136,28 +188,28 @@ virtualMembersSection i18n callbacks formData =
          ]
             ++ List.map
                 (\( id, _ ) ->
-                    virtualMemberRow i18n callbacks id formData
+                    virtualMemberRow i18n id form
                 )
                 members
-            ++ [ addMemberButton i18n callbacks.onAddVirtualMember ]
+            ++ [ addMemberButton i18n ]
         )
 
 
-virtualMemberRow : I18n -> Callbacks msg -> Form.List.Id -> Form -> Ui.Element msg
-virtualMemberRow i18n callbacks id formData =
+virtualMemberRow : I18n -> Form.List.Id -> NewGroup.Form -> Ui.Element Msg
+virtualMemberRow i18n id form =
     let
         field =
-            Form.get (\a -> a.virtualMemberName id) formData
+            Form.get (\a -> a.virtualMemberName id) form
     in
     Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
         [ Ui.Input.text [ Ui.width Ui.fill ]
-            { onChange = callbacks.onInputVirtualMemberName id
+            { onChange = InputVirtualMemberName id
             , text = Field.toRawString field
             , placeholder = Just (T.newGroupVirtualMemberPlaceholder i18n)
             , label = Ui.Input.labelHidden (T.newGroupVirtualMembersLabel i18n)
             }
         , Ui.el
-            [ Ui.Input.button (callbacks.onRemoveVirtualMember id)
+            [ Ui.Input.button (RemoveVirtualMember id)
             , Ui.pointer
             , Ui.Font.color Theme.danger
             , Ui.Font.size Theme.fontSize.sm
@@ -166,10 +218,10 @@ virtualMemberRow i18n callbacks id formData =
         ]
 
 
-addMemberButton : I18n -> msg -> Ui.Element msg
-addMemberButton i18n onAdd =
+addMemberButton : I18n -> Ui.Element Msg
+addMemberButton i18n =
     Ui.el
-        [ Ui.Input.button onAdd
+        [ Ui.Input.button AddVirtualMember
         , Ui.pointer
         , Ui.Font.color Theme.primary
         , Ui.Font.size Theme.fontSize.sm
@@ -178,10 +230,10 @@ addMemberButton i18n onAdd =
         (Ui.text (T.newGroupAddMember i18n))
 
 
-submitButton : I18n -> msg -> Ui.Element msg
-submitButton i18n onSubmit =
+submitButton : I18n -> Ui.Element Msg
+submitButton i18n =
     Ui.el
-        [ Ui.Input.button onSubmit
+        [ Ui.Input.button Submit
         , Ui.width Ui.fill
         , Ui.padding Theme.spacing.md
         , Ui.rounded Theme.rounding.md
@@ -194,9 +246,9 @@ submitButton i18n onSubmit =
         (Ui.text (T.newGroupSubmit i18n))
 
 
-fieldError : I18n -> Field.Field a -> Ui.Element msg
-fieldError i18n field =
-    if Field.isDirty field && Field.isInvalid field then
+fieldError : I18n -> Bool -> Field.Field a -> Ui.Element msg
+fieldError i18n submitted field =
+    if Field.isInvalid field && (submitted || Field.isDirty field) then
         Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.danger ]
             (Ui.text (T.fieldRequired i18n))
 
