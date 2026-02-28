@@ -4,10 +4,10 @@ import AppUrl exposing (AppUrl)
 import Browser
 import ConcurrentTask
 import Dict
+import Domain.Date as Date
 import Domain.Event as Event
 import Domain.Group as Group
 import Domain.GroupState as GroupState exposing (GroupState)
-import Form.NewEntry
 import Form.NewGroup
 import Html exposing (Html)
 import Identity exposing (Identity)
@@ -180,7 +180,7 @@ init flags =
       , randomSeed = seedAfterV7
       , currentTime = currentTime
       , newGroupModel = Page.NewGroup.init
-      , newEntryModel = Page.NewEntry.init
+      , newEntryModel = Page.NewEntry.init { currentUserRootId = "", activeMembers = [], today = Date.posixToDate currentTime }
       , loadedGroup = Nothing
       }
     , cmd
@@ -205,8 +205,11 @@ update msg model =
 
                 ( modelAfterGuard, loadCmd ) =
                     ensureGroupLoaded { model | route = guardedRoute } guardedRoute
+
+                modelWithEntry =
+                    initNewEntryIfNeeded modelAfterGuard guardedRoute
             in
-            ( modelAfterGuard, Cmd.batch [ guardCmd, loadCmd ] )
+            ( modelWithEntry, Cmd.batch [ guardCmd, loadCmd ] )
 
         NavigateTo route ->
             ( model, Navigation.pushUrl navCmd (Route.toAppUrl route) )
@@ -398,15 +401,19 @@ update msg model =
                 Ready readyData ->
                     case findGroupSummary groupId readyData.groups of
                         Just summary ->
-                            ( { model
-                                | loadedGroup =
-                                    Just
-                                        { groupId = groupId
-                                        , events = events
-                                        , groupState = GroupState.applyEvents events
-                                        , summary = summary
-                                        }
-                              }
+                            let
+                                modelWithGroup =
+                                    { model
+                                        | loadedGroup =
+                                            Just
+                                                { groupId = groupId
+                                                , events = events
+                                                , groupState = GroupState.applyEvents events
+                                                , summary = summary
+                                                }
+                                    }
+                            in
+                            ( initNewEntryIfNeeded modelWithGroup model.route
                             , Cmd.none
                             )
 
@@ -478,7 +485,7 @@ submitNewGroup model readyData output =
             )
 
 
-submitNewEntry : Model -> Storage.InitData -> LoadedGroup -> Form.NewEntry.Output -> ( Model, Cmd Msg )
+submitNewEntry : Model -> Storage.InitData -> LoadedGroup -> Page.NewEntry.Output -> ( Model, Cmd Msg )
 submitNewEntry model readyData loaded output =
     case readyData.identity |> Maybe.andThen (\id -> Dict.get id.publicKeyHash loaded.groupState.members) |> Maybe.map .rootId of
         Nothing ->
@@ -493,16 +500,36 @@ submitNewEntry model readyData loaded output =
                     UuidGen.v7 model.currentTime model.uuidState
 
                 envelope =
-                    Event.buildExpenseEvent
-                        { entryId = entryId
-                        , eventId = eventId
-                        , currentUserRootId = currentUserRootId
-                        , currentTime = model.currentTime
-                        , currency = loaded.summary.defaultCurrency
-                        , beneficiaryIds = List.map .rootId (GroupState.activeMembers loaded.groupState)
-                        , description = output.description
-                        , amountCents = output.amountCents
-                        }
+                    case output of
+                        Page.NewEntry.ExpenseOutput data ->
+                            Event.buildExpenseEvent
+                                { entryId = entryId
+                                , eventId = eventId
+                                , currentUserRootId = currentUserRootId
+                                , currentTime = model.currentTime
+                                , currency = loaded.summary.defaultCurrency
+                                , payerId = data.payerId
+                                , beneficiaryIds = data.beneficiaryIds
+                                , description = data.description
+                                , amountCents = data.amountCents
+                                , category = data.category
+                                , notes = data.notes
+                                , date = data.date
+                                }
+
+                        Page.NewEntry.TransferOutput data ->
+                            Event.buildTransferEvent
+                                { entryId = entryId
+                                , eventId = eventId
+                                , currentUserRootId = currentUserRootId
+                                , currentTime = model.currentTime
+                                , currency = loaded.summary.defaultCurrency
+                                , fromMemberId = data.fromMemberId
+                                , toMemberId = data.toMemberId
+                                , amountCents = data.amountCents
+                                , notes = data.notes
+                                , date = data.date
+                                }
 
                 task =
                     Storage.saveEvents readyData.db loaded.groupId [ envelope ]
@@ -523,6 +550,33 @@ submitNewEntry model readyData loaded output =
               }
             , cmd
             )
+
+
+initNewEntryIfNeeded : Model -> Route -> Model
+initNewEntryIfNeeded model route =
+    case ( route, model.appState, model.loadedGroup ) of
+        ( GroupRoute _ NewEntry, Ready readyData, Just loaded ) ->
+            let
+                currentUserRootId =
+                    readyData.identity
+                        |> Maybe.andThen (\id -> Dict.get id.publicKeyHash loaded.groupState.members)
+                        |> Maybe.map .rootId
+                        |> Maybe.withDefault ""
+
+                activeMembers =
+                    GroupState.activeMembers loaded.groupState
+            in
+            { model
+                | newEntryModel =
+                    Page.NewEntry.init
+                        { currentUserRootId = currentUserRootId
+                        , activeMembers = List.map (\m -> { id = m.id, rootId = m.rootId }) activeMembers
+                        , today = Date.posixToDate model.currentTime
+                        }
+            }
+
+        _ ->
+            model
 
 
 ensureGroupLoaded : Model -> Route -> ( Model, Cmd Msg )
@@ -691,7 +745,11 @@ viewReady model readyData =
                         UI.Shell.appShell
                             { title = T.shellNewEntry i18n
                             , headerExtra = langSelector
-                            , content = Page.NewEntry.view i18n NewEntryMsg model.newEntryModel
+                            , content =
+                                Page.NewEntry.view i18n
+                                    (GroupState.activeMembers loaded.groupState)
+                                    NewEntryMsg
+                                    model.newEntryModel
                             }
 
                     else

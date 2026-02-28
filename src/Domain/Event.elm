@@ -1,4 +1,4 @@
-module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), buildExpenseEvent, buildGroupCreationEvents, compareEnvelopes, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents)
+module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), buildExpenseEvent, buildGroupCreationEvents, buildTransferEvent, compareEnvelopes, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents)
 
 {-| Event types and ordering for the event-sourced state machine.
 -}
@@ -131,7 +131,7 @@ buildGroupCreationEvents config =
         )
 
 
-{-| Build an expense entry event with equal shares among the given beneficiary member IDs.
+{-| Build an expense entry event.
 -}
 buildExpenseEvent :
     { entryId : Entry.Id
@@ -139,9 +139,13 @@ buildExpenseEvent :
     , currentUserRootId : Member.Id
     , currentTime : Time.Posix
     , currency : Currency
+    , payerId : Member.Id
     , beneficiaryIds : List Member.Id
     , description : String
     , amountCents : Int
+    , category : Maybe Entry.Category
+    , notes : Maybe String
+    , date : Date.Date
     }
     -> Envelope
 buildExpenseEvent config =
@@ -156,15 +160,53 @@ buildExpenseEvent config =
                     , amount = config.amountCents
                     , currency = config.currency
                     , defaultCurrencyAmount = Nothing
-                    , date = Date.posixToDate config.currentTime
-                    , payers = [ { memberId = config.currentUserRootId, amount = config.amountCents } ]
+                    , date = config.date
+                    , payers = [ { memberId = config.payerId, amount = config.amountCents } ]
                     , beneficiaries =
                         List.map
                             (\mid -> Entry.ShareBeneficiary { memberId = mid, shares = 1 })
                             config.beneficiaryIds
-                    , category = Nothing
+                    , category = config.category
                     , location = Nothing
-                    , notes = Nothing
+                    , notes = config.notes
+                    }
+            }
+    in
+    { id = config.eventId
+    , clientTimestamp = config.currentTime
+    , triggeredBy = config.currentUserRootId
+    , payload = EntryAdded entry
+    }
+
+
+{-| Build a transfer entry event.
+-}
+buildTransferEvent :
+    { entryId : Entry.Id
+    , eventId : Id
+    , currentUserRootId : Member.Id
+    , currentTime : Time.Posix
+    , currency : Currency
+    , fromMemberId : Member.Id
+    , toMemberId : Member.Id
+    , amountCents : Int
+    , notes : Maybe String
+    , date : Date.Date
+    }
+    -> Envelope
+buildTransferEvent config =
+    let
+        entry =
+            { meta = Entry.newMetadata config.entryId config.currentUserRootId config.currentTime
+            , kind =
+                Entry.Transfer
+                    { amount = config.amountCents
+                    , currency = config.currency
+                    , defaultCurrencyAmount = Nothing
+                    , date = config.date
+                    , from = config.fromMemberId
+                    , to = config.toMemberId
+                    , notes = config.notes
                     }
             }
     in
