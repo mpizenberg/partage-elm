@@ -48,6 +48,7 @@ type alias ModelData =
     { form : NewEntry.Form
     , submitted : Bool
     , kind : EntryKind
+    , kindLocked : Bool
     , payerId : Member.Id
     , beneficiaryIds : Set Member.Id
     , fromMemberId : Member.Id
@@ -103,6 +104,7 @@ init config =
         { form = NewEntry.form |> NewEntry.initDate config.today
         , submitted = False
         , kind = ExpenseKind
+        , kindLocked = False
         , payerId = config.currentUserRootId
         , beneficiaryIds = Set.fromList allRootIds
         , fromMemberId = from
@@ -147,6 +149,7 @@ initFromEntry config entry =
                         |> NewEntry.initDate data.date
                 , submitted = False
                 , kind = ExpenseKind
+                , kindLocked = True
                 , payerId = payerId
                 , beneficiaryIds = Set.fromList beneficiaryMemberIds
                 , fromMemberId = config.currentUserRootId
@@ -163,6 +166,7 @@ initFromEntry config entry =
                         |> NewEntry.initDate data.date
                 , submitted = False
                 , kind = TransferKind
+                , kindLocked = True
                 , payerId = config.currentUserRootId
                 , beneficiaryIds = Set.fromList (List.map .rootId config.activeMembers)
                 , fromMemberId = data.from
@@ -319,11 +323,17 @@ view i18n activeMembers toMsg (Model data) =
                     transferFields i18n activeMembers data
     in
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
-        ([ Ui.el [ Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text (T.newEntryTitle i18n))
-         , kindToggle i18n data
-         ]
-            ++ content
-            ++ [ submitButton i18n ]
+        (List.concat
+            [ [ Ui.el [ Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text (T.newEntryTitle i18n))
+              , if data.kindLocked then
+                    Ui.none
+
+                else
+                    kindToggle i18n data
+              ]
+            , content
+            , [ submitButton i18n ]
+            ]
         )
         |> Ui.map toMsg
 
