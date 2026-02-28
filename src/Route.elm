@@ -7,6 +7,7 @@ import AppUrl exposing (AppUrl)
 import Dict
 import Domain.Entry as Entry
 import Domain.Group as Group
+import Domain.Member as Member
 
 
 {-| Top-level application routes.
@@ -28,6 +29,9 @@ type GroupView
     | NewEntry
     | EntryDetail Entry.Id
     | EditEntry Entry.Id
+    | MemberDetail Member.Id
+    | AddVirtualMember
+    | EditMemberMetadata Member.Id
 
 
 {-| The tabs available within a group's main view.
@@ -76,6 +80,15 @@ fromAppUrl appUrl =
 
         [ "groups", groupId, "entries", entryId, "edit" ] ->
             GroupRoute groupId (EditEntry entryId)
+
+        [ "groups", groupId, "members", "new" ] ->
+            GroupRoute groupId AddVirtualMember
+
+        [ "groups", groupId, "members", memberId ] ->
+            GroupRoute groupId (MemberDetail memberId)
+
+        [ "groups", groupId, "members", memberId, "edit" ] ->
+            GroupRoute groupId (EditMemberMetadata memberId)
 
         [ "about" ] ->
             About
@@ -135,6 +148,15 @@ toPathSegments route =
         GroupRoute groupId (EditEntry entryId) ->
             [ "groups", groupId, "entries", entryId, "edit" ]
 
+        GroupRoute groupId AddVirtualMember ->
+            [ "groups", groupId, "members", "new" ]
+
+        GroupRoute groupId (MemberDetail memberId) ->
+            [ "groups", groupId, "members", memberId ]
+
+        GroupRoute groupId (EditMemberMetadata memberId) ->
+            [ "groups", groupId, "members", memberId, "edit" ]
+
         About ->
             [ "about" ]
 
@@ -179,6 +201,15 @@ toPath route =
 
         GroupRoute groupId (EditEntry entryId) ->
             "/groups/" ++ groupId ++ "/entries/" ++ entryId ++ "/edit"
+
+        GroupRoute groupId AddVirtualMember ->
+            "/groups/" ++ groupId ++ "/members/new"
+
+        GroupRoute groupId (MemberDetail memberId) ->
+            "/groups/" ++ groupId ++ "/members/" ++ memberId
+
+        GroupRoute groupId (EditMemberMetadata memberId) ->
+            "/groups/" ++ groupId ++ "/members/" ++ memberId ++ "/edit"
 
         About ->
             "/about"

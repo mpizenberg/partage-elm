@@ -1,4 +1,4 @@
-module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), buildEntryDeletedEvent, buildEntryModifiedEvent, buildEntryUndeletedEvent, buildExpenseEvent, buildGroupCreationEvents, buildTransferEvent, compareEnvelopes, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents)
+module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), buildEntryDeletedEvent, buildEntryModifiedEvent, buildEntryUndeletedEvent, buildExpenseEvent, buildGroupCreationEvents, buildMemberCreatedEvent, buildMemberMetadataUpdatedEvent, buildMemberRenamedEvent, buildMemberRetiredEvent, buildMemberUnretiredEvent, buildTransferEvent, compareEnvelopes, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents)
 
 {-| Event types and ordering for the event-sourced state machine.
 -}
@@ -269,6 +269,111 @@ buildEntryUndeletedEvent config =
     , clientTimestamp = config.currentTime
     , triggeredBy = config.memberId
     , payload = EntryUndeleted { rootId = config.rootId }
+    }
+
+
+{-| Build a member creation event.
+-}
+buildMemberCreatedEvent :
+    { eventId : Id
+    , memberId : Member.Id
+    , currentTime : Time.Posix
+    , newMemberId : Member.Id
+    , name : String
+    , memberType : Member.Type
+    }
+    -> Envelope
+buildMemberCreatedEvent config =
+    { id = config.eventId
+    , clientTimestamp = config.currentTime
+    , triggeredBy = config.memberId
+    , payload =
+        MemberCreated
+            { memberId = config.newMemberId
+            , name = config.name
+            , memberType = config.memberType
+            , addedBy = config.memberId
+            }
+    }
+
+
+{-| Build a member rename event.
+-}
+buildMemberRenamedEvent :
+    { eventId : Id
+    , memberId : Member.Id
+    , currentTime : Time.Posix
+    , targetMemberId : Member.Id
+    , oldName : String
+    , newName : String
+    }
+    -> Envelope
+buildMemberRenamedEvent config =
+    { id = config.eventId
+    , clientTimestamp = config.currentTime
+    , triggeredBy = config.memberId
+    , payload =
+        MemberRenamed
+            { memberId = config.targetMemberId
+            , oldName = config.oldName
+            , newName = config.newName
+            }
+    }
+
+
+{-| Build a member retirement event.
+-}
+buildMemberRetiredEvent :
+    { eventId : Id
+    , memberId : Member.Id
+    , currentTime : Time.Posix
+    , targetMemberId : Member.Id
+    }
+    -> Envelope
+buildMemberRetiredEvent config =
+    { id = config.eventId
+    , clientTimestamp = config.currentTime
+    , triggeredBy = config.memberId
+    , payload = MemberRetired { memberId = config.targetMemberId }
+    }
+
+
+{-| Build a member reactivation event.
+-}
+buildMemberUnretiredEvent :
+    { eventId : Id
+    , memberId : Member.Id
+    , currentTime : Time.Posix
+    , targetMemberId : Member.Id
+    }
+    -> Envelope
+buildMemberUnretiredEvent config =
+    { id = config.eventId
+    , clientTimestamp = config.currentTime
+    , triggeredBy = config.memberId
+    , payload = MemberUnretired { memberId = config.targetMemberId }
+    }
+
+
+{-| Build a member metadata update event.
+-}
+buildMemberMetadataUpdatedEvent :
+    { eventId : Id
+    , memberId : Member.Id
+    , currentTime : Time.Posix
+    , targetMemberId : Member.Id
+    , metadata : Member.Metadata
+    }
+    -> Envelope
+buildMemberMetadataUpdatedEvent config =
+    { id = config.eventId
+    , clientTimestamp = config.currentTime
+    , triggeredBy = config.memberId
+    , payload =
+        MemberMetadataUpdated
+            { memberId = config.targetMemberId
+            , metadata = config.metadata
+            }
     }
 
 

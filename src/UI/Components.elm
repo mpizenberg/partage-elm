@@ -131,10 +131,10 @@ payerSummary i18n resolveName payers =
             T.entryPaidByMultiple (String.join ", " (List.map (.memberId >> resolveName) multiple)) i18n
 
 
-{-| A row displaying a member in the member list.
+{-| A row displaying a member in the member list. Clickable via onClick.
 -}
-memberRow : I18n -> { member : GroupState.MemberState, isCurrentUser : Bool } -> Ui.Element msg
-memberRow i18n config =
+memberRow : I18n -> msg -> { member : GroupState.MemberState, isCurrentUser : Bool } -> Ui.Element msg
+memberRow i18n onClick config =
     let
         nameLabel =
             if config.isCurrentUser then
@@ -157,6 +157,8 @@ memberRow i18n config =
         , Ui.borderWith { bottom = Theme.borderWidth.sm, top = 0, left = 0, right = 0 }
         , Ui.borderColor Theme.neutral200
         , Ui.spacing Theme.spacing.sm
+        , Ui.pointer
+        , Ui.Events.onClick onClick
         ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.md ] (Ui.text nameLabel)
         , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ] (Ui.text typeLabel)

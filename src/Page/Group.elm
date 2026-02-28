@@ -24,6 +24,8 @@ type alias Context msg =
     , onNewEntry : msg
     , onEntryClick : Entry.Id -> msg
     , onToggleDeleted : msg
+    , onMemberClick : Member.Id -> msg
+    , onAddMember : msg
     , currentUserRootId : Member.Id
     }
 
@@ -61,7 +63,12 @@ tabContent ctx showDeleted state tab =
                 state
 
         MembersTab ->
-            Page.Group.MembersTab.view ctx.i18n ctx.currentUserRootId state
+            Page.Group.MembersTab.view ctx.i18n
+                { onMemberClick = ctx.onMemberClick
+                , onAddMember = ctx.onAddMember
+                }
+                ctx.currentUserRootId
+                state
 
         ActivitiesTab ->
             Page.Group.ActivitiesTab.view ctx.i18n

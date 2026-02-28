@@ -1,4 +1,4 @@
-module Page.Group.MembersTab exposing (view)
+module Page.Group.MembersTab exposing (Msg, view)
 
 {-| Members tab showing active and retired members.
 -}
@@ -11,10 +11,17 @@ import UI.Components
 import UI.Theme as Theme
 import Ui
 import Ui.Font
+import Ui.Input
 
 
-view : I18n -> Member.Id -> GroupState -> Ui.Element msg
-view i18n currentUserRootId state =
+type alias Msg msg =
+    { onMemberClick : Member.Id -> msg
+    , onAddMember : msg
+    }
+
+
+view : I18n -> Msg msg -> Member.Id -> GroupState -> Ui.Element msg
+view i18n msg currentUserRootId state =
     let
         allMembers =
             Dict.values state.members
@@ -31,6 +38,7 @@ view i18n currentUserRootId state =
 
         viewMember member =
             UI.Components.memberRow i18n
+                (msg.onMemberClick member.rootId)
                 { member = member
                 , isCurrentUser = member.rootId == currentUserRootId
                 }
@@ -49,7 +57,24 @@ view i18n currentUserRootId state =
 
           else
             Ui.none
+        , addMemberButton i18n msg.onAddMember
         ]
+
+
+addMemberButton : I18n -> msg -> Ui.Element msg
+addMemberButton i18n onAddMember =
+    Ui.el
+        [ Ui.Input.button onAddMember
+        , Ui.width Ui.fill
+        , Ui.padding Theme.spacing.md
+        , Ui.rounded Theme.rounding.md
+        , Ui.background Theme.primary
+        , Ui.Font.color Theme.white
+        , Ui.Font.center
+        , Ui.Font.bold
+        , Ui.pointer
+        ]
+        (Ui.text (T.memberAddButton i18n))
 
 
 boolToInt : Bool -> Int

@@ -19,11 +19,14 @@ import Json.Decode
 import Json.Encode
 import Navigation
 import Page.About
+import Page.AddMember
+import Page.EditMemberMetadata
 import Page.EntryDetail
 import Page.Group
 import Page.Home
 import Page.InitError
 import Page.Loading
+import Page.MemberDetail
 import Page.NewEntry
 import Page.NewGroup
 import Page.NotFound
@@ -76,6 +79,9 @@ type alias Model =
     , currentTime : Time.Posix
     , newGroupModel : Page.NewGroup.Model
     , newEntryModel : Page.NewEntry.Model
+    , memberDetailModel : Page.MemberDetail.Model
+    , addMemberModel : Page.AddMember.Model
+    , editMemberMetadataModel : Page.EditMemberMetadata.Model
     , loadedGroup : Maybe LoadedGroup
     , showDeleted : Bool
     }
@@ -116,6 +122,11 @@ type Msg
     | RestoreEntry Entry.Id
     | OnEntryActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | ToggleShowDeleted
+      -- Member management
+    | MemberDetailMsg Page.MemberDetail.Msg
+    | AddMemberMsg Page.AddMember.Msg
+    | EditMemberMetadataMsg Page.EditMemberMetadata.Msg
+    | OnMemberActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
       -- Group loading
     | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error (List Event.Envelope))
 
@@ -191,6 +202,9 @@ init flags =
       , currentTime = currentTime
       , newGroupModel = Page.NewGroup.init
       , newEntryModel = Page.NewEntry.init { currentUserRootId = "", activeMembers = [], today = Date.posixToDate currentTime }
+      , memberDetailModel = Page.MemberDetail.init dummyMemberState
+      , addMemberModel = Page.AddMember.init
+      , editMemberMetadataModel = Page.EditMemberMetadata.init "" Member.emptyMetadata
       , loadedGroup = Nothing
       , showDeleted = False
       }
@@ -217,11 +231,13 @@ update msg model =
                 ( modelAfterGuard, loadCmd ) =
                     ensureGroupLoaded { model | route = guardedRoute } guardedRoute
 
-                modelWithEntry =
+                modelWithPages =
                     initNewEntryIfNeeded modelAfterGuard guardedRoute
                         |> (\m -> initEditEntryIfNeeded m guardedRoute)
+                        |> (\m -> initMemberDetailIfNeeded m guardedRoute)
+                        |> (\m -> initEditMemberMetadataIfNeeded m guardedRoute)
             in
-            ( modelWithEntry, Cmd.batch [ guardCmd, loadCmd ] )
+            ( modelWithPages, Cmd.batch [ guardCmd, loadCmd ] )
 
         NavigateTo route ->
             ( model, Navigation.pushUrl navCmd (Route.toAppUrl route) )
@@ -452,6 +468,100 @@ update msg model =
         ToggleShowDeleted ->
             ( { model | showDeleted = not model.showDeleted }, Cmd.none )
 
+        MemberDetailMsg subMsg ->
+            let
+                ( memberDetailModel, maybeOutput ) =
+                    Page.MemberDetail.update subMsg model.memberDetailModel
+
+                modelWithPage =
+                    { model | memberDetailModel = memberDetailModel }
+            in
+            case ( maybeOutput, model.appState, model.loadedGroup ) of
+                ( Just output, Ready readyData, Just loaded ) ->
+                    handleMemberDetailOutput modelWithPage readyData loaded output
+
+                _ ->
+                    ( modelWithPage, Cmd.none )
+
+        AddMemberMsg subMsg ->
+            let
+                ( addMemberModel, maybeOutput ) =
+                    Page.AddMember.update subMsg model.addMemberModel
+
+                modelWithPage =
+                    { model | addMemberModel = addMemberModel }
+            in
+            case ( maybeOutput, model.appState, model.loadedGroup ) of
+                ( Just output, Ready readyData, Just loaded ) ->
+                    submitAddMember modelWithPage readyData loaded output
+
+                _ ->
+                    ( modelWithPage, Cmd.none )
+
+        EditMemberMetadataMsg subMsg ->
+            let
+                ( editModel, maybeOutput ) =
+                    Page.EditMemberMetadata.update subMsg model.editMemberMetadataModel
+
+                modelWithPage =
+                    { model | editMemberMetadataModel = editModel }
+            in
+            case ( maybeOutput, model.appState, model.loadedGroup ) of
+                ( Just output, Ready readyData, Just loaded ) ->
+                    submitMemberMetadata modelWithPage readyData loaded output
+
+                _ ->
+                    ( modelWithPage, Cmd.none )
+
+        OnMemberActionSaved groupId (ConcurrentTask.Success envelope) ->
+            case model.loadedGroup of
+                Just loaded ->
+                    if loaded.groupId == groupId then
+                        let
+                            newEvents =
+                                loaded.events ++ [ envelope ]
+
+                            newGroupState =
+                                GroupState.applyEvents newEvents
+
+                            updatedModel =
+                                { model
+                                    | loadedGroup =
+                                        Just
+                                            { loaded
+                                                | events = newEvents
+                                                , groupState = newGroupState
+                                            }
+                                }
+
+                            ( finalModel, navCmd_ ) =
+                                case model.route of
+                                    GroupRoute gid AddVirtualMember ->
+                                        ( { updatedModel | addMemberModel = Page.AddMember.init }
+                                        , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute gid (Tab MembersTab)))
+                                        )
+
+                                    GroupRoute gid (EditMemberMetadata memberId) ->
+                                        ( updatedModel
+                                        , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute gid (MemberDetail memberId)))
+                                        )
+
+                                    _ ->
+                                        ( updatedModel |> (\m -> initMemberDetailIfNeeded m model.route)
+                                        , Cmd.none
+                                        )
+                        in
+                        ( finalModel, navCmd_ )
+
+                    else
+                        ( model, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        OnMemberActionSaved _ _ ->
+            ( model, Cmd.none )
+
         -- Group loading
         OnGroupEventsLoaded groupId (ConcurrentTask.Success events) ->
             case model.appState of
@@ -473,6 +583,8 @@ update msg model =
                             ( modelWithGroup
                                 |> (\m -> initNewEntryIfNeeded m model.route)
                                 |> (\m -> initEditEntryIfNeeded m model.route)
+                                |> (\m -> initMemberDetailIfNeeded m model.route)
+                                |> (\m -> initEditMemberMetadataIfNeeded m model.route)
                             , Cmd.none
                             )
 
@@ -837,6 +949,202 @@ loadGroup model groupId =
             ( model, Cmd.none )
 
 
+handleMemberDetailOutput : Model -> Storage.InitData -> LoadedGroup -> Page.MemberDetail.Output -> ( Model, Cmd Msg )
+handleMemberDetailOutput model readyData loaded output =
+    case output of
+        Page.MemberDetail.RenameOutput data ->
+            submitMemberEvent model
+                readyData
+                loaded
+                (\eventId identity ->
+                    Event.buildMemberRenamedEvent
+                        { eventId = eventId
+                        , memberId = identity.publicKeyHash
+                        , currentTime = model.currentTime
+                        , targetMemberId = data.memberId
+                        , oldName = data.oldName
+                        , newName = data.newName
+                        }
+                )
+
+        Page.MemberDetail.RetireOutput memberId ->
+            submitMemberEvent model
+                readyData
+                loaded
+                (\eventId identity ->
+                    Event.buildMemberRetiredEvent
+                        { eventId = eventId
+                        , memberId = identity.publicKeyHash
+                        , currentTime = model.currentTime
+                        , targetMemberId = memberId
+                        }
+                )
+
+        Page.MemberDetail.UnretireOutput memberId ->
+            submitMemberEvent model
+                readyData
+                loaded
+                (\eventId identity ->
+                    Event.buildMemberUnretiredEvent
+                        { eventId = eventId
+                        , memberId = identity.publicKeyHash
+                        , currentTime = model.currentTime
+                        , targetMemberId = memberId
+                        }
+                )
+
+        Page.MemberDetail.NavigateToEditMetadata ->
+            case model.route of
+                GroupRoute groupId (MemberDetail memberId) ->
+                    ( model
+                    , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (EditMemberMetadata memberId)))
+                    )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        Page.MemberDetail.NavigateBack ->
+            case model.route of
+                GroupRoute groupId _ ->
+                    ( model
+                    , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab MembersTab)))
+                    )
+
+                _ ->
+                    ( model, Cmd.none )
+
+
+submitMemberEvent : Model -> Storage.InitData -> LoadedGroup -> (Event.Id -> Identity -> Event.Envelope) -> ( Model, Cmd Msg )
+submitMemberEvent model readyData loaded buildEnvelope =
+    case readyData.identity of
+        Nothing ->
+            ( model, Cmd.none )
+
+        Just identity ->
+            let
+                ( eventId, uuidStateAfter ) =
+                    UuidGen.v7 model.currentTime model.uuidState
+
+                envelope =
+                    buildEnvelope eventId identity
+
+                task =
+                    Storage.saveEvents readyData.db loaded.groupId [ envelope ]
+                        |> ConcurrentTask.map (\_ -> envelope)
+
+                ( pool, cmd ) =
+                    ConcurrentTask.attempt
+                        { pool = model.pool
+                        , send = sendTask
+                        , onComplete = OnMemberActionSaved loaded.groupId
+                        }
+                        task
+            in
+            ( { model | pool = pool, uuidState = uuidStateAfter }, cmd )
+
+
+submitAddMember : Model -> Storage.InitData -> LoadedGroup -> Page.AddMember.Output -> ( Model, Cmd Msg )
+submitAddMember model readyData loaded output =
+    case readyData.identity of
+        Nothing ->
+            ( model, Cmd.none )
+
+        Just identity ->
+            let
+                ( newMemberId, seedAfter ) =
+                    UuidGen.v4 model.randomSeed
+
+                ( eventId, uuidStateAfter ) =
+                    UuidGen.v7 model.currentTime model.uuidState
+
+                envelope =
+                    Event.buildMemberCreatedEvent
+                        { eventId = eventId
+                        , memberId = identity.publicKeyHash
+                        , currentTime = model.currentTime
+                        , newMemberId = newMemberId
+                        , name = output.name
+                        , memberType = Member.Virtual
+                        }
+
+                task =
+                    Storage.saveEvents readyData.db loaded.groupId [ envelope ]
+                        |> ConcurrentTask.map (\_ -> envelope)
+
+                ( pool, cmd ) =
+                    ConcurrentTask.attempt
+                        { pool = model.pool
+                        , send = sendTask
+                        , onComplete = OnMemberActionSaved loaded.groupId
+                        }
+                        task
+            in
+            ( { model | pool = pool, randomSeed = seedAfter, uuidState = uuidStateAfter }, cmd )
+
+
+submitMemberMetadata : Model -> Storage.InitData -> LoadedGroup -> Page.EditMemberMetadata.Output -> ( Model, Cmd Msg )
+submitMemberMetadata model readyData loaded output =
+    submitMemberEvent model
+        readyData
+        loaded
+        (\eventId identity ->
+            Event.buildMemberMetadataUpdatedEvent
+                { eventId = eventId
+                , memberId = identity.publicKeyHash
+                , currentTime = model.currentTime
+                , targetMemberId = output.memberId
+                , metadata = output.metadata
+                }
+        )
+
+
+initMemberDetailIfNeeded : Model -> Route -> Model
+initMemberDetailIfNeeded model route =
+    case ( route, model.loadedGroup ) of
+        ( GroupRoute _ (MemberDetail memberId), Just loaded ) ->
+            case Dict.get memberId loaded.groupState.members of
+                Just memberState ->
+                    { model | memberDetailModel = Page.MemberDetail.init memberState }
+
+                Nothing ->
+                    model
+
+        _ ->
+            model
+
+
+initEditMemberMetadataIfNeeded : Model -> Route -> Model
+initEditMemberMetadataIfNeeded model route =
+    case ( route, model.loadedGroup ) of
+        ( GroupRoute _ (EditMemberMetadata memberId), Just loaded ) ->
+            case Dict.get memberId loaded.groupState.members of
+                Just memberState ->
+                    { model
+                        | editMemberMetadataModel =
+                            Page.EditMemberMetadata.init memberState.rootId memberState.metadata
+                    }
+
+                Nothing ->
+                    model
+
+        _ ->
+            model
+
+
+dummyMemberState : GroupState.MemberState
+dummyMemberState =
+    { id = ""
+    , rootId = ""
+    , previousId = Nothing
+    , name = ""
+    , memberType = Member.Virtual
+    , isRetired = False
+    , isReplaced = False
+    , isActive = False
+    , metadata = Member.emptyMetadata
+    }
+
+
 findGroupSummary : Group.Id -> List GroupSummary -> Maybe GroupSummary
 findGroupSummary groupId groups =
     List.filter (\g -> g.id == groupId) groups
@@ -939,6 +1247,8 @@ viewReady model readyData =
                             , onNewEntry = NavigateTo (GroupRoute groupId NewEntry)
                             , onEntryClick = \entryId -> NavigateTo (GroupRoute groupId (EntryDetail entryId))
                             , onToggleDeleted = ToggleShowDeleted
+                            , onMemberClick = \memberId -> NavigateTo (GroupRoute groupId (MemberDetail memberId))
+                            , onAddMember = NavigateTo (GroupRoute groupId AddVirtualMember)
                             , currentUserRootId = currentUserRootId
                             }
                             { showDeleted = model.showDeleted }
@@ -1031,6 +1341,71 @@ viewReady model readyData =
                                     (GroupState.activeMembers loaded.groupState)
                                     NewEntryMsg
                                     model.newEntryModel
+                            }
+
+                    else
+                        viewLoadingGroup i18n langSelector
+
+                Nothing ->
+                    viewLoadingGroup i18n langSelector
+
+        GroupRoute groupId (MemberDetail memberId) ->
+            case model.loadedGroup of
+                Just loaded ->
+                    if loaded.groupId == groupId then
+                        let
+                            currentUserRootId =
+                                readyData.identity
+                                    |> Maybe.andThen (\id -> Dict.get id.publicKeyHash loaded.groupState.members)
+                                    |> Maybe.map .rootId
+                                    |> Maybe.withDefault ""
+                        in
+                        UI.Shell.appShell
+                            { title = T.memberDetailTitle i18n
+                            , headerExtra = langSelector
+                            , content =
+                                Page.MemberDetail.view i18n
+                                    currentUserRootId
+                                    MemberDetailMsg
+                                    model.memberDetailModel
+                            }
+
+                    else
+                        viewLoadingGroup i18n langSelector
+
+                Nothing ->
+                    viewLoadingGroup i18n langSelector
+
+        GroupRoute groupId AddVirtualMember ->
+            case model.loadedGroup of
+                Just loaded ->
+                    if loaded.groupId == groupId then
+                        UI.Shell.appShell
+                            { title = T.memberAddTitle i18n
+                            , headerExtra = langSelector
+                            , content =
+                                Page.AddMember.view i18n
+                                    AddMemberMsg
+                                    model.addMemberModel
+                            }
+
+                    else
+                        viewLoadingGroup i18n langSelector
+
+                Nothing ->
+                    viewLoadingGroup i18n langSelector
+
+        GroupRoute groupId (EditMemberMetadata _) ->
+            case model.loadedGroup of
+                Just loaded ->
+                    if loaded.groupId == groupId then
+                        UI.Shell.appShell
+                            { title = T.memberEditMetadataButton i18n
+                            , headerExtra = langSelector
+                            , content =
+                                Page.EditMemberMetadata.view i18n
+                                    EditMemberMetadataMsg
+                                    model.editMemberMetadataModel
                             }
 
                     else
