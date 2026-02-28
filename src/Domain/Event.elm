@@ -136,7 +136,7 @@ buildGroupCreationEvents config =
 buildExpenseEvent :
     { entryId : Entry.Id
     , eventId : Id
-    , currentUserRootId : Member.Id
+    , memberId : Member.Id
     , currentTime : Time.Posix
     , currency : Currency
     , payerId : Member.Id
@@ -150,10 +150,8 @@ buildExpenseEvent :
     -> Envelope
 buildExpenseEvent config =
     let
-        -- TODO later: actually, when creating new entry, we should record the actual member Id, not its rootId.
-        -- The rootId matching is someone else’s concern.
         entry =
-            { meta = Entry.newMetadata config.entryId config.currentUserRootId config.currentTime
+            { meta = Entry.newMetadata config.entryId config.memberId config.currentTime
             , kind =
                 Entry.Expense
                     { description = config.description
@@ -174,7 +172,7 @@ buildExpenseEvent config =
     in
     { id = config.eventId
     , clientTimestamp = config.currentTime
-    , triggeredBy = config.currentUserRootId
+    , triggeredBy = config.memberId
     , payload = EntryAdded entry
     }
 
@@ -184,7 +182,7 @@ buildExpenseEvent config =
 buildTransferEvent :
     { entryId : Entry.Id
     , eventId : Id
-    , currentUserRootId : Member.Id
+    , memberId : Member.Id
     , currentTime : Time.Posix
     , currency : Currency
     , fromMemberId : Member.Id
@@ -197,7 +195,7 @@ buildTransferEvent :
 buildTransferEvent config =
     let
         entry =
-            { meta = Entry.newMetadata config.entryId config.currentUserRootId config.currentTime
+            { meta = Entry.newMetadata config.entryId config.memberId config.currentTime
             , kind =
                 Entry.Transfer
                     { amount = config.amountCents
@@ -212,7 +210,7 @@ buildTransferEvent config =
     in
     { id = config.eventId
     , clientTimestamp = config.currentTime
-    , triggeredBy = config.currentUserRootId
+    , triggeredBy = config.memberId
     , payload = EntryAdded entry
     }
 
@@ -222,7 +220,7 @@ buildTransferEvent config =
 buildEntryModifiedEvent :
     { newEntryId : Entry.Id
     , eventId : Id
-    , currentUserRootId : Member.Id
+    , memberId : Member.Id
     , currentTime : Time.Posix
     , previousEntry : Entry
     , newKind : Entry.Kind
@@ -235,7 +233,7 @@ buildEntryModifiedEvent config =
     in
     { id = config.eventId
     , clientTimestamp = config.currentTime
-    , triggeredBy = config.currentUserRootId
+    , triggeredBy = config.memberId
     , payload = EntryModified entry
     }
 
@@ -244,7 +242,7 @@ buildEntryModifiedEvent config =
 -}
 buildEntryDeletedEvent :
     { eventId : Id
-    , currentUserRootId : Member.Id
+    , memberId : Member.Id
     , currentTime : Time.Posix
     , rootId : Entry.Id
     }
@@ -252,7 +250,7 @@ buildEntryDeletedEvent :
 buildEntryDeletedEvent config =
     { id = config.eventId
     , clientTimestamp = config.currentTime
-    , triggeredBy = config.currentUserRootId
+    , triggeredBy = config.memberId
     , payload = EntryDeleted { rootId = config.rootId }
     }
 
@@ -261,7 +259,7 @@ buildEntryDeletedEvent config =
 -}
 buildEntryUndeletedEvent :
     { eventId : Id
-    , currentUserRootId : Member.Id
+    , memberId : Member.Id
     , currentTime : Time.Posix
     , rootId : Entry.Id
     }
@@ -269,7 +267,7 @@ buildEntryUndeletedEvent :
 buildEntryUndeletedEvent config =
     { id = config.eventId
     , clientTimestamp = config.currentTime
-    , triggeredBy = config.currentUserRootId
+    , triggeredBy = config.memberId
     , payload = EntryUndeleted { rootId = config.rootId }
     }
 

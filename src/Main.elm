@@ -546,11 +546,11 @@ submitNewGroup model readyData output =
 
 submitNewEntry : Model -> Storage.InitData -> LoadedGroup -> Page.NewEntry.Output -> ( Model, Cmd Msg )
 submitNewEntry model readyData loaded output =
-    case readyData.identity |> Maybe.andThen (\id -> Dict.get id.publicKeyHash loaded.groupState.members) |> Maybe.map .rootId of
+    case readyData.identity of
         Nothing ->
             ( model, Cmd.none )
 
-        Just currentUserRootId ->
+        Just identity ->
             let
                 ( entryId, seedAfter ) =
                     UuidGen.v4 model.randomSeed
@@ -564,7 +564,7 @@ submitNewEntry model readyData loaded output =
                             Event.buildExpenseEvent
                                 { entryId = entryId
                                 , eventId = eventId
-                                , currentUserRootId = currentUserRootId
+                                , memberId = identity.publicKeyHash
                                 , currentTime = model.currentTime
                                 , currency = loaded.summary.defaultCurrency
                                 , payerId = data.payerId
@@ -580,7 +580,7 @@ submitNewEntry model readyData loaded output =
                             Event.buildTransferEvent
                                 { entryId = entryId
                                 , eventId = eventId
-                                , currentUserRootId = currentUserRootId
+                                , memberId = identity.publicKeyHash
                                 , currentTime = model.currentTime
                                 , currency = loaded.summary.defaultCurrency
                                 , fromMemberId = data.fromMemberId
@@ -613,11 +613,11 @@ submitNewEntry model readyData loaded output =
 
 submitEditEntry : Model -> Storage.InitData -> LoadedGroup -> Entry.Id -> Page.NewEntry.Output -> ( Model, Cmd Msg )
 submitEditEntry model readyData loaded originalEntryId output =
-    case readyData.identity |> Maybe.andThen (\id -> Dict.get id.publicKeyHash loaded.groupState.members) |> Maybe.map .rootId of
+    case readyData.identity of
         Nothing ->
             ( model, Cmd.none )
 
-        Just currentUserRootId ->
+        Just identity ->
             case Dict.get originalEntryId loaded.groupState.entries of
                 Nothing ->
                     ( model, Cmd.none )
@@ -637,7 +637,7 @@ submitEditEntry model readyData loaded originalEntryId output =
                             Event.buildEntryModifiedEvent
                                 { newEntryId = newEntryId
                                 , eventId = eventId
-                                , currentUserRootId = currentUserRootId
+                                , memberId = identity.publicKeyHash
                                 , currentTime = model.currentTime
                                 , previousEntry = entryState.currentVersion
                                 , newKind = newKind
@@ -698,14 +698,14 @@ outputToKind currency output =
 
 deleteOrRestoreEntry :
     Model
-    -> ({ eventId : Event.Id, currentUserRootId : Member.Id, currentTime : Time.Posix, rootId : Entry.Id } -> Event.Envelope)
+    -> ({ eventId : Event.Id, memberId : Member.Id, currentTime : Time.Posix, rootId : Entry.Id } -> Event.Envelope)
     -> Entry.Id
     -> ( Model, Cmd Msg )
 deleteOrRestoreEntry model buildEvent rootId =
     case ( model.appState, model.loadedGroup ) of
         ( Ready readyData, Just loaded ) ->
-            case readyData.identity |> Maybe.andThen (\id -> Dict.get id.publicKeyHash loaded.groupState.members) |> Maybe.map .rootId of
-                Just currentUserRootId ->
+            case readyData.identity of
+                Just identity ->
                     let
                         ( eventId, uuidStateAfter ) =
                             UuidGen.v7 model.currentTime model.uuidState
@@ -713,7 +713,7 @@ deleteOrRestoreEntry model buildEvent rootId =
                         envelope =
                             buildEvent
                                 { eventId = eventId
-                                , currentUserRootId = currentUserRootId
+                                , memberId = identity.publicKeyHash
                                 , currentTime = model.currentTime
                                 , rootId = rootId
                                 }
