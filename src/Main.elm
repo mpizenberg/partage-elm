@@ -4,7 +4,6 @@ import AppUrl exposing (AppUrl)
 import Browser
 import ConcurrentTask
 import Dict
-import Domain.Currency
 import Domain.Date as Date
 import Domain.Entry as Entry
 import Domain.Event as Event
@@ -232,10 +231,7 @@ update msg model =
                     ensureGroupLoaded { model | route = guardedRoute } guardedRoute
 
                 modelWithPages =
-                    initNewEntryIfNeeded modelAfterGuard guardedRoute
-                        |> (\m -> initEditEntryIfNeeded m guardedRoute)
-                        |> (\m -> initMemberDetailIfNeeded m guardedRoute)
-                        |> (\m -> initEditMemberMetadataIfNeeded m guardedRoute)
+                    initPagesIfNeeded modelAfterGuard guardedRoute
             in
             ( modelWithPages, Cmd.batch [ guardCmd, loadCmd ] )
 
@@ -392,35 +388,11 @@ update msg model =
             ( model, Cmd.none )
 
         OnEntrySaved groupId (ConcurrentTask.Success envelope) ->
-            case model.loadedGroup of
-                Just loaded ->
-                    if loaded.groupId == groupId then
-                        let
-                            -- TODO later: reverse events order to ease aggregation
-                            newEvents =
-                                loaded.events ++ [ envelope ]
-
-                            -- TODO later: do not re-build group state from scratch if possible,
-                            -- change applyEvents to: List Envelope -> GroupState -> GroupState
-                            newGroupState =
-                                GroupState.applyEvents newEvents
-
-                            newRoute =
-                                GroupRoute groupId (Tab EntriesTab)
-                        in
-                        ( { model
-                            | loadedGroup =
-                                Just
-                                    { loaded
-                                        | events = newEvents
-                                        , groupState = newGroupState
-                                    }
-                          }
-                        , Navigation.pushUrl navCmd (Route.toAppUrl newRoute)
-                        )
-
-                    else
-                        ( model, Cmd.none )
+            case appendEventAndRecompute model groupId envelope of
+                Just updatedModel ->
+                    ( updatedModel
+                    , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab EntriesTab)))
+                    )
 
                 Nothing ->
                     ( model, Cmd.none )
@@ -435,32 +407,10 @@ update msg model =
             deleteOrRestoreEntry model Event.buildEntryUndeletedEvent rootId
 
         OnEntryActionSaved groupId (ConcurrentTask.Success envelope) ->
-            case model.loadedGroup of
-                Just loaded ->
-                    if loaded.groupId == groupId then
-                        let
-                            newEvents =
-                                loaded.events ++ [ envelope ]
-
-                            newGroupState =
-                                GroupState.applyEvents newEvents
-                        in
-                        ( { model
-                            | loadedGroup =
-                                Just
-                                    { loaded
-                                        | events = newEvents
-                                        , groupState = newGroupState
-                                    }
-                          }
-                        , Cmd.none
-                        )
-
-                    else
-                        ( model, Cmd.none )
-
-                Nothing ->
-                    ( model, Cmd.none )
+            ( appendEventAndRecompute model groupId envelope
+                |> Maybe.withDefault model
+            , Cmd.none
+            )
 
         OnEntryActionSaved _ _ ->
             ( model, Cmd.none )
@@ -514,47 +464,23 @@ update msg model =
                     ( modelWithPage, Cmd.none )
 
         OnMemberActionSaved groupId (ConcurrentTask.Success envelope) ->
-            case model.loadedGroup of
-                Just loaded ->
-                    if loaded.groupId == groupId then
-                        let
-                            newEvents =
-                                loaded.events ++ [ envelope ]
+            case appendEventAndRecompute model groupId envelope of
+                Just updatedModel ->
+                    case model.route of
+                        GroupRoute gid AddVirtualMember ->
+                            ( { updatedModel | addMemberModel = Page.AddMember.init }
+                            , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute gid (Tab MembersTab)))
+                            )
 
-                            newGroupState =
-                                GroupState.applyEvents newEvents
+                        GroupRoute gid (EditMemberMetadata memberId) ->
+                            ( updatedModel
+                            , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute gid (MemberDetail memberId)))
+                            )
 
-                            updatedModel =
-                                { model
-                                    | loadedGroup =
-                                        Just
-                                            { loaded
-                                                | events = newEvents
-                                                , groupState = newGroupState
-                                            }
-                                }
-
-                            ( finalModel, navCmd_ ) =
-                                case model.route of
-                                    GroupRoute gid AddVirtualMember ->
-                                        ( { updatedModel | addMemberModel = Page.AddMember.init }
-                                        , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute gid (Tab MembersTab)))
-                                        )
-
-                                    GroupRoute gid (EditMemberMetadata memberId) ->
-                                        ( updatedModel
-                                        , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute gid (MemberDetail memberId)))
-                                        )
-
-                                    _ ->
-                                        ( updatedModel |> (\m -> initMemberDetailIfNeeded m model.route)
-                                        , Cmd.none
-                                        )
-                        in
-                        ( finalModel, navCmd_ )
-
-                    else
-                        ( model, Cmd.none )
+                        _ ->
+                            ( initPagesIfNeeded updatedModel model.route
+                            , Cmd.none
+                            )
 
                 Nothing ->
                     ( model, Cmd.none )
@@ -580,11 +506,7 @@ update msg model =
                                                 }
                                     }
                             in
-                            ( modelWithGroup
-                                |> (\m -> initNewEntryIfNeeded m model.route)
-                                |> (\m -> initEditEntryIfNeeded m model.route)
-                                |> (\m -> initMemberDetailIfNeeded m model.route)
-                                |> (\m -> initEditMemberMetadataIfNeeded m model.route)
+                            ( initPagesIfNeeded modelWithGroup model.route
                             , Cmd.none
                             )
 
@@ -743,7 +665,7 @@ submitEditEntry model readyData loaded originalEntryId output =
                             UuidGen.v7 model.currentTime model.uuidState
 
                         newKind =
-                            outputToKind loaded.summary.defaultCurrency output
+                            Page.NewEntry.outputToKind loaded.summary.defaultCurrency output
 
                         envelope =
                             Event.buildEntryModifiedEvent
@@ -774,38 +696,6 @@ submitEditEntry model readyData loaded originalEntryId output =
                       }
                     , cmd
                     )
-
-
-outputToKind : Domain.Currency.Currency -> Page.NewEntry.Output -> Entry.Kind
-outputToKind currency output =
-    case output of
-        Page.NewEntry.ExpenseOutput data ->
-            Entry.Expense
-                { description = data.description
-                , amount = data.amountCents
-                , currency = currency
-                , defaultCurrencyAmount = Nothing
-                , date = data.date
-                , payers = [ { memberId = data.payerId, amount = data.amountCents } ]
-                , beneficiaries =
-                    List.map
-                        (\mid -> Entry.ShareBeneficiary { memberId = mid, shares = 1 })
-                        data.beneficiaryIds
-                , category = data.category
-                , location = Nothing
-                , notes = data.notes
-                }
-
-        Page.NewEntry.TransferOutput data ->
-            Entry.Transfer
-                { amount = data.amountCents
-                , currency = currency
-                , defaultCurrencyAmount = Nothing
-                , date = data.date
-                , from = data.fromMemberId
-                , to = data.toMemberId
-                , notes = data.notes
-                }
 
 
 deleteOrRestoreEntry :
@@ -851,30 +741,42 @@ deleteOrRestoreEntry model buildEvent rootId =
             ( model, Cmd.none )
 
 
-initEditEntryIfNeeded : Model -> Route -> Model
-initEditEntryIfNeeded model route =
+initPagesIfNeeded : Model -> Route -> Model
+initPagesIfNeeded model route =
     case ( route, model.appState, model.loadedGroup ) of
+        ( GroupRoute _ NewEntry, Ready readyData, Just loaded ) ->
+            { model
+                | newEntryModel =
+                    Page.NewEntry.init (entryFormConfig readyData loaded model.currentTime)
+            }
+
         ( GroupRoute _ (EditEntry entryId), Ready readyData, Just loaded ) ->
             case Dict.get entryId loaded.groupState.entries of
                 Just entryState ->
-                    let
-                        currentUserRootId =
-                            readyData.identity
-                                |> Maybe.andThen (\id -> Dict.get id.publicKeyHash loaded.groupState.members)
-                                |> Maybe.map .rootId
-                                |> Maybe.withDefault ""
-
-                        activeMembers =
-                            GroupState.activeMembers loaded.groupState
-                    in
                     { model
                         | newEntryModel =
                             Page.NewEntry.initFromEntry
-                                { currentUserRootId = currentUserRootId
-                                , activeMembers = List.map (\m -> { id = m.id, rootId = m.rootId }) activeMembers
-                                , today = Date.posixToDate model.currentTime
-                                }
+                                (entryFormConfig readyData loaded model.currentTime)
                                 entryState.currentVersion
+                    }
+
+                Nothing ->
+                    model
+
+        ( GroupRoute _ (MemberDetail memberId), _, Just loaded ) ->
+            case Dict.get memberId loaded.groupState.members of
+                Just memberState ->
+                    { model | memberDetailModel = Page.MemberDetail.init memberState }
+
+                Nothing ->
+                    model
+
+        ( GroupRoute _ (EditMemberMetadata memberId), _, Just loaded ) ->
+            case Dict.get memberId loaded.groupState.members of
+                Just memberState ->
+                    { model
+                        | editMemberMetadataModel =
+                            Page.EditMemberMetadata.init memberState.rootId memberState.metadata
                     }
 
                 Nothing ->
@@ -884,31 +786,16 @@ initEditEntryIfNeeded model route =
             model
 
 
-initNewEntryIfNeeded : Model -> Route -> Model
-initNewEntryIfNeeded model route =
-    case ( route, model.appState, model.loadedGroup ) of
-        ( GroupRoute _ NewEntry, Ready readyData, Just loaded ) ->
-            let
-                currentUserRootId =
-                    readyData.identity
-                        |> Maybe.andThen (\id -> Dict.get id.publicKeyHash loaded.groupState.members)
-                        |> Maybe.map .rootId
-                        |> Maybe.withDefault ""
-
-                activeMembers =
-                    GroupState.activeMembers loaded.groupState
-            in
-            { model
-                | newEntryModel =
-                    Page.NewEntry.init
-                        { currentUserRootId = currentUserRootId
-                        , activeMembers = List.map (\m -> { id = m.id, rootId = m.rootId }) activeMembers
-                        , today = Date.posixToDate model.currentTime
-                        }
-            }
-
-        _ ->
-            model
+entryFormConfig : Storage.InitData -> LoadedGroup -> Time.Posix -> Page.NewEntry.Config
+entryFormConfig readyData loaded currentTime =
+    let
+        activeMembers =
+            GroupState.activeMembers loaded.groupState
+    in
+    { currentUserRootId = resolveCurrentUserRootId readyData loaded.groupState
+    , activeMembers = List.map (\m -> { id = m.id, rootId = m.rootId }) activeMembers
+    , today = Date.posixToDate currentTime
+    }
 
 
 ensureGroupLoaded : Model -> Route -> ( Model, Cmd Msg )
@@ -1098,39 +985,6 @@ submitMemberMetadata model readyData loaded output =
         )
 
 
-initMemberDetailIfNeeded : Model -> Route -> Model
-initMemberDetailIfNeeded model route =
-    case ( route, model.loadedGroup ) of
-        ( GroupRoute _ (MemberDetail memberId), Just loaded ) ->
-            case Dict.get memberId loaded.groupState.members of
-                Just memberState ->
-                    { model | memberDetailModel = Page.MemberDetail.init memberState }
-
-                Nothing ->
-                    model
-
-        _ ->
-            model
-
-
-initEditMemberMetadataIfNeeded : Model -> Route -> Model
-initEditMemberMetadataIfNeeded model route =
-    case ( route, model.loadedGroup ) of
-        ( GroupRoute _ (EditMemberMetadata memberId), Just loaded ) ->
-            case Dict.get memberId loaded.groupState.members of
-                Just memberState ->
-                    { model
-                        | editMemberMetadataModel =
-                            Page.EditMemberMetadata.init memberState.rootId memberState.metadata
-                    }
-
-                Nothing ->
-                    model
-
-        _ ->
-            model
-
-
 dummyMemberState : GroupState.MemberState
 dummyMemberState =
     { id = ""
@@ -1143,6 +997,37 @@ dummyMemberState =
     , isActive = False
     , metadata = Member.emptyMetadata
     }
+
+
+appendEventAndRecompute : Model -> Group.Id -> Event.Envelope -> Maybe Model
+appendEventAndRecompute model groupId envelope =
+    case model.loadedGroup of
+        Just loaded ->
+            if loaded.groupId == groupId then
+                let
+                    -- TODO later: reverse the orders of events for efficient add of new events
+                    newEvents =
+                        loaded.events ++ [ envelope ]
+                in
+                Just
+                    { model
+                        | loadedGroup =
+                            Just
+                                { loaded
+                                    | events = newEvents
+
+                                    -- TODO later: change type of applyEvents to:
+                                    -- List Envelope -> GroupState -> GroupState
+                                    -- to avoid full recomputation when not needed.
+                                    , groupState = GroupState.applyEvents newEvents
+                                }
+                    }
+
+            else
+                Nothing
+
+        Nothing ->
+            Nothing
 
 
 findGroupSummary : Group.Id -> List GroupSummary -> Maybe GroupSummary
@@ -1231,36 +1116,25 @@ viewReady model readyData =
                 }
 
         GroupRoute groupId (Tab tab) ->
-            case model.loadedGroup of
-                Just loaded ->
-                    if loaded.groupId == groupId then
-                        let
-                            currentUserRootId =
-                                readyData.identity
-                                    |> Maybe.andThen (\id -> Dict.get id.publicKeyHash loaded.groupState.members)
-                                    |> Maybe.map .rootId
-                                    |> Maybe.withDefault ""
-                        in
-                        Page.Group.view
-                            { i18n = i18n
-                            , onTabClick = SwitchTab
-                            , onNewEntry = NavigateTo (GroupRoute groupId NewEntry)
-                            , onEntryClick = \entryId -> NavigateTo (GroupRoute groupId (EntryDetail entryId))
-                            , onToggleDeleted = ToggleShowDeleted
-                            , onMemberClick = \memberId -> NavigateTo (GroupRoute groupId (MemberDetail memberId))
-                            , onAddMember = NavigateTo (GroupRoute groupId AddVirtualMember)
-                            , currentUserRootId = currentUserRootId
-                            }
-                            { showDeleted = model.showDeleted }
-                            langSelector
-                            loaded.groupState
-                            tab
-
-                    else
-                        viewLoadingGroup i18n langSelector
-
-                Nothing ->
-                    viewLoadingGroup i18n langSelector
+            viewWithLoadedGroup model
+                groupId
+                langSelector
+                (\loaded ->
+                    Page.Group.view
+                        { i18n = i18n
+                        , onTabClick = SwitchTab
+                        , onNewEntry = NavigateTo (GroupRoute groupId NewEntry)
+                        , onEntryClick = \entryId -> NavigateTo (GroupRoute groupId (EntryDetail entryId))
+                        , onToggleDeleted = ToggleShowDeleted
+                        , onMemberClick = \memberId -> NavigateTo (GroupRoute groupId (MemberDetail memberId))
+                        , onAddMember = NavigateTo (GroupRoute groupId AddVirtualMember)
+                        , currentUserRootId = resolveCurrentUserRootId readyData loaded.groupState
+                        }
+                        { showDeleted = model.showDeleted }
+                        langSelector
+                        loaded.groupState
+                        tab
+                )
 
         GroupRoute groupId (Join _) ->
             UI.Shell.appShell
@@ -1272,153 +1146,132 @@ viewReady model readyData =
                 }
 
         GroupRoute groupId NewEntry ->
-            case model.loadedGroup of
-                Just loaded ->
-                    if loaded.groupId == groupId then
-                        UI.Shell.appShell
-                            { title = T.shellNewEntry i18n
-                            , headerExtra = langSelector
-                            , content =
-                                Page.NewEntry.view i18n
-                                    (GroupState.activeMembers loaded.groupState)
-                                    NewEntryMsg
-                                    model.newEntryModel
-                            }
-
-                    else
-                        viewLoadingGroup i18n langSelector
-
-                Nothing ->
-                    viewLoadingGroup i18n langSelector
+            viewWithLoadedGroup model
+                groupId
+                langSelector
+                (\loaded ->
+                    UI.Shell.appShell
+                        { title = T.shellNewEntry i18n
+                        , headerExtra = langSelector
+                        , content =
+                            Page.NewEntry.view i18n
+                                (GroupState.activeMembers loaded.groupState)
+                                NewEntryMsg
+                                model.newEntryModel
+                        }
+                )
 
         GroupRoute groupId (EntryDetail entryId) ->
-            case model.loadedGroup of
-                Just loaded ->
-                    if loaded.groupId == groupId then
-                        case Dict.get entryId loaded.groupState.entries of
-                            Just entryState ->
-                                UI.Shell.appShell
-                                    { title = T.entryDetailTitle i18n
-                                    , headerExtra = langSelector
-                                    , content =
-                                        Page.EntryDetail.view i18n
-                                            { onEdit = NavigateTo (GroupRoute groupId (EditEntry entryId))
-                                            , onDelete = DeleteEntry entryId
-                                            , onRestore = RestoreEntry entryId
-                                            , onBack = NavigateTo (GroupRoute groupId (Tab EntriesTab))
-                                            , currentUserRootId =
-                                                readyData.identity
-                                                    |> Maybe.andThen (\id -> Dict.get id.publicKeyHash loaded.groupState.members)
-                                                    |> Maybe.map .rootId
-                                                    |> Maybe.withDefault ""
-                                            , resolveName = GroupState.resolveMemberName loaded.groupState
-                                            }
-                                            entryState
-                                    }
+            viewWithLoadedGroup model
+                groupId
+                langSelector
+                (\loaded ->
+                    case Dict.get entryId loaded.groupState.entries of
+                        Just entryState ->
+                            UI.Shell.appShell
+                                { title = T.entryDetailTitle i18n
+                                , headerExtra = langSelector
+                                , content =
+                                    Page.EntryDetail.view i18n
+                                        { onEdit = NavigateTo (GroupRoute groupId (EditEntry entryId))
+                                        , onDelete = DeleteEntry entryId
+                                        , onRestore = RestoreEntry entryId
+                                        , onBack = NavigateTo (GroupRoute groupId (Tab EntriesTab))
+                                        , currentUserRootId = resolveCurrentUserRootId readyData loaded.groupState
+                                        , resolveName = GroupState.resolveMemberName loaded.groupState
+                                        }
+                                        entryState
+                                }
 
-                            Nothing ->
-                                UI.Shell.appShell
-                                    { title = T.shellPartage i18n
-                                    , headerExtra = langSelector
-                                    , content = Page.NotFound.view i18n
-                                    }
-
-                    else
-                        viewLoadingGroup i18n langSelector
-
-                Nothing ->
-                    viewLoadingGroup i18n langSelector
+                        Nothing ->
+                            UI.Shell.appShell
+                                { title = T.shellPartage i18n
+                                , headerExtra = langSelector
+                                , content = Page.NotFound.view i18n
+                                }
+                )
 
         GroupRoute groupId (EditEntry _) ->
-            case model.loadedGroup of
-                Just loaded ->
-                    if loaded.groupId == groupId then
-                        UI.Shell.appShell
-                            { title = T.editEntryTitle i18n
-                            , headerExtra = langSelector
-                            , content =
-                                Page.NewEntry.view i18n
-                                    (GroupState.activeMembers loaded.groupState)
-                                    NewEntryMsg
-                                    model.newEntryModel
-                            }
+            viewWithLoadedGroup model
+                groupId
+                langSelector
+                (\loaded ->
+                    UI.Shell.appShell
+                        { title = T.editEntryTitle i18n
+                        , headerExtra = langSelector
+                        , content =
+                            Page.NewEntry.view i18n
+                                (GroupState.activeMembers loaded.groupState)
+                                NewEntryMsg
+                                model.newEntryModel
+                        }
+                )
 
-                    else
-                        viewLoadingGroup i18n langSelector
-
-                Nothing ->
-                    viewLoadingGroup i18n langSelector
-
-        GroupRoute groupId (MemberDetail memberId) ->
-            case model.loadedGroup of
-                Just loaded ->
-                    if loaded.groupId == groupId then
-                        let
-                            currentUserRootId =
-                                readyData.identity
-                                    |> Maybe.andThen (\id -> Dict.get id.publicKeyHash loaded.groupState.members)
-                                    |> Maybe.map .rootId
-                                    |> Maybe.withDefault ""
-                        in
-                        UI.Shell.appShell
-                            { title = T.memberDetailTitle i18n
-                            , headerExtra = langSelector
-                            , content =
-                                Page.MemberDetail.view i18n
-                                    currentUserRootId
-                                    MemberDetailMsg
-                                    model.memberDetailModel
-                            }
-
-                    else
-                        viewLoadingGroup i18n langSelector
-
-                Nothing ->
-                    viewLoadingGroup i18n langSelector
+        GroupRoute groupId (MemberDetail _) ->
+            viewWithLoadedGroup model
+                groupId
+                langSelector
+                (\loaded ->
+                    UI.Shell.appShell
+                        { title = T.memberDetailTitle i18n
+                        , headerExtra = langSelector
+                        , content =
+                            Page.MemberDetail.view i18n
+                                (resolveCurrentUserRootId readyData loaded.groupState)
+                                MemberDetailMsg
+                                model.memberDetailModel
+                        }
+                )
 
         GroupRoute groupId AddVirtualMember ->
-            case model.loadedGroup of
-                Just loaded ->
-                    if loaded.groupId == groupId then
-                        UI.Shell.appShell
-                            { title = T.memberAddTitle i18n
-                            , headerExtra = langSelector
-                            , content =
-                                Page.AddMember.view i18n
-                                    AddMemberMsg
-                                    model.addMemberModel
-                            }
-
-                    else
-                        viewLoadingGroup i18n langSelector
-
-                Nothing ->
-                    viewLoadingGroup i18n langSelector
+            viewWithLoadedGroup model
+                groupId
+                langSelector
+                (\_ ->
+                    UI.Shell.appShell
+                        { title = T.memberAddTitle i18n
+                        , headerExtra = langSelector
+                        , content =
+                            Page.AddMember.view i18n
+                                AddMemberMsg
+                                model.addMemberModel
+                        }
+                )
 
         GroupRoute groupId (EditMemberMetadata _) ->
-            case model.loadedGroup of
-                Just loaded ->
-                    if loaded.groupId == groupId then
-                        UI.Shell.appShell
-                            { title = T.memberEditMetadataButton i18n
-                            , headerExtra = langSelector
-                            , content =
-                                Page.EditMemberMetadata.view i18n
-                                    EditMemberMetadataMsg
-                                    model.editMemberMetadataModel
-                            }
-
-                    else
-                        viewLoadingGroup i18n langSelector
-
-                Nothing ->
-                    viewLoadingGroup i18n langSelector
+            viewWithLoadedGroup model
+                groupId
+                langSelector
+                (\_ ->
+                    UI.Shell.appShell
+                        { title = T.memberEditMetadataButton i18n
+                        , headerExtra = langSelector
+                        , content =
+                            Page.EditMemberMetadata.view i18n
+                                EditMemberMetadataMsg
+                                model.editMemberMetadataModel
+                        }
+                )
 
         About ->
             UI.Shell.appShell { title = T.shellPartage i18n, headerExtra = langSelector, content = Page.About.view i18n }
 
         NotFound ->
             UI.Shell.appShell { title = T.shellPartage i18n, headerExtra = langSelector, content = Page.NotFound.view i18n }
+
+
+viewWithLoadedGroup : Model -> Group.Id -> Ui.Element Msg -> (LoadedGroup -> Ui.Element Msg) -> Ui.Element Msg
+viewWithLoadedGroup model groupId langSelector content =
+    case model.loadedGroup of
+        Just loaded ->
+            if loaded.groupId == groupId then
+                content loaded
+
+            else
+                viewLoadingGroup model.i18n langSelector
+
+        Nothing ->
+            viewLoadingGroup model.i18n langSelector
 
 
 viewLoadingGroup : I18n -> Ui.Element Msg -> Ui.Element Msg
@@ -1430,3 +1283,11 @@ viewLoadingGroup i18n langSelector =
             Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
                 (Ui.text (T.loadingGroup i18n))
         }
+
+
+resolveCurrentUserRootId : Storage.InitData -> GroupState -> Member.Id
+resolveCurrentUserRootId readyData groupState =
+    readyData.identity
+        |> Maybe.andThen (\id -> Dict.get id.publicKeyHash groupState.members)
+        |> Maybe.map .rootId
+        |> Maybe.withDefault ""

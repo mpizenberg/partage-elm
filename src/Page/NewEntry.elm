@@ -1,5 +1,6 @@
-module Page.NewEntry exposing (Config, EntryKind(..), Model, Msg, Output(..), init, initFromEntry, update, view)
+module Page.NewEntry exposing (Config, EntryKind(..), Model, Msg, Output(..), init, initFromEntry, outputToKind, update, view)
 
+import Domain.Currency exposing (Currency)
 import Domain.Date as Date exposing (Date)
 import Domain.Entry as Entry
 import Domain.GroupState as GroupState
@@ -571,3 +572,35 @@ errorWhen condition message =
 
     else
         Ui.none
+
+
+outputToKind : Currency -> Output -> Entry.Kind
+outputToKind currency output =
+    case output of
+        ExpenseOutput data ->
+            Entry.Expense
+                { description = data.description
+                , amount = data.amountCents
+                , currency = currency
+                , defaultCurrencyAmount = Nothing
+                , date = data.date
+                , payers = [ { memberId = data.payerId, amount = data.amountCents } ]
+                , beneficiaries =
+                    List.map
+                        (\mid -> Entry.ShareBeneficiary { memberId = mid, shares = 1 })
+                        data.beneficiaryIds
+                , category = data.category
+                , location = Nothing
+                , notes = data.notes
+                }
+
+        TransferOutput data ->
+            Entry.Transfer
+                { amount = data.amountCents
+                , currency = currency
+                , defaultCurrencyAmount = Nothing
+                , date = data.date
+                , from = data.fromMemberId
+                , to = data.toMemberId
+                , notes = data.notes
+                }
