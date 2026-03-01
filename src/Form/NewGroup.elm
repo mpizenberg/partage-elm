@@ -8,7 +8,7 @@ module Form.NewGroup exposing
     , form
     )
 
-import Domain.Currency exposing (Currency(..))
+import Domain.Currency as Currency exposing (Currency(..))
 import Field exposing (Field, Validation)
 import Form exposing (Accessor)
 import Form.List exposing (Forms, Id)
@@ -97,38 +97,18 @@ currencyFromString : String -> Result Field.Error Currency
 currencyFromString =
     Field.trim
         (\s ->
-            case s of
-                "usd" ->
-                    Ok USD
+            case List.filter (\c -> String.toLower (Currency.currencyCode c) == s) Currency.allCurrencies of
+                c :: _ ->
+                    Ok c
 
-                "eur" ->
-                    Ok EUR
-
-                "gbp" ->
-                    Ok GBP
-
-                "chf" ->
-                    Ok CHF
-
-                _ ->
+                [] ->
                     Err (Field.validationError s)
         )
 
 
 currencyToString : Currency -> String
 currencyToString c =
-    case c of
-        USD ->
-            "usd"
-
-        EUR ->
-            "eur"
-
-        GBP ->
-            "gbp"
-
-        CHF ->
-            "chf"
+    String.toLower (Currency.currencyCode c)
 
 
 currencyType : Field.Type Currency

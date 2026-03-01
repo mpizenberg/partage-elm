@@ -1,4 +1,4 @@
-module Domain.Currency exposing (Currency(..), currencyDecoder, encodeCurrency, precision)
+module Domain.Currency exposing (Currency(..), allCurrencies, currencyCode, currencyDecoder, encodeCurrency, precision)
 
 {-| Supported currencies and their precision.
 -}
@@ -14,6 +14,91 @@ type Currency
     | EUR
     | GBP
     | CHF
+    | JPY
+    | AUD
+    | CAD
+    | CNY
+    | SEK
+    | NZD
+    | MXN
+    | SGD
+    | HKD
+    | NOK
+    | KRW
+    | TRY
+    | INR
+    | RUB
+    | BRL
+    | ZAR
+
+
+allCurrencies : List Currency
+allCurrencies =
+    [ EUR, USD, GBP, CHF, JPY, AUD, CAD, CNY, SEK, NZD, MXN, SGD, HKD, NOK, KRW, TRY, INR, RUB, BRL, ZAR ]
+
+
+currencyCode : Currency -> String
+currencyCode currency =
+    case currency of
+        USD ->
+            "USD"
+
+        EUR ->
+            "EUR"
+
+        GBP ->
+            "GBP"
+
+        CHF ->
+            "CHF"
+
+        JPY ->
+            "JPY"
+
+        AUD ->
+            "AUD"
+
+        CAD ->
+            "CAD"
+
+        CNY ->
+            "CNY"
+
+        SEK ->
+            "SEK"
+
+        NZD ->
+            "NZD"
+
+        MXN ->
+            "MXN"
+
+        SGD ->
+            "SGD"
+
+        HKD ->
+            "HKD"
+
+        NOK ->
+            "NOK"
+
+        KRW ->
+            "KRW"
+
+        TRY ->
+            "TRY"
+
+        INR ->
+            "INR"
+
+        RUB ->
+            "RUB"
+
+        BRL ->
+            "BRL"
+
+        ZAR ->
+            "ZAR"
 
 
 {-| Number of decimal digits for a currency (e.g. 2 for cents).
@@ -21,35 +106,19 @@ type Currency
 precision : Currency -> Int
 precision currency =
     case currency of
-        USD ->
-            2
+        JPY ->
+            0
 
-        EUR ->
-            2
+        KRW ->
+            0
 
-        GBP ->
-            2
-
-        CHF ->
+        _ ->
             2
 
 
 encodeCurrency : Currency -> Encode.Value
 encodeCurrency currency =
-    Encode.string
-        (case currency of
-            USD ->
-                "usd"
-
-            EUR ->
-                "eur"
-
-            GBP ->
-                "gbp"
-
-            CHF ->
-                "chf"
-        )
+    Encode.string (String.toLower (currencyCode currency))
 
 
 currencyDecoder : Decode.Decoder Currency
@@ -69,6 +138,54 @@ currencyDecoder =
 
                     "chf" ->
                         Decode.succeed CHF
+
+                    "jpy" ->
+                        Decode.succeed JPY
+
+                    "aud" ->
+                        Decode.succeed AUD
+
+                    "cad" ->
+                        Decode.succeed CAD
+
+                    "cny" ->
+                        Decode.succeed CNY
+
+                    "sek" ->
+                        Decode.succeed SEK
+
+                    "nzd" ->
+                        Decode.succeed NZD
+
+                    "mxn" ->
+                        Decode.succeed MXN
+
+                    "sgd" ->
+                        Decode.succeed SGD
+
+                    "hkd" ->
+                        Decode.succeed HKD
+
+                    "nok" ->
+                        Decode.succeed NOK
+
+                    "krw" ->
+                        Decode.succeed KRW
+
+                    "try" ->
+                        Decode.succeed TRY
+
+                    "inr" ->
+                        Decode.succeed INR
+
+                    "rub" ->
+                        Decode.succeed RUB
+
+                    "brl" ->
+                        Decode.succeed BRL
+
+                    "zar" ->
+                        Decode.succeed ZAR
 
                     _ ->
                         Decode.fail ("Unknown currency: " ++ s)

@@ -4,6 +4,7 @@ import AppUrl exposing (AppUrl)
 import Browser
 import ConcurrentTask
 import Dict
+import Domain.Currency
 import Domain.Date as Date
 import Domain.Entry as Entry
 import Domain.Event as Event
@@ -202,7 +203,7 @@ init flags =
       , randomSeed = seedAfterV7
       , currentTime = currentTime
       , newGroupModel = Page.NewGroup.init
-      , newEntryModel = Page.NewEntry.init { currentUserRootId = "", activeMembersRootIds = [], today = Date.posixToDate currentTime }
+      , newEntryModel = Page.NewEntry.init { currentUserRootId = "", activeMembersRootIds = [], today = Date.posixToDate currentTime, defaultCurrency = Domain.Currency.EUR }
       , memberDetailModel = Page.MemberDetail.init dummyMemberChainState
       , addMemberModel = Page.AddMember.init
       , editMemberMetadataModel = Page.EditMemberMetadata.init "" Member.emptyMetadata
@@ -430,6 +431,8 @@ update msg model =
                         output =
                             Page.NewEntry.TransferOutput
                                 { amountCents = tx.amount
+                                , currency = loaded.summary.defaultCurrency
+                                , defaultCurrencyAmount = Nothing
                                 , fromMemberId = tx.from
                                 , toMemberId = tx.to
                                 , notes = Nothing
@@ -743,6 +746,7 @@ entryFormConfig readyData loaded currentTime =
     { currentUserRootId = currentUserRootId readyData loaded
     , activeMembersRootIds = List.map .rootId (GroupState.activeMembers loaded.groupState)
     , today = Date.posixToDate currentTime
+    , defaultCurrency = loaded.summary.defaultCurrency
     }
 
 

@@ -1,6 +1,6 @@
 module Page.NewGroup exposing (Model, Msg, init, update, view)
 
-import Domain.Currency exposing (Currency(..))
+import Domain.Currency as Currency exposing (Currency(..))
 import Field
 import Form
 import Form.List
@@ -160,18 +160,7 @@ currencyField i18n form =
 
 currencyToString : Currency -> String
 currencyToString c =
-    case c of
-        USD ->
-            "usd"
-
-        EUR ->
-            "eur"
-
-        GBP ->
-            "gbp"
-
-        CHF ->
-            "chf"
+    String.toLower (Currency.currencyCode c)
 
 
 virtualMembersSection : I18n -> NewGroup.Form -> Ui.Element Msg

@@ -88,7 +88,9 @@ expenseContent i18n ctx data =
             [ [ detailRow (T.newEntryDescriptionLabel i18n) data.description
               , detailRow (T.entryDetailDate i18n) (Date.toString data.date)
               , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency data.amount data.currency)
-              , detailRow (T.entryDetailPaidBy i18n) (payerNames ctx.resolveName data.payers)
+              ]
+            , defaultCurrencyAmountRow data.defaultCurrencyAmount
+            , [ detailRow (T.entryDetailPaidBy i18n) (payerNames ctx.resolveName data.payers)
               , beneficiariesSection i18n ctx.resolveName data.beneficiaries
               ]
             , categoryRow i18n data.category
@@ -103,12 +105,26 @@ transferContent i18n ctx data =
         (List.concat
             [ [ detailRow (T.entryDetailDate i18n) (Date.toString data.date)
               , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency data.amount data.currency)
-              , detailRow (T.entryDetailFrom i18n) (ctx.resolveName data.from)
+              ]
+            , defaultCurrencyAmountRow data.defaultCurrencyAmount
+            , [ detailRow (T.entryDetailFrom i18n) (ctx.resolveName data.from)
               , detailRow (T.entryDetailTo i18n) (ctx.resolveName data.to)
               ]
             , optionalRow (T.entryDetailNotes i18n) data.notes
             ]
         )
+
+
+defaultCurrencyAmountRow : Maybe Int -> List (Ui.Element msg)
+defaultCurrencyAmountRow maybeAmount =
+    case maybeAmount of
+        Just amount ->
+            [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
+                (Ui.text ("≈ " ++ Format.formatCents amount))
+            ]
+
+        Nothing ->
+            []
 
 
 detailRow : String -> String -> Ui.Element msg

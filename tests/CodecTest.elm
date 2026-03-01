@@ -44,12 +44,7 @@ suite =
 
 currencyFuzzer : Fuzzer Currency
 currencyFuzzer =
-    Fuzz.oneOf
-        [ Fuzz.constant USD
-        , Fuzz.constant EUR
-        , Fuzz.constant GBP
-        , Fuzz.constant CHF
-        ]
+    Fuzz.oneOf (List.map Fuzz.constant Currency.allCurrencies)
 
 
 dateFuzzer : Fuzzer Date

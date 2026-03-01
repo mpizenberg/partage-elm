@@ -1,7 +1,7 @@
 module Page.NewEntry exposing (Config, EntryKind(..), Model, Msg, Output(..), SplitData(..), init, initFromEntry, outputToKind, update, view)
 
 import Dict exposing (Dict)
-import Domain.Currency exposing (Currency)
+import Domain.Currency as Currency exposing (Currency)
 import Domain.Date as Date exposing (Date)
 import Domain.Entry as Entry
 import Domain.Member as Member
@@ -40,6 +40,8 @@ type Output
     = ExpenseOutput
         { description : String
         , amountCents : Int
+        , currency : Currency
+        , defaultCurrencyAmount : Maybe Int
         , notes : Maybe String
         , payers : List Entry.Payer
         , split : SplitData
@@ -48,6 +50,8 @@ type Output
         }
     | TransferOutput
         { amountCents : Int
+        , currency : Currency
+        , defaultCurrencyAmount : Maybe Int
         , fromMemberId : Member.Id
         , toMemberId : Member.Id
         , notes : Maybe String
@@ -74,6 +78,9 @@ type alias ModelData =
     , toMemberId : Member.Id
     , category : Maybe Entry.Category
     , notes : String
+    , currency : Currency
+    , groupDefaultCurrency : Currency
+    , defaultCurrencyAmount : String
     }
 
 
@@ -81,6 +88,7 @@ type alias Config =
     { currentUserRootId : Member.Id
     , activeMembersRootIds : List Member.Id
     , today : Date
+    , defaultCurrency : Currency
     }
 
 
@@ -100,6 +108,8 @@ type Msg
     | InputFromMember Member.Id
     | InputToMember Member.Id
     | InputCategory (Maybe Entry.Category)
+    | InputCurrency Currency
+    | InputDefaultCurrencyAmount String
     | InputDate String
     | Submit
 
@@ -137,6 +147,9 @@ init config =
         , toMemberId = to
         , category = Nothing
         , notes = ""
+        , currency = config.defaultCurrency
+        , groupDefaultCurrency = config.defaultCurrency
+        , defaultCurrencyAmount = ""
         }
 
 
@@ -237,6 +250,15 @@ initFromEntry config entry =
                 , toMemberId = config.currentUserRootId
                 , category = data.category
                 , notes = Maybe.withDefault "" data.notes
+                , currency = data.currency
+                , groupDefaultCurrency = config.defaultCurrency
+                , defaultCurrencyAmount =
+                    case data.defaultCurrencyAmount of
+                        Just amt ->
+                            centsToDecimalString amt
+
+                        Nothing ->
+                            ""
                 }
 
         Entry.Transfer data ->
@@ -258,6 +280,15 @@ initFromEntry config entry =
                 , toMemberId = data.to
                 , category = Nothing
                 , notes = Maybe.withDefault "" data.notes
+                , currency = data.currency
+                , groupDefaultCurrency = config.defaultCurrency
+                , defaultCurrencyAmount =
+                    case data.defaultCurrencyAmount of
+                        Just amt ->
+                            centsToDecimalString amt
+
+                        Nothing ->
+                            ""
                 }
 
 
@@ -335,6 +366,12 @@ update msg (Model data) =
 
         InputCategory cat ->
             ( Model { data | category = cat }, Nothing )
+
+        InputCurrency c ->
+            ( Model { data | currency = c }, Nothing )
+
+        InputDefaultCurrencyAmount s ->
+            ( Model { data | defaultCurrencyAmount = s }, Nothing )
 
         InputDate s ->
             ( Model { data | form = Form.modify .date (Field.setFromString s) data.form }, Nothing )
@@ -436,11 +473,21 @@ submitExpense data =
                 in
                 case ( splitResult, payersResult ) of
                     ( Ok splitData, Ok payers ) ->
+                        let
+                            defaultCurrencyAmount =
+                                if data.currency /= data.groupDefaultCurrency then
+                                    parseAmountCents (String.trim data.defaultCurrencyAmount)
+
+                                else
+                                    Nothing
+                        in
                         ( Model { data | submitted = False }
                         , Just
                             (ExpenseOutput
                                 { description = formOutput.description
                                 , amountCents = formOutput.amountCents
+                                , currency = data.currency
+                                , defaultCurrencyAmount = defaultCurrencyAmount
                                 , notes = notes
                                 , payers = payers
                                 , split = splitData
@@ -484,10 +531,20 @@ submitTransfer data =
                         else
                             Just (String.trim data.notes)
                 in
+                let
+                    defaultCurrencyAmount =
+                        if data.currency /= data.groupDefaultCurrency then
+                            parseAmountCents (String.trim data.defaultCurrencyAmount)
+
+                        else
+                            Nothing
+                in
                 ( Model { data | submitted = False }
                 , Just
                     (TransferOutput
                         { amountCents = amountCents
+                        , currency = data.currency
+                        , defaultCurrencyAmount = defaultCurrencyAmount
                         , fromMemberId = data.fromMemberId
                         , toMemberId = data.toMemberId
                         , notes = notes
@@ -553,6 +610,8 @@ expenseFields : I18n -> List Member.ChainState -> ModelData -> List (Ui.Element 
 expenseFields i18n activeMembers data =
     [ descriptionField i18n data
     , amountField i18n data
+    , currencyField i18n data
+    , defaultCurrencyAmountField i18n data
     , dateField i18n data
     , payerField i18n activeMembers data
     , beneficiariesField i18n activeMembers data
@@ -564,6 +623,8 @@ expenseFields i18n activeMembers data =
 transferFields : I18n -> List Member.ChainState -> ModelData -> List (Ui.Element Msg)
 transferFields i18n activeMembers data =
     [ amountField i18n data
+    , currencyField i18n data
+    , defaultCurrencyAmountField i18n data
     , dateField i18n data
     , memberDropdown i18n (T.newEntryFromLabel i18n) InputFromMember activeMembers data.fromMemberId
     , memberDropdown i18n (T.newEntryToLabel i18n) InputToMember activeMembers data.toMemberId
@@ -612,6 +673,44 @@ amountField i18n data =
             (Ui.text (T.newEntryAmountHint i18n))
         , fieldError i18n data.submitted field
         ]
+
+
+currencyField : I18n -> ModelData -> Ui.Element Msg
+currencyField i18n data =
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
+            (Ui.text (T.newEntryCurrencyLabel i18n))
+        , Ui.Input.chooseOne Ui.row
+            [ Ui.spacing Theme.spacing.sm, Ui.wrap ]
+            { onChange = InputCurrency
+            , options =
+                List.map
+                    (\c -> Ui.Input.option c (Ui.text (Currency.currencyCode c)))
+                    Currency.allCurrencies
+            , selected = Just data.currency
+            , label = Ui.Input.labelHidden (T.newEntryCurrencyLabel i18n)
+            }
+        ]
+
+
+defaultCurrencyAmountField : I18n -> ModelData -> Ui.Element Msg
+defaultCurrencyAmountField i18n data =
+    if data.currency == data.groupDefaultCurrency then
+        Ui.none
+
+    else
+        Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+            [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
+                (Ui.text (T.newEntryDefaultCurrencyAmountLabel (Currency.currencyCode data.groupDefaultCurrency) i18n))
+            , Ui.Input.text [ Ui.width Ui.fill ]
+                { onChange = InputDefaultCurrencyAmount
+                , text = data.defaultCurrencyAmount
+                , placeholder = Just (T.newEntryAmountPlaceholder i18n)
+                , label = Ui.Input.labelHidden (T.newEntryDefaultCurrencyAmountLabel (Currency.currencyCode data.groupDefaultCurrency) i18n)
+                }
+            , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
+                (Ui.text (T.newEntryDefaultCurrencyAmountHint (Currency.currencyCode data.groupDefaultCurrency) i18n))
+            ]
 
 
 dateField : I18n -> ModelData -> Ui.Element Msg
@@ -942,14 +1041,14 @@ centsToDecimalString cents =
 
 
 outputToKind : Currency -> Output -> Entry.Kind
-outputToKind currency output =
+outputToKind _ output =
     case output of
         ExpenseOutput data ->
             Entry.Expense
                 { description = data.description
                 , amount = data.amountCents
-                , currency = currency
-                , defaultCurrencyAmount = Nothing
+                , currency = data.currency
+                , defaultCurrencyAmount = data.defaultCurrencyAmount
                 , date = data.date
                 , payers = data.payers
                 , beneficiaries =
@@ -971,8 +1070,8 @@ outputToKind currency output =
         TransferOutput data ->
             Entry.Transfer
                 { amount = data.amountCents
-                , currency = currency
-                , defaultCurrencyAmount = Nothing
+                , currency = data.currency
+                , defaultCurrencyAmount = data.defaultCurrencyAmount
                 , date = data.date
                 , from = data.fromMemberId
                 , to = data.toMemberId
