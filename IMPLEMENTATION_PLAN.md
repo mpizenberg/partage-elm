@@ -532,7 +532,7 @@ src/
 
 **Goal:** Complete the local bill-splitting experience by adding the remaining features from the specification that don't require server sync. Also clean up `Main.elm` by extracting form logic into page modules.
 
-**Status: IN PROGRESS (Steps 0-5 complete)**
+**Status: COMPLETE**
 
 ### Step 0: Main.elm cleanup ✅
 
@@ -788,75 +788,32 @@ Transfer support integrated into `Page.NewEntry` (no separate `Form.NewTransfer.
 - **`UpdateResult` pattern** instead of standard `( Model, Maybe Output )` — needed to signal both metadata output and delete request from a single update call
 - **Link validation**: label is mandatory (non-blank), URL must start with `http://` or `https://` (custom `urlString` field type)
 
-### Step 6: Settlement actions
+### Step 6: Settlement actions ✅
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 **Spec ref:** Section 7.3
 
-#### 6a. "Mark as Paid" on settlement rows
+#### What was done
 
-Each settlement row in `BalanceTab` gains a "Mark as Paid" button. Clicking it creates a `Transfer` entry recording the payment, using the existing `Submit.newEntry` pipeline.
+**"Mark as Paid" button on settlement rows:**
+- `UI.Components.settlementRow` signature: `I18n -> (Member.Id -> String) -> Member.Id -> (Settlement.Transaction -> msg) -> Settlement.Transaction -> Ui.Element msg`
+- Each row renders a primary-styled "Mark as Paid" button on the right
+- Clicking bypasses the `Page.NewEntry` form — builds a `TransferOutput` directly from the `Settlement.Transaction` and calls `submitNewEntry`
 
-**`UI.Components.settlementRow`** — Signature changes to accept a message:
-- Current: `settlementRow : I18n -> (Member.Id -> String) -> Settlement.Transaction -> Ui.Element msg`
-- New: `settlementRow : I18n -> (Member.Id -> String) -> Maybe (Settlement.Transaction -> msg) -> Settlement.Transaction -> Ui.Element msg`
-- When `Just onSettle`: renders a "Mark as Paid" button (primary, small) on the right side of the row
-- When `Nothing`: read-only display (no button) — useful if we need to render settlement rows without actions in the future
+**Current user highlighting:**
+- Settlement rows where `tx.from` or `tx.to` matches `currentUserRootId` use `Theme.primaryLight` background instead of `Theme.neutral200`
 
-**`Page.Group.BalanceTab`** — Signature changes to accept a settlement callback:
-- Current: `view : I18n -> Member.Id -> GroupState -> Ui.Element msg`
-- New: `view : I18n -> Member.Id -> Maybe (Settlement.Transaction -> msg) -> GroupState -> Ui.Element msg`
-- Passes `onSettle` through to `UI.Components.settlementRow`
+**Main.elm wiring:**
+- `SettleTransaction Settlement.Transaction` Msg variant
+- Handler constructs `Page.NewEntry.TransferOutput { amountCents, fromMemberId, toMemberId, notes = Nothing, date = today }` and calls `submitNewEntry`
+- `OnEntrySaved` checks current route: stays on BalanceTab if already there, otherwise navigates to EntriesTab
 
-**`Page.Group.Context`** — Add settlement callback:
-- Add `onSettleTransaction : Settlement.Transaction -> msg` to `Context msg`
+**Callback threading:**
+- `Page.Group.Context` gained `onSettleTransaction : Settlement.Transaction -> msg`
+- `BalanceTab.view` takes `Settlement.Transaction -> msg` callback, passes through to `settlementSection` → `settlementRow`
 
-#### 6b. Main.elm wiring
-
-New Msg variant:
-- `SettleTransaction Settlement.Transaction`
-
-Handler `SettleTransaction tx`:
-1. Build a `Page.NewEntry.TransferOutput` from the `Settlement.Transaction`:
-   - `amountCents = tx.amount`
-   - `fromMemberId = tx.from`
-   - `toMemberId = tx.to`
-   - `notes = Nothing`
-   - `date = Date.posixToDate model.currentTime` (today's date)
-2. Call `submitNewEntry` with the constructed output (reuses the existing transfer submission pipeline)
-3. On success (`OnEntrySaved`): recomputes group state, stays on Balance tab (not Entries tab as for normal entries)
-
-Note: The settlement action bypasses the `Page.NewEntry` form entirely — it goes straight to submission since all data is already known from the settlement computation. No user input needed.
-
-**Navigation after save:** When `SettleTransaction` triggers `OnEntrySaved`, the handler should stay on the Balance tab instead of navigating to Entries tab. This can be handled by checking the current route: if already on `Tab BalanceTab`, remain there.
-
-#### 6c. Highlight current user in settlement rows
-
-Settlement rows involving the current user are visually emphasized:
-
-**`UI.Components.settlementRow`** — Add `currentUserRootId : Member.Id` parameter:
-- New: `settlementRow : I18n -> (Member.Id -> String) -> Member.Id -> Maybe (Settlement.Transaction -> msg) -> Settlement.Transaction -> Ui.Element msg`
-- When `tx.from == currentUserRootId` or `tx.to == currentUserRootId`: use `Theme.primaryLight` background (or a subtle highlight color) instead of `Theme.neutral200`
-- The "you" suffix is already handled by `resolveName` in the caller — no special name formatting needed here
-
-**`Page.Group.BalanceTab`** — Thread `currentUserRootId` through to `settlementRow`.
-
-#### Files modified
-
-| File | Action | Description |
-| --- | --- | --- |
-| `src/UI/Components.elm` | Modified | `settlementRow` gains `onSettle` callback + `currentUserRootId` + highlight |
-| `src/Page/Group/BalanceTab.elm` | Modified | Pass settle callback and currentUserRootId to settlementRow |
-| `src/Page/Group.elm` | Modified | Add `onSettleTransaction` to `Context` |
-| `src/Main.elm` | Modified | `SettleTransaction` Msg + handler |
-| `translations/messages.en.json` | Modified | ~2 new keys |
-| `translations/messages.fr.json` | Modified | ~2 new keys |
-
-#### Translation keys needed
-
-- `settlementMarkAsPaid`: "Mark as Paid" / "Marquer comme payé"
-- `settlementPaid`: "Paid!" / "Payé !" (optional, for toast/feedback after marking)
+**1 translation key** added (EN + FR): `settlementMarkAsPaid`
 
 ### Not in scope (deferred to later phases)
 
