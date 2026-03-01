@@ -56,7 +56,7 @@ equalSplitEntry =
 
 equalSplitBalances : Dict.Dict String MemberBalance
 equalSplitBalances =
-    Balance.computeBalances identity [ equalSplitEntry ]
+    Balance.computeBalances [ equalSplitEntry ]
 
 
 simpleSplitTests : Test
@@ -110,7 +110,7 @@ simpleSplitTests =
                             }
 
                     balances =
-                        Balance.computeBalances identity [ entry ]
+                        Balance.computeBalances [ entry ]
                 in
                 Dict.get "bob" balances
                     |> Maybe.map .totalOwed
@@ -133,7 +133,7 @@ simpleSplitTests =
                         }
 
                 balances =
-                    Balance.computeBalances identity [ entry ]
+                    Balance.computeBalances [ entry ]
              in
              [ test "alice paid 600" <|
                 \_ ->
@@ -175,7 +175,7 @@ sharesRemainderTests =
                             }
 
                     balances =
-                        Balance.computeBalances identity [ entry ]
+                        Balance.computeBalances [ entry ]
 
                     totalOwed =
                         Dict.foldl (\_ b acc -> acc + b.totalOwed) 0 balances
@@ -197,7 +197,7 @@ sharesRemainderTests =
                             }
 
                     balances =
-                        Balance.computeBalances identity [ entry ]
+                        Balance.computeBalances [ entry ]
 
                     totalOwed =
                         Dict.foldl (\_ b acc -> acc + b.totalOwed) 0 balances
@@ -219,7 +219,7 @@ transferTests =
                 }
 
         balances =
-            Balance.computeBalances identity [ entry ]
+            Balance.computeBalances [ entry ]
     in
     describe "Transfers"
         [ test "sender has positive net balance" <|
@@ -255,7 +255,7 @@ multiCurrencyTests =
                         }
 
                 balances =
-                    Balance.computeBalances identity [ entry ]
+                    Balance.computeBalances [ entry ]
              in
              [ test "payer amount is converted to default currency" <|
                 \_ ->
@@ -284,7 +284,7 @@ multiCurrencyTests =
                             }
 
                     balances =
-                        Balance.computeBalances identity [ entry ]
+                        Balance.computeBalances [ entry ]
                 in
                 Dict.get "alice" balances
                     |> Maybe.map .totalPaid
@@ -312,7 +312,7 @@ invariantTests =
                             }
 
                     balances =
-                        Balance.computeBalances identity [ entry ]
+                        Balance.computeBalances [ entry ]
 
                     totalNet =
                         Dict.foldl (\_ b acc -> acc + b.netBalance) 0 balances
@@ -334,7 +334,7 @@ invariantTests =
                             }
 
                     balances =
-                        Balance.computeBalances identity [ entry ]
+                        Balance.computeBalances [ entry ]
 
                     allCorrect =
                         Dict.values balances
@@ -358,7 +358,7 @@ invariantTests =
                             }
 
                     balances =
-                        Balance.computeBalances identity [ entry ]
+                        Balance.computeBalances [ entry ]
 
                     totalPaid =
                         Dict.foldl (\_ b acc -> acc + b.totalPaid) 0 balances

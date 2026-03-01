@@ -29,7 +29,7 @@ view i18n msg currentUserRootId state =
 
         active =
             allMembers
-                |> List.filter .isActive
+                |> List.filter (not << .isRetired)
                 |> List.sortBy (\m -> ( boolToInt (m.rootId /= currentUserRootId), String.toLower m.name ))
 
         retired =

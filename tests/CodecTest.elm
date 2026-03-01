@@ -207,14 +207,14 @@ payloadFuzzer =
             Fuzz.string
             memberTypeFuzzer
             Fuzz.string
-        , Fuzz.map3 (\mid oldN newN -> MemberRenamed { memberId = mid, oldName = oldN, newName = newN })
+        , Fuzz.map3 (\rid oldN newN -> MemberRenamed { rootId = rid, oldName = oldN, newName = newN })
             Fuzz.string
             Fuzz.string
             Fuzz.string
-        , Fuzz.map (\mid -> MemberRetired { memberId = mid }) Fuzz.string
-        , Fuzz.map (\mid -> MemberUnretired { memberId = mid }) Fuzz.string
-        , Fuzz.map2 (\prev new -> MemberReplaced { previousId = prev, newId = new }) Fuzz.string Fuzz.string
-        , Fuzz.map2 (\mid meta -> MemberMetadataUpdated { memberId = mid, metadata = meta }) Fuzz.string memberMetadataFuzzer
+        , Fuzz.map (\rid -> MemberRetired { rootId = rid }) Fuzz.string
+        , Fuzz.map (\rid -> MemberUnretired { rootId = rid }) Fuzz.string
+        , Fuzz.map3 (\rid prev new -> MemberReplaced { rootId = rid, previousId = prev, newId = new }) Fuzz.string Fuzz.string Fuzz.string
+        , Fuzz.map2 (\rid meta -> MemberMetadataUpdated { rootId = rid, metadata = meta }) Fuzz.string memberMetadataFuzzer
         , Fuzz.map EntryAdded entryFuzzer
         , Fuzz.map EntryModified entryFuzzer
         , Fuzz.map (\rid -> EntryDeleted { rootId = rid }) Fuzz.string

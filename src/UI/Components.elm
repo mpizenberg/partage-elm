@@ -5,7 +5,6 @@ module UI.Components exposing (balanceCard, entryCard, languageSelector, memberR
 
 import Domain.Balance as Balance exposing (MemberBalance)
 import Domain.Entry as Entry exposing (Entry, Kind(..))
-import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Domain.Settlement as Settlement
 import Format
@@ -133,7 +132,7 @@ payerSummary i18n resolveName payers =
 
 {-| A row displaying a member in the member list. Clickable via onClick.
 -}
-memberRow : I18n -> msg -> { member : GroupState.MemberState, isCurrentUser : Bool } -> Ui.Element msg
+memberRow : I18n -> msg -> { member : Member.ChainState, isCurrentUser : Bool } -> Ui.Element msg
 memberRow i18n onClick config =
     let
         nameLabel =
@@ -144,7 +143,7 @@ memberRow i18n onClick config =
                 config.member.name
 
         typeLabel =
-            case config.member.memberType of
+            case config.member.currentMember.memberType of
                 Member.Virtual ->
                     T.memberVirtualLabel i18n
 

@@ -2,7 +2,6 @@ module Domain.GroupState exposing
     ( EntryState
     , GroupMetadata
     , GroupState
-    , MemberState
     , RejectionReason(..)
     , activeEntries
     , activeMembers
@@ -26,7 +25,7 @@ import Domain.Member as Member
 {-| The full state of a group, computed by replaying events.
 -}
 type alias GroupState =
-    { members : Dict Member.Id MemberState
+    { members : Dict Member.Id Member.ChainState
     , entries : Dict Entry.Id EntryState
     , balances : Dict Member.Id MemberBalance
     , groupMeta : GroupMetadata
@@ -48,22 +47,6 @@ type RejectionReason
     | IsDeletedMismatch
     | CreatedByMismatch
     | CreatedAtMismatch
-
-
-{-| A member's computed state after applying all events,
-including lifecycle flags and replacement chain info.
--}
-type alias MemberState =
-    { id : Member.Id
-    , rootId : Member.Id
-    , previousId : Maybe Member.Id
-    , name : String
-    , memberType : Member.Type
-    , isRetired : Bool
-    , isReplaced : Bool
-    , isActive : Bool
-    , metadata : Member.Metadata
-    }
 
 
 {-| An entry's computed state, tracking all versions and deletion status.
@@ -117,7 +100,7 @@ applyEvents events state =
 -}
 recomputeBalances : GroupState -> GroupState
 recomputeBalances state =
-    { state | balances = Balance.computeBalances (resolveMemberRootId state) (activeEntries state) }
+    { state | balances = Balance.computeBalances (activeEntries state) }
 
 
 {-| Apply a single event to the group state, without recomputing balances.
@@ -168,130 +151,140 @@ applyEvent envelope state =
 applyMemberCreated : { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id } -> GroupState -> GroupState
 applyMemberCreated data state =
     if Dict.member data.memberId state.members then
-        -- Member already exists, ignore
+        -- Chain with this rootId already exists, ignore
         state
 
     else
         let
-            member =
+            memberInfo =
                 { id = data.memberId
-                , rootId = data.memberId
                 , previousId = Nothing
-                , name = data.name
+                , depth = 0
                 , memberType = data.memberType
+                }
+
+            chain =
+                { rootId = data.memberId
+                , name = data.name
                 , isRetired = False
-                , isReplaced = False
-                , isActive = True
                 , metadata = Member.emptyMetadata
+                , currentMember = memberInfo
+                , allMembers = Dict.singleton data.memberId memberInfo
                 }
         in
-        { state | members = Dict.insert data.memberId member state.members }
+        { state | members = Dict.insert data.memberId chain state.members }
 
 
-applyMemberRenamed : { memberId : Member.Id, oldName : String, newName : String } -> GroupState -> GroupState
+applyMemberRenamed : { rootId : Member.Id, oldName : String, newName : String } -> GroupState -> GroupState
 applyMemberRenamed data state =
-    case Dict.get data.memberId state.members of
+    case Dict.get data.rootId state.members of
         Nothing ->
             state
 
-        Just member ->
+        Just chain ->
             let
                 updated =
-                    { member | name = data.newName }
+                    { chain | name = data.newName }
             in
-            { state | members = Dict.insert data.memberId updated state.members }
+            { state | members = Dict.insert data.rootId updated state.members }
 
 
-applyMemberRetired : { memberId : Member.Id } -> GroupState -> GroupState
+applyMemberRetired : { rootId : Member.Id } -> GroupState -> GroupState
 applyMemberRetired data state =
-    case Dict.get data.memberId state.members of
+    case Dict.get data.rootId state.members of
         Nothing ->
             state
 
-        Just member ->
-            if member.isActive then
+        Just chain ->
+            if not chain.isRetired then
                 let
                     updated =
-                        { member | isRetired = True, isActive = False }
+                        { chain | isRetired = True }
                 in
-                { state | members = Dict.insert data.memberId updated state.members }
+                { state | members = Dict.insert data.rootId updated state.members }
 
             else
-                -- Already retired or replaced, ignore
+                -- Already retired, ignore
                 state
 
 
-applyMemberUnretired : { memberId : Member.Id } -> GroupState -> GroupState
+applyMemberUnretired : { rootId : Member.Id } -> GroupState -> GroupState
 applyMemberUnretired data state =
-    case Dict.get data.memberId state.members of
+    case Dict.get data.rootId state.members of
         Nothing ->
             state
 
-        Just member ->
-            if member.isRetired && not member.isReplaced then
+        Just chain ->
+            if chain.isRetired then
                 let
                     updated =
-                        { member | isRetired = False, isActive = True }
+                        { chain | isRetired = False }
                 in
-                { state | members = Dict.insert data.memberId updated state.members }
+                { state | members = Dict.insert data.rootId updated state.members }
 
             else
                 state
 
 
-applyMemberReplaced : { previousId : Member.Id, newId : Member.Id } -> GroupState -> GroupState
+applyMemberReplaced : { rootId : Member.Id, previousId : Member.Id, newId : Member.Id } -> GroupState -> GroupState
 applyMemberReplaced data state =
     if data.previousId == data.newId then
         -- Cannot replace self
         state
 
     else
-        case Dict.get data.previousId state.members of
+        case Dict.get data.rootId state.members of
             Nothing ->
+                -- Chain doesn't exist
                 state
 
-            Just prevMember ->
-                if not prevMember.isActive then
-                    -- Already retired or replaced, ignore
-                    state
+            Just chain ->
+                case Dict.get data.previousId chain.allMembers of
+                    Nothing ->
+                        -- previousId not in chain
+                        state
 
-                else
-                    case Dict.get data.newId state.members of
-                        Nothing ->
-                            -- New member doesn't exist yet, ignore
+                    Just prev ->
+                        if Dict.member data.newId chain.allMembers then
+                            -- Duplicate newId in chain
                             state
 
-                        Just newMember ->
+                        else
                             let
-                                updatedPrev =
-                                    { prevMember | isReplaced = True, isActive = False }
+                                newMemberInfo =
+                                    { id = data.newId
+                                    , previousId = Just data.previousId
+                                    , depth = prev.depth + 1
+                                    , memberType = Member.Real
+                                    }
 
-                                updatedNew =
-                                    { newMember
-                                        | rootId = prevMember.rootId
-                                        , previousId = Just data.previousId
+                                updatedAllMembers =
+                                    Dict.insert data.newId newMemberInfo chain.allMembers
+
+                                current =
+                                    Member.pickCurrent chain.currentMember newMemberInfo
+
+                                updatedChain =
+                                    { chain
+                                        | allMembers = updatedAllMembers
+                                        , currentMember = current
                                     }
                             in
-                            { state
-                                | members =
-                                    state.members
-                                        |> Dict.insert data.previousId updatedPrev
-                                        |> Dict.insert data.newId updatedNew
-                            }
+                            { state | members = Dict.insert data.rootId updatedChain state.members }
 
 
-applyMemberMetadataUpdated : { memberId : Member.Id, metadata : Member.Metadata } -> GroupState -> GroupState
+applyMemberMetadataUpdated : { rootId : Member.Id, metadata : Member.Metadata } -> GroupState -> GroupState
 applyMemberMetadataUpdated data state =
-    case Dict.get data.memberId state.members of
+    case Dict.get data.rootId state.members of
         Nothing ->
             state
 
-        Just member ->
+        Just chain ->
             let
                 updated =
-                    { member | metadata = data.metadata }
+                    { chain | metadata = data.metadata }
             in
-            { state | members = Dict.insert data.memberId updated state.members }
+            { state | members = Dict.insert data.rootId updated state.members }
 
 
 
@@ -453,36 +446,52 @@ applyGroupMetadataUpdated change state =
 -- QUERY FUNCTIONS
 
 
-{-| Resolve a member ID to its root ID, following replacement chains.
+{-| Resolve a device member ID to its root ID.
+First checks if it's a root ID directly, then scans allMembers dicts.
 -}
 resolveMemberRootId : GroupState -> Member.Id -> Member.Id
-resolveMemberRootId state memberId =
-    case Dict.get memberId state.members of
-        Just member ->
-            member.rootId
+resolveMemberRootId state deviceId =
+    if Dict.member deviceId state.members then
+        deviceId
 
-        Nothing ->
-            memberId
+    else
+        -- Scan allMembers dicts to find which chain contains this device ID
+        Dict.foldl
+            (\rootId chain found ->
+                case found of
+                    Just _ ->
+                        found
+
+                    Nothing ->
+                        if Dict.member deviceId chain.allMembers then
+                            Just rootId
+
+                        else
+                            Nothing
+            )
+            Nothing
+            state.members
+            |> Maybe.withDefault deviceId
 
 
-{-| Resolve a member ID to a display name. Falls back to the raw ID if not found.
+{-| Resolve a member root ID to a display name. Falls back to the raw ID if not found.
 -}
 resolveMemberName : GroupState -> Member.Id -> String
 resolveMemberName state memberId =
     case Dict.get memberId state.members of
-        Just member ->
-            member.name
+        Just chain ->
+            chain.name
 
         Nothing ->
             memberId
 
 
-{-| Get all active (non-retired, non-replaced) members.
+{-| Get all active (non-retired) members.
 -}
-activeMembers : GroupState -> List MemberState
+activeMembers : GroupState -> List Member.ChainState
 activeMembers state =
     Dict.values state.members
-        |> List.filter .isActive
+        |> List.filter (not << .isRetired)
 
 
 {-| Get all active (non-deleted) entries.

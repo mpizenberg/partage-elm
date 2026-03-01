@@ -3,7 +3,6 @@ module Page.MemberDetail exposing (Model, Msg, Output(..), init, update, view)
 {-| Member detail view with rename, retire/unretire actions.
 -}
 
-import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Translations as T exposing (I18n)
 import UI.Theme as Theme
@@ -26,7 +25,7 @@ type Model
 
 
 type alias ModelData =
-    { member : GroupState.MemberState
+    { member : Member.ChainState
     , renaming : Bool
     , renameText : String
     }
@@ -43,7 +42,7 @@ type Msg
     | GoBack
 
 
-init : GroupState.MemberState -> Model
+init : Member.ChainState -> Model
 init member =
     Model
         { member = member
@@ -159,11 +158,11 @@ nameSection i18n data =
             (Ui.text data.member.name)
 
 
-infoSection : I18n -> GroupState.MemberState -> Ui.Element msg
+infoSection : I18n -> Member.ChainState -> Ui.Element msg
 infoSection i18n member =
     let
         typeLabel =
-            case member.memberType of
+            case member.currentMember.memberType of
                 Member.Real ->
                     T.memberDetailTypeReal i18n
 
@@ -183,7 +182,7 @@ infoSection i18n member =
         ]
 
 
-metadataSection : I18n -> GroupState.MemberState -> Ui.Element msg
+metadataSection : I18n -> Member.ChainState -> Ui.Element msg
 metadataSection i18n member =
     let
         meta =
@@ -231,7 +230,7 @@ metadataRow label value =
         ]
 
 
-actionButtons : I18n -> Member.Id -> GroupState.MemberState -> Ui.Element Msg
+actionButtons : I18n -> Member.Id -> Member.ChainState -> Ui.Element Msg
 actionButtons i18n currentUserRootId member =
     let
         renameBtn =

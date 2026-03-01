@@ -55,15 +55,6 @@ memberCreationTests =
                 Dict.get "alice" state.members
                     |> Maybe.map .rootId
                     |> Expect.equal (Just "alice")
-        , test "member starts active" <|
-            \_ ->
-                let
-                    state =
-                        GroupState.applyEvents createAliceEvents GroupState.empty
-                in
-                Dict.get "alice" state.members
-                    |> Maybe.map .isActive
-                    |> Expect.equal (Just True)
         , test "member starts not retired" <|
             \_ ->
                 let
@@ -73,24 +64,33 @@ memberCreationTests =
                 Dict.get "alice" state.members
                     |> Maybe.map .isRetired
                     |> Expect.equal (Just False)
-        , test "member starts not replaced" <|
+        , test "preserves member type in currentMember" <|
             \_ ->
                 let
                     state =
                         GroupState.applyEvents createAliceEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
-                    |> Maybe.map .isReplaced
-                    |> Expect.equal (Just False)
-        , test "preserves member type" <|
-            \_ ->
-                let
-                    state =
-                        GroupState.applyEvents createAliceEvents GroupState.empty
-                in
-                Dict.get "alice" state.members
-                    |> Maybe.map .memberType
+                    |> Maybe.map (.currentMember >> .memberType)
                     |> Expect.equal (Just Member.Real)
+        , test "currentMember has depth 0" <|
+            \_ ->
+                let
+                    state =
+                        GroupState.applyEvents createAliceEvents GroupState.empty
+                in
+                Dict.get "alice" state.members
+                    |> Maybe.map (.currentMember >> .depth)
+                    |> Expect.equal (Just 0)
+        , test "allMembers has exactly one entry" <|
+            \_ ->
+                let
+                    state =
+                        GroupState.applyEvents createAliceEvents GroupState.empty
+                in
+                Dict.get "alice" state.members
+                    |> Maybe.map (.allMembers >> Dict.size)
+                    |> Expect.equal (Just 1)
         , test "ignores duplicate member creation" <|
             \_ ->
                 let
@@ -137,7 +137,7 @@ memberRenameTests =
                             ++ [ makeEnvelope "e2"
                                     2000
                                     "alice"
-                                    (MemberRenamed { memberId = "alice", oldName = "Alice", newName = "Alicia" })
+                                    (MemberRenamed { rootId = "alice", oldName = "Alice", newName = "Alicia" })
                                ]
 
                     state =
@@ -153,7 +153,7 @@ memberRenameTests =
                         [ makeEnvelope "e1"
                             1000
                             "admin"
-                            (MemberRenamed { memberId = "ghost", oldName = "Ghost", newName = "Phantom" })
+                            (MemberRenamed { rootId = "ghost", oldName = "Ghost", newName = "Phantom" })
                         ]
 
                     state =
@@ -169,7 +169,7 @@ retireAliceEvents =
         ++ [ makeEnvelope "e2"
                 2000
                 "admin"
-                (MemberRetired { memberId = "alice" })
+                (MemberRetired { rootId = "alice" })
            ]
 
 
@@ -185,15 +185,15 @@ memberRetireTests =
                 Dict.get "alice" state.members
                     |> Maybe.map .isRetired
                     |> Expect.equal (Just True)
-        , test "retired member is no longer active" <|
+        , test "retired member is excluded from activeMembers" <|
             \_ ->
                 let
                     state =
                         GroupState.applyEvents retireAliceEvents GroupState.empty
                 in
-                Dict.get "alice" state.members
-                    |> Maybe.map .isActive
-                    |> Expect.equal (Just False)
+                GroupState.activeMembers state
+                    |> List.length
+                    |> Expect.equal 0
         , test "ignores retire for already retired member" <|
             \_ ->
                 let
@@ -202,7 +202,7 @@ memberRetireTests =
                             ++ [ makeEnvelope "e3"
                                     3000
                                     "admin"
-                                    (MemberRetired { memberId = "alice" })
+                                    (MemberRetired { rootId = "alice" })
                                ]
 
                     state =
@@ -218,7 +218,7 @@ memberRetireTests =
                         [ makeEnvelope "e1"
                             1000
                             "admin"
-                            (MemberRetired { memberId = "ghost" })
+                            (MemberRetired { rootId = "ghost" })
                         ]
 
                     state =
@@ -236,7 +236,7 @@ memberUnretireTests =
                 ++ [ makeEnvelope "e3"
                         3000
                         "admin"
-                        (MemberUnretired { memberId = "alice" })
+                        (MemberUnretired { rootId = "alice" })
                    ]
     in
     describe "Member unretire"
@@ -249,16 +249,16 @@ memberUnretireTests =
                 Dict.get "alice" state.members
                     |> Maybe.map .isRetired
                     |> Expect.equal (Just False)
-        , test "unretired member is active again" <|
+        , test "unretired member appears in activeMembers" <|
             \_ ->
                 let
                     state =
                         GroupState.applyEvents unretireAliceEvents GroupState.empty
                 in
-                Dict.get "alice" state.members
-                    |> Maybe.map .isActive
-                    |> Expect.equal (Just True)
-        , test "ignores unretire for active member" <|
+                GroupState.activeMembers state
+                    |> List.length
+                    |> Expect.equal 1
+        , test "ignores unretire for non-retired member" <|
             \_ ->
                 let
                     events =
@@ -266,120 +266,136 @@ memberUnretireTests =
                             ++ [ makeEnvelope "e2"
                                     2000
                                     "admin"
-                                    (MemberUnretired { memberId = "alice" })
+                                    (MemberUnretired { rootId = "alice" })
                                ]
 
                     state =
                         GroupState.applyEvents events GroupState.empty
                 in
                 Dict.get "alice" state.members
-                    |> Maybe.map .isActive
-                    |> Expect.equal (Just True)
-        , test "ignores unretire for replaced member" <|
-            \_ ->
-                let
-                    events =
-                        createAliceEvents
-                            ++ [ makeEnvelope "e2"
-                                    1001
-                                    "admin"
-                                    (MemberCreated { memberId = "bob", name = "Bob", memberType = Member.Real, addedBy = "admin" })
-                               , makeEnvelope "e3"
-                                    2000
-                                    "admin"
-                                    (MemberReplaced { previousId = "alice", newId = "bob" })
-                               , makeEnvelope "e4"
-                                    3000
-                                    "admin"
-                                    (MemberUnretired { memberId = "alice" })
-                               ]
-
-                    state =
-                        GroupState.applyEvents events GroupState.empty
-                in
-                Dict.get "alice" state.members
-                    |> Maybe.map .isReplaced
-                    |> Expect.equal (Just True)
+                    |> Maybe.map .isRetired
+                    |> Expect.equal (Just False)
         ]
 
 
-replaceAliceWithBobEvents : List Envelope
-replaceAliceWithBobEvents =
-    [ makeEnvelope "e1"
-        1000
-        "admin"
-        (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Virtual, addedBy = "admin" })
-    , makeEnvelope "e2"
-        1001
-        "admin"
-        (MemberCreated { memberId = "bob", name = "Bob", memberType = Member.Real, addedBy = "admin" })
-    , makeEnvelope "e3"
-        2000
-        "bob"
-        (MemberReplaced { previousId = "alice", newId = "bob" })
-    ]
+replaceAliceEvents : List Envelope
+replaceAliceEvents =
+    createAliceEvents
+        ++ [ makeEnvelope "e2"
+                2000
+                "bob-device"
+                (MemberReplaced { rootId = "alice", previousId = "alice", newId = "bob-device" })
+           ]
 
 
 memberReplacementTests : Test
 memberReplacementTests =
     describe "Member replacement"
-        [ test "replaced member is marked replaced" <|
+        [ test "currentMember is the new device after replacement" <|
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents replaceAliceWithBobEvents GroupState.empty
+                        GroupState.applyEvents replaceAliceEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
-                    |> Maybe.map .isReplaced
-                    |> Expect.equal (Just True)
-        , test "replaced member is no longer active" <|
+                    |> Maybe.map (.currentMember >> .id)
+                    |> Expect.equal (Just "bob-device")
+        , test "allMembers has both devices" <|
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents replaceAliceWithBobEvents GroupState.empty
+                        GroupState.applyEvents replaceAliceEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
-                    |> Maybe.map .isActive
-                    |> Expect.equal (Just False)
-        , test "replacer inherits rootId from replaced member" <|
+                    |> Maybe.map (.allMembers >> Dict.size)
+                    |> Expect.equal (Just 2)
+        , test "new device has depth 1" <|
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents replaceAliceWithBobEvents GroupState.empty
+                        GroupState.applyEvents replaceAliceEvents GroupState.empty
                 in
-                Dict.get "bob" state.members
-                    |> Maybe.map .rootId
-                    |> Expect.equal (Just "alice")
-        , test "replacer has previousId pointing to replaced member" <|
+                Dict.get "alice" state.members
+                    |> Maybe.andThen (.allMembers >> Dict.get "bob-device")
+                    |> Maybe.map .depth
+                    |> Expect.equal (Just 1)
+        , test "new device has previousId pointing to replaced member" <|
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents replaceAliceWithBobEvents GroupState.empty
+                        GroupState.applyEvents replaceAliceEvents GroupState.empty
                 in
-                Dict.get "bob" state.members
+                Dict.get "alice" state.members
+                    |> Maybe.andThen (.allMembers >> Dict.get "bob-device")
                     |> Maybe.map .previousId
                     |> Expect.equal (Just (Just "alice"))
-        , test "replacement chain preserves rootId" <|
+        , test "new device is Real type" <|
+            \_ ->
+                let
+                    state =
+                        GroupState.applyEvents replaceAliceEvents GroupState.empty
+                in
+                Dict.get "alice" state.members
+                    |> Maybe.andThen (.allMembers >> Dict.get "bob-device")
+                    |> Maybe.map .memberType
+                    |> Expect.equal (Just Member.Real)
+        , test "chain preserves rootId through replacements" <|
             \_ ->
                 let
                     events =
-                        replaceAliceWithBobEvents
-                            ++ [ makeEnvelope "e4"
-                                    2001
-                                    "admin"
-                                    (MemberCreated { memberId = "m3", name = "Third", memberType = Member.Real, addedBy = "admin" })
-                               , makeEnvelope "e5"
+                        replaceAliceEvents
+                            ++ [ makeEnvelope "e3"
                                     3000
-                                    "m3"
-                                    (MemberReplaced { previousId = "bob", newId = "m3" })
+                                    "carol-device"
+                                    (MemberReplaced { rootId = "alice", previousId = "bob-device", newId = "carol-device" })
                                ]
 
                     state =
                         GroupState.applyEvents events GroupState.empty
                 in
-                Dict.get "m3" state.members
+                Dict.get "alice" state.members
                     |> Maybe.map .rootId
                     |> Expect.equal (Just "alice")
+        , test "deeper replacement wins as currentMember" <|
+            \_ ->
+                let
+                    events =
+                        replaceAliceEvents
+                            ++ [ makeEnvelope "e3"
+                                    3000
+                                    "carol-device"
+                                    (MemberReplaced { rootId = "alice", previousId = "bob-device", newId = "carol-device" })
+                               ]
+
+                    state =
+                        GroupState.applyEvents events GroupState.empty
+                in
+                Dict.get "alice" state.members
+                    |> Maybe.map (.currentMember >> .id)
+                    |> Expect.equal (Just "carol-device")
+        , test "id breaks tie at same depth" <|
+            \_ ->
+                let
+                    -- Two concurrent replacements of alice (both at depth 1)
+                    events =
+                        createAliceEvents
+                            ++ [ makeEnvelope "e2"
+                                    2000
+                                    "device-aaa"
+                                    (MemberReplaced { rootId = "alice", previousId = "alice", newId = "device-aaa" })
+                               , makeEnvelope "e3"
+                                    2001
+                                    "device-zzz"
+                                    (MemberReplaced { rootId = "alice", previousId = "alice", newId = "device-zzz" })
+                               ]
+
+                    state =
+                        GroupState.applyEvents events GroupState.empty
+                in
+                -- "device-zzz" > "device-aaa" lexicographically, so device-zzz wins
+                Dict.get "alice" state.members
+                    |> Maybe.map (.currentMember >> .id)
+                    |> Expect.equal (Just "device-zzz")
         , test "ignores self-replacement" <|
             \_ ->
                 let
@@ -388,37 +404,81 @@ memberReplacementTests =
                             ++ [ makeEnvelope "e2"
                                     2000
                                     "alice"
-                                    (MemberReplaced { previousId = "alice", newId = "alice" })
+                                    (MemberReplaced { rootId = "alice", previousId = "alice", newId = "alice" })
                                ]
 
                     state =
                         GroupState.applyEvents events GroupState.empty
                 in
                 Dict.get "alice" state.members
-                    |> Maybe.map .isActive
-                    |> Expect.equal (Just True)
-        , test "ignores replacement of already replaced member" <|
+                    |> Maybe.map (.allMembers >> Dict.size)
+                    |> Expect.equal (Just 1)
+        , test "ignores replacement for non-existent rootId" <|
             \_ ->
                 let
                     events =
-                        replaceAliceWithBobEvents
-                            ++ [ makeEnvelope "e4"
-                                    1002
-                                    "admin"
-                                    (MemberCreated { memberId = "carol", name = "Carol", memberType = Member.Real, addedBy = "admin" })
-                               , makeEnvelope "e5"
-                                    3000
-                                    "carol"
-                                    (MemberReplaced { previousId = "alice", newId = "carol" })
+                        [ makeEnvelope "e1"
+                            1000
+                            "device"
+                            (MemberReplaced { rootId = "ghost", previousId = "ghost", newId = "device" })
+                        ]
+
+                    state =
+                        GroupState.applyEvents events GroupState.empty
+                in
+                Expect.equal 0 (Dict.size state.members)
+        , test "ignores replacement when previousId not in chain" <|
+            \_ ->
+                let
+                    events =
+                        createAliceEvents
+                            ++ [ makeEnvelope "e2"
+                                    2000
+                                    "device"
+                                    (MemberReplaced { rootId = "alice", previousId = "not-in-chain", newId = "device" })
                                ]
 
                     state =
                         GroupState.applyEvents events GroupState.empty
                 in
-                -- Carol's rootId should still be her own (replacement was ignored)
-                Dict.get "carol" state.members
-                    |> Maybe.map .rootId
-                    |> Expect.equal (Just "carol")
+                Dict.get "alice" state.members
+                    |> Maybe.map (.allMembers >> Dict.size)
+                    |> Expect.equal (Just 1)
+        , test "ignores replacement with duplicate newId" <|
+            \_ ->
+                let
+                    events =
+                        replaceAliceEvents
+                            ++ [ makeEnvelope "e3"
+                                    3000
+                                    "bob-device"
+                                    (MemberReplaced { rootId = "alice", previousId = "bob-device", newId = "bob-device" })
+                               ]
+
+                    state =
+                        GroupState.applyEvents events GroupState.empty
+                in
+                -- bob-device already in chain, so this is self-replacement and ignored
+                Dict.get "alice" state.members
+                    |> Maybe.map (.allMembers >> Dict.size)
+                    |> Expect.equal (Just 2)
+        , test "name is preserved after replacement" <|
+            \_ ->
+                let
+                    state =
+                        GroupState.applyEvents replaceAliceEvents GroupState.empty
+                in
+                Dict.get "alice" state.members
+                    |> Maybe.map .name
+                    |> Expect.equal (Just "Alice")
+        , test "resolveMemberRootId finds device within chain" <|
+            \_ ->
+                let
+                    state =
+                        GroupState.applyEvents replaceAliceEvents GroupState.empty
+                in
+                GroupState.resolveMemberRootId state "bob-device"
+                    |> Expect.equal "alice"
         ]
 
 
@@ -498,7 +558,7 @@ eventOrderingTests =
                         [ makeEnvelope "e2"
                             2000
                             "alice"
-                            (MemberRenamed { memberId = "alice", oldName = "Alice", newName = "Alicia" })
+                            (MemberRenamed { rootId = "alice", oldName = "Alice", newName = "Alicia" })
                         , makeEnvelope "e1"
                             1000
                             "admin"
@@ -522,11 +582,11 @@ eventOrderingTests =
                         , makeEnvelope "e3"
                             2000
                             "alice"
-                            (MemberRenamed { memberId = "alice", oldName = "Alice", newName = "Third" })
+                            (MemberRenamed { rootId = "alice", oldName = "Alice", newName = "Third" })
                         , makeEnvelope "e2"
                             2000
                             "alice"
-                            (MemberRenamed { memberId = "alice", oldName = "Alice", newName = "Second" })
+                            (MemberRenamed { rootId = "alice", oldName = "Alice", newName = "Second" })
                         ]
 
                     state =
@@ -552,7 +612,7 @@ eventOrderingTests =
                                 makeEnvelope ("e" ++ String.fromInt (i + 1))
                                     ((i + 1) * 1000)
                                     "alice"
-                                    (MemberRenamed { memberId = "alice", oldName = "", newName = "Name" ++ String.fromInt i })
+                                    (MemberRenamed { rootId = "alice", oldName = "", newName = "Name" ++ String.fromInt i })
                             )
                             randomInts
 

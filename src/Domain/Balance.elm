@@ -6,7 +6,6 @@ module Domain.Balance exposing (MemberBalance, Status(..), computeBalances, stat
 import Dict exposing (Dict)
 import Domain.Entry as Entry exposing (Beneficiary(..), Entry, Kind(..))
 import Domain.Member as Member
-import Time
 
 
 {-| Accumulated balance for a member (identified by rootId),
@@ -43,10 +42,10 @@ status balance =
 
 
 {-| Compute balances for all members from active entries.
-Takes a rootId resolver (member id -> root id) and a list of active entries.
+Member IDs in entries are assumed to be root IDs.
 -}
-computeBalances : (Member.Id -> Member.Id) -> List Entry -> Dict Member.Id MemberBalance
-computeBalances resolveRootId entries =
+computeBalances : List Entry -> Dict Member.Id MemberBalance
+computeBalances entries =
     let
         emptyAccum =
             { paid = 0, owed = 0 }
@@ -55,10 +54,10 @@ computeBalances resolveRootId entries =
         accumulate entry acc =
             let
                 paidUpdates =
-                    computeEntryPaid resolveRootId entry
+                    computeEntryPaid entry
 
                 owedUpdates =
-                    computeEntryOwed resolveRootId entry
+                    computeEntryOwed entry
 
                 addPaid ( memberId, amount ) d =
                     Dict.update memberId
@@ -100,12 +99,12 @@ computeBalances resolveRootId entries =
         accumulated
 
 
-{-| Compute what each member paid for an entry, resolved to root IDs.
-Returns list of (rootMemberId, amount) pairs.
+{-| Compute what each member paid for an entry.
+Returns list of (memberId, amount) pairs.
 For multi-currency entries, payer amounts are converted proportionally.
 -}
-computeEntryPaid : (Member.Id -> Member.Id) -> Entry -> List ( Member.Id, Int )
-computeEntryPaid resolveRootId entry =
+computeEntryPaid : Entry -> List ( Member.Id, Int )
+computeEntryPaid entry =
     let
         totalAmount =
             entryDefaultCurrencyAmount entry
@@ -118,7 +117,7 @@ computeEntryPaid resolveRootId entry =
             in
             if data.defaultCurrencyAmount /= Nothing && payerTotal > 0 then
                 -- Multi-currency: proportional conversion
-                distributeProportionally resolveRootId
+                distributeProportionally
                     totalAmount
                     (List.map (\p -> ( p.memberId, p.amount )) data.payers)
                     payerTotal
@@ -126,27 +125,27 @@ computeEntryPaid resolveRootId entry =
             else
                 -- Same currency: direct amounts
                 List.map
-                    (\p -> ( resolveRootId p.memberId, p.amount ))
+                    (\p -> ( p.memberId, p.amount ))
                     data.payers
 
         Transfer data ->
-            [ ( resolveRootId data.from, totalAmount ) ]
+            [ ( data.from, totalAmount ) ]
 
 
-{-| Compute what each member owes for an entry, resolved to root IDs.
+{-| Compute what each member owes for an entry.
 -}
-computeEntryOwed : (Member.Id -> Member.Id) -> Entry -> List ( Member.Id, Int )
-computeEntryOwed resolveRootId entry =
+computeEntryOwed : Entry -> List ( Member.Id, Int )
+computeEntryOwed entry =
     let
         totalAmount =
             entryDefaultCurrencyAmount entry
     in
     case entry.kind of
         Expense data ->
-            computeBeneficiarySplit resolveRootId totalAmount data.beneficiaries
+            computeBeneficiarySplit totalAmount data.beneficiaries
 
         Transfer data ->
-            [ ( resolveRootId data.to, totalAmount ) ]
+            [ ( data.to, totalAmount ) ]
 
 
 {-| Get the amount in default currency for an entry.
@@ -163,8 +162,8 @@ entryDefaultCurrencyAmount entry =
 
 {-| Split beneficiary amounts using shares-based or exact split.
 -}
-computeBeneficiarySplit : (Member.Id -> Member.Id) -> Int -> List Beneficiary -> List ( Member.Id, Int )
-computeBeneficiarySplit resolveRootId totalAmount beneficiaries =
+computeBeneficiarySplit : Int -> List Beneficiary -> List ( Member.Id, Int )
+computeBeneficiarySplit totalAmount beneficiaries =
     case beneficiaries of
         [] ->
             []
@@ -198,28 +197,28 @@ computeBeneficiarySplit resolveRootId totalAmount beneficiaries =
                         beneficiaries
             in
             if exactTotal > 0 && exactTotal /= totalAmount then
-                distributeProportionally resolveRootId totalAmount items exactTotal
+                distributeProportionally totalAmount items exactTotal
 
             else
-                List.map (\( mid, amt ) -> ( resolveRootId mid, amt )) items
+                items
 
         (ShareBeneficiary _) :: _ ->
-            computeSharesSplit resolveRootId totalAmount beneficiaries
+            computeSharesSplit totalAmount beneficiaries
 
 
 {-| Shares-based split with deterministic remainder distribution.
-Remainder cents distributed to beneficiaries sorted by rootId,
+Remainder cents distributed to beneficiaries sorted by memberId,
 with max N remainder cents per member (N = their share count).
 -}
-computeSharesSplit : (Member.Id -> Member.Id) -> Int -> List Beneficiary -> List ( Member.Id, Int )
-computeSharesSplit resolveRootId totalAmount beneficiaries =
+computeSharesSplit : Int -> List Beneficiary -> List ( Member.Id, Int )
+computeSharesSplit totalAmount beneficiaries =
     let
         shareItems =
             List.filterMap
                 (\b ->
                     case b of
                         ShareBeneficiary { memberId, shares } ->
-                            Just ( resolveRootId memberId, shares )
+                            Just ( memberId, shares )
 
                         ExactBeneficiary _ ->
                             Nothing
@@ -272,13 +271,13 @@ distributeRemainder rem items acc =
 
 {-| Distribute totalAmount proportionally among items, with remainder distribution.
 -}
-distributeProportionally : (Member.Id -> Member.Id) -> Int -> List ( Member.Id, Int ) -> Int -> List ( Member.Id, Int )
-distributeProportionally resolveRootId totalAmount items itemTotal =
+distributeProportionally : Int -> List ( Member.Id, Int ) -> Int -> List ( Member.Id, Int )
+distributeProportionally totalAmount items itemTotal =
     let
         baseAllocated =
             List.map
                 (\( mid, amt ) ->
-                    ( resolveRootId mid, (amt * totalAmount) // itemTotal )
+                    ( mid, (amt * totalAmount) // itemTotal )
                 )
                 items
 

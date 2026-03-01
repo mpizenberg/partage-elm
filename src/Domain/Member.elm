@@ -1,8 +1,9 @@
-module Domain.Member exposing (Id, Member, Metadata, PaymentInfo, Type(..), emptyMetadata, emptyPaymentInfo, encodeMetadata, encodePaymentInfo, encodeType, metadataDecoder, paymentInfoDecoder, typeDecoder)
+module Domain.Member exposing (ChainState, Id, Info, Metadata, PaymentInfo, Type(..), emptyMetadata, emptyPaymentInfo, encodeMetadata, encodePaymentInfo, encodeType, metadataDecoder, paymentInfoDecoder, pickCurrent, typeDecoder)
 
 {-| Group members, their lifecycle, and contact metadata.
 -}
 
+import Dict exposing (Dict)
 import Json.Decode as Decode
 import Json.Encode as Encode
 
@@ -21,20 +22,46 @@ type Type
     | Virtual
 
 
-{-| A group member with identity, lifecycle state, and contact metadata.
-Members form replacement chains via rootId/previousId.
+{-| A member chain's computed state, grouping all device identities under one rootId.
+Chain-level fields describe the person; device-level fields are in Info.
 -}
-type alias Member =
-    { id : Id
-    , rootId : Id
-    , previousId : Maybe Id
+type alias ChainState =
+    { rootId : Id
     , name : String
-    , memberType : Type
     , isRetired : Bool
-    , isReplaced : Bool
-    , isActive : Bool
     , metadata : Metadata
+    , currentMember : Info
+    , allMembers : Dict Id Info
     }
+
+
+{-| A single device identity within a member chain.
+-}
+type alias Info =
+    { id : Id
+    , previousId : Maybe Id
+    , depth : Int
+    , memberType : Type
+    }
+
+
+{-| Pick the winning member between two. Deeper wins. ID breaks ties.
+-}
+pickCurrent : Info -> Info -> Info
+pickCurrent a b =
+    case compare a.depth b.depth of
+        GT ->
+            a
+
+        LT ->
+            b
+
+        EQ ->
+            if a.id >= b.id then
+                a
+
+            else
+                b
 
 
 {-| Optional contact and payment information for a member.

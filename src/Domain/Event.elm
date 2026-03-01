@@ -31,11 +31,11 @@ type alias Envelope =
 -}
 type Payload
     = MemberCreated { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id }
-    | MemberRenamed { memberId : Member.Id, oldName : String, newName : String }
-    | MemberRetired { memberId : Member.Id }
-    | MemberUnretired { memberId : Member.Id }
-    | MemberReplaced { previousId : Member.Id, newId : Member.Id }
-    | MemberMetadataUpdated { memberId : Member.Id, metadata : Member.Metadata }
+    | MemberRenamed { rootId : Member.Id, oldName : String, newName : String }
+    | MemberRetired { rootId : Member.Id }
+    | MemberUnretired { rootId : Member.Id }
+    | MemberReplaced { rootId : Member.Id, previousId : Member.Id, newId : Member.Id }
+    | MemberMetadataUpdated { rootId : Member.Id, metadata : Member.Metadata }
     | EntryAdded Entry
     | EntryModified Entry
     | EntryDeleted { rootId : Entry.Id }
@@ -148,7 +148,7 @@ encodePayload payload =
         MemberRenamed data ->
             Encode.object
                 [ ( "type", Encode.string "MemberRenamed" )
-                , ( "memberId", Encode.string data.memberId )
+                , ( "rootId", Encode.string data.rootId )
                 , ( "oldName", Encode.string data.oldName )
                 , ( "newName", Encode.string data.newName )
                 ]
@@ -156,18 +156,19 @@ encodePayload payload =
         MemberRetired data ->
             Encode.object
                 [ ( "type", Encode.string "MemberRetired" )
-                , ( "memberId", Encode.string data.memberId )
+                , ( "rootId", Encode.string data.rootId )
                 ]
 
         MemberUnretired data ->
             Encode.object
                 [ ( "type", Encode.string "MemberUnretired" )
-                , ( "memberId", Encode.string data.memberId )
+                , ( "rootId", Encode.string data.rootId )
                 ]
 
         MemberReplaced data ->
             Encode.object
                 [ ( "type", Encode.string "MemberReplaced" )
+                , ( "rootId", Encode.string data.rootId )
                 , ( "previousId", Encode.string data.previousId )
                 , ( "newId", Encode.string data.newId )
                 ]
@@ -175,7 +176,7 @@ encodePayload payload =
         MemberMetadataUpdated data ->
             Encode.object
                 [ ( "type", Encode.string "MemberMetadataUpdated" )
-                , ( "memberId", Encode.string data.memberId )
+                , ( "rootId", Encode.string data.rootId )
                 , ( "metadata", Member.encodeMetadata data.metadata )
                 ]
 
@@ -233,45 +234,47 @@ payloadDecoder =
 
                     "MemberRenamed" ->
                         Decode.map3
-                            (\mid oldN newN ->
+                            (\rid oldN newN ->
                                 MemberRenamed
-                                    { memberId = mid
+                                    { rootId = rid
                                     , oldName = oldN
                                     , newName = newN
                                     }
                             )
-                            (Decode.field "memberId" Decode.string)
+                            (Decode.field "rootId" Decode.string)
                             (Decode.field "oldName" Decode.string)
                             (Decode.field "newName" Decode.string)
 
                     "MemberRetired" ->
-                        Decode.map (\mid -> MemberRetired { memberId = mid })
-                            (Decode.field "memberId" Decode.string)
+                        Decode.map (\rid -> MemberRetired { rootId = rid })
+                            (Decode.field "rootId" Decode.string)
 
                     "MemberUnretired" ->
-                        Decode.map (\mid -> MemberUnretired { memberId = mid })
-                            (Decode.field "memberId" Decode.string)
+                        Decode.map (\rid -> MemberUnretired { rootId = rid })
+                            (Decode.field "rootId" Decode.string)
 
                     "MemberReplaced" ->
-                        Decode.map2
-                            (\prevId newId ->
+                        Decode.map3
+                            (\rid prevId newId ->
                                 MemberReplaced
-                                    { previousId = prevId
+                                    { rootId = rid
+                                    , previousId = prevId
                                     , newId = newId
                                     }
                             )
+                            (Decode.field "rootId" Decode.string)
                             (Decode.field "previousId" Decode.string)
                             (Decode.field "newId" Decode.string)
 
                     "MemberMetadataUpdated" ->
                         Decode.map2
-                            (\mid meta ->
+                            (\rid meta ->
                                 MemberMetadataUpdated
-                                    { memberId = mid
+                                    { rootId = rid
                                     , metadata = meta
                                     }
                             )
-                            (Decode.field "memberId" Decode.string)
+                            (Decode.field "rootId" Decode.string)
                             (Decode.field "metadata" Member.metadataDecoder)
 
                     "EntryAdded" ->

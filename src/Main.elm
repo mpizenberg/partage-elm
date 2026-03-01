@@ -201,8 +201,8 @@ init flags =
       , randomSeed = seedAfterV7
       , currentTime = currentTime
       , newGroupModel = Page.NewGroup.init
-      , newEntryModel = Page.NewEntry.init { currentUserRootId = "", activeMembers = [], today = Date.posixToDate currentTime }
-      , memberDetailModel = Page.MemberDetail.init dummyMemberState
+      , newEntryModel = Page.NewEntry.init { currentUserRootId = "", activeMembersRootIds = [], today = Date.posixToDate currentTime }
+      , memberDetailModel = Page.MemberDetail.init dummyMemberChainState
       , addMemberModel = Page.AddMember.init
       , editMemberMetadataModel = Page.EditMemberMetadata.init "" Member.emptyMetadata
       , editGroupMetadataModel = Page.EditGroupMetadata.init GroupState.empty.groupMeta
@@ -213,17 +213,14 @@ init flags =
     )
 
 
-dummyMemberState : GroupState.MemberState
-dummyMemberState =
-    { id = ""
-    , rootId = ""
-    , previousId = Nothing
+dummyMemberChainState : Member.ChainState
+dummyMemberChainState =
+    { rootId = ""
     , name = ""
-    , memberType = Member.Virtual
     , isRetired = False
-    , isReplaced = False
-    , isActive = False
     , metadata = Member.emptyMetadata
+    , currentMember = { id = "", previousId = Nothing, depth = 0, memberType = Member.Virtual }
+    , allMembers = Dict.empty
     }
 
 
@@ -733,12 +730,8 @@ initPagesIfNeeded route model =
 
 entryFormConfig : Storage.InitData -> LoadedGroup -> Time.Posix -> Page.NewEntry.Config
 entryFormConfig readyData loaded currentTime =
-    let
-        activeMembers =
-            GroupState.activeMembers loaded.groupState
-    in
     { currentUserRootId = GroupState.resolveMemberRootId loaded.groupState (readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault "")
-    , activeMembers = List.map (\m -> { id = m.id, rootId = m.rootId }) activeMembers
+    , activeMembersRootIds = List.map .rootId (GroupState.activeMembers loaded.groupState)
     , today = Date.posixToDate currentTime
     }
 
@@ -791,17 +784,17 @@ handleMemberDetailOutput model readyData loaded output =
         Page.MemberDetail.RenameOutput data ->
             submit
                 (Event.MemberRenamed
-                    { memberId = data.memberId
+                    { rootId = data.memberId
                     , oldName = data.oldName
                     , newName = data.newName
                     }
                 )
 
         Page.MemberDetail.RetireOutput memberId ->
-            submit (Event.MemberRetired { memberId = memberId })
+            submit (Event.MemberRetired { rootId = memberId })
 
         Page.MemberDetail.UnretireOutput memberId ->
-            submit (Event.MemberUnretired { memberId = memberId })
+            submit (Event.MemberUnretired { rootId = memberId })
 
         Page.MemberDetail.NavigateToEditMetadata ->
             case model.route of
@@ -851,7 +844,7 @@ submitMemberMetadata model readyData loaded output =
         readyData
         loaded
         (Event.MemberMetadataUpdated
-            { memberId = output.memberId
+            { rootId = output.memberId
             , metadata = output.metadata
             }
         )

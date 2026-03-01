@@ -3,7 +3,6 @@ module Page.NewEntry exposing (Config, EntryKind(..), Model, Msg, Output(..), in
 import Domain.Currency exposing (Currency)
 import Domain.Date as Date exposing (Date)
 import Domain.Entry as Entry
-import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Field
 import Form
@@ -61,7 +60,7 @@ type alias ModelData =
 
 type alias Config =
     { currentUserRootId : Member.Id
-    , activeMembers : List { id : Member.Id, rootId : Member.Id }
+    , activeMembersRootIds : List Member.Id
     , today : Date
     }
 
@@ -83,11 +82,8 @@ type Msg
 init : Config -> Model
 init config =
     let
-        allRootIds =
-            List.map .rootId config.activeMembers
-
         ( from, to ) =
-            case allRootIds of
+            case config.activeMembersRootIds of
                 first :: second :: _ ->
                     if first == config.currentUserRootId then
                         ( first, second )
@@ -107,7 +103,7 @@ init config =
         , kind = ExpenseKind
         , kindLocked = False
         , payerId = config.currentUserRootId
-        , beneficiaryIds = Set.fromList allRootIds
+        , beneficiaryIds = Set.fromList config.activeMembersRootIds
         , fromMemberId = from
         , toMemberId = to
         , category = Nothing
@@ -169,7 +165,7 @@ initFromEntry config entry =
                 , kind = TransferKind
                 , kindLocked = True
                 , payerId = config.currentUserRootId
-                , beneficiaryIds = Set.fromList (List.map .rootId config.activeMembers)
+                , beneficiaryIds = Set.fromList config.activeMembersRootIds
                 , fromMemberId = data.from
                 , toMemberId = data.to
                 , category = Nothing
@@ -312,7 +308,7 @@ submitTransfer data =
 -- VIEW
 
 
-view : I18n -> List GroupState.MemberState -> (Msg -> msg) -> Model -> Ui.Element msg
+view : I18n -> List Member.ChainState -> (Msg -> msg) -> Model -> Ui.Element msg
 view i18n activeMembers toMsg (Model data) =
     let
         content =
@@ -357,7 +353,7 @@ kindToggle i18n data =
         ]
 
 
-expenseFields : I18n -> List GroupState.MemberState -> ModelData -> List (Ui.Element Msg)
+expenseFields : I18n -> List Member.ChainState -> ModelData -> List (Ui.Element Msg)
 expenseFields i18n activeMembers data =
     [ descriptionField i18n data
     , amountField i18n data
@@ -369,7 +365,7 @@ expenseFields i18n activeMembers data =
     ]
 
 
-transferFields : I18n -> List GroupState.MemberState -> ModelData -> List (Ui.Element Msg)
+transferFields : I18n -> List Member.ChainState -> ModelData -> List (Ui.Element Msg)
 transferFields i18n activeMembers data =
     [ amountField i18n data
     , dateField i18n data
@@ -441,12 +437,12 @@ dateField i18n data =
         ]
 
 
-payerField : I18n -> List GroupState.MemberState -> ModelData -> Ui.Element Msg
+payerField : I18n -> List Member.ChainState -> ModelData -> Ui.Element Msg
 payerField i18n activeMembers data =
     memberDropdown i18n (T.newEntryPayerLabel i18n) InputPayer activeMembers data.payerId
 
 
-beneficiariesField : I18n -> List GroupState.MemberState -> ModelData -> Ui.Element Msg
+beneficiariesField : I18n -> List Member.ChainState -> ModelData -> Ui.Element Msg
 beneficiariesField i18n activeMembers data =
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
         (List.concat
@@ -461,7 +457,7 @@ beneficiariesField i18n activeMembers data =
         )
 
 
-beneficiaryCheckbox : Set Member.Id -> GroupState.MemberState -> Ui.Element Msg
+beneficiaryCheckbox : Set Member.Id -> Member.ChainState -> Ui.Element Msg
 beneficiaryCheckbox selectedIds member =
     let
         checkLabel =
@@ -518,7 +514,7 @@ notesField i18n data =
         ]
 
 
-memberDropdown : I18n -> String -> (Member.Id -> Msg) -> List GroupState.MemberState -> Member.Id -> Ui.Element Msg
+memberDropdown : I18n -> String -> (Member.Id -> Msg) -> List Member.ChainState -> Member.Id -> Ui.Element Msg
 memberDropdown _ label onChange activeMembers selectedId =
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
