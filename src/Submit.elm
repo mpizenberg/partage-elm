@@ -96,15 +96,17 @@ newGroup ctx onComplete output =
         ( eventIds, uuidStateAfter ) =
             UuidGen.v7batch (2 + List.length output.virtualMembers) ctx.currentTime ctx.uuidState
 
-        allEvents =
-            Event.buildGroupCreationEvents
-                { creatorId = ctx.identity.publicKeyHash
-                , groupName = output.name
-                , creatorName = output.creatorName
+        payloads =
+            Event.createGroup
+                { name = output.name
+                , creator = ( ctx.identity.publicKeyHash, output.creatorName )
                 , virtualMembers = List.map2 Tuple.pair virtualMemberIds output.virtualMembers
-                , eventIds = eventIds
-                , currentTime = ctx.currentTime
                 }
+
+        allEvents =
+            List.map2 (\eventId -> Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash)
+                eventIds
+                payloads
 
         summary =
             { id = groupId
@@ -146,37 +148,44 @@ newEntry ctx loaded output =
         ( eventId, uuidStateAfter ) =
             UuidGen.v7 ctx.currentTime ctx.uuidState
 
-        envelope =
+        meta =
+            Entry.newMetadata entryId ctx.identity.publicKeyHash ctx.currentTime
+
+        kind =
             case output of
                 Page.NewEntry.ExpenseOutput data ->
-                    Event.buildExpenseEvent
-                        { entryId = entryId
-                        , eventId = eventId
-                        , memberId = ctx.identity.publicKeyHash
-                        , currentTime = ctx.currentTime
+                    Entry.Expense
+                        { description = data.description
+                        , amount = data.amountCents
                         , currency = loaded.summary.defaultCurrency
-                        , payerId = data.payerId
-                        , beneficiaryIds = data.beneficiaryIds
-                        , description = data.description
-                        , amountCents = data.amountCents
-                        , category = data.category
-                        , notes = data.notes
+                        , defaultCurrencyAmount = Nothing
                         , date = data.date
+                        , payers = [ { memberId = data.payerId, amount = data.amountCents } ]
+                        , beneficiaries =
+                            List.map
+                                (\mid -> Entry.ShareBeneficiary { memberId = mid, shares = 1 })
+                                data.beneficiaryIds
+                        , category = data.category
+                        , location = Nothing
+                        , notes = data.notes
                         }
 
                 Page.NewEntry.TransferOutput data ->
-                    Event.buildTransferEvent
-                        { entryId = entryId
-                        , eventId = eventId
-                        , memberId = ctx.identity.publicKeyHash
-                        , currentTime = ctx.currentTime
+                    Entry.Transfer
+                        { amount = data.amountCents
                         , currency = loaded.summary.defaultCurrency
-                        , fromMemberId = data.fromMemberId
-                        , toMemberId = data.toMemberId
-                        , amountCents = data.amountCents
-                        , notes = data.notes
+                        , defaultCurrencyAmount = Nothing
                         , date = data.date
+                        , from = data.fromMemberId
+                        , to = data.toMemberId
+                        , notes = data.notes
                         }
+
+        entry =
+            { meta = meta, kind = kind }
+
+        envelope =
+            Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash (Event.EntryAdded entry)
     in
     attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter } envelope loaded.groupId
 

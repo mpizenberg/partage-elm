@@ -1,10 +1,8 @@
-module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), buildExpenseEvent, buildGroupCreationEvents, buildTransferEvent, compareEnvelopes, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents, wrap)
+module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), compareEnvelopes, createGroup, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents, wrap)
 
 {-| Event types and ordering for the event-sourced state machine.
 -}
 
-import Domain.Currency exposing (Currency)
-import Domain.Date as Date
 import Domain.Entry as Entry exposing (Entry)
 import Domain.Group as Group
 import Domain.Member as Member
@@ -93,122 +91,27 @@ wrap eventId clientTimestamp triggeredBy payload =
     }
 
 
-{-| Build the events for creating a new group:
+{-| Build the list of payloads for creating a new group:
 GroupMetadataUpdated + MemberCreated for the creator + MemberCreated for each virtual member.
-The eventIds list must have length >= 2 + length of virtualMembers.
 -}
-buildGroupCreationEvents :
-    { creatorId : Member.Id
-    , groupName : String
-    , creatorName : String
-    , virtualMembers : List ( Member.Id, String )
-    , eventIds : List Id
-    , currentTime : Time.Posix
-    }
-    -> List Envelope
-buildGroupCreationEvents config =
-    List.map2 (\eventId -> wrap eventId config.currentTime config.creatorId)
-        config.eventIds
-        (GroupMetadataUpdated
-            { name = Just config.groupName
-            , subtitle = Nothing
-            , description = Nothing
-            , links = Nothing
-            }
-            :: MemberCreated
-                { memberId = config.creatorId
-                , name = config.creatorName
-                , memberType = Member.Real
-                , addedBy = config.creatorId
+createGroup : { name : String, creator : ( Member.Id, String ), virtualMembers : List ( Member.Id, String ) } -> List Payload
+createGroup { name, creator, virtualMembers } =
+    let
+        groupMetadata =
+            GroupMetadataUpdated
+                { name = Just name, subtitle = Nothing, description = Nothing, links = Nothing }
+
+        memberPayload memberType ( memberId, memberName ) =
+            MemberCreated
+                { memberId = memberId
+                , name = memberName
+                , memberType = memberType
+                , addedBy = Tuple.first creator
                 }
-            :: List.map
-                (\( vmId, vmName ) ->
-                    MemberCreated
-                        { memberId = vmId
-                        , name = vmName
-                        , memberType = Member.Virtual
-                        , addedBy = config.creatorId
-                        }
-                )
-                config.virtualMembers
-        )
-
-
-{-| Build an expense entry event.
--}
-buildExpenseEvent :
-    { entryId : Entry.Id
-    , eventId : Id
-    , memberId : Member.Id
-    , currentTime : Time.Posix
-    , currency : Currency
-    , payerId : Member.Id
-    , beneficiaryIds : List Member.Id
-    , description : String
-    , amountCents : Int
-    , category : Maybe Entry.Category
-    , notes : Maybe String
-    , date : Date.Date
-    }
-    -> Envelope
-buildExpenseEvent config =
-    let
-        entry =
-            { meta = Entry.newMetadata config.entryId config.memberId config.currentTime
-            , kind =
-                Entry.Expense
-                    { description = config.description
-                    , amount = config.amountCents
-                    , currency = config.currency
-                    , defaultCurrencyAmount = Nothing
-                    , date = config.date
-                    , payers = [ { memberId = config.payerId, amount = config.amountCents } ]
-                    , beneficiaries =
-                        List.map
-                            (\mid -> Entry.ShareBeneficiary { memberId = mid, shares = 1 })
-                            config.beneficiaryIds
-                    , category = config.category
-                    , location = Nothing
-                    , notes = config.notes
-                    }
-            }
     in
-    wrap config.eventId config.currentTime config.memberId (EntryAdded entry)
-
-
-{-| Build a transfer entry event.
--}
-buildTransferEvent :
-    { entryId : Entry.Id
-    , eventId : Id
-    , memberId : Member.Id
-    , currentTime : Time.Posix
-    , currency : Currency
-    , fromMemberId : Member.Id
-    , toMemberId : Member.Id
-    , amountCents : Int
-    , notes : Maybe String
-    , date : Date.Date
-    }
-    -> Envelope
-buildTransferEvent config =
-    let
-        entry =
-            { meta = Entry.newMetadata config.entryId config.memberId config.currentTime
-            , kind =
-                Entry.Transfer
-                    { amount = config.amountCents
-                    , currency = config.currency
-                    , defaultCurrencyAmount = Nothing
-                    , date = config.date
-                    , from = config.fromMemberId
-                    , to = config.toMemberId
-                    , notes = config.notes
-                    }
-            }
-    in
-    wrap config.eventId config.currentTime config.memberId (EntryAdded entry)
-
+    groupMetadata
+        :: memberPayload Member.Real creator
+        :: List.map (memberPayload Member.Virtual) virtualMembers
 
 
 encodeEnvelope : Envelope -> Encode.Value
