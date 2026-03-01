@@ -247,7 +247,7 @@ update msg model =
                     ensureGroupLoaded { model | route = guardedRoute } guardedRoute
 
                 modelWithPages =
-                    initPagesIfNeeded modelAfterGuard guardedRoute
+                    initPagesIfNeeded guardedRoute modelAfterGuard
             in
             ( modelWithPages, Cmd.batch [ guardCmd, loadCmd ] )
 
@@ -521,7 +521,7 @@ update msg model =
                             )
 
                         _ ->
-                            ( initPagesIfNeeded updatedModel model.route
+                            ( initPagesIfNeeded model.route updatedModel
                             , Cmd.none
                             )
 
@@ -596,32 +596,12 @@ update msg model =
             ( model, Cmd.none )
 
         -- Group loading
-        OnGroupEventsLoaded groupId (ConcurrentTask.Success events) ->
-            case model.appState of
-                Ready readyData ->
-                    case Dict.get groupId readyData.groups of
-                        Just summary ->
-                            let
-                                modelWithGroup =
-                                    { model
-                                        | loadedGroup =
-                                            Just
-                                                { groupId = groupId
-                                                , events = List.reverse events
-                                                , groupState = GroupState.applyEvents events GroupState.empty
-                                                , summary = summary
-                                                }
-                                    }
-                            in
-                            ( initPagesIfNeeded modelWithGroup model.route
-                            , Cmd.none
-                            )
-
-                        Nothing ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+        OnGroupEventsLoaded _ (ConcurrentTask.Success events) ->
+            ( applyLoadedGroup events model
+                |> Maybe.map (initPagesIfNeeded model.route)
+                |> Maybe.withDefault model
+            , Cmd.none
+            )
 
         OnGroupEventsLoaded _ _ ->
             ( model, Cmd.none )
@@ -659,7 +639,7 @@ submitEntryAction : Model -> (Submit.Context Msg -> LoadedGroup -> ( Submit.Stat
 submitEntryAction model action =
     case ( model.appState, model.loadedGroup ) of
         ( Ready readyData, Just loaded ) ->
-            case submitContext (OnEntryActionSaved loaded.groupId) model readyData of
+            case submitContext (OnEntryActionSaved loaded.summary.id) model readyData of
                 Just ctx ->
                     applySubmitResult model (action ctx loaded)
 
@@ -683,7 +663,7 @@ submitNewGroup model readyData output =
 
 submitNewEntry : Model -> Storage.InitData -> LoadedGroup -> Page.NewEntry.Output -> ( Model, Cmd Msg )
 submitNewEntry model readyData loaded output =
-    case submitContext (OnEntrySaved loaded.groupId) model readyData of
+    case submitContext (OnEntrySaved loaded.summary.id) model readyData of
         Just ctx ->
             applySubmitResult model (Submit.newEntry ctx loaded output)
 
@@ -693,7 +673,7 @@ submitNewEntry model readyData loaded output =
 
 submitEditEntry : Model -> Storage.InitData -> LoadedGroup -> Entry.Id -> Page.NewEntry.Output -> ( Model, Cmd Msg )
 submitEditEntry model readyData loaded originalEntryId output =
-    case submitContext (OnEntrySaved loaded.groupId) model readyData of
+    case submitContext (OnEntrySaved loaded.summary.id) model readyData of
         Just ctx ->
             Submit.editEntry ctx loaded originalEntryId output
                 |> Maybe.map (applySubmitResult model)
@@ -703,8 +683,8 @@ submitEditEntry model readyData loaded originalEntryId output =
             ( model, Cmd.none )
 
 
-initPagesIfNeeded : Model -> Route -> Model
-initPagesIfNeeded model route =
+initPagesIfNeeded : Route -> Model -> Model
+initPagesIfNeeded route model =
     case ( route, model.appState, model.loadedGroup ) of
         ( GroupRoute _ NewEntry, Ready readyData, Just loaded ) ->
             { model
@@ -769,7 +749,7 @@ ensureGroupLoaded model route =
         GroupRoute groupId _ ->
             case model.loadedGroup of
                 Just loaded ->
-                    if loaded.groupId == groupId then
+                    if loaded.summary.id == groupId then
                         ( model, Cmd.none )
 
                     else
@@ -805,7 +785,7 @@ handleMemberDetailOutput : Model -> Storage.InitData -> LoadedGroup -> Page.Memb
 handleMemberDetailOutput model readyData loaded output =
     let
         submit =
-            submitEvent (OnMemberActionSaved loaded.groupId) model readyData loaded
+            submitEvent (OnMemberActionSaved loaded.summary.id) model readyData loaded
     in
     case output of
         Page.MemberDetail.RenameOutput data ->
@@ -856,7 +836,7 @@ submitEvent onComplete model readyData loaded payload =
 
 submitAddMember : Model -> Storage.InitData -> LoadedGroup -> Page.AddMember.Output -> ( Model, Cmd Msg )
 submitAddMember model readyData loaded output =
-    case submitContext (OnMemberActionSaved loaded.groupId) model readyData of
+    case submitContext (OnMemberActionSaved loaded.summary.id) model readyData of
         Just ctx ->
             applySubmitResult model (Submit.addMember ctx loaded output)
 
@@ -866,7 +846,7 @@ submitAddMember model readyData loaded output =
 
 submitMemberMetadata : Model -> Storage.InitData -> LoadedGroup -> Page.EditMemberMetadata.Output -> ( Model, Cmd Msg )
 submitMemberMetadata model readyData loaded output =
-    submitEvent (OnMemberActionSaved loaded.groupId)
+    submitEvent (OnMemberActionSaved loaded.summary.id)
         model
         readyData
         loaded
@@ -879,7 +859,7 @@ submitMemberMetadata model readyData loaded output =
 
 submitGroupMetadata : Model -> Storage.InitData -> LoadedGroup -> Event.GroupMetadataChange -> ( Model, Cmd Msg )
 submitGroupMetadata model readyData loaded change =
-    submitEvent (OnGroupMetadataActionSaved loaded.groupId)
+    submitEvent (OnGroupMetadataActionSaved loaded.summary.id)
         model
         readyData
         loaded
@@ -951,11 +931,28 @@ appendEventAndRecompute model groupId envelope =
         model
 
 
+applyLoadedGroup : List Event.Envelope -> Model -> Maybe Model
+applyLoadedGroup events model =
+    case model.appState of
+        Ready readyData ->
+            case model.route of
+                GroupRoute groupId _ ->
+                    Dict.get groupId readyData.groups
+                        |> Maybe.map (Submit.initLoadedGroup events)
+                        |> Maybe.map (\loaded -> { model | loadedGroup = Just loaded })
+
+                _ ->
+                    Nothing
+
+        _ ->
+            Nothing
+
+
 mapLoadedGroup : (LoadedGroup -> LoadedGroup) -> Group.Id -> Model -> Maybe Model
 mapLoadedGroup f groupId model =
     case model.loadedGroup of
         Just loaded ->
-            if loaded.groupId == groupId then
+            if loaded.summary.id == groupId then
                 Just { model | loadedGroup = Just (f loaded) }
 
             else
@@ -1210,7 +1207,7 @@ viewWithLoadedGroup : Model -> Group.Id -> Ui.Element Msg -> (LoadedGroup -> Ui.
 viewWithLoadedGroup model groupId langSelector content =
     case model.loadedGroup of
         Just loaded ->
-            if loaded.groupId == groupId then
+            if loaded.summary.id == groupId then
                 content loaded
 
             else

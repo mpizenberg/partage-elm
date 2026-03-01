@@ -6,6 +6,7 @@ module Submit exposing
     , deleteEntry
     , editEntry
     , event
+    , initLoadedGroup
     , newEntry
     , newGroup
     , restoreEntry
@@ -50,10 +51,18 @@ type alias State msg =
 
 
 type alias LoadedGroup =
-    { groupId : Group.Id
-    , events : List Event.Envelope
+    { events : List Event.Envelope
     , groupState : GroupState.GroupState
     , summary : GroupSummary
+    }
+
+
+initLoadedGroup : List Event.Envelope -> GroupSummary -> LoadedGroup
+initLoadedGroup events summary =
+    -- We store the events in reverse order for efficient prepending of new events
+    { events = List.reverse events
+    , groupState = GroupState.applyEvents events GroupState.empty
+    , summary = summary
     }
 
 
@@ -187,7 +196,7 @@ newEntry ctx loaded output =
         envelope =
             Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash (Event.EntryAdded entry)
     in
-    attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter } envelope loaded.groupId
+    attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter } envelope loaded.summary.id
 
 
 
@@ -217,7 +226,7 @@ editEntry ctx loaded originalEntryId output =
                 envelope =
                     Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash (Event.EntryModified entry)
             in
-            Just (attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter } envelope loaded.groupId)
+            Just (attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter } envelope loaded.summary.id)
 
 
 
@@ -243,7 +252,7 @@ simpleEvent ctx loaded payload =
         envelope =
             Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash payload
     in
-    attempt { ctx | uuidState = uuidStateAfter } envelope loaded.groupId
+    attempt { ctx | uuidState = uuidStateAfter } envelope loaded.summary.id
 
 
 
@@ -279,4 +288,4 @@ addMember ctx loaded output =
         envelope =
             Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash payload
     in
-    attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter } envelope loaded.groupId
+    attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter } envelope loaded.summary.id
