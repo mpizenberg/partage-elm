@@ -55,6 +55,7 @@ detailText i18n detail =
                 ++ " ("
                 ++ Format.formatCentsWithCurrency data.amount data.currency
                 ++ ")"
+                ++ changesText i18n data.changes
 
         TransferAddedDetail data ->
             T.activityTransferAdded i18n
@@ -67,6 +68,7 @@ detailText i18n detail =
                 ++ " ("
                 ++ Format.formatCentsWithCurrency data.amount data.currency
                 ++ ")"
+                ++ changesText i18n data.changes
 
         EntryDeletedDetail data ->
             T.activityEntryDeleted data.entryDescription i18n
@@ -96,9 +98,73 @@ detailText i18n detail =
 
         MemberMetadataUpdatedDetail data ->
             T.activityMemberMetadataUpdated data.name i18n
+                ++ changesText i18n data.updatedFields
 
-        GroupMetadataUpdatedDetail ->
+        GroupMetadataUpdatedDetail data ->
             T.activityGroupMetadataUpdated i18n
+                ++ changesText i18n data.changedFields
+
+
+changesText : I18n -> List String -> String
+changesText i18n fields =
+    case fields of
+        [] ->
+            ""
+
+        _ ->
+            " — " ++ String.join ", " (List.map (translateField i18n) fields)
+
+
+translateField : I18n -> String -> String
+translateField i18n field =
+    case field of
+        "description" ->
+            T.changeFieldDescription i18n
+
+        "amount" ->
+            T.changeFieldAmount i18n
+
+        "date" ->
+            T.changeFieldDate i18n
+
+        "payers" ->
+            T.changeFieldPayers i18n
+
+        "beneficiaries" ->
+            T.changeFieldBeneficiaries i18n
+
+        "category" ->
+            T.changeFieldCategory i18n
+
+        "notes" ->
+            T.changeFieldNotes i18n
+
+        "from" ->
+            T.changeFieldFrom i18n
+
+        "to" ->
+            T.changeFieldTo i18n
+
+        "phone" ->
+            T.changeFieldPhone i18n
+
+        "email" ->
+            T.changeFieldEmail i18n
+
+        "payment" ->
+            T.changeFieldPayment i18n
+
+        "name" ->
+            T.changeFieldName i18n
+
+        "subtitle" ->
+            T.changeFieldSubtitle i18n
+
+        "links" ->
+            T.changeFieldLinks i18n
+
+        _ ->
+            field
 
 
 formatTimestamp : Time.Posix -> String

@@ -79,4 +79,4 @@ tabContent ctx showDeleted state events tab =
         ActivityTab ->
             Page.Group.ActivityTab.view ctx.i18n
                 (GroupState.resolveMemberName state)
-                (Activity.fromEvents state events)
+                (Activity.fromEvents events)
