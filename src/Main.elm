@@ -203,6 +203,20 @@ init flags =
     )
 
 
+dummyMemberState : GroupState.MemberState
+dummyMemberState =
+    { id = ""
+    , rootId = ""
+    , previousId = Nothing
+    , name = ""
+    , memberType = Member.Virtual
+    , isRetired = False
+    , isReplaced = False
+    , isActive = False
+    , metadata = Member.emptyMetadata
+    }
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
@@ -787,20 +801,6 @@ submitMemberMetadata model readyData loaded output =
                 , metadata = output.metadata
                 }
         )
-
-
-dummyMemberState : GroupState.MemberState
-dummyMemberState =
-    { id = ""
-    , rootId = ""
-    , previousId = Nothing
-    , name = ""
-    , memberType = Member.Virtual
-    , isRetired = False
-    , isReplaced = False
-    , isActive = False
-    , metadata = Member.emptyMetadata
-    }
 
 
 appendEventAndRecompute : Model -> Group.Id -> Event.Envelope -> Maybe Model
