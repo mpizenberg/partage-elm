@@ -32,6 +32,7 @@ type GroupView
     | MemberDetail Member.Id
     | AddVirtualMember
     | EditMemberMetadata Member.Id
+    | EditGroupMetadata
 
 
 {-| The tabs available within a group's main view.
@@ -89,6 +90,9 @@ fromAppUrl appUrl =
 
         [ "groups", groupId, "members", memberId, "edit" ] ->
             GroupRoute groupId (EditMemberMetadata memberId)
+
+        [ "groups", groupId, "settings" ] ->
+            GroupRoute groupId EditGroupMetadata
 
         [ "about" ] ->
             About
@@ -157,6 +161,9 @@ toPathSegments route =
         GroupRoute groupId (EditMemberMetadata memberId) ->
             [ "groups", groupId, "members", memberId, "edit" ]
 
+        GroupRoute groupId EditGroupMetadata ->
+            [ "groups", groupId, "settings" ]
+
         About ->
             [ "about" ]
 
@@ -210,6 +217,9 @@ toPath route =
 
         GroupRoute groupId (EditMemberMetadata memberId) ->
             "/groups/" ++ groupId ++ "/members/" ++ memberId ++ "/edit"
+
+        GroupRoute groupId EditGroupMetadata ->
+            "/groups/" ++ groupId ++ "/settings"
 
         About ->
             "/about"

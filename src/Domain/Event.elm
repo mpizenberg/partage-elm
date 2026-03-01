@@ -1,4 +1,4 @@
-module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), buildEntryDeletedEvent, buildEntryModifiedEvent, buildEntryUndeletedEvent, buildExpenseEvent, buildGroupCreationEvents, buildMemberCreatedEvent, buildMemberMetadataUpdatedEvent, buildMemberRenamedEvent, buildMemberRetiredEvent, buildMemberUnretiredEvent, buildTransferEvent, compareEnvelopes, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents)
+module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), buildEntryDeletedEvent, buildEntryModifiedEvent, buildEntryUndeletedEvent, buildExpenseEvent, buildGroupCreationEvents, buildGroupMetadataUpdatedEvent, buildMemberCreatedEvent, buildMemberMetadataUpdatedEvent, buildMemberRenamedEvent, buildMemberRetiredEvent, buildMemberUnretiredEvent, buildTransferEvent, compareEnvelopes, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents)
 
 {-| Event types and ordering for the event-sourced state machine.
 -}
@@ -374,6 +374,15 @@ buildMemberMetadataUpdatedEvent config =
             { memberId = config.targetMemberId
             , metadata = config.metadata
             }
+    }
+
+
+buildGroupMetadataUpdatedEvent : { eventId : Id, memberId : Member.Id, currentTime : Time.Posix, change : GroupMetadataChange } -> Envelope
+buildGroupMetadataUpdatedEvent config =
+    { id = config.eventId
+    , clientTimestamp = config.currentTime
+    , triggeredBy = config.memberId
+    , payload = GroupMetadataUpdated config.change
     }
 
 

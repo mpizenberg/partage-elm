@@ -1,6 +1,7 @@
 module Storage exposing
     ( GroupSummary
     , InitData
+    , deleteGroup
     , errorToString
     , init
     , loadAllGroups
@@ -140,6 +141,22 @@ loadGroupEvents : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error (List Event.Env
 loadGroupEvents db groupId =
     Idb.getByIndex db eventsStore byGroupIdIndex (Idb.only (Idb.StringKey groupId)) Event.envelopeDecoder
         |> ConcurrentTask.map (List.map Tuple.second)
+
+
+deleteGroup : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error ()
+deleteGroup db groupId =
+    ConcurrentTask.batch
+        -- Delete group summary
+        [ Idb.delete db groupsStore (Idb.StringKey groupId)
+
+        -- Delete group key
+        , Idb.delete db groupKeysStore (Idb.StringKey groupId)
+
+        -- Delete group events
+        , Idb.getKeysByIndex db eventsStore byGroupIdIndex (Idb.only (Idb.StringKey groupId))
+            |> ConcurrentTask.andThen (\keys -> Idb.deleteMany db eventsStore keys)
+        ]
+        |> ConcurrentTask.map (\_ -> ())
 
 
 

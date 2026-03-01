@@ -19,6 +19,7 @@ import Json.Encode
 import Navigation
 import Page.About
 import Page.AddMember
+import Page.EditGroupMetadata
 import Page.EditMemberMetadata
 import Page.EntryDetail
 import Page.Group
@@ -81,6 +82,7 @@ type alias Model =
     , memberDetailModel : Page.MemberDetail.Model
     , addMemberModel : Page.AddMember.Model
     , editMemberMetadataModel : Page.EditMemberMetadata.Model
+    , editGroupMetadataModel : Page.EditGroupMetadata.Model
     , loadedGroup : Maybe LoadedGroup
     , showDeleted : Bool
     }
@@ -118,6 +120,11 @@ type Msg
     | AddMemberMsg Page.AddMember.Msg
     | EditMemberMetadataMsg Page.EditMemberMetadata.Msg
     | OnMemberActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
+      -- Group metadata editing
+    | EditGroupMetadataMsg Page.EditGroupMetadata.Msg
+    | OnGroupMetadataActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
+    | RemoveGroup Group.Id
+    | OnGroupRemoved Group.Id (ConcurrentTask.Response Idb.Error ())
       -- Group loading
     | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error (List Event.Envelope))
 
@@ -196,6 +203,7 @@ init flags =
       , memberDetailModel = Page.MemberDetail.init dummyMemberState
       , addMemberModel = Page.AddMember.init
       , editMemberMetadataModel = Page.EditMemberMetadata.init "" Member.emptyMetadata
+      , editGroupMetadataModel = Page.EditGroupMetadata.init GroupState.empty.groupMeta
       , loadedGroup = Nothing
       , showDeleted = False
       }
@@ -514,6 +522,111 @@ update msg model =
         OnMemberActionSaved _ _ ->
             ( model, Cmd.none )
 
+        -- Group metadata editing
+        EditGroupMetadataMsg subMsg ->
+            let
+                result =
+                    Page.EditGroupMetadata.update subMsg model.editGroupMetadataModel
+
+                modelWithPage =
+                    { model | editGroupMetadataModel = result.model }
+            in
+            if result.deleteRequested then
+                case model.route of
+                    GroupRoute groupId _ ->
+                        deleteGroup modelWithPage groupId
+
+                    _ ->
+                        ( modelWithPage, Cmd.none )
+
+            else
+                case ( result.metadataOutput, model.appState, model.loadedGroup ) of
+                    ( Just change, Ready readyData, Just loaded ) ->
+                        submitGroupMetadata modelWithPage readyData loaded change
+
+                    _ ->
+                        ( modelWithPage, Cmd.none )
+
+        OnGroupMetadataActionSaved groupId (ConcurrentTask.Success envelope) ->
+            case appendEventAndRecompute model groupId envelope of
+                Just updatedModel ->
+                    let
+                        -- If group name changed, update the summary in model and IndexedDB
+                        ( finalModel, saveCmd ) =
+                            case ( updatedModel.loadedGroup, updatedModel.appState ) of
+                                ( Just loaded, Ready readyData ) ->
+                                    let
+                                        newName =
+                                            loaded.groupState.groupMeta.name
+
+                                        updatedGroups =
+                                            List.map
+                                                (\g ->
+                                                    if g.id == groupId then
+                                                        { g | name = newName }
+
+                                                    else
+                                                        g
+                                                )
+                                                readyData.groups
+
+                                        summary =
+                                            loaded.summary
+
+                                        updatedSummary =
+                                            { summary | name = newName }
+
+                                        ( pool, cmd ) =
+                                            ConcurrentTask.attempt
+                                                { pool = updatedModel.pool
+                                                , send = sendTask
+                                                , onComplete = \_ -> OnIdentitySaved (ConcurrentTask.Success ())
+                                                }
+                                                (Storage.saveGroupSummary readyData.db updatedSummary)
+                                    in
+                                    ( { updatedModel
+                                        | appState = Ready { readyData | groups = updatedGroups }
+                                        , loadedGroup = Just { loaded | summary = updatedSummary }
+                                        , pool = pool
+                                      }
+                                    , cmd
+                                    )
+
+                                _ ->
+                                    ( updatedModel, Cmd.none )
+                    in
+                    ( finalModel
+                    , Cmd.batch
+                        [ saveCmd
+                        , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab MembersTab)))
+                        ]
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        OnGroupMetadataActionSaved _ _ ->
+            ( model, Cmd.none )
+
+        RemoveGroup groupId ->
+            deleteGroup model groupId
+
+        OnGroupRemoved groupId (ConcurrentTask.Success _) ->
+            case model.appState of
+                Ready readyData ->
+                    ( { model
+                        | appState = Ready { readyData | groups = List.filter (\g -> g.id /= groupId) readyData.groups }
+                        , loadedGroup = Nothing
+                      }
+                    , Navigation.pushUrl navCmd (Route.toAppUrl Home)
+                    )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        OnGroupRemoved _ _ ->
+            ( model, Cmd.none )
+
         -- Group loading
         OnGroupEventsLoaded groupId (ConcurrentTask.Success events) ->
             case model.appState of
@@ -647,6 +760,9 @@ initPagesIfNeeded model route =
 
                 Nothing ->
                     model
+
+        ( GroupRoute _ EditGroupMetadata, _, Just loaded ) ->
+            { model | editGroupMetadataModel = Page.EditGroupMetadata.init loaded.groupState.groupMeta }
 
         _ ->
             model
@@ -803,6 +919,46 @@ submitMemberMetadata model readyData loaded output =
         )
 
 
+submitGroupMetadata : Model -> Storage.InitData -> LoadedGroup -> Event.GroupMetadataChange -> ( Model, Cmd Msg )
+submitGroupMetadata model readyData loaded change =
+    case submitContext (OnGroupMetadataActionSaved loaded.groupId) model readyData of
+        Just ctx ->
+            applySubmitResult model
+                (Submit.memberEvent ctx
+                    loaded
+                    (\eventId identity ->
+                        Event.buildGroupMetadataUpdatedEvent
+                            { eventId = eventId
+                            , memberId = identity.publicKeyHash
+                            , currentTime = model.currentTime
+                            , change = change
+                            }
+                    )
+                )
+
+        Nothing ->
+            ( model, Cmd.none )
+
+
+deleteGroup : Model -> Group.Id -> ( Model, Cmd Msg )
+deleteGroup model groupId =
+    case model.appState of
+        Ready readyData ->
+            let
+                ( pool, cmd ) =
+                    ConcurrentTask.attempt
+                        { pool = model.pool
+                        , send = sendTask
+                        , onComplete = OnGroupRemoved groupId
+                        }
+                        (Storage.deleteGroup readyData.db groupId)
+            in
+            ( { model | pool = pool }, cmd )
+
+        _ ->
+            ( model, Cmd.none )
+
+
 appendEventAndRecompute : Model -> Group.Id -> Event.Envelope -> Maybe Model
 appendEventAndRecompute model groupId envelope =
     case model.loadedGroup of
@@ -932,6 +1088,7 @@ viewReady model readyData =
                         , onToggleDeleted = ToggleShowDeleted
                         , onMemberClick = \memberId -> NavigateTo (GroupRoute groupId (MemberDetail memberId))
                         , onAddMember = NavigateTo (GroupRoute groupId AddVirtualMember)
+                        , onEditGroupMetadata = NavigateTo (GroupRoute groupId EditGroupMetadata)
                         , currentUserRootId = resolveCurrentUserRootId readyData loaded.groupState
                         }
                         { showDeleted = model.showDeleted }
@@ -1054,6 +1211,21 @@ viewReady model readyData =
                             Page.EditMemberMetadata.view i18n
                                 EditMemberMetadataMsg
                                 model.editMemberMetadataModel
+                        }
+                )
+
+        GroupRoute groupId EditGroupMetadata ->
+            viewWithLoadedGroup model
+                groupId
+                langSelector
+                (\_ ->
+                    UI.Shell.appShell
+                        { title = T.groupSettingsTitle i18n
+                        , headerExtra = langSelector
+                        , content =
+                            Page.EditGroupMetadata.view i18n
+                                EditGroupMetadataMsg
+                                model.editGroupMetadataModel
                         }
                 )
 
