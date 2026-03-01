@@ -262,7 +262,7 @@ update msg model =
                             GroupRoute groupId (Tab tab)
                     in
                     ( { model | route = newRoute }
-                    , Navigation.replaceUrl navCmd (Route.toAppUrl newRoute)
+                    , Navigation.pushUrl navCmd (Route.toAppUrl newRoute)
                     )
 
                 _ ->
