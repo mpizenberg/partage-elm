@@ -532,7 +532,7 @@ src/
 
 **Goal:** Complete the local bill-splitting experience by adding the remaining features from the specification that don't require server sync. Also clean up `Main.elm` by extracting form logic into page modules.
 
-**Status: IN PROGRESS (Steps 0-3 complete)**
+**Status: IN PROGRESS (Steps 0-5 complete)**
 
 ### Step 0: Main.elm cleanup ✅
 
@@ -687,239 +687,106 @@ Transfer support integrated into `Page.NewEntry` (no separate `Form.NewTransfer.
 
 **20 translation keys added** (EN + FR) for detail view, actions, deleted state.
 
-### Step 4: Member management within a group
+### Step 4: Member management within a group ✅
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 **Spec ref:** Sections 4.2, 4.5, 4.6
 
-Currently members are only created at group creation time. The domain layer fully supports member lifecycle events (`MemberCreated`, `MemberRenamed`, `MemberRetired`, `MemberUnretired`, `MemberMetadataUpdated`). What's needed is event builders, UI, and wiring.
+#### What was done
 
-#### 4a. Event builders in `Domain.Event`
+**Event construction:** No dedicated builder functions — callers construct `Event.Payload` values directly (e.g. `Event.MemberRenamed { memberId, oldName, newName }`) and pass them to `Submit.event` or `Event.wrap`. This was a deliberate simplification from the original plan (see Step 0 refactoring).
 
-Add simple envelope wrapper functions (same pattern as `buildEntryDeletedEvent`):
+**`src/Page/MemberDetail.elm`** — Full page with `Model/Msg/init/update/view` pattern:
+- `Model` (opaque): stores `MemberState`, inline rename state (`renaming : Bool`, `renameText : String`)
+- `Output`: `RenameOutput { memberId, oldName, newName }` | `RetireOutput Member.Id` | `UnretireOutput Member.Id` | `NavigateToEditMetadata` | `NavigateBack`
+- Inline rename: "Rename" button toggles text input with Save/Cancel directly in the detail view
+- Display: member name (with "(you)"), type (Real/Virtual), status (Active/Retired), metadata section (phone, email, notes), payment info (IBAN, Wero, Lydia, Revolut, PayPal, Venmo, BTC, ADA)
+- Action buttons: Rename (primary), Edit Contact Info (primary), Retire (danger, hidden for self), Reactivate (success, shown when retired)
 
-- `buildMemberCreatedEvent : { eventId, memberId, currentTime, newMemberId, name, memberType, addedBy } -> Envelope`
-- `buildMemberRenamedEvent : { eventId, memberId, currentTime, targetMemberId, oldName, newName } -> Envelope`
-- `buildMemberRetiredEvent : { eventId, memberId, currentTime, targetMemberId } -> Envelope`
-- `buildMemberUnretiredEvent : { eventId, memberId, currentTime, targetMemberId } -> Envelope`
-- `buildMemberMetadataUpdatedEvent : { eventId, memberId, currentTime, targetMemberId, metadata } -> Envelope`
+**`src/Page/AddMember.elm`** — Simple form page:
+- `Output`: `{ name : String }`
+- Name text input with non-blank validation
+- On submit: Main generates member UUID v4 via `Submit.addMember`, emits `MemberCreated` with `memberType = Virtual`
 
-Note: `memberId` is the identity performing the action (`triggeredBy`), `targetMemberId` is the member being acted upon.
+**`src/Page/EditMemberMetadata.elm`** — Metadata editing page with `Model/Msg/init/update/view`:
+- `Output`: `{ memberId : Member.Id, metadata : Member.Metadata }`
+- Uses `Form.EditMemberMetadata` for validation (email must contain `@domain.ext`)
+- Fields: phone, email, notes (contact), IBAN, Wero, Lydia, Revolut, PayPal, Venmo, BTC, ADA (payment)
+- All fields optional — empty strings become `Nothing`; payment section is `Just PaymentInfo` only if at least one payment field set
 
-#### 4b. Member detail view (`src/Page/MemberDetail.elm`)
+**`src/Form/EditMemberMetadata.elm`** — Form state and validation using `dwayne/elm-form` + `dwayne/elm-field`:
+- Custom `emailString` field type with basic email format validation
+- Accessor pattern for all 11 fields
 
-New module following the `Page.EntryDetail` pattern:
+**Clickable member rows:**
+- `UI.Components.memberRow : I18n -> msg -> { member, isCurrentUser } -> Ui.Element msg` — gains `onClick` parameter
+- `MembersTab` uses `Msg msg` type alias: `{ onMemberClick : Member.Id -> msg, onAddMember : msg, onEditGroupMetadata : msg }`
+- "Add Member" button at bottom, "Edit Group" button at top
 
-```elm
-type alias Context msg =
-    { onRename : msg
-    , onEditMetadata : msg
-    , onRetire : msg
-    , onUnretire : msg
-    , onBack : msg
-    , currentUserRootId : Member.Id
-    }
+**Routes added to `GroupView`:**
+- `MemberDetail Member.Id` — `/groups/:id/members/:memberId`
+- `AddVirtualMember` — `/groups/:id/members/new`
+- `EditMemberMetadata Member.Id` — `/groups/:id/members/:memberId/edit`
 
-view : I18n -> Context msg -> GroupState.MemberState -> Ui.Element msg
-```
+**Main.elm wiring:**
+- Msg: `MemberDetailMsg`, `AddMemberMsg`, `EditMemberMetadataMsg`, `OnMemberActionSaved`
+- Model: `memberDetailModel`, `addMemberModel`, `editMemberMetadataModel`
+- `handleMemberDetailOutput` uses payload constructors directly: `Event.MemberRenamed { ... }`, `Event.MemberRetired { ... }`, etc.
+- `submitMemberMetadata` constructs `Event.MemberMetadataUpdated` payload
+- `OnMemberActionSaved`: recomputes group state, navigates back to MembersTab
 
-Display:
-- Member name (with "(you)" suffix if current user)
-- Member type label (Real / Virtual)
-- Status: Active / Retired
-- Metadata section: phone, email, notes (if any set)
-- Payment info section: each non-empty field displayed as a row (IBAN, Wero, Lydia, Revolut, PayPal, Venmo, BTC, ADA)
-- Action buttons:
-  - "Rename" (primary) — always available
-  - "Edit Contact Info" (primary) — always available
-  - "Retire" (danger) — only if active, cannot retire yourself
-  - "Reactivate" (success) — only if retired
+**~30 translation keys** added (EN + FR) for detail view, actions, add member, metadata editing.
 
-#### 4c. Clickable member rows + route
+### Step 5: Group metadata editing ✅
 
-- Add `MemberDetail Member.Id` variant to `GroupView` in `Route.elm`
-- URL: `/groups/:id/members/:memberId`
-- `UI.Components.memberRow` gains an `onClick` parameter (same pattern as `entryCard`)
-- `MembersTab.view` signature changes to accept message callbacks: `view : I18n -> Msg msg -> Member.Id -> GroupState -> Ui.Element msg`
-- `Msg msg` type alias: `{ onMemberClick : Member.Id -> msg, onAddMember : msg }`
-- Thread `onMemberClick` through `Page.Group.Context`
-
-#### 4d. Rename member (inline or modal)
-
-Simple approach — no separate page/form, use a prompt-like pattern:
-
-- On `MemberDetail`, "Rename" button triggers a `RenameMember Member.Id` Msg in Main
-- Main stores `renamingMember : Maybe { memberId : Member.Id, newName : String }` in Model
-- When set, `MemberDetail` view shows inline text input + "Save" / "Cancel" buttons instead of the name display
-- On save: build `MemberRenamed` event with old name from `MemberState.name` and new name from input
-- Alternatively, can use a simple text field directly in `MemberDetail` — the view can own its own local rename state without needing Main to track it
-
-Preferred approach: `Page.MemberDetail` is a page with `Model/Msg/init/update/view` exposing `Output`:
-- `Output` variants: `RenameOutput { memberId, oldName, newName }` | `RetireOutput Member.Id` | `UnretireOutput Member.Id`
-- Main delegates to `submitMemberAction` on `Just output`
-
-#### 4e. Add virtual member
-
-- "Add Member" button in `MembersTab` (below member list, similar to "New Entry" button)
-- Add `AddVirtualMember` route variant to `GroupView` — URL: `/groups/:id/members/new`
-- Simple form page (`Page.AddMember.elm` or inline): name text input + submit
-- On submit: generate member ID (UUID v4), emit `MemberCreated { memberId, name, memberType = Virtual, addedBy = identity.publicKeyHash }`
-- Navigate back to Members tab on success
-
-#### 4f. Retire / Unretire member
-
-- Buttons in `Page.MemberDetail` view (conditionally shown based on `isActive`/`isRetired`)
-- Cannot retire yourself (hide/disable button when `member.rootId == currentUserRootId`)
-- On click: emit `MemberRetired { memberId }` or `MemberUnretired { memberId }`
-- Recompute group state, stay on member detail (status updates)
-
-#### 4g. Member metadata editing (`src/Page/EditMemberMetadata.elm`)
-
-New page module for editing contact info and payment methods:
-
-- Route: `EditMemberMetadata Member.Id` in `GroupView` — URL: `/groups/:id/members/:memberId/edit`
-- Page with `Model/Msg/init/update/view` pattern:
-  - `init` pre-populates from existing `MemberState.metadata`
-  - Fields: phone, email, notes (text inputs), payment method fields (IBAN, Wero, Lydia, Revolut, PayPal, Venmo, BTC, ADA)
-  - All fields optional — empty strings treated as `Nothing`
-  - `Output`: `Member.Metadata` record
-- On submit: emit `MemberMetadataUpdated { memberId, metadata }` event
-- Navigate back to member detail on success
-
-#### 4h. Main.elm wiring
-
-New Msg variants:
-- `MemberDetailMsg Page.MemberDetail.Msg` — delegated to page update
-- `EditMemberMetadataMsg Page.EditMemberMetadata.Msg`
-- `OnMemberActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)`
-
-Model additions:
-- `memberDetailModel : Page.MemberDetail.Model`
-- `editMemberMetadataModel : Page.EditMemberMetadata.Model`
-
-Pattern follows existing `NewEntryMsg` / `submitNewEntry` flow:
-1. Page update returns `( Model, Maybe Output )`
-2. Main matches on `Just output` and calls `submitMemberAction`
-3. `submitMemberAction` generates event ID (v7), builds event, saves to IndexedDB
-4. `OnMemberActionSaved` recomputes group state
-
-#### Files modified/created
-
-| File | Action | Description |
-| --- | --- | --- |
-| `src/Domain/Event.elm` | Modified | Add 5 member event builder functions |
-| `src/Route.elm` | Modified | Add `MemberDetail`, `AddVirtualMember`, `EditMemberMetadata` to `GroupView` |
-| `src/Page/MemberDetail.elm` | New | Member detail view with rename/retire/unretire actions |
-| `src/Page/EditMemberMetadata.elm` | New | Metadata editing form (contact info + payment methods) |
-| `src/Page/Group/MembersTab.elm` | Modified | Clickable member rows, "Add Member" button, `Msg msg` type alias |
-| `src/UI/Components.elm` | Modified | `memberRow` gains `onClick` parameter |
-| `src/Page/Group.elm` | Modified | Add member callbacks to `Context` |
-| `src/Main.elm` | Modified | New Msg variants, member action handlers, route branches |
-| `translations/messages.en.json` | Modified | ~30 new keys |
-| `translations/messages.fr.json` | Modified | ~30 new keys |
-
-#### Translation keys needed (estimated)
-
-- Member detail: `memberDetailTitle`, `memberDetailType`, `memberDetailTypeReal`, `memberDetailTypeVirtual`, `memberDetailStatus`, `memberDetailStatusActive`, `memberDetailStatusRetired`, `memberDetailBack`
-- Actions: `memberRenameButton`, `memberEditMetadataButton`, `memberRetireButton`, `memberUnretireButton`, `memberRenameSave`, `memberRenameCancel`, `memberRenameLabel`
-- Add member: `memberAddButton`, `memberAddTitle`, `memberAddNameLabel`, `memberAddNamePlaceholder`, `memberAddSubmit`
-- Metadata: `memberMetadataTitle`, `memberMetadataPhone`, `memberMetadataEmail`, `memberMetadataNotes`, `memberMetadataPayment`, `memberMetadataIban`, `memberMetadataWero`, `memberMetadataLydia`, `memberMetadataRevolut`, `memberMetadataPaypal`, `memberMetadataVenmo`, `memberMetadataBtc`, `memberMetadataAda`, `memberMetadataSave`
-
-### Step 5: Group metadata editing
-
-**Status: NOT STARTED**
+**Status: COMPLETE**
 
 **Spec ref:** Sections 3.2, 3.3
 
-The domain layer fully supports `GroupMetadataUpdated` events with partial updates (`GroupMetadataChange` uses `Maybe` fields — `Nothing` = unchanged, `Just value` = set). The `GroupState.applyGroupMetadataUpdated` handler already processes these correctly. What's needed is an event builder, UI, and wiring.
+#### What was done
 
-#### 5a. Event builder in `Domain.Event`
+**Event construction:** Like member events, callers construct `Event.GroupMetadataUpdated change` directly and pass to `Submit.event` / `Event.wrap`.
 
-- `buildGroupMetadataUpdatedEvent : { eventId, memberId, currentTime, change : GroupMetadataChange } -> Envelope`
+**`src/Page/EditGroupMetadata.elm`** — Combined settings + deletion page with `Model/Msg/init/update/view`:
+- `Output`: `Event.GroupMetadataChange` (partial update — only changed fields set)
+- `UpdateResult`: `{ model, metadataOutput : Maybe Output, deleteRequested : Bool }` — signals both metadata save and delete intent
+- Fields: name (required), subtitle (optional), description (optional), links (dynamic list of `{ label, url }` pairs)
+- `buildChange`: Compares form values against `originalMeta` — `Nothing` = unchanged, `Just Nothing` = cleared, `Just (Just s)` = set
+- Delete: two-stage confirmation (`confirmingDelete` toggle + confirm button)
 
-#### 5b. Group settings page (`src/Page/GroupSettings.elm`)
+**`src/Form/EditGroupMetadata.elm`** — Form state and validation using `dwayne/elm-form` + `dwayne/elm-field`:
+- Custom `urlString` field type: validates URLs start with `http://` or `https://`
+- Link label: required non-blank string; link URL: required valid URL
+- Dynamic link list via `Form.List` (add/remove)
 
-New page module:
+**Group info displayed in MembersTab:**
+- Subtitle, description, and links (if set) shown at top of Members tab
+- "Edit Group" button linking to settings page
 
-```elm
-type alias Config =
-    { groupMeta : GroupState.GroupMetadata
-    , links : List Group.Link
-    }
+**Route:** `EditGroupMetadata` in `GroupView` — URL: `/groups/:id/settings`
 
-type Output
-    = MetadataOutput Event.GroupMetadataChange
+**Remove group locally:**
+- "Remove Group" button (danger) with confirmation UI in EditGroupMetadata page
+- `Storage.deleteGroup`: batch deletes group summary, group key, and all events (queried by groupId index)
+- On success: removes from `groups` dict in model, navigates to Home
 
--- Model/Msg/init/update/view pattern
-init : Config -> Model
-view : I18n -> (Msg -> msg) -> Model -> Ui.Element msg
-update : Msg -> Model -> ( Model, Maybe Output )
-```
+**Main.elm wiring:**
+- Msg: `EditGroupMetadataMsg`, `OnGroupMetadataActionSaved`, `RemoveGroup`, `OnGroupRemoved`
+- Model: `editGroupMetadataModel`
+- `submitGroupMetadata`: constructs `Event.GroupMetadataUpdated change` payload via `submitEvent`
+- `syncGroupSummaryName`: updates `GroupSummary` in both model dict and IndexedDB when group name changes
+- `deleteGroup`: triggers `Storage.deleteGroup` via ConcurrentTask
 
-Fields:
-- Group name (text input, required — `Field String`)
-- Subtitle (text input, optional — empty = clear)
-- Description (multiline text input, optional — empty = clear)
-- Links (dynamic list of `{ label, url }` pairs — add/remove, similar to virtual members in `NewGroup`)
+**`groups` changed to `Dict Group.Id GroupSummary`** throughout the app (in `Storage.InitData`, Main model, and all usage sites) for natural O(1) lookups.
 
-The `Output` produces a `GroupMetadataChange` that only sets fields that differ from the original values (to minimize event payload). Uses `Maybe (Maybe String)` encoding: `Nothing` = unchanged, `Just Nothing` = cleared, `Just (Just s)` = set to `s`.
+**~20 translation keys** added (EN + FR) for settings page, group info display, and deletion.
 
-#### 5c. Route and navigation
+#### Key decisions
 
-- Add `GroupSettings` variant to `GroupView` in `Route.elm`
-- URL: `/groups/:id/settings`
-- "Settings" button/link accessible from the group shell header or Members tab
-- Navigate back to group on save
-
-#### 5d. Display group info in Members tab
-
-- Show subtitle (if set) below group name in tab header
-- Show description (if set) as a text block
-- Show links (if any) as clickable items
-- Add "Edit Group" button linking to group settings page
-
-#### 5e. Remove group locally
-
-- "Remove Group" button in group settings page (danger styled, at the bottom)
-- Confirmation: show group name and ask user to confirm
-- On confirm: delete group summary and all group events from IndexedDB via `Storage.deleteGroup`
-- Add `deleteGroup : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error ()` to `Storage.elm`
-- Navigate to Home page on success, remove from `groups` list in model
-- Does not require a domain event (local-only action)
-
-#### 5f. Main.elm wiring
-
-New Msg variants:
-- `GroupSettingsMsg Page.GroupSettings.Msg`
-- `OnGroupMetadataSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)`
-- `RemoveGroup Group.Id`
-- `OnGroupRemoved (ConcurrentTask.Response Idb.Error ())`
-
-Model additions:
-- `groupSettingsModel : Page.GroupSettings.Model`
-- `initGroupSettingsIfNeeded` — similar to `initEditEntryIfNeeded`, pre-populates from `groupState.groupMeta`
-
-On metadata save: also update the `GroupSummary` in IndexedDB if group name changed (via `Storage.saveGroupSummary`), and update the `groups` list in model.
-
-#### Files modified/created
-
-| File | Action | Description |
-| --- | --- | --- |
-| `src/Domain/Event.elm` | Modified | Add `buildGroupMetadataUpdatedEvent` |
-| `src/Route.elm` | Modified | Add `GroupSettings` to `GroupView` |
-| `src/Page/GroupSettings.elm` | New | Group metadata editing form |
-| `src/Page/Group/MembersTab.elm` | Modified | Display group info, "Edit Group" button |
-| `src/Storage.elm` | Modified | Add `deleteGroup` operation |
-| `src/Page/Group.elm` | Modified | Add settings callback to `Context` |
-| `src/Main.elm` | Modified | New Msg variants, settings handlers, route branch |
-| `translations/messages.en.json` | Modified | ~15 new keys |
-| `translations/messages.fr.json` | Modified | ~15 new keys |
-
-#### Translation keys needed (estimated)
-
-- Settings page: `groupSettingsTitle`, `groupSettingsName`, `groupSettingsSubtitle`, `groupSettingsSubtitlePlaceholder`, `groupSettingsDescription`, `groupSettingsDescriptionPlaceholder`, `groupSettingsLinks`, `groupSettingsLinkLabel`, `groupSettingsLinkUrl`, `groupSettingsAddLink`, `groupSettingsRemoveLink`, `groupSettingsSave`
-- Remove group: `groupRemoveButton`, `groupRemoveConfirm`, `groupRemoveWarning`
+- **No separate `Page.GroupSettings.elm`** — `Page.EditGroupMetadata` serves both editing and deletion, accessed via `/groups/:id/settings`
+- **`UpdateResult` pattern** instead of standard `( Model, Maybe Output )` — needed to signal both metadata output and delete request from a single update call
+- **Link validation**: label is mandatory (non-blank), URL must start with `http://` or `https://` (custom `urlString` field type)
 
 ### Step 6: Settlement actions
 
@@ -927,8 +794,69 @@ On metadata save: also update the `GroupSummary` in IndexedDB if group name chan
 
 **Spec ref:** Section 7.3
 
-- **"Mark as Paid" button**: On each settlement row, clicking creates a `Transfer` entry recording the payment.
-- **Highlight current user**: Settlement transactions involving the current user are visually highlighted.
+#### 6a. "Mark as Paid" on settlement rows
+
+Each settlement row in `BalanceTab` gains a "Mark as Paid" button. Clicking it creates a `Transfer` entry recording the payment, using the existing `Submit.newEntry` pipeline.
+
+**`UI.Components.settlementRow`** — Signature changes to accept a message:
+- Current: `settlementRow : I18n -> (Member.Id -> String) -> Settlement.Transaction -> Ui.Element msg`
+- New: `settlementRow : I18n -> (Member.Id -> String) -> Maybe (Settlement.Transaction -> msg) -> Settlement.Transaction -> Ui.Element msg`
+- When `Just onSettle`: renders a "Mark as Paid" button (primary, small) on the right side of the row
+- When `Nothing`: read-only display (no button) — useful if we need to render settlement rows without actions in the future
+
+**`Page.Group.BalanceTab`** — Signature changes to accept a settlement callback:
+- Current: `view : I18n -> Member.Id -> GroupState -> Ui.Element msg`
+- New: `view : I18n -> Member.Id -> Maybe (Settlement.Transaction -> msg) -> GroupState -> Ui.Element msg`
+- Passes `onSettle` through to `UI.Components.settlementRow`
+
+**`Page.Group.Context`** — Add settlement callback:
+- Add `onSettleTransaction : Settlement.Transaction -> msg` to `Context msg`
+
+#### 6b. Main.elm wiring
+
+New Msg variant:
+- `SettleTransaction Settlement.Transaction`
+
+Handler `SettleTransaction tx`:
+1. Build a `Page.NewEntry.TransferOutput` from the `Settlement.Transaction`:
+   - `amountCents = tx.amount`
+   - `fromMemberId = tx.from`
+   - `toMemberId = tx.to`
+   - `notes = Nothing`
+   - `date = Date.posixToDate model.currentTime` (today's date)
+2. Call `submitNewEntry` with the constructed output (reuses the existing transfer submission pipeline)
+3. On success (`OnEntrySaved`): recomputes group state, stays on Balance tab (not Entries tab as for normal entries)
+
+Note: The settlement action bypasses the `Page.NewEntry` form entirely — it goes straight to submission since all data is already known from the settlement computation. No user input needed.
+
+**Navigation after save:** When `SettleTransaction` triggers `OnEntrySaved`, the handler should stay on the Balance tab instead of navigating to Entries tab. This can be handled by checking the current route: if already on `Tab BalanceTab`, remain there.
+
+#### 6c. Highlight current user in settlement rows
+
+Settlement rows involving the current user are visually emphasized:
+
+**`UI.Components.settlementRow`** — Add `currentUserRootId : Member.Id` parameter:
+- New: `settlementRow : I18n -> (Member.Id -> String) -> Member.Id -> Maybe (Settlement.Transaction -> msg) -> Settlement.Transaction -> Ui.Element msg`
+- When `tx.from == currentUserRootId` or `tx.to == currentUserRootId`: use `Theme.primaryLight` background (or a subtle highlight color) instead of `Theme.neutral200`
+- The "you" suffix is already handled by `resolveName` in the caller — no special name formatting needed here
+
+**`Page.Group.BalanceTab`** — Thread `currentUserRootId` through to `settlementRow`.
+
+#### Files modified
+
+| File | Action | Description |
+| --- | --- | --- |
+| `src/UI/Components.elm` | Modified | `settlementRow` gains `onSettle` callback + `currentUserRootId` + highlight |
+| `src/Page/Group/BalanceTab.elm` | Modified | Pass settle callback and currentUserRootId to settlementRow |
+| `src/Page/Group.elm` | Modified | Add `onSettleTransaction` to `Context` |
+| `src/Main.elm` | Modified | `SettleTransaction` Msg + handler |
+| `translations/messages.en.json` | Modified | ~2 new keys |
+| `translations/messages.fr.json` | Modified | ~2 new keys |
+
+#### Translation keys needed
+
+- `settlementMarkAsPaid`: "Mark as Paid" / "Marquer comme payé"
+- `settlementPaid`: "Paid!" / "Payé !" (optional, for toast/feedback after marking)
 
 ### Not in scope (deferred to later phases)
 
@@ -945,15 +873,16 @@ These features from the specification require server sync, complex infrastructur
 - **PoW challenge** (Spec Section 3.1): Server-side feature for group creation anti-spam.
 - **PWA & service worker** (Spec Section 15): Installation, offline caching, auto-update.
 
-### Current file structure (after Steps 0-3)
+### Current file structure (after Steps 0-5)
 
 ```
 src/
   Main.elm                  -- App entry, 4 ports, AppState lifecycle, delegates to page modules
-  Route.elm                 -- Route types + URL parsing/serialization (EntryDetail, EditEntry routes)
+  Route.elm                 -- Route types + URL parsing (Entry, Member, GroupMetadata routes)
   Format.elm                -- Currency/amount formatting
   Identity.elm              -- Identity type, crypto generation, JSON codecs
-  Storage.elm               -- IndexedDB schema (4 stores), InitData, GroupSummary, CRUD operations
+  Storage.elm               -- IndexedDB schema (4 stores), InitData (Dict groups), CRUD + deleteGroup
+  Submit.elm                -- Event submission: attempt, newGroup, newEntry, editEntry, delete/restore, addMember, event
   UuidGen.elm               -- UUID v4/v7 generation helpers (extracted from Main)
   Translations.elm          -- (generated, gitignored) i18n module
   Domain/
@@ -962,7 +891,7 @@ src/
     Group.elm               -- Group/Link types + Link JSON codecs
     Member.elm              -- Member types + JSON codecs (Type, Metadata, PaymentInfo)
     Entry.elm               -- Entry types + full JSON codecs + replace helper
-    Event.elm               -- Event types + JSON codecs + build* helpers (entry + member + group)
+    Event.elm               -- Event types + JSON codecs + wrap + createGroup
     GroupState.elm           -- Event-sourced state machine + resolveMemberName
     Balance.elm              -- Balance computation
     Settlement.elm           -- Settlement plan computation
@@ -970,6 +899,8 @@ src/
   Form/
     NewGroup.elm            -- Group creation form (dwayne/elm-form)
     NewEntry.elm            -- Entry creation form: description, amount, date (dwayne/elm-form)
+    EditMemberMetadata.elm  -- Member metadata form: contact info + payment methods
+    EditGroupMetadata.elm   -- Group metadata form: name, subtitle, description, links
   Page/
     Loading.elm             -- "Loading..." centered text
     InitError.elm           -- Error display
@@ -980,11 +911,15 @@ src/
     NewGroup.elm            -- Group creation: Model/Msg/init/update/view (opaque Model)
     NewEntry.elm            -- Entry creation/edit: Model/Msg/init/initFromEntry/update/view, kindLocked
     EntryDetail.elm         -- Entry detail view: Context msg, expense/transfer content, actions
+    MemberDetail.elm        -- Member detail: inline rename, retire/unretire, metadata display
+    AddMember.elm           -- Simple virtual member creation form
+    EditMemberMetadata.elm  -- Member contact/payment info editing
+    EditGroupMetadata.elm   -- Group metadata editing + group deletion
     Group.elm               -- Group page shell (Context msg pattern) + tab routing
     Group/
       BalanceTab.elm        -- Balance cards + settlement plan + empty state
       EntriesTab.elm        -- Clickable entry cards, show/hide deleted toggle, Msg msg type alias
-      MembersTab.elm        -- Active + departed members
+      MembersTab.elm        -- Clickable member rows, group info display, add member + edit group buttons
       ActivitiesTab.elm     -- Placeholder "coming soon"
   UI/
     Theme.elm               -- Design tokens
@@ -1000,7 +935,7 @@ src/
 2. **All ports in `Main.elm`** -- nav ports (`navCmd`/`onNavEvent`) + task ports (`sendTask`/`receiveTask`)
 3. **Single `ConcurrentTask.Pool`** in top-level Model, shared by webcrypto/indexeddb
 4. **Page-owned form state** -- form pages (`Page.NewGroup`, `Page.NewEntry`) expose opaque `Model/Msg/init/update/view`; `update` returns `( Model, Maybe Output )`; Main checks for `Just output` to run submission/async logic
-5. **Domain modules unchanged** -- frontend wraps them, doesn't modify them (except adding JSON codecs, helpers like `resolveMemberName`, and event builders)
+5. **Domain modules unchanged** -- frontend wraps them, doesn't modify them (except adding JSON codecs, helpers like `resolveMemberName`, `Event.wrap`, and `Event.createGroup`)
 6. **JSON codecs colocated** -- each domain module has its own encode/decode functions
 7. **GroupState computed on demand** from events via `applyEvents` (caching later if needed)
 8. **UUID v7** for event IDs (time-sortable), **UUID v4** for entity IDs (members, entries, groups)
@@ -1017,7 +952,11 @@ src/
 19. **Argument ordering convention** -- stable/config args first, frequently-changing data last; enables partial application and future `Ui.lazy` usage
 20. **`GroupState.resolveMemberName`** as canonical name resolution -- eliminates threading a `resolveName` function; each tab view derives it locally from the `GroupState` it receives
 21. **`UuidGen` module** -- extracted UUID generation helpers (`v4`, `v4batch`, `v7`, `v7batch`); keeps Main and event builders focused on logic
-22. **Event builder functions in `Domain.Event`** -- `buildGroupCreationEvents`, `buildExpenseEvent`, `buildTransferEvent`, `buildEntryModifiedEvent`, `buildEntryDeletedEvent`, `buildEntryUndeletedEvent` encapsulate event construction; Main only provides config records
-23. **Events use actual member IDs** -- `triggeredBy` and `createdBy` store the identity's `publicKeyHash` (the actual member ID), not a root ID; root ID resolution is a group state concern handled in views and form initialization
-24. **`kindLocked` prevents entry type change** -- when editing an entry via `initFromEntry`, `kindLocked = True` hides the expense/transfer toggle; new entries have `kindLocked = False`
-25. **`showDeleted` outside `Context`** -- ephemeral UI state like `showDeleted : Bool` is passed separately to `Page.Group.view`, not bundled into the `Context msg` record which holds stable callbacks
+22. **`Event.wrap` + direct payload construction** -- callers construct `Event.Payload` values directly (e.g. `Event.MemberRenamed { ... }`) and use `Event.wrap` to create envelopes; `Event.createGroup` is the only multi-payload helper; `Submit.elm` handles UUID generation + IndexedDB persistence
+23. **`Submit` module** -- centralizes event submission logic: `attempt` (save to IndexedDB), `simpleEvent` (generate eventId + wrap + attempt), `newGroup`, `newEntry`, `editEntry`, `addMember`, `deleteEntry`, `restoreEntry`, `event` (generic)
+24. **Events use actual member IDs** -- `triggeredBy` and `createdBy` store the identity's `publicKeyHash` (the actual member ID), not a root ID; root ID resolution is a group state concern handled in views and form initialization
+25. **`kindLocked` prevents entry type change** -- when editing an entry via `initFromEntry`, `kindLocked = True` hides the expense/transfer toggle; new entries have `kindLocked = False`
+26. **`showDeleted` outside `Context`** -- ephemeral UI state like `showDeleted : Bool` is passed separately to `Page.Group.view`, not bundled into the `Context msg` record which holds stable callbacks
+27. **`Dict Group.Id GroupSummary`** for groups storage -- O(1) lookup/insert/remove instead of list scanning; used in `Storage.InitData` and `Main.Model`
+28. **`UpdateResult` pattern** -- `Page.EditGroupMetadata.update` returns `{ model, metadataOutput, deleteRequested }` when a page needs to signal multiple independent outputs from a single update
+29. **Custom field types** -- `urlString` (validates http(s):// prefix) and `emailString` (validates @domain.ext format) via `Field.customType` in form modules
