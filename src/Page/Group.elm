@@ -6,6 +6,7 @@ module Page.Group exposing (Context, view)
 import Domain.Entry as Entry
 import Domain.GroupState exposing (GroupState)
 import Domain.Member as Member
+import Domain.Settlement as Settlement
 import Page.Group.ActivitiesTab
 import Page.Group.BalanceTab
 import Page.Group.EntriesTab
@@ -27,6 +28,7 @@ type alias Context msg =
     , onMemberClick : Member.Id -> msg
     , onAddMember : msg
     , onEditGroupMetadata : msg
+    , onSettleTransaction : Settlement.Transaction -> msg
     , currentUserRootId : Member.Id
     }
 
@@ -52,7 +54,7 @@ tabContent : Context msg -> Bool -> GroupState -> GroupTab -> Ui.Element msg
 tabContent ctx showDeleted state tab =
     case tab of
         BalanceTab ->
-            Page.Group.BalanceTab.view ctx.i18n ctx.currentUserRootId state
+            Page.Group.BalanceTab.view ctx.i18n ctx.currentUserRootId ctx.onSettleTransaction state
 
         EntriesTab ->
             Page.Group.EntriesTab.view ctx.i18n

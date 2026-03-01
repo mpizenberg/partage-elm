@@ -165,5 +165,6 @@
   "groupRemoveWarning": "This will permanently remove this group from your device. This cannot be undone.",
   "groupInfoSubtitle": "Subtitle",
   "groupInfoDescription": "Description",
-  "groupInfoLinks": "Links"
+  "groupInfoLinks": "Links",
+  "settlementMarkAsPaid": "Mark as Paid"
 }

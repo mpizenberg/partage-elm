@@ -165,15 +165,27 @@ memberRow i18n onClick config =
         ]
 
 
-{-| A row displaying a settlement transaction.
+{-| A row displaying a settlement transaction, with a "Mark as Paid" button
+and highlighting when the current user is involved.
 -}
-settlementRow : I18n -> (Member.Id -> String) -> Settlement.Transaction -> Ui.Element msg
-settlementRow i18n resolveName t =
+settlementRow : I18n -> (Member.Id -> String) -> Member.Id -> (Settlement.Transaction -> msg) -> Settlement.Transaction -> Ui.Element msg
+settlementRow i18n resolveName currentUserRootId onSettle t =
+    let
+        isCurrentUser =
+            t.from == currentUserRootId || t.to == currentUserRootId
+
+        bgColor =
+            if isCurrentUser then
+                Theme.primaryLight
+
+            else
+                Theme.neutral200
+    in
     Ui.row
         [ Ui.width Ui.fill
         , Ui.padding Theme.spacing.sm
         , Ui.spacing Theme.spacing.sm
-        , Ui.background Theme.neutral200
+        , Ui.background bgColor
         , Ui.rounded Theme.rounding.sm
         ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.sm ]
@@ -184,6 +196,16 @@ settlementRow i18n resolveName t =
             (Ui.text (resolveName t.to))
         , Ui.el [ Ui.alignRight, Ui.Font.bold, Ui.Font.size Theme.fontSize.sm ]
             (Ui.text (Format.formatCents t.amount))
+        , Ui.el
+            [ Ui.Font.size Theme.fontSize.sm
+            , Ui.Font.color Theme.white
+            , Ui.background Theme.primary
+            , Ui.rounded Theme.rounding.sm
+            , Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
+            , Ui.pointer
+            , Ui.Events.onClick (onSettle t)
+            ]
+            (Ui.text (T.settlementMarkAsPaid i18n))
         ]
 
 

@@ -165,5 +165,6 @@
   "groupRemoveWarning": "Cela supprimera définitivement ce groupe de votre appareil. Cette action est irréversible.",
   "groupInfoSubtitle": "Sous-titre",
   "groupInfoDescription": "Description",
-  "groupInfoLinks": "Liens"
+  "groupInfoLinks": "Liens",
+  "settlementMarkAsPaid": "Marquer comme payé"
 }

@@ -14,8 +14,8 @@ import Ui
 import Ui.Font
 
 
-view : I18n -> Member.Id -> GroupState -> Ui.Element msg
-view i18n currentUserRootId state =
+view : I18n -> Member.Id -> (Settlement.Transaction -> msg) -> GroupState -> Ui.Element msg
+view i18n currentUserRootId onSettle state =
     if Dict.isEmpty state.entries then
         Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
             [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.balanceTabTitle i18n))
@@ -26,7 +26,7 @@ view i18n currentUserRootId state =
     else
         Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
             [ balancesSection i18n state currentUserRootId
-            , settlementSection i18n state
+            , settlementSection i18n currentUserRootId onSettle state
             ]
 
 
@@ -68,8 +68,8 @@ balancesSection i18n state currentUserRootId =
         ]
 
 
-settlementSection : I18n -> GroupState -> Ui.Element msg
-settlementSection i18n state =
+settlementSection : I18n -> Member.Id -> (Settlement.Transaction -> msg) -> GroupState -> Ui.Element msg
+settlementSection i18n currentUserRootId onSettle state =
     let
         resolveName =
             GroupState.resolveMemberName state
@@ -86,7 +86,7 @@ settlementSection i18n state =
           else
             let
                 settleTx =
-                    UI.Components.settlementRow i18n resolveName
+                    UI.Components.settlementRow i18n resolveName currentUserRootId onSettle
             in
             Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
                 (List.map settleTx transactions)

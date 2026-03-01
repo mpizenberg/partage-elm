@@ -10,6 +10,7 @@ import Domain.Event as Event
 import Domain.Group as Group
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
+import Domain.Settlement as Settlement
 import Form.NewGroup
 import Html exposing (Html)
 import Identity exposing (Identity)
@@ -111,6 +112,7 @@ type Msg
     | OnGroupCreated (ConcurrentTask.Response Idb.Error GroupSummary)
     | OnEntrySaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
       -- Entry actions
+    | SettleTransaction Settlement.Transaction
     | DeleteEntry Entry.Id
     | RestoreEntry Entry.Id
     | OnEntryActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
@@ -404,8 +406,17 @@ update msg model =
         OnEntrySaved groupId (ConcurrentTask.Success envelope) ->
             case appendEventAndRecompute model groupId envelope of
                 Just updatedModel ->
+                    let
+                        targetRoute =
+                            case model.route of
+                                GroupRoute _ (Tab BalanceTab) ->
+                                    GroupRoute groupId (Tab BalanceTab)
+
+                                _ ->
+                                    GroupRoute groupId (Tab EntriesTab)
+                    in
                     ( updatedModel
-                    , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab EntriesTab)))
+                    , Navigation.pushUrl navCmd (Route.toAppUrl targetRoute)
                     )
 
                 Nothing ->
@@ -413,6 +424,24 @@ update msg model =
 
         OnEntrySaved _ _ ->
             ( model, Cmd.none )
+
+        SettleTransaction tx ->
+            case ( model.appState, model.loadedGroup ) of
+                ( Ready readyData, Just loaded ) ->
+                    let
+                        output =
+                            Page.NewEntry.TransferOutput
+                                { amountCents = tx.amount
+                                , fromMemberId = tx.from
+                                , toMemberId = tx.to
+                                , notes = Nothing
+                                , date = Date.posixToDate model.currentTime
+                                }
+                    in
+                    submitNewEntry model readyData loaded output
+
+                _ ->
+                    ( model, Cmd.none )
 
         DeleteEntry rootId ->
             submitEntryAction model (\ctx loaded -> Submit.deleteEntry ctx loaded rootId)
@@ -1034,6 +1063,7 @@ viewReady model readyData =
                         , onMemberClick = \memberId -> NavigateTo (GroupRoute groupId (MemberDetail memberId))
                         , onAddMember = NavigateTo (GroupRoute groupId AddVirtualMember)
                         , onEditGroupMetadata = NavigateTo (GroupRoute groupId EditGroupMetadata)
+                        , onSettleTransaction = SettleTransaction
                         , currentUserRootId = resolveCurrentUserRootId readyData loaded.groupState
                         }
                         { showDeleted = model.showDeleted }
