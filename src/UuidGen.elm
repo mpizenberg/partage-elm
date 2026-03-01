@@ -27,7 +27,7 @@ v4batch n seed =
 v4batchHelp : Int -> Random.Seed -> List String -> ( List String, Random.Seed )
 v4batchHelp remaining seed acc =
     if remaining <= 0 then
-        ( acc, seed )
+        ( List.reverse acc, seed )
 
     else
         let
@@ -65,7 +65,7 @@ v7batch n time state =
 v7batchHelp : Int -> Time.Posix -> UUID.V7State -> List String -> ( List String, UUID.V7State )
 v7batchHelp remaining time state acc =
     if remaining <= 0 then
-        ( acc, state )
+        ( List.reverse acc, state )
 
     else
         let

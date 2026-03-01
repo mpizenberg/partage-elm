@@ -41,7 +41,7 @@ type GroupTab
     = BalanceTab
     | EntriesTab
     | MembersTab
-    | ActivitiesTab
+    | ActivityTab
 
 
 {-| Parse an AppUrl into a Route.
@@ -70,8 +70,8 @@ fromAppUrl appUrl =
         [ "groups", groupId, "members" ] ->
             GroupRoute groupId (Tab MembersTab)
 
-        [ "groups", groupId, "activities" ] ->
-            GroupRoute groupId (Tab ActivitiesTab)
+        [ "groups", groupId, "activity" ] ->
+            GroupRoute groupId (Tab ActivityTab)
 
         [ "groups", groupId, "new-entry" ] ->
             GroupRoute groupId NewEntry
@@ -140,8 +140,8 @@ toPathSegments route =
         GroupRoute groupId (Tab MembersTab) ->
             [ "groups", groupId, "members" ]
 
-        GroupRoute groupId (Tab ActivitiesTab) ->
-            [ "groups", groupId, "activities" ]
+        GroupRoute groupId (Tab ActivityTab) ->
+            [ "groups", groupId, "activity" ]
 
         GroupRoute groupId NewEntry ->
             [ "groups", groupId, "new-entry" ]
@@ -197,8 +197,8 @@ toPath route =
         GroupRoute groupId (Tab MembersTab) ->
             "/groups/" ++ groupId ++ "/members"
 
-        GroupRoute groupId (Tab ActivitiesTab) ->
-            "/groups/" ++ groupId ++ "/activities"
+        GroupRoute groupId (Tab ActivityTab) ->
+            "/groups/" ++ groupId ++ "/activity"
 
         GroupRoute groupId NewEntry ->
             "/groups/" ++ groupId ++ "/new-entry"

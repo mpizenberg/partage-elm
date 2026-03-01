@@ -3,11 +3,13 @@ module Page.Group exposing (Context, view)
 {-| Group page shell with tab routing, using real group data.
 -}
 
+import Domain.Activity as Activity
 import Domain.Entry as Entry
-import Domain.GroupState exposing (GroupState)
+import Domain.Event as Event
+import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
 import Domain.Settlement as Settlement
-import Page.Group.ActivitiesTab
+import Page.Group.ActivityTab
 import Page.Group.BalanceTab
 import Page.Group.EntriesTab
 import Page.Group.MembersTab
@@ -33,25 +35,25 @@ type alias Context msg =
     }
 
 
-view : Context msg -> { showDeleted : Bool } -> Ui.Element msg -> GroupState -> GroupTab -> Ui.Element msg
-view ctx { showDeleted } headerExtra groupState activeTab =
+view : Context msg -> { showDeleted : Bool } -> Ui.Element msg -> GroupState -> List Event.Envelope -> GroupTab -> Ui.Element msg
+view ctx { showDeleted } headerExtra groupState events activeTab =
     UI.Shell.groupShell
         { groupName = groupState.groupMeta.name
         , headerExtra = headerExtra
         , activeTab = activeTab
         , onTabClick = ctx.onTabClick
-        , content = tabContent ctx showDeleted groupState activeTab
+        , content = tabContent ctx showDeleted groupState events activeTab
         , tabLabels =
             { balance = T.tabBalance ctx.i18n
             , entries = T.tabEntries ctx.i18n
             , members = T.tabMembers ctx.i18n
-            , activities = T.tabActivities ctx.i18n
+            , activity = T.tabActivity ctx.i18n
             }
         }
 
 
-tabContent : Context msg -> Bool -> GroupState -> GroupTab -> Ui.Element msg
-tabContent ctx showDeleted state tab =
+tabContent : Context msg -> Bool -> GroupState -> List Event.Envelope -> GroupTab -> Ui.Element msg
+tabContent ctx showDeleted state events tab =
     case tab of
         BalanceTab ->
             Page.Group.BalanceTab.view ctx.i18n ctx.currentUserRootId ctx.onSettleTransaction state
@@ -74,5 +76,7 @@ tabContent ctx showDeleted state tab =
                 ctx.currentUserRootId
                 state
 
-        ActivitiesTab ->
-            Page.Group.ActivitiesTab.view ctx.i18n
+        ActivityTab ->
+            Page.Group.ActivityTab.view ctx.i18n
+                (GroupState.resolveMemberName state)
+                (Activity.fromEvents state events)

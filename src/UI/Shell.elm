@@ -14,7 +14,7 @@ type alias TabLabels =
     { balance : String
     , entries : String
     , members : String
-    , activities : String
+    , activity : String
     }
 
 
@@ -95,7 +95,7 @@ tabBar labels activeTab onTabClick =
         [ tab activeTab onTabClick BalanceTab labels.balance
         , tab activeTab onTabClick EntriesTab labels.entries
         , tab activeTab onTabClick MembersTab labels.members
-        , tab activeTab onTabClick ActivitiesTab labels.activities
+        , tab activeTab onTabClick ActivityTab labels.activity
         ]
 
 
