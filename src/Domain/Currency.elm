@@ -17,24 +17,14 @@ type Currency
     | JPY
     | AUD
     | CAD
-    | CNY
-    | SEK
     | NZD
-    | MXN
-    | SGD
-    | HKD
-    | NOK
-    | KRW
-    | TRY
-    | INR
-    | RUB
     | BRL
-    | ZAR
+    | ARS
 
 
 allCurrencies : List Currency
 allCurrencies =
-    [ EUR, USD, GBP, CHF, JPY, AUD, CAD, CNY, SEK, NZD, MXN, SGD, HKD, NOK, KRW, TRY, INR, RUB, BRL, ZAR ]
+    [ EUR, USD, GBP, CHF, JPY, AUD, CAD, NZD, BRL, ARS ]
 
 
 currencyCode : Currency -> String
@@ -61,44 +51,14 @@ currencyCode currency =
         CAD ->
             "CAD"
 
-        CNY ->
-            "CNY"
-
-        SEK ->
-            "SEK"
-
         NZD ->
             "NZD"
-
-        MXN ->
-            "MXN"
-
-        SGD ->
-            "SGD"
-
-        HKD ->
-            "HKD"
-
-        NOK ->
-            "NOK"
-
-        KRW ->
-            "KRW"
-
-        TRY ->
-            "TRY"
-
-        INR ->
-            "INR"
-
-        RUB ->
-            "RUB"
 
         BRL ->
             "BRL"
 
-        ZAR ->
-            "ZAR"
+        ARS ->
+            "ARS"
 
 
 {-| Number of decimal digits for a currency (e.g. 2 for cents).
@@ -107,9 +67,6 @@ precision : Currency -> Int
 precision currency =
     case currency of
         JPY ->
-            0
-
-        KRW ->
             0
 
         _ ->
@@ -148,44 +105,14 @@ currencyDecoder =
                     "cad" ->
                         Decode.succeed CAD
 
-                    "cny" ->
-                        Decode.succeed CNY
-
-                    "sek" ->
-                        Decode.succeed SEK
-
                     "nzd" ->
                         Decode.succeed NZD
-
-                    "mxn" ->
-                        Decode.succeed MXN
-
-                    "sgd" ->
-                        Decode.succeed SGD
-
-                    "hkd" ->
-                        Decode.succeed HKD
-
-                    "nok" ->
-                        Decode.succeed NOK
-
-                    "krw" ->
-                        Decode.succeed KRW
-
-                    "try" ->
-                        Decode.succeed TRY
-
-                    "inr" ->
-                        Decode.succeed INR
-
-                    "rub" ->
-                        Decode.succeed RUB
 
                     "brl" ->
                         Decode.succeed BRL
 
-                    "zar" ->
-                        Decode.succeed ZAR
+                    "ars" ->
+                        Decode.succeed ARS
 
                     _ ->
                         Decode.fail ("Unknown currency: " ++ s)
