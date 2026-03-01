@@ -389,7 +389,7 @@ update msg model =
                             GroupRoute summary.id (Tab BalanceTab)
                     in
                     ( { model
-                        | appState = Ready { readyData | groups = readyData.groups ++ [ summary ] }
+                        | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
                         , loadedGroup = Nothing
                       }
                     , Navigation.pushUrl navCmd (Route.toAppUrl newRoute)
@@ -415,30 +415,10 @@ update msg model =
             ( model, Cmd.none )
 
         DeleteEntry rootId ->
-            case ( model.appState, model.loadedGroup ) of
-                ( Ready readyData, Just loaded ) ->
-                    case submitContext (OnEntryActionSaved loaded.groupId) model readyData of
-                        Just ctx ->
-                            applySubmitResult model (Submit.deleteEntry ctx loaded rootId)
-
-                        Nothing ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            submitEntryAction model (\ctx loaded -> Submit.deleteEntry ctx loaded rootId)
 
         RestoreEntry rootId ->
-            case ( model.appState, model.loadedGroup ) of
-                ( Ready readyData, Just loaded ) ->
-                    case submitContext (OnEntryActionSaved loaded.groupId) model readyData of
-                        Just ctx ->
-                            applySubmitResult model (Submit.restoreEntry ctx loaded rootId)
-
-                        Nothing ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            submitEntryAction model (\ctx loaded -> Submit.restoreEntry ctx loaded rootId)
 
         OnEntryActionSaved groupId (ConcurrentTask.Success envelope) ->
             ( appendEventAndRecompute model groupId envelope
@@ -551,53 +531,12 @@ update msg model =
             case appendEventAndRecompute model groupId envelope of
                 Just updatedModel ->
                     let
-                        -- If group name changed, update the summary in model and IndexedDB
-                        ( finalModel, saveCmd ) =
-                            case ( updatedModel.loadedGroup, updatedModel.appState ) of
-                                ( Just loaded, Ready readyData ) ->
-                                    let
-                                        newName =
-                                            loaded.groupState.groupMeta.name
-
-                                        updatedGroups =
-                                            List.map
-                                                (\g ->
-                                                    if g.id == groupId then
-                                                        { g | name = newName }
-
-                                                    else
-                                                        g
-                                                )
-                                                readyData.groups
-
-                                        summary =
-                                            loaded.summary
-
-                                        updatedSummary =
-                                            { summary | name = newName }
-
-                                        ( pool, cmd ) =
-                                            ConcurrentTask.attempt
-                                                { pool = updatedModel.pool
-                                                , send = sendTask
-                                                , onComplete = \_ -> OnIdentitySaved (ConcurrentTask.Success ())
-                                                }
-                                                (Storage.saveGroupSummary readyData.db updatedSummary)
-                                    in
-                                    ( { updatedModel
-                                        | appState = Ready { readyData | groups = updatedGroups }
-                                        , loadedGroup = Just { loaded | summary = updatedSummary }
-                                        , pool = pool
-                                      }
-                                    , cmd
-                                    )
-
-                                _ ->
-                                    ( updatedModel, Cmd.none )
+                        ( finalModel, syncCmd ) =
+                            syncGroupSummaryName groupId updatedModel
                     in
                     ( finalModel
                     , Cmd.batch
-                        [ saveCmd
+                        [ syncCmd
                         , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab MembersTab)))
                         ]
                     )
@@ -615,7 +554,7 @@ update msg model =
             case model.appState of
                 Ready readyData ->
                     ( { model
-                        | appState = Ready { readyData | groups = List.filter (\g -> g.id /= groupId) readyData.groups }
+                        | appState = Ready { readyData | groups = Dict.remove groupId readyData.groups }
                         , loadedGroup = Nothing
                       }
                     , Navigation.pushUrl navCmd (Route.toAppUrl Home)
@@ -631,7 +570,7 @@ update msg model =
         OnGroupEventsLoaded groupId (ConcurrentTask.Success events) ->
             case model.appState of
                 Ready readyData ->
-                    case findGroupSummary groupId readyData.groups of
+                    case Dict.get groupId readyData.groups of
                         Just summary ->
                             let
                                 modelWithGroup =
@@ -685,6 +624,21 @@ applySubmitResult model ( state, cmd ) =
       }
     , cmd
     )
+
+
+submitEntryAction : Model -> (Submit.Context Msg -> LoadedGroup -> ( Submit.State Msg, Cmd Msg )) -> ( Model, Cmd Msg )
+submitEntryAction model action =
+    case ( model.appState, model.loadedGroup ) of
+        ( Ready readyData, Just loaded ) ->
+            case submitContext (OnEntryActionSaved loaded.groupId) model readyData of
+                Just ctx ->
+                    applySubmitResult model (action ctx loaded)
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        _ ->
+            ( model, Cmd.none )
 
 
 submitNewGroup : Model -> Storage.InitData -> Form.NewGroup.Output -> ( Model, Cmd Msg )
@@ -820,11 +774,13 @@ loadGroup model groupId =
 
 handleMemberDetailOutput : Model -> Storage.InitData -> LoadedGroup -> Page.MemberDetail.Output -> ( Model, Cmd Msg )
 handleMemberDetailOutput model readyData loaded output =
+    let
+        submitMember =
+            submitEvent (OnMemberActionSaved loaded.groupId) model readyData loaded
+    in
     case output of
         Page.MemberDetail.RenameOutput data ->
-            submitMemberEvent model
-                readyData
-                loaded
+            submitMember
                 (\eventId identity ->
                     Event.buildMemberRenamedEvent
                         { eventId = eventId
@@ -837,9 +793,7 @@ handleMemberDetailOutput model readyData loaded output =
                 )
 
         Page.MemberDetail.RetireOutput memberId ->
-            submitMemberEvent model
-                readyData
-                loaded
+            submitMember
                 (\eventId identity ->
                     Event.buildMemberRetiredEvent
                         { eventId = eventId
@@ -850,9 +804,7 @@ handleMemberDetailOutput model readyData loaded output =
                 )
 
         Page.MemberDetail.UnretireOutput memberId ->
-            submitMemberEvent model
-                readyData
-                loaded
+            submitMember
                 (\eventId identity ->
                     Event.buildMemberUnretiredEvent
                         { eventId = eventId
@@ -883,9 +835,9 @@ handleMemberDetailOutput model readyData loaded output =
                     ( model, Cmd.none )
 
 
-submitMemberEvent : Model -> Storage.InitData -> LoadedGroup -> (Event.Id -> Identity -> Event.Envelope) -> ( Model, Cmd Msg )
-submitMemberEvent model readyData loaded buildEnvelope =
-    case submitContext (OnMemberActionSaved loaded.groupId) model readyData of
+submitEvent : (ConcurrentTask.Response Idb.Error Event.Envelope -> Msg) -> Model -> Storage.InitData -> LoadedGroup -> (Event.Id -> Identity -> Event.Envelope) -> ( Model, Cmd Msg )
+submitEvent onComplete model readyData loaded buildEnvelope =
+    case submitContext onComplete model readyData of
         Just ctx ->
             applySubmitResult model (Submit.memberEvent ctx loaded buildEnvelope)
 
@@ -905,7 +857,8 @@ submitAddMember model readyData loaded output =
 
 submitMemberMetadata : Model -> Storage.InitData -> LoadedGroup -> Page.EditMemberMetadata.Output -> ( Model, Cmd Msg )
 submitMemberMetadata model readyData loaded output =
-    submitMemberEvent model
+    submitEvent (OnMemberActionSaved loaded.groupId)
+        model
         readyData
         loaded
         (\eventId identity ->
@@ -921,22 +874,50 @@ submitMemberMetadata model readyData loaded output =
 
 submitGroupMetadata : Model -> Storage.InitData -> LoadedGroup -> Event.GroupMetadataChange -> ( Model, Cmd Msg )
 submitGroupMetadata model readyData loaded change =
-    case submitContext (OnGroupMetadataActionSaved loaded.groupId) model readyData of
-        Just ctx ->
-            applySubmitResult model
-                (Submit.memberEvent ctx
-                    loaded
-                    (\eventId identity ->
-                        Event.buildGroupMetadataUpdatedEvent
-                            { eventId = eventId
-                            , memberId = identity.publicKeyHash
-                            , currentTime = model.currentTime
-                            , change = change
-                            }
-                    )
-                )
+    submitEvent (OnGroupMetadataActionSaved loaded.groupId)
+        model
+        readyData
+        loaded
+        (\eventId identity ->
+            Event.buildGroupMetadataUpdatedEvent
+                { eventId = eventId
+                , memberId = identity.publicKeyHash
+                , currentTime = model.currentTime
+                , change = change
+                }
+        )
 
-        Nothing ->
+
+{-| After a group metadata event is applied, sync the group name in the summary list and IndexedDB.
+-}
+syncGroupSummaryName : Group.Id -> Model -> ( Model, Cmd Msg )
+syncGroupSummaryName groupId model =
+    case ( model.loadedGroup, model.appState ) of
+        ( Just loaded, Ready readyData ) ->
+            let
+                updatedSummary =
+                    { id = groupId
+                    , name = loaded.groupState.groupMeta.name
+                    , defaultCurrency = loaded.summary.defaultCurrency
+                    }
+
+                ( pool, cmd ) =
+                    ConcurrentTask.attempt
+                        { pool = model.pool
+                        , send = sendTask
+                        , onComplete = \_ -> OnIdentitySaved (ConcurrentTask.Success ())
+                        }
+                        (Storage.saveGroupSummary readyData.db updatedSummary)
+            in
+            ( { model
+                | appState = Ready { readyData | groups = Dict.insert groupId updatedSummary readyData.groups }
+                , loadedGroup = Just { loaded | summary = updatedSummary }
+                , pool = pool
+              }
+            , cmd
+            )
+
+        _ ->
             ( model, Cmd.none )
 
 
@@ -989,11 +970,6 @@ appendEventAndRecompute model groupId envelope =
         Nothing ->
             Nothing
 
-
-findGroupSummary : Group.Id -> List GroupSummary -> Maybe GroupSummary
-findGroupSummary groupId groups =
-    List.filter (\g -> g.id == groupId) groups
-        |> List.head
 
 
 applyRouteGuard : Maybe Identity -> Route -> ( Route, Cmd Msg )
@@ -1065,7 +1041,7 @@ viewReady model readyData =
             UI.Shell.appShell
                 { title = T.shellPartage i18n
                 , headerExtra = langSelector
-                , content = Page.Home.view i18n NavigateTo readyData.groups
+                , content = Page.Home.view i18n NavigateTo (Dict.values readyData.groups)
                 }
 
         NewGroup ->

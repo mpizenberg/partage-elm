@@ -16,6 +16,7 @@ module Storage exposing
     )
 
 import ConcurrentTask exposing (ConcurrentTask)
+import Dict exposing (Dict)
 import Domain.Currency as Currency exposing (Currency)
 import Domain.Event as Event
 import Domain.Group as Group
@@ -31,7 +32,7 @@ import Time
 type alias InitData =
     { db : Idb.Db
     , identity : Maybe Identity
-    , groups : List GroupSummary
+    , groups : Dict Group.Id GroupSummary
     }
 
 
@@ -116,10 +117,10 @@ saveGroupSummary db summary =
     Idb.put db groupsStore (encodeGroupSummary summary)
 
 
-loadAllGroups : Idb.Db -> ConcurrentTask Idb.Error (List GroupSummary)
+loadAllGroups : Idb.Db -> ConcurrentTask Idb.Error (Dict Group.Id GroupSummary)
 loadAllGroups db =
     Idb.getAll db groupsStore groupSummaryDecoder
-        |> ConcurrentTask.map (List.map Tuple.second)
+        |> ConcurrentTask.map (List.map (\( _, s ) -> ( s.id, s )) >> Dict.fromList)
 
 
 saveGroupKey : Idb.Db -> Group.Id -> String -> ConcurrentTask Idb.Error ()
