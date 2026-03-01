@@ -161,34 +161,7 @@ newEntry ctx loaded output =
             Entry.newMetadata entryId ctx.identity.publicKeyHash ctx.currentTime
 
         kind =
-            case output of
-                Page.NewEntry.ExpenseOutput data ->
-                    Entry.Expense
-                        { description = data.description
-                        , amount = data.amountCents
-                        , currency = loaded.summary.defaultCurrency
-                        , defaultCurrencyAmount = Nothing
-                        , date = data.date
-                        , payers = [ { memberId = data.payerId, amount = data.amountCents } ]
-                        , beneficiaries =
-                            List.map
-                                (\mid -> Entry.ShareBeneficiary { memberId = mid, shares = 1 })
-                                data.beneficiaryIds
-                        , category = data.category
-                        , location = Nothing
-                        , notes = data.notes
-                        }
-
-                Page.NewEntry.TransferOutput data ->
-                    Entry.Transfer
-                        { amount = data.amountCents
-                        , currency = loaded.summary.defaultCurrency
-                        , defaultCurrencyAmount = Nothing
-                        , date = data.date
-                        , from = data.fromMemberId
-                        , to = data.toMemberId
-                        , notes = data.notes
-                        }
+            Page.NewEntry.outputToKind loaded.summary.defaultCurrency output
 
         entry =
             { meta = meta, kind = kind }

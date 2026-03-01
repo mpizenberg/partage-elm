@@ -150,8 +150,16 @@ beneficiaryItem : (Member.Id -> String) -> Entry.Beneficiary -> Ui.Element msg
 beneficiaryItem resolveName beneficiary =
     case beneficiary of
         Entry.ShareBeneficiary data ->
-            Ui.el [ Ui.Font.size Theme.fontSize.md ]
-                (Ui.text (resolveName data.memberId))
+            Ui.row [ Ui.spacing Theme.spacing.sm ]
+                [ Ui.el [ Ui.Font.size Theme.fontSize.md ]
+                    (Ui.text (resolveName data.memberId))
+                , if data.shares > 1 then
+                    Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
+                        (Ui.text ("×" ++ String.fromInt data.shares))
+
+                  else
+                    Ui.none
+                ]
 
         Entry.ExactBeneficiary data ->
             Ui.row [ Ui.spacing Theme.spacing.sm ]

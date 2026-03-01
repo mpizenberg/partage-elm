@@ -1,5 +1,6 @@
-module Page.NewEntry exposing (Config, EntryKind(..), Model, Msg, Output(..), init, initFromEntry, outputToKind, update, view)
+module Page.NewEntry exposing (Config, EntryKind(..), Model, Msg, Output(..), SplitData(..), init, initFromEntry, outputToKind, update, view)
 
+import Dict exposing (Dict)
 import Domain.Currency exposing (Currency)
 import Domain.Date as Date exposing (Date)
 import Domain.Entry as Entry
@@ -7,7 +8,6 @@ import Domain.Member as Member
 import Field
 import Form
 import Form.NewEntry as NewEntry exposing (Output)
-import Set exposing (Set)
 import Translations as T exposing (I18n)
 import UI.Theme as Theme
 import Ui
@@ -21,13 +21,28 @@ type EntryKind
     | TransferKind
 
 
+type PayerMode
+    = SinglePayer
+    | MultiPayer
+
+
+type SplitMode
+    = ShareSplit
+    | ExactSplit
+
+
+type SplitData
+    = ShareSplitData (List { memberId : Member.Id, shares : Int })
+    | ExactSplitData (List { memberId : Member.Id, amount : Int })
+
+
 type Output
     = ExpenseOutput
         { description : String
         , amountCents : Int
         , notes : Maybe String
-        , payerId : Member.Id
-        , beneficiaryIds : List Member.Id
+        , payers : List Entry.Payer
+        , split : SplitData
         , category : Maybe Entry.Category
         , date : Date
         }
@@ -49,8 +64,12 @@ type alias ModelData =
     , submitted : Bool
     , kind : EntryKind
     , kindLocked : Bool
+    , payerMode : PayerMode
     , payerId : Member.Id
-    , beneficiaryIds : Set Member.Id
+    , payerAmounts : Dict Member.Id String
+    , beneficiaries : Dict Member.Id Int
+    , splitMode : SplitMode
+    , exactAmounts : Dict Member.Id String
     , fromMemberId : Member.Id
     , toMemberId : Member.Id
     , category : Maybe Entry.Category
@@ -70,8 +89,14 @@ type Msg
     | InputAmount String
     | InputNotes String
     | InputKind EntryKind
+    | InputPayerMode PayerMode
     | InputPayer Member.Id
+    | TogglePayer Member.Id
+    | InputPayerAmount Member.Id String
     | ToggleBeneficiary Member.Id
+    | InputBeneficiaryShares Member.Id String
+    | InputSplitMode SplitMode
+    | InputExactAmount Member.Id String
     | InputFromMember Member.Id
     | InputToMember Member.Id
     | InputCategory (Maybe Entry.Category)
@@ -102,8 +127,12 @@ init config =
         , submitted = False
         , kind = ExpenseKind
         , kindLocked = False
+        , payerMode = SinglePayer
         , payerId = config.currentUserRootId
-        , beneficiaryIds = Set.fromList config.activeMembersRootIds
+        , payerAmounts = Dict.empty
+        , beneficiaries = Dict.fromList (List.map (\mid -> ( mid, 1 )) config.activeMembersRootIds)
+        , splitMode = ShareSplit
+        , exactAmounts = Dict.empty
         , fromMemberId = from
         , toMemberId = to
         , category = Nothing
@@ -118,17 +147,50 @@ initFromEntry config entry =
     case entry.kind of
         Entry.Expense data ->
             let
-                beneficiaryMemberIds =
+                isExactSplit =
+                    List.any
+                        (\b ->
+                            case b of
+                                Entry.ExactBeneficiary _ ->
+                                    True
+
+                                _ ->
+                                    False
+                        )
+                        data.beneficiaries
+
+                beneficiaryDict =
                     List.filterMap
                         (\b ->
                             case b of
                                 Entry.ShareBeneficiary s ->
-                                    Just s.memberId
+                                    Just ( s.memberId, s.shares )
 
                                 Entry.ExactBeneficiary e ->
-                                    Just e.memberId
+                                    Just ( e.memberId, 1 )
                         )
                         data.beneficiaries
+                        |> Dict.fromList
+
+                exactAmountsDict =
+                    if isExactSplit then
+                        List.filterMap
+                            (\b ->
+                                case b of
+                                    Entry.ExactBeneficiary e ->
+                                        Just ( e.memberId, centsToDecimalString e.amount )
+
+                                    _ ->
+                                        Nothing
+                            )
+                            data.beneficiaries
+                            |> Dict.fromList
+
+                    else
+                        Dict.empty
+
+                isMultiPayer =
+                    List.length data.payers > 1
 
                 payerId =
                     case data.payers of
@@ -137,6 +199,14 @@ initFromEntry config entry =
 
                         [] ->
                             config.currentUserRootId
+
+                payerAmountsDict =
+                    if isMultiPayer then
+                        List.map (\p -> ( p.memberId, centsToDecimalString p.amount )) data.payers
+                            |> Dict.fromList
+
+                    else
+                        Dict.empty
             in
             Model
                 { form =
@@ -147,8 +217,22 @@ initFromEntry config entry =
                 , submitted = False
                 , kind = ExpenseKind
                 , kindLocked = True
+                , payerMode =
+                    if isMultiPayer then
+                        MultiPayer
+
+                    else
+                        SinglePayer
                 , payerId = payerId
-                , beneficiaryIds = Set.fromList beneficiaryMemberIds
+                , payerAmounts = payerAmountsDict
+                , beneficiaries = beneficiaryDict
+                , splitMode =
+                    if isExactSplit then
+                        ExactSplit
+
+                    else
+                        ShareSplit
+                , exactAmounts = exactAmountsDict
                 , fromMemberId = config.currentUserRootId
                 , toMemberId = config.currentUserRootId
                 , category = data.category
@@ -164,8 +248,12 @@ initFromEntry config entry =
                 , submitted = False
                 , kind = TransferKind
                 , kindLocked = True
+                , payerMode = SinglePayer
                 , payerId = config.currentUserRootId
-                , beneficiaryIds = Set.fromList config.activeMembersRootIds
+                , payerAmounts = Dict.empty
+                , beneficiaries = Dict.fromList (List.map (\mid -> ( mid, 1 )) config.activeMembersRootIds)
+                , splitMode = ShareSplit
+                , exactAmounts = Dict.empty
                 , fromMemberId = data.from
                 , toMemberId = data.to
                 , category = Nothing
@@ -192,19 +280,52 @@ update msg (Model data) =
         InputKind kind ->
             ( Model { data | kind = kind }, Nothing )
 
+        InputPayerMode mode ->
+            ( Model { data | payerMode = mode }, Nothing )
+
         InputPayer memberId ->
             ( Model { data | payerId = memberId }, Nothing )
 
-        ToggleBeneficiary memberId ->
+        TogglePayer memberId ->
             let
-                newSet =
-                    if Set.member memberId data.beneficiaryIds then
-                        Set.remove memberId data.beneficiaryIds
+                newDict =
+                    if Dict.member memberId data.payerAmounts then
+                        Dict.remove memberId data.payerAmounts
 
                     else
-                        Set.insert memberId data.beneficiaryIds
+                        Dict.insert memberId "" data.payerAmounts
             in
-            ( Model { data | beneficiaryIds = newSet }, Nothing )
+            ( Model { data | payerAmounts = newDict }, Nothing )
+
+        InputPayerAmount memberId s ->
+            ( Model { data | payerAmounts = Dict.insert memberId s data.payerAmounts }, Nothing )
+
+        ToggleBeneficiary memberId ->
+            let
+                newDict =
+                    if Dict.member memberId data.beneficiaries then
+                        Dict.remove memberId data.beneficiaries
+
+                    else
+                        Dict.insert memberId 1 data.beneficiaries
+            in
+            ( Model { data | beneficiaries = newDict }, Nothing )
+
+        InputBeneficiaryShares memberId s ->
+            let
+                shares =
+                    String.toInt s |> Maybe.withDefault 1 |> max 1
+
+                newDict =
+                    Dict.update memberId (Maybe.map (\_ -> shares)) data.beneficiaries
+            in
+            ( Model { data | beneficiaries = newDict }, Nothing )
+
+        InputSplitMode mode ->
+            ( Model { data | splitMode = mode }, Nothing )
+
+        InputExactAmount memberId s ->
+            ( Model { data | exactAmounts = Dict.insert memberId s data.exactAmounts }, Nothing )
 
         InputFromMember memberId ->
             ( Model { data | fromMemberId = memberId }, Nothing )
@@ -231,7 +352,7 @@ submitExpense : ModelData -> ( Model, Maybe Output )
 submitExpense data =
     case Form.validate data.form |> V.toResult of
         Ok formOutput ->
-            if Set.isEmpty data.beneficiaryIds then
+            if Dict.isEmpty data.beneficiaries then
                 ( Model { data | submitted = True }, Nothing )
 
             else
@@ -242,20 +363,95 @@ submitExpense data =
 
                         else
                             Just (String.trim data.notes)
+
+                    splitResult =
+                        case data.splitMode of
+                            ShareSplit ->
+                                Ok
+                                    (ShareSplitData
+                                        (Dict.toList data.beneficiaries
+                                            |> List.map (\( mid, shares ) -> { memberId = mid, shares = shares })
+                                        )
+                                    )
+
+                            ExactSplit ->
+                                let
+                                    selectedIds =
+                                        Dict.keys data.beneficiaries
+
+                                    parsedAmounts =
+                                        List.filterMap
+                                            (\mid ->
+                                                Dict.get mid data.exactAmounts
+                                                    |> Maybe.andThen parseAmountCents
+                                                    |> Maybe.map (\cents -> { memberId = mid, amount = cents })
+                                            )
+                                            selectedIds
+                                in
+                                if List.length parsedAmounts /= List.length selectedIds then
+                                    Err ()
+
+                                else
+                                    let
+                                        totalExact =
+                                            List.foldl (\b acc -> acc + b.amount) 0 parsedAmounts
+                                    in
+                                    if totalExact /= formOutput.amountCents then
+                                        Err ()
+
+                                    else
+                                        Ok (ExactSplitData parsedAmounts)
+
+                    payersResult =
+                        case data.payerMode of
+                            SinglePayer ->
+                                Ok [ { memberId = data.payerId, amount = formOutput.amountCents } ]
+
+                            MultiPayer ->
+                                let
+                                    parsed =
+                                        Dict.toList data.payerAmounts
+                                            |> List.filterMap
+                                                (\( mid, s ) ->
+                                                    parseAmountCents s
+                                                        |> Maybe.map (\cents -> { memberId = mid, amount = cents })
+                                                )
+                                in
+                                if List.length parsed /= Dict.size data.payerAmounts then
+                                    Err ()
+
+                                else
+                                    let
+                                        totalPayer =
+                                            List.foldl (\p acc -> acc + p.amount) 0 parsed
+                                    in
+                                    if totalPayer /= formOutput.amountCents then
+                                        Err ()
+
+                                    else if List.isEmpty parsed then
+                                        Err ()
+
+                                    else
+                                        Ok parsed
                 in
-                ( Model { data | submitted = False }
-                , Just
-                    (ExpenseOutput
-                        { description = formOutput.description
-                        , amountCents = formOutput.amountCents
-                        , notes = notes
-                        , payerId = data.payerId
-                        , beneficiaryIds = Set.toList data.beneficiaryIds
-                        , category = data.category
-                        , date = formOutput.date
-                        }
-                    )
-                )
+                case ( splitResult, payersResult ) of
+                    ( Ok splitData, Ok payers ) ->
+                        ( Model { data | submitted = False }
+                        , Just
+                            (ExpenseOutput
+                                { description = formOutput.description
+                                , amountCents = formOutput.amountCents
+                                , notes = notes
+                                , payers = payers
+                                , split = splitData
+                                , category = data.category
+                                , date = formOutput.date
+                                }
+                            )
+                        )
+
+                    _ ->
+                        ( Model { data | submitted = True }, Nothing )
 
         Err _ ->
             ( Model { data | submitted = True }, Nothing )
@@ -439,38 +635,187 @@ dateField i18n data =
 
 payerField : I18n -> List Member.ChainState -> ModelData -> Ui.Element Msg
 payerField i18n activeMembers data =
-    memberDropdown i18n (T.newEntryPayerLabel i18n) InputPayer activeMembers data.payerId
+    let
+        modeToggle =
+            Ui.Input.chooseOne Ui.row
+                [ Ui.spacing Theme.spacing.sm ]
+                { onChange = InputPayerMode
+                , options =
+                    [ Ui.Input.option SinglePayer (Ui.text (T.newEntryPayerSingle i18n))
+                    , Ui.Input.option MultiPayer (Ui.text (T.newEntryPayerMultiple i18n))
+                    ]
+                , selected = Just data.payerMode
+                , label = Ui.Input.labelHidden (T.newEntryPayerMode i18n)
+                }
+
+        payerContent =
+            case data.payerMode of
+                SinglePayer ->
+                    [ memberDropdown i18n (T.newEntryPayerLabel i18n) InputPayer activeMembers data.payerId ]
+
+                MultiPayer ->
+                    let
+                        payerMismatchError =
+                            let
+                                totalPayer =
+                                    Dict.values data.payerAmounts
+                                        |> List.filterMap parseAmountCents
+                                        |> List.foldl (+) 0
+
+                                totalAmount =
+                                    Form.get .amount data.form |> Field.toMaybe |> Maybe.withDefault 0
+                            in
+                            if data.submitted && (Dict.isEmpty data.payerAmounts || totalPayer /= totalAmount) then
+                                errorWhen True (T.newEntryPayerMismatch i18n)
+
+                            else
+                                Ui.none
+                    in
+                    List.map (payerRow data.payerAmounts) activeMembers ++ [ payerMismatchError ]
+    in
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        ([ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
+            (Ui.text (T.newEntryPayerLabel i18n))
+         , modeToggle
+         ]
+            ++ payerContent
+        )
+
+
+payerRow : Dict Member.Id String -> Member.ChainState -> Ui.Element Msg
+payerRow payerAmounts member =
+    let
+        isSelected =
+            Dict.member member.rootId payerAmounts
+
+        checkLabel =
+            Ui.Input.label ("payer-" ++ member.rootId) [] (Ui.text member.name)
+
+        amountInput =
+            if isSelected then
+                Ui.Input.text [ Ui.width (Ui.px 80) ]
+                    { onChange = InputPayerAmount member.rootId
+                    , text = Maybe.withDefault "" (Dict.get member.rootId payerAmounts)
+                    , placeholder = Just "0.00"
+                    , label = Ui.Input.labelHidden member.name
+                    }
+
+            else
+                Ui.none
+    in
+    Ui.row [ Ui.spacing Theme.spacing.sm ]
+        [ Ui.Input.checkbox []
+            { onChange = \_ -> TogglePayer member.rootId
+            , icon = Nothing
+            , checked = isSelected
+            , label = checkLabel.id
+            }
+        , checkLabel.element
+        , amountInput
+        ]
 
 
 beneficiariesField : I18n -> List Member.ChainState -> ModelData -> Ui.Element Msg
 beneficiariesField i18n activeMembers data =
+    let
+        splitModeToggle =
+            Ui.Input.chooseOne Ui.row
+                [ Ui.spacing Theme.spacing.sm ]
+                { onChange = InputSplitMode
+                , options =
+                    [ Ui.Input.option ShareSplit (Ui.text (T.newEntrySplitShares i18n))
+                    , Ui.Input.option ExactSplit (Ui.text (T.newEntrySplitExact i18n))
+                    ]
+                , selected = Just data.splitMode
+                , label = Ui.Input.labelHidden (T.newEntrySplitMode i18n)
+                }
+
+        exactMismatchError =
+            case data.splitMode of
+                ExactSplit ->
+                    let
+                        totalExact =
+                            Dict.keys data.beneficiaries
+                                |> List.filterMap (\mid -> Dict.get mid data.exactAmounts |> Maybe.andThen parseAmountCents)
+                                |> List.foldl (+) 0
+
+                        totalAmount =
+                            Form.get .amount data.form |> Field.toMaybe |> Maybe.withDefault 0
+                    in
+                    if data.submitted && totalExact /= totalAmount then
+                        errorWhen True (T.newEntryExactMismatch i18n)
+
+                    else
+                        Ui.none
+
+                ShareSplit ->
+                    Ui.none
+    in
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
         (List.concat
             [ [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
                     (Ui.text (T.newEntryBeneficiariesLabel i18n))
               , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
                     (Ui.text (T.newEntryBeneficiariesHint i18n))
+              , splitModeToggle
               ]
-            , List.map (beneficiaryCheckbox data.beneficiaryIds) activeMembers
-            , [ errorWhen (data.submitted && Set.isEmpty data.beneficiaryIds) (T.newEntryNoBeneficiaries i18n) ]
+            , List.map (beneficiaryRow i18n data.splitMode data.beneficiaries data.exactAmounts) activeMembers
+            , [ errorWhen (data.submitted && Dict.isEmpty data.beneficiaries) (T.newEntryNoBeneficiaries i18n)
+              , exactMismatchError
+              ]
             ]
         )
 
 
-beneficiaryCheckbox : Set Member.Id -> Member.ChainState -> Ui.Element Msg
-beneficiaryCheckbox selectedIds member =
+beneficiaryRow : I18n -> SplitMode -> Dict Member.Id Int -> Dict Member.Id String -> Member.ChainState -> Ui.Element Msg
+beneficiaryRow i18n splitMode selectedBeneficiaries exactAmounts member =
     let
         checkLabel =
             Ui.Input.label ("beneficiary-" ++ member.rootId) [] (Ui.text member.name)
+
+        isSelected =
+            Dict.member member.rootId selectedBeneficiaries
+
+        extraInput =
+            if not isSelected then
+                Ui.none
+
+            else
+                case splitMode of
+                    ShareSplit ->
+                        case Dict.get member.rootId selectedBeneficiaries of
+                            Just shares ->
+                                Ui.row [ Ui.spacing Theme.spacing.xs ]
+                                    [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
+                                        (Ui.text (T.newEntrySharesLabel i18n))
+                                    , Ui.Input.text [ Ui.width (Ui.px 50) ]
+                                        { onChange = InputBeneficiaryShares member.rootId
+                                        , text = String.fromInt shares
+                                        , placeholder = Nothing
+                                        , label = Ui.Input.labelHidden (T.newEntrySharesLabel i18n)
+                                        }
+                                    ]
+
+                            Nothing ->
+                                Ui.none
+
+                    ExactSplit ->
+                        Ui.Input.text [ Ui.width (Ui.px 80) ]
+                            { onChange = InputExactAmount member.rootId
+                            , text = Maybe.withDefault "" (Dict.get member.rootId exactAmounts)
+                            , placeholder = Just "0.00"
+                            , label = Ui.Input.labelHidden (T.newEntrySplitExact i18n)
+                            }
     in
     Ui.row [ Ui.spacing Theme.spacing.sm ]
         [ Ui.Input.checkbox []
             { onChange = \_ -> ToggleBeneficiary member.rootId
             , icon = Nothing
-            , checked = Set.member member.rootId selectedIds
+            , checked = isSelected
             , label = checkLabel.id
             }
         , checkLabel.element
+        , extraInput
         ]
 
 
@@ -570,6 +915,32 @@ errorWhen condition message =
         Ui.none
 
 
+parseAmountCents : String -> Maybe Int
+parseAmountCents s =
+    String.toFloat (String.trim s)
+        |> Maybe.map (\f -> round (f * 100))
+        |> Maybe.andThen
+            (\cents ->
+                if cents >= 0 then
+                    Just cents
+
+                else
+                    Nothing
+            )
+
+
+centsToDecimalString : Int -> String
+centsToDecimalString cents =
+    let
+        whole =
+            cents // 100
+
+        frac =
+            remainderBy 100 cents
+    in
+    String.fromInt whole ++ "." ++ String.padLeft 2 '0' (String.fromInt frac)
+
+
 outputToKind : Currency -> Output -> Entry.Kind
 outputToKind currency output =
     case output of
@@ -580,11 +951,18 @@ outputToKind currency output =
                 , currency = currency
                 , defaultCurrencyAmount = Nothing
                 , date = data.date
-                , payers = [ { memberId = data.payerId, amount = data.amountCents } ]
+                , payers = data.payers
                 , beneficiaries =
-                    List.map
-                        (\mid -> Entry.ShareBeneficiary { memberId = mid, shares = 1 })
-                        data.beneficiaryIds
+                    case data.split of
+                        ShareSplitData items ->
+                            List.map
+                                (\b -> Entry.ShareBeneficiary { memberId = b.memberId, shares = b.shares })
+                                items
+
+                        ExactSplitData items ->
+                            List.map
+                                (\b -> Entry.ExactBeneficiary { memberId = b.memberId, amount = b.amount })
+                                items
                 , category = data.category
                 , location = Nothing
                 , notes = data.notes
