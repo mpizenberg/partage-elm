@@ -886,6 +886,94 @@ src/
 
 ---
 
+## Phase 5.6: Member Chain Refactoring + Main.elm Cleanup
+
+**Goal:** Align member storage with the entry chain model (keyed by rootId, grouping all device identities), simplify balance computation, and clean up Main.elm view code.
+
+**Status: COMPLETE**
+
+### Member chain refactoring
+
+Refactored member storage from a flat `Dict Member.Id MemberState` (keyed by device member ID) to a chain-based `Dict Member.Id Member.ChainState` (keyed by rootId), mirroring how entries group versions under a root ID.
+
+#### New types in `Domain/Member.elm`
+
+```elm
+type alias ChainState =
+    { rootId : Id, name : String, isRetired : Bool, metadata : Metadata
+    , currentMember : Info, allMembers : Dict Id Info }
+
+type alias Info =
+    { id : Id, previousId : Maybe Id, depth : Int, memberType : Type }
+
+pickCurrent : Info -> Info -> Info  -- deepest wins, ID breaks ties
+```
+
+Chain-level fields (`name`, `isRetired`, `metadata`) describe the person. Device-level fields (`id`, `previousId`, `depth`, `memberType`) describe the device identity. Removed old `MemberState` and `Member.Member` types.
+
+#### Event payload renames in `Domain/Event.elm`
+
+- `MemberRenamed`, `MemberRetired`, `MemberUnretired`, `MemberMetadataUpdated`: `memberId` → `rootId`
+- `MemberReplaced`: `{ previousId, newId }` → `{ rootId, previousId, newId }` — `rootId` identifies the chain
+- `MemberCreated`: unchanged (`memberId` is the new device/chain ID)
+- Encoders/decoders updated: JSON field `"memberId"` → `"rootId"` (no backward compat — database erased)
+
+#### Rewritten event handlers in `Domain/GroupState.elm`
+
+- `applyMemberCreated`: creates chain with `rootId = memberId`, `depth = 0`
+- `applyMemberRenamed/Retired/Unretired/MetadataUpdated`: lookup by `data.rootId`
+- `applyMemberReplaced`: entry-like validations (chain exists, previousId in allMembers, no self-replacement, no duplicate newId), uses `Member.pickCurrent`
+- `resolveMemberRootId`: checks direct dict key first, then scans `allMembers` dicts
+- `activeMembers`: `List.filter (not << .isRetired)`
+
+#### Simplified `Domain/Balance.elm`
+
+Removed `(Member.Id -> Member.Id)` resolver parameter from `computeBalances` and all internal functions. Entries already use rootIds, so no resolution needed.
+
+#### Updated consumers
+
+- `Main.elm`: `dummyMemberChainState`, `entryFormConfig`, `handleMemberDetailOutput`, `submitMemberMetadata` — all use `rootId =` instead of `memberId =`
+- `Page/NewEntry.elm`: `Config.activeMembers` simplified from `List { id, rootId }` to `List { rootId }`
+- `Page/MemberDetail.elm`: `member.currentMember.memberType` instead of `member.memberType`
+- `Page/Group/MembersTab.elm`: `.isActive` → `not << .isRetired`
+- `UI/Components.elm`: `memberRow` and `balanceCard` use `Member.ChainState`
+
+#### Updated tests
+
+- `GroupStateTest.elm`: fully rewritten — replacement tests cover chain mechanics (currentMember, allMembers, depth, previousId, concurrent replacement conflict resolution)
+- `BalanceTest.elm`: `Balance.computeBalances identity [...]` → `Balance.computeBalances [...]` (~11 occurrences)
+- `CodecTest.elm`: payload fuzzers updated with `rootId` fields
+
+### Main.elm view cleanup
+
+#### Extracted `currentUserRootId` helper
+
+```elm
+currentUserRootId : Storage.InitData -> LoadedGroup -> Member.Id
+```
+
+Replaces 4 occurrences of `GroupState.resolveMemberRootId loaded.groupState (readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault "")`.
+
+#### Extracted view functions from `viewReady`
+
+`viewReady` reduced from ~200 lines of inline route dispatch to a compact case expression using:
+
+- `shell` local helper — wraps content in `UI.Shell.appShell` with `langSelector`
+- `withGroup` / `withGroupShell` local helpers — handle loaded group check + optional shell wrapping
+- Named view functions returning just content (no shell wrapping):
+  - `viewGroupTab` — group tab page (entries/balance/members/settle) — handles its own shell via `Page.Group.view`
+  - `viewGroupNewEntry` — new entry form content
+  - `viewGroupEditEntry` — edit entry form content
+  - `viewGroupMemberDetail` — member detail content
+  - `viewGroupEntryDetail` — entry detail content (receives `EntryState` directly, `Dict.get` done at call site)
+- `viewLoadingGroup` inlined into `viewWithLoadedGroup` as local `loadingShell`
+
+#### Dedicated `OnGroupSummarySaved` msg
+
+Replaced the `\_ -> OnIdentitySaved (ConcurrentTask.Success ())` hack in `syncGroupSummaryName` with a proper `OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)` msg.
+
+---
+
 ## Architecture Decisions
 
 1. **`Browser.element`** with **`elm-url-navigation-port`** for SPA navigation
@@ -917,3 +1005,5 @@ src/
 27. **`Dict Group.Id GroupSummary`** for groups storage -- O(1) lookup/insert/remove instead of list scanning; used in `Storage.InitData` and `Main.Model`
 28. **`UpdateResult` pattern** -- `Page.EditGroupMetadata.update` returns `{ model, metadataOutput, deleteRequested }` when a page needs to signal multiple independent outputs from a single update
 29. **Custom field types** -- `urlString` (validates http(s):// prefix) and `emailString` (validates @domain.ext format) via `Field.customType` in form modules
+30. **Chain-based member model** -- members stored as `Dict Member.Id Member.ChainState` keyed by rootId, grouping all device identities under one chain (mirrors entry version chains); `Member.Info` per device tracks `id`, `previousId`, `depth`, `memberType`; `Member.pickCurrent` resolves concurrent replacements (deepest wins, ID breaks ties)
+31. **View function extraction** -- `viewReady` uses local `shell`/`withGroup`/`withGroupShell` helpers; extracted view functions (`viewGroupTab`, `viewGroupNewEntry`, etc.) return just content, shell wrapping applied at dispatch site
