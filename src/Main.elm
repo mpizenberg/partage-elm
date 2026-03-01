@@ -127,6 +127,7 @@ type Msg
     | OnGroupMetadataActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | RemoveGroup Group.Id
     | OnGroupRemoved Group.Id (ConcurrentTask.Response Idb.Error ())
+    | OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)
       -- Group loading
     | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error (List Event.Envelope))
 
@@ -592,6 +593,9 @@ update msg model =
         OnGroupRemoved _ _ ->
             ( model, Cmd.none )
 
+        OnGroupSummarySaved _ ->
+            ( model, Cmd.none )
+
         -- Group loading
         OnGroupEventsLoaded _ (ConcurrentTask.Success events) ->
             ( applyLoadedGroup events model
@@ -728,9 +732,15 @@ initPagesIfNeeded route model =
             model
 
 
+currentUserRootId : Storage.InitData -> LoadedGroup -> Member.Id
+currentUserRootId readyData loaded =
+    GroupState.resolveMemberRootId loaded.groupState
+        (readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault "")
+
+
 entryFormConfig : Storage.InitData -> LoadedGroup -> Time.Posix -> Page.NewEntry.Config
 entryFormConfig readyData loaded currentTime =
-    { currentUserRootId = GroupState.resolveMemberRootId loaded.groupState (readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault "")
+    { currentUserRootId = currentUserRootId readyData loaded
     , activeMembersRootIds = List.map .rootId (GroupState.activeMembers loaded.groupState)
     , today = Date.posixToDate currentTime
     }
@@ -876,7 +886,7 @@ syncGroupSummaryName groupId model =
                     ConcurrentTask.attempt
                         { pool = model.pool
                         , send = sendTask
-                        , onComplete = \_ -> OnIdentitySaved (ConcurrentTask.Success ())
+                        , onComplete = OnGroupSummarySaved
                         }
                         (Storage.saveGroupSummary readyData.db updatedSummary)
             in
@@ -1011,211 +1021,157 @@ viewReady model readyData =
 
         langSelector =
             UI.Components.languageSelector SwitchLanguage model.language
+
+        shell title content =
+            UI.Shell.appShell { title = title, headerExtra = langSelector, content = content }
+
+        withGroup groupId viewFn =
+            viewWithLoadedGroup model groupId langSelector viewFn
+
+        withGroupShell groupId title contentFn =
+            withGroup groupId (\loaded -> shell title (contentFn loaded))
     in
     case model.route of
         Setup ->
-            UI.Shell.appShell
-                { title = T.shellPartage i18n
-                , headerExtra = langSelector
-                , content = Page.Setup.view i18n { onGenerate = GenerateIdentity, isGenerating = model.generatingIdentity }
-                }
+            shell (T.shellPartage i18n)
+                (Page.Setup.view i18n { onGenerate = GenerateIdentity, isGenerating = model.generatingIdentity })
 
         Home ->
-            UI.Shell.appShell
-                { title = T.shellPartage i18n
-                , headerExtra = langSelector
-                , content = Page.Home.view i18n NavigateTo (Dict.values readyData.groups)
-                }
+            shell (T.shellPartage i18n)
+                (Page.Home.view i18n NavigateTo (Dict.values readyData.groups))
 
         NewGroup ->
-            UI.Shell.appShell
-                { title = T.shellNewGroup i18n
-                , headerExtra = langSelector
-                , content = Page.NewGroup.view i18n NewGroupMsg model.newGroupModel
-                }
-
-        GroupRoute groupId (Tab tab) ->
-            viewWithLoadedGroup model
-                groupId
-                langSelector
-                (\loaded ->
-                    Page.Group.view
-                        { i18n = i18n
-                        , onTabClick = SwitchTab
-                        , onNewEntry = NavigateTo (GroupRoute groupId NewEntry)
-                        , onEntryClick = \entryId -> NavigateTo (GroupRoute groupId (EntryDetail entryId))
-                        , onToggleDeleted = ToggleShowDeleted
-                        , onMemberClick = \memberId -> NavigateTo (GroupRoute groupId (MemberDetail memberId))
-                        , onAddMember = NavigateTo (GroupRoute groupId AddVirtualMember)
-                        , onEditGroupMetadata = NavigateTo (GroupRoute groupId EditGroupMetadata)
-                        , onSettleTransaction = SettleTransaction
-                        , currentUserRootId = GroupState.resolveMemberRootId loaded.groupState (readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault "")
-                        }
-                        { showDeleted = model.showDeleted }
-                        langSelector
-                        loaded.groupState
-                        tab
-                )
+            shell (T.shellNewGroup i18n)
+                (Page.NewGroup.view i18n NewGroupMsg model.newGroupModel)
 
         GroupRoute groupId (Join _) ->
-            UI.Shell.appShell
-                { title = T.shellJoinGroup i18n
-                , headerExtra = langSelector
-                , content =
-                    Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                        (Ui.text (T.joinGroupComingSoon i18n))
-                }
-
-        GroupRoute groupId NewEntry ->
-            viewWithLoadedGroup model
-                groupId
-                langSelector
-                (\loaded ->
-                    UI.Shell.appShell
-                        { title = T.shellNewEntry i18n
-                        , headerExtra = langSelector
-                        , content =
-                            Page.NewEntry.view i18n
-                                (GroupState.activeMembers loaded.groupState)
-                                NewEntryMsg
-                                model.newEntryModel
-                        }
+            shell (T.shellJoinGroup i18n)
+                (Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
+                    (Ui.text (T.joinGroupComingSoon i18n))
                 )
 
+        GroupRoute groupId (Tab tab) ->
+            withGroup groupId (viewGroupTab model readyData langSelector groupId tab)
+
         GroupRoute groupId (EntryDetail entryId) ->
-            viewWithLoadedGroup model
-                groupId
-                langSelector
+            withGroup groupId
                 (\loaded ->
                     case Dict.get entryId loaded.groupState.entries of
                         Just entryState ->
-                            UI.Shell.appShell
-                                { title = T.entryDetailTitle i18n
-                                , headerExtra = langSelector
-                                , content =
-                                    Page.EntryDetail.view i18n
-                                        { onEdit = NavigateTo (GroupRoute groupId (EditEntry entryId))
-                                        , onDelete = DeleteEntry entryId
-                                        , onRestore = RestoreEntry entryId
-                                        , onBack = NavigateTo (GroupRoute groupId (Tab EntriesTab))
-                                        , currentUserRootId = GroupState.resolveMemberRootId loaded.groupState (readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault "")
-                                        , resolveName = GroupState.resolveMemberName loaded.groupState
-                                        }
-                                        entryState
-                                }
+                            shell (T.entryDetailTitle i18n)
+                                (viewGroupEntryDetail model readyData groupId entryId loaded entryState)
 
                         Nothing ->
-                            UI.Shell.appShell
-                                { title = T.shellPartage i18n
-                                , headerExtra = langSelector
-                                , content = Page.NotFound.view i18n
-                                }
+                            shell (T.shellPartage i18n) (Page.NotFound.view i18n)
                 )
+
+        GroupRoute groupId NewEntry ->
+            withGroupShell groupId (T.shellNewEntry i18n) (viewGroupNewEntry model)
 
         GroupRoute groupId (EditEntry _) ->
-            viewWithLoadedGroup model
-                groupId
-                langSelector
-                (\loaded ->
-                    UI.Shell.appShell
-                        { title = T.editEntryTitle i18n
-                        , headerExtra = langSelector
-                        , content =
-                            Page.NewEntry.view i18n
-                                (GroupState.activeMembers loaded.groupState)
-                                NewEntryMsg
-                                model.newEntryModel
-                        }
-                )
+            withGroupShell groupId (T.editEntryTitle i18n) (viewGroupEditEntry model)
 
         GroupRoute groupId (MemberDetail _) ->
-            viewWithLoadedGroup model
-                groupId
-                langSelector
-                (\loaded ->
-                    UI.Shell.appShell
-                        { title = T.memberDetailTitle i18n
-                        , headerExtra = langSelector
-                        , content =
-                            Page.MemberDetail.view i18n
-                                (GroupState.resolveMemberRootId loaded.groupState (readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault ""))
-                                MemberDetailMsg
-                                model.memberDetailModel
-                        }
-                )
+            withGroupShell groupId (T.memberDetailTitle i18n) (viewGroupMemberDetail model readyData)
 
         GroupRoute groupId AddVirtualMember ->
-            viewWithLoadedGroup model
-                groupId
-                langSelector
-                (\_ ->
-                    UI.Shell.appShell
-                        { title = T.memberAddTitle i18n
-                        , headerExtra = langSelector
-                        , content =
-                            Page.AddMember.view i18n
-                                AddMemberMsg
-                                model.addMemberModel
-                        }
-                )
+            withGroupShell groupId
+                (T.memberAddTitle i18n)
+                (always (Page.AddMember.view i18n AddMemberMsg model.addMemberModel))
 
         GroupRoute groupId (EditMemberMetadata _) ->
-            viewWithLoadedGroup model
-                groupId
-                langSelector
-                (\_ ->
-                    UI.Shell.appShell
-                        { title = T.memberEditMetadataButton i18n
-                        , headerExtra = langSelector
-                        , content =
-                            Page.EditMemberMetadata.view i18n
-                                EditMemberMetadataMsg
-                                model.editMemberMetadataModel
-                        }
-                )
+            withGroupShell groupId
+                (T.memberEditMetadataButton i18n)
+                (always (Page.EditMemberMetadata.view i18n EditMemberMetadataMsg model.editMemberMetadataModel))
 
         GroupRoute groupId EditGroupMetadata ->
-            viewWithLoadedGroup model
-                groupId
-                langSelector
-                (\_ ->
-                    UI.Shell.appShell
-                        { title = T.groupSettingsTitle i18n
-                        , headerExtra = langSelector
-                        , content =
-                            Page.EditGroupMetadata.view i18n
-                                EditGroupMetadataMsg
-                                model.editGroupMetadataModel
-                        }
-                )
+            withGroupShell groupId
+                (T.groupSettingsTitle i18n)
+                (always (Page.EditGroupMetadata.view i18n EditGroupMetadataMsg model.editGroupMetadataModel))
 
         About ->
-            UI.Shell.appShell { title = T.shellPartage i18n, headerExtra = langSelector, content = Page.About.view i18n }
+            shell (T.shellPartage i18n) (Page.About.view i18n)
 
         NotFound ->
-            UI.Shell.appShell { title = T.shellPartage i18n, headerExtra = langSelector, content = Page.NotFound.view i18n }
+            shell (T.shellPartage i18n) (Page.NotFound.view i18n)
+
+
+viewGroupTab : Model -> Storage.InitData -> Ui.Element Msg -> Group.Id -> GroupTab -> LoadedGroup -> Ui.Element Msg
+viewGroupTab model readyData langSelector groupId tab loaded =
+    Page.Group.view
+        { i18n = model.i18n
+        , onTabClick = SwitchTab
+        , onNewEntry = NavigateTo (GroupRoute groupId NewEntry)
+        , onEntryClick = \entryId -> NavigateTo (GroupRoute groupId (EntryDetail entryId))
+        , onToggleDeleted = ToggleShowDeleted
+        , onMemberClick = \memberId -> NavigateTo (GroupRoute groupId (MemberDetail memberId))
+        , onAddMember = NavigateTo (GroupRoute groupId AddVirtualMember)
+        , onEditGroupMetadata = NavigateTo (GroupRoute groupId EditGroupMetadata)
+        , onSettleTransaction = SettleTransaction
+        , currentUserRootId = currentUserRootId readyData loaded
+        }
+        { showDeleted = model.showDeleted }
+        langSelector
+        loaded.groupState
+        tab
+
+
+viewGroupNewEntry : Model -> LoadedGroup -> Ui.Element Msg
+viewGroupNewEntry model loaded =
+    Page.NewEntry.view model.i18n
+        (GroupState.activeMembers loaded.groupState)
+        NewEntryMsg
+        model.newEntryModel
+
+
+viewGroupEntryDetail : Model -> Storage.InitData -> Group.Id -> Entry.Id -> LoadedGroup -> GroupState.EntryState -> Ui.Element Msg
+viewGroupEntryDetail model readyData groupId entryId loaded entryState =
+    Page.EntryDetail.view model.i18n
+        { onEdit = NavigateTo (GroupRoute groupId (EditEntry entryId))
+        , onDelete = DeleteEntry entryId
+        , onRestore = RestoreEntry entryId
+        , onBack = NavigateTo (GroupRoute groupId (Tab EntriesTab))
+        , currentUserRootId = currentUserRootId readyData loaded
+        , resolveName = GroupState.resolveMemberName loaded.groupState
+        }
+        entryState
+
+
+viewGroupEditEntry : Model -> LoadedGroup -> Ui.Element Msg
+viewGroupEditEntry model loaded =
+    Page.NewEntry.view model.i18n
+        (GroupState.activeMembers loaded.groupState)
+        NewEntryMsg
+        model.newEntryModel
+
+
+viewGroupMemberDetail : Model -> Storage.InitData -> LoadedGroup -> Ui.Element Msg
+viewGroupMemberDetail model readyData loaded =
+    Page.MemberDetail.view model.i18n
+        (currentUserRootId readyData loaded)
+        MemberDetailMsg
+        model.memberDetailModel
 
 
 viewWithLoadedGroup : Model -> Group.Id -> Ui.Element Msg -> (LoadedGroup -> Ui.Element Msg) -> Ui.Element Msg
-viewWithLoadedGroup model groupId langSelector content =
+viewWithLoadedGroup model groupId langSelector viewFn =
+    let
+        loadingShell =
+            UI.Shell.appShell
+                { title = T.shellPartage model.i18n
+                , headerExtra = langSelector
+                , content =
+                    Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
+                        (Ui.text (T.loadingGroup model.i18n))
+                }
+    in
     case model.loadedGroup of
         Just loaded ->
             if loaded.summary.id == groupId then
-                content loaded
+                viewFn loaded
 
             else
-                viewLoadingGroup model.i18n langSelector
+                loadingShell
 
         Nothing ->
-            viewLoadingGroup model.i18n langSelector
-
-
-viewLoadingGroup : I18n -> Ui.Element Msg -> Ui.Element Msg
-viewLoadingGroup i18n langSelector =
-    UI.Shell.appShell
-        { title = T.shellPartage i18n
-        , headerExtra = langSelector
-        , content =
-            Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                (Ui.text (T.loadingGroup i18n))
-        }
+            loadingShell
