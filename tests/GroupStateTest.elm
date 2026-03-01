@@ -41,7 +41,7 @@ memberCreationTests =
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents createAliceEvents
+                        GroupState.applyEvents createAliceEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .name
@@ -50,7 +50,7 @@ memberCreationTests =
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents createAliceEvents
+                        GroupState.applyEvents createAliceEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .rootId
@@ -59,7 +59,7 @@ memberCreationTests =
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents createAliceEvents
+                        GroupState.applyEvents createAliceEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .isActive
@@ -68,7 +68,7 @@ memberCreationTests =
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents createAliceEvents
+                        GroupState.applyEvents createAliceEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .isRetired
@@ -77,7 +77,7 @@ memberCreationTests =
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents createAliceEvents
+                        GroupState.applyEvents createAliceEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .isReplaced
@@ -86,7 +86,7 @@ memberCreationTests =
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents createAliceEvents
+                        GroupState.applyEvents createAliceEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .memberType
@@ -103,7 +103,7 @@ memberCreationTests =
                                ]
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents events GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .name
@@ -120,7 +120,7 @@ memberCreationTests =
                                ]
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents events GroupState.empty
                 in
                 Expect.equal 2 (Dict.size state.members)
         ]
@@ -141,7 +141,7 @@ memberRenameTests =
                                ]
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents events GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .name
@@ -157,7 +157,7 @@ memberRenameTests =
                         ]
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents events GroupState.empty
                 in
                 Expect.equal 0 (Dict.size state.members)
         ]
@@ -180,7 +180,7 @@ memberRetireTests =
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents retireAliceEvents
+                        GroupState.applyEvents retireAliceEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .isRetired
@@ -189,7 +189,7 @@ memberRetireTests =
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents retireAliceEvents
+                        GroupState.applyEvents retireAliceEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .isActive
@@ -206,7 +206,7 @@ memberRetireTests =
                                ]
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents events GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .isRetired
@@ -222,7 +222,7 @@ memberRetireTests =
                         ]
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents events GroupState.empty
                 in
                 Expect.equal 0 (Dict.size state.members)
         ]
@@ -244,7 +244,7 @@ memberUnretireTests =
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents unretireAliceEvents
+                        GroupState.applyEvents unretireAliceEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .isRetired
@@ -253,7 +253,7 @@ memberUnretireTests =
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents unretireAliceEvents
+                        GroupState.applyEvents unretireAliceEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .isActive
@@ -270,7 +270,7 @@ memberUnretireTests =
                                ]
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents events GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .isActive
@@ -295,7 +295,7 @@ memberUnretireTests =
                                ]
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents events GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .isReplaced
@@ -327,7 +327,7 @@ memberReplacementTests =
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents replaceAliceWithBobEvents
+                        GroupState.applyEvents replaceAliceWithBobEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .isReplaced
@@ -336,7 +336,7 @@ memberReplacementTests =
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents replaceAliceWithBobEvents
+                        GroupState.applyEvents replaceAliceWithBobEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .isActive
@@ -345,7 +345,7 @@ memberReplacementTests =
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents replaceAliceWithBobEvents
+                        GroupState.applyEvents replaceAliceWithBobEvents GroupState.empty
                 in
                 Dict.get "bob" state.members
                     |> Maybe.map .rootId
@@ -354,7 +354,7 @@ memberReplacementTests =
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents replaceAliceWithBobEvents
+                        GroupState.applyEvents replaceAliceWithBobEvents GroupState.empty
                 in
                 Dict.get "bob" state.members
                     |> Maybe.map .previousId
@@ -375,7 +375,7 @@ memberReplacementTests =
                                ]
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents events GroupState.empty
                 in
                 Dict.get "m3" state.members
                     |> Maybe.map .rootId
@@ -392,7 +392,7 @@ memberReplacementTests =
                                ]
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents events GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .isActive
@@ -413,7 +413,7 @@ memberReplacementTests =
                                ]
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents events GroupState.empty
                 in
                 -- Carol's rootId should still be her own (replacement was ignored)
                 Dict.get "carol" state.members
@@ -442,21 +442,21 @@ groupMetadataTests =
                         ]
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents events GroupState.empty
                 in
                 Expect.equal "Trip to Paris" state.groupMeta.name
         , test "partial update preserves name" <|
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents partialUpdateEvents
+                        GroupState.applyEvents partialUpdateEvents GroupState.empty
                 in
                 Expect.equal "Trip to Paris" state.groupMeta.name
         , test "partial update preserves subtitle" <|
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents partialUpdateEvents
+                        GroupState.applyEvents partialUpdateEvents GroupState.empty
                 in
                 Expect.equal (Just "Summer 2025") state.groupMeta.subtitle
         ]
@@ -506,7 +506,7 @@ eventOrderingTests =
                         ]
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents events GroupState.empty
                 in
                 Dict.get "alice" state.members
                     |> Maybe.map .name
@@ -530,7 +530,7 @@ eventOrderingTests =
                         ]
 
                     state =
-                        GroupState.applyEvents events
+                        GroupState.applyEvents events GroupState.empty
                 in
                 -- e2 sorts before e3 at same timestamp, so e3 is applied last
                 Dict.get "alice" state.members
@@ -557,10 +557,10 @@ eventOrderingTests =
                             randomInts
 
                     forwardState =
-                        GroupState.applyEvents (baseEvents ++ renameEvents)
+                        GroupState.applyEvents (baseEvents ++ renameEvents) GroupState.empty
 
                     reverseState =
-                        GroupState.applyEvents (baseEvents ++ List.reverse renameEvents)
+                        GroupState.applyEvents (baseEvents ++ List.reverse renameEvents) GroupState.empty
                 in
                 Expect.equal
                     (Dict.get "alice" forwardState.members |> Maybe.map .name)

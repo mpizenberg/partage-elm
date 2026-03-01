@@ -31,6 +31,7 @@ singleVersionTests =
                 state =
                     GroupState.applyEvents
                         [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry) ]
+                        GroupState.empty
             in
             [ test "current version id matches" <|
                 \_ ->
@@ -72,6 +73,7 @@ modificationTests =
                             [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
                             , makeEnvelope "e2" 2000 "admin" (EntryModified modifiedEntry)
                             ]
+                            GroupState.empty
                 in
                 Dict.get "entry1" state.entries
                     |> Maybe.map (.currentVersion >> .meta >> .id)
@@ -84,6 +86,7 @@ modificationTests =
                             [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
                             , makeEnvelope "e2" 2000 "admin" (EntryModified modifiedEntry)
                             ]
+                            GroupState.empty
                 in
                 Dict.get "entry1" state.entries
                     |> Maybe.map (.allVersions >> Dict.size)
@@ -104,6 +107,7 @@ modificationTests =
                     state =
                         GroupState.applyEvents
                             [ makeEnvelope "e1" 2000 "admin" (EntryModified orphanEntry) ]
+                            GroupState.empty
                 in
                 Expect.equal 0 (Dict.size state.entries)
         ]
@@ -123,6 +127,7 @@ deletionTests =
                             [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
                             , makeEnvelope "e2" 2000 "admin" (EntryDeleted { rootId = "entry1" })
                             ]
+                            GroupState.empty
                 in
                 Dict.get "entry1" state.entries
                     |> Maybe.map .isDeleted
@@ -139,6 +144,7 @@ deletionTests =
                             , makeEnvelope "e2" 2000 "admin" (EntryDeleted { rootId = "entry1" })
                             , makeEnvelope "e3" 3000 "admin" (EntryUndeleted { rootId = "entry1" })
                             ]
+                            GroupState.empty
                 in
                 Dict.get "entry1" state.entries
                     |> Maybe.map .isDeleted
@@ -158,6 +164,7 @@ deletionTests =
                             , makeEnvelope "e2" 1001 "admin" (EntryAdded entry2)
                             , makeEnvelope "e3" 2000 "admin" (EntryDeleted { rootId = "entry1" })
                             ]
+                            GroupState.empty
                 in
                 Expect.equal 1 (List.length (GroupState.activeEntries state))
         , test "delete non-existent entry is ignored" <|
@@ -166,6 +173,7 @@ deletionTests =
                     state =
                         GroupState.applyEvents
                             [ makeEnvelope "e1" 1000 "admin" (EntryDeleted { rootId = "ghost" }) ]
+                            GroupState.empty
                 in
                 Expect.equal 0 (Dict.size state.entries)
         ]
@@ -194,6 +202,7 @@ concurrentModificationTests =
                             , makeEnvelope "e2" 2000 "alice" (EntryModified mod1)
                             , makeEnvelope "e3" 3000 "bob" (EntryModified mod2)
                             ]
+                            GroupState.empty
                 in
                 Dict.get "entry1" state.entries
                     |> Maybe.map (.currentVersion >> .meta >> .id)
@@ -217,6 +226,7 @@ concurrentModificationTests =
                             , makeEnvelope "e2" 2000 "alice" (EntryModified mod1)
                             , makeEnvelope "e3" 2000 "bob" (EntryModified mod2)
                             ]
+                            GroupState.empty
                 in
                 -- "v-zzz" > "v-aaa" lexicographically, so v-zzz wins
                 Dict.get "entry1" state.entries
@@ -239,6 +249,7 @@ rejectionTests =
                             [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
                             , makeEnvelope "e2" 2000 "admin" (EntryAdded entry)
                             ]
+                            GroupState.empty
                 in
                 state.rejectedEntries
                     |> List.map Tuple.second
@@ -259,6 +270,7 @@ rejectionTests =
                     state =
                         GroupState.applyEvents
                             [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry) ]
+                            GroupState.empty
                 in
                 state.rejectedEntries
                     |> List.map Tuple.second
@@ -279,6 +291,7 @@ rejectionTests =
                     state =
                         GroupState.applyEvents
                             [ makeEnvelope "e1" 2000 "admin" (EntryModified orphanEntry) ]
+                            GroupState.empty
                 in
                 state.rejectedEntries
                     |> List.map Tuple.second
@@ -297,6 +310,7 @@ rejectionTests =
                             [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
                             , makeEnvelope "e2" 2000 "admin" (EntryModified modified)
                             ]
+                            GroupState.empty
                 in
                 Expect.equal [] state.rejectedEntries
         , test "multiple rejections are accumulated" <|
@@ -331,6 +345,7 @@ rejectionTests =
                             , makeEnvelope "e2" 2000 "admin" (EntryModified orphan1)
                             , makeEnvelope "e3" 3000 "admin" (EntryModified orphan2)
                             ]
+                            GroupState.empty
                 in
                 Expect.equal 2 (List.length state.rejectedEntries)
         ]

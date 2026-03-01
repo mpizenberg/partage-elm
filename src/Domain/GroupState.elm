@@ -103,12 +103,13 @@ empty =
     }
 
 
-{-| Build a GroupState by sorting and replaying a list of events from scratch.
-Balances are computed once after all events have been applied.
+{-| Apply a list of events to a GroupState.
+Events are sorted before application. Balances are recomputed after all events.
+Can be used from scratch with `empty` or incrementally on an existing state.
 -}
-applyEvents : List Envelope -> GroupState
-applyEvents events =
-    List.foldl applyEvent empty (Event.sortEvents events)
+applyEvents : List Envelope -> GroupState -> GroupState
+applyEvents events state =
+    List.foldl applyEvent state (Event.sortEvents events)
         |> recomputeBalances
 
 

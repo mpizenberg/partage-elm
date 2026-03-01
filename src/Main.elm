@@ -388,7 +388,7 @@ update msg model =
                 Ready readyData ->
                     let
                         newRoute =
-                            GroupRoute summary.id (Tab BalanceTab)
+                            GroupRoute summary.id (Tab EntriesTab)
                     in
                     ( { model
                         | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
@@ -607,8 +607,8 @@ update msg model =
                                         | loadedGroup =
                                             Just
                                                 { groupId = groupId
-                                                , events = events
-                                                , groupState = GroupState.applyEvents events
+                                                , events = List.reverse events
+                                                , groupState = GroupState.applyEvents events GroupState.empty
                                                 , summary = summary
                                                 }
                                     }
@@ -757,7 +757,7 @@ entryFormConfig readyData loaded currentTime =
         activeMembers =
             GroupState.activeMembers loaded.groupState
     in
-    { currentUserRootId = resolveCurrentUserRootId readyData loaded.groupState
+    { currentUserRootId = GroupState.resolveMemberRootId loaded.groupState (readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault "")
     , activeMembers = List.map (\m -> { id = m.id, rootId = m.rootId }) activeMembers
     , today = Date.posixToDate currentTime
     }
@@ -940,34 +940,29 @@ deleteGroup model groupId =
 
 appendEventAndRecompute : Model -> Group.Id -> Event.Envelope -> Maybe Model
 appendEventAndRecompute model groupId envelope =
+    mapLoadedGroup
+        (\loaded ->
+            { loaded
+                | events = envelope :: loaded.events
+                , groupState = GroupState.applyEvents [ envelope ] loaded.groupState
+            }
+        )
+        groupId
+        model
+
+
+mapLoadedGroup : (LoadedGroup -> LoadedGroup) -> Group.Id -> Model -> Maybe Model
+mapLoadedGroup f groupId model =
     case model.loadedGroup of
         Just loaded ->
             if loaded.groupId == groupId then
-                let
-                    -- TODO later: reverse the orders of events for efficient add of new events
-                    newEvents =
-                        loaded.events ++ [ envelope ]
-                in
-                Just
-                    { model
-                        | loadedGroup =
-                            Just
-                                { loaded
-                                    | events = newEvents
-
-                                    -- TODO later: change type of applyEvents to:
-                                    -- List Envelope -> GroupState -> GroupState
-                                    -- to avoid full recomputation when not needed.
-                                    , groupState = GroupState.applyEvents newEvents
-                                }
-                    }
+                Just { model | loadedGroup = Just (f loaded) }
 
             else
                 Nothing
 
         Nothing ->
             Nothing
-
 
 
 applyRouteGuard : Maybe Identity -> Route -> ( Route, Cmd Msg )
@@ -1064,7 +1059,7 @@ viewReady model readyData =
                         , onAddMember = NavigateTo (GroupRoute groupId AddVirtualMember)
                         , onEditGroupMetadata = NavigateTo (GroupRoute groupId EditGroupMetadata)
                         , onSettleTransaction = SettleTransaction
-                        , currentUserRootId = resolveCurrentUserRootId readyData loaded.groupState
+                        , currentUserRootId = GroupState.resolveMemberRootId loaded.groupState (readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault "")
                         }
                         { showDeleted = model.showDeleted }
                         langSelector
@@ -1113,7 +1108,7 @@ viewReady model readyData =
                                         , onDelete = DeleteEntry entryId
                                         , onRestore = RestoreEntry entryId
                                         , onBack = NavigateTo (GroupRoute groupId (Tab EntriesTab))
-                                        , currentUserRootId = resolveCurrentUserRootId readyData loaded.groupState
+                                        , currentUserRootId = GroupState.resolveMemberRootId loaded.groupState (readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault "")
                                         , resolveName = GroupState.resolveMemberName loaded.groupState
                                         }
                                         entryState
@@ -1153,7 +1148,7 @@ viewReady model readyData =
                         , headerExtra = langSelector
                         , content =
                             Page.MemberDetail.view i18n
-                                (resolveCurrentUserRootId readyData loaded.groupState)
+                                (GroupState.resolveMemberRootId loaded.groupState (readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault ""))
                                 MemberDetailMsg
                                 model.memberDetailModel
                         }
@@ -1234,11 +1229,3 @@ viewLoadingGroup i18n langSelector =
             Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
                 (Ui.text (T.loadingGroup i18n))
         }
-
-
-resolveCurrentUserRootId : Storage.InitData -> GroupState -> Member.Id
-resolveCurrentUserRootId readyData groupState =
-    readyData.identity
-        |> Maybe.andThen (\id -> Dict.get id.publicKeyHash groupState.members)
-        |> Maybe.map .rootId
-        |> Maybe.withDefault ""

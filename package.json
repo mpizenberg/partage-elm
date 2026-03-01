@@ -13,7 +13,7 @@
     "watch:i18n": "watchexec -w translations -- pnpm i18n",
     "dev": "pnpm prebuild && run-pty % elm-watch hot % pnpm watch:html % pnpm watch:js % pnpm watch:i18n",
     "test": "elm-test",
-    "format": "elm-format --yes src/"
+    "format": "elm-format --yes src/ tests/"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
