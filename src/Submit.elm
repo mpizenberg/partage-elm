@@ -5,7 +5,7 @@ module Submit exposing
     , addMember
     , deleteEntry
     , editEntry
-    , memberEvent
+    , event
     , newEntry
     , newGroup
     , restoreEntry
@@ -202,15 +202,11 @@ editEntry ctx loaded originalEntryId output =
                 newKind =
                     Page.NewEntry.outputToKind loaded.summary.defaultCurrency output
 
+                entry =
+                    Entry.replace entryState.currentVersion.meta newEntryId newKind
+
                 envelope =
-                    Event.buildEntryModifiedEvent
-                        { newEntryId = newEntryId
-                        , eventId = eventId
-                        , memberId = ctx.identity.publicKeyHash
-                        , currentTime = ctx.currentTime
-                        , previousEntry = entryState.currentVersion
-                        , newKind = newKind
-                        }
+                    Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash (Event.EntryModified entry)
             in
             Just (attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter } envelope loaded.groupId)
 
@@ -220,33 +216,23 @@ editEntry ctx loaded originalEntryId output =
 
 
 deleteEntry : Context msg -> LoadedGroup -> Entry.Id -> ( State msg, Cmd msg )
-deleteEntry =
-    entryAction Event.buildEntryDeletedEvent
+deleteEntry ctx loaded rootId =
+    simpleEvent ctx loaded (Event.EntryDeleted { rootId = rootId })
 
 
 restoreEntry : Context msg -> LoadedGroup -> Entry.Id -> ( State msg, Cmd msg )
-restoreEntry =
-    entryAction Event.buildEntryUndeletedEvent
+restoreEntry ctx loaded rootId =
+    simpleEvent ctx loaded (Event.EntryUndeleted { rootId = rootId })
 
 
-entryAction :
-    ({ eventId : Event.Id, memberId : Member.Id, currentTime : Time.Posix, rootId : Entry.Id } -> Event.Envelope)
-    -> Context msg
-    -> LoadedGroup
-    -> Entry.Id
-    -> ( State msg, Cmd msg )
-entryAction buildEvent ctx loaded rootId =
+simpleEvent : Context msg -> LoadedGroup -> Event.Payload -> ( State msg, Cmd msg )
+simpleEvent ctx loaded payload =
     let
         ( eventId, uuidStateAfter ) =
             UuidGen.v7 ctx.currentTime ctx.uuidState
 
         envelope =
-            buildEvent
-                { eventId = eventId
-                , memberId = ctx.identity.publicKeyHash
-                , currentTime = ctx.currentTime
-                , rootId = rootId
-                }
+            Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash payload
     in
     attempt { ctx | uuidState = uuidStateAfter } envelope loaded.groupId
 
@@ -255,16 +241,9 @@ entryAction buildEvent ctx loaded rootId =
 -- Member Event (generic)
 
 
-memberEvent : Context msg -> LoadedGroup -> (Event.Id -> Identity -> Event.Envelope) -> ( State msg, Cmd msg )
-memberEvent ctx loaded buildEnvelope =
-    let
-        ( eventId, uuidStateAfter ) =
-            UuidGen.v7 ctx.currentTime ctx.uuidState
-
-        envelope =
-            buildEnvelope eventId ctx.identity
-    in
-    attempt { ctx | uuidState = uuidStateAfter } envelope loaded.groupId
+event : Context msg -> LoadedGroup -> Event.Payload -> ( State msg, Cmd msg )
+event =
+    simpleEvent
 
 
 
@@ -280,14 +259,15 @@ addMember ctx loaded output =
         ( eventId, uuidStateAfter ) =
             UuidGen.v7 ctx.currentTime ctx.uuidState
 
-        envelope =
-            Event.buildMemberCreatedEvent
-                { eventId = eventId
-                , memberId = ctx.identity.publicKeyHash
-                , currentTime = ctx.currentTime
-                , newMemberId = newMemberId
+        payload =
+            Event.MemberCreated
+                { memberId = newMemberId
                 , name = output.name
                 , memberType = Member.Virtual
+                , addedBy = ctx.identity.publicKeyHash
                 }
+
+        envelope =
+            Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash payload
     in
     attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter } envelope loaded.groupId

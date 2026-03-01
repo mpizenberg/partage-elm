@@ -1,4 +1,4 @@
-module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), buildEntryDeletedEvent, buildEntryModifiedEvent, buildEntryUndeletedEvent, buildExpenseEvent, buildGroupCreationEvents, buildGroupMetadataUpdatedEvent, buildMemberCreatedEvent, buildMemberMetadataUpdatedEvent, buildMemberRenamedEvent, buildMemberRetiredEvent, buildMemberUnretiredEvent, buildTransferEvent, compareEnvelopes, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents)
+module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), buildExpenseEvent, buildGroupCreationEvents, buildTransferEvent, compareEnvelopes, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents, wrap)
 
 {-| Event types and ordering for the event-sourced state machine.
 -}
@@ -82,6 +82,17 @@ sortEvents =
     List.sortWith compareEnvelopes
 
 
+{-| Wrap a payload into an envelope.
+-}
+wrap : Id -> Time.Posix -> Member.Id -> Payload -> Envelope
+wrap eventId clientTimestamp triggeredBy payload =
+    { id = eventId
+    , clientTimestamp = clientTimestamp
+    , triggeredBy = triggeredBy
+    , payload = payload
+    }
+
+
 {-| Build the events for creating a new group:
 GroupMetadataUpdated + MemberCreated for the creator + MemberCreated for each virtual member.
 The eventIds list must have length >= 2 + length of virtualMembers.
@@ -96,15 +107,7 @@ buildGroupCreationEvents :
     }
     -> List Envelope
 buildGroupCreationEvents config =
-    let
-        envelope eventId payload =
-            { id = eventId
-            , clientTimestamp = config.currentTime
-            , triggeredBy = config.creatorId
-            , payload = payload
-            }
-    in
-    List.map2 envelope
+    List.map2 (\eventId -> wrap eventId config.currentTime config.creatorId)
         config.eventIds
         (GroupMetadataUpdated
             { name = Just config.groupName
@@ -170,11 +173,7 @@ buildExpenseEvent config =
                     }
             }
     in
-    { id = config.eventId
-    , clientTimestamp = config.currentTime
-    , triggeredBy = config.memberId
-    , payload = EntryAdded entry
-    }
+    wrap config.eventId config.currentTime config.memberId (EntryAdded entry)
 
 
 {-| Build a transfer entry event.
@@ -208,182 +207,8 @@ buildTransferEvent config =
                     }
             }
     in
-    { id = config.eventId
-    , clientTimestamp = config.currentTime
-    , triggeredBy = config.memberId
-    , payload = EntryAdded entry
-    }
+    wrap config.eventId config.currentTime config.memberId (EntryAdded entry)
 
-
-{-| Build an entry modification event, linking the new version to the previous one.
--}
-buildEntryModifiedEvent :
-    { newEntryId : Entry.Id
-    , eventId : Id
-    , memberId : Member.Id
-    , currentTime : Time.Posix
-    , previousEntry : Entry
-    , newKind : Entry.Kind
-    }
-    -> Envelope
-buildEntryModifiedEvent config =
-    let
-        entry =
-            Entry.replace config.previousEntry.meta config.newEntryId config.newKind
-    in
-    { id = config.eventId
-    , clientTimestamp = config.currentTime
-    , triggeredBy = config.memberId
-    , payload = EntryModified entry
-    }
-
-
-{-| Build an entry deletion event.
--}
-buildEntryDeletedEvent :
-    { eventId : Id
-    , memberId : Member.Id
-    , currentTime : Time.Posix
-    , rootId : Entry.Id
-    }
-    -> Envelope
-buildEntryDeletedEvent config =
-    { id = config.eventId
-    , clientTimestamp = config.currentTime
-    , triggeredBy = config.memberId
-    , payload = EntryDeleted { rootId = config.rootId }
-    }
-
-
-{-| Build an entry restoration event.
--}
-buildEntryUndeletedEvent :
-    { eventId : Id
-    , memberId : Member.Id
-    , currentTime : Time.Posix
-    , rootId : Entry.Id
-    }
-    -> Envelope
-buildEntryUndeletedEvent config =
-    { id = config.eventId
-    , clientTimestamp = config.currentTime
-    , triggeredBy = config.memberId
-    , payload = EntryUndeleted { rootId = config.rootId }
-    }
-
-
-{-| Build a member creation event.
--}
-buildMemberCreatedEvent :
-    { eventId : Id
-    , memberId : Member.Id
-    , currentTime : Time.Posix
-    , newMemberId : Member.Id
-    , name : String
-    , memberType : Member.Type
-    }
-    -> Envelope
-buildMemberCreatedEvent config =
-    { id = config.eventId
-    , clientTimestamp = config.currentTime
-    , triggeredBy = config.memberId
-    , payload =
-        MemberCreated
-            { memberId = config.newMemberId
-            , name = config.name
-            , memberType = config.memberType
-            , addedBy = config.memberId
-            }
-    }
-
-
-{-| Build a member rename event.
--}
-buildMemberRenamedEvent :
-    { eventId : Id
-    , memberId : Member.Id
-    , currentTime : Time.Posix
-    , targetMemberId : Member.Id
-    , oldName : String
-    , newName : String
-    }
-    -> Envelope
-buildMemberRenamedEvent config =
-    { id = config.eventId
-    , clientTimestamp = config.currentTime
-    , triggeredBy = config.memberId
-    , payload =
-        MemberRenamed
-            { memberId = config.targetMemberId
-            , oldName = config.oldName
-            , newName = config.newName
-            }
-    }
-
-
-{-| Build a member retirement event.
--}
-buildMemberRetiredEvent :
-    { eventId : Id
-    , memberId : Member.Id
-    , currentTime : Time.Posix
-    , targetMemberId : Member.Id
-    }
-    -> Envelope
-buildMemberRetiredEvent config =
-    { id = config.eventId
-    , clientTimestamp = config.currentTime
-    , triggeredBy = config.memberId
-    , payload = MemberRetired { memberId = config.targetMemberId }
-    }
-
-
-{-| Build a member reactivation event.
--}
-buildMemberUnretiredEvent :
-    { eventId : Id
-    , memberId : Member.Id
-    , currentTime : Time.Posix
-    , targetMemberId : Member.Id
-    }
-    -> Envelope
-buildMemberUnretiredEvent config =
-    { id = config.eventId
-    , clientTimestamp = config.currentTime
-    , triggeredBy = config.memberId
-    , payload = MemberUnretired { memberId = config.targetMemberId }
-    }
-
-
-{-| Build a member metadata update event.
--}
-buildMemberMetadataUpdatedEvent :
-    { eventId : Id
-    , memberId : Member.Id
-    , currentTime : Time.Posix
-    , targetMemberId : Member.Id
-    , metadata : Member.Metadata
-    }
-    -> Envelope
-buildMemberMetadataUpdatedEvent config =
-    { id = config.eventId
-    , clientTimestamp = config.currentTime
-    , triggeredBy = config.memberId
-    , payload =
-        MemberMetadataUpdated
-            { memberId = config.targetMemberId
-            , metadata = config.metadata
-            }
-    }
-
-
-buildGroupMetadataUpdatedEvent : { eventId : Id, memberId : Member.Id, currentTime : Time.Posix, change : GroupMetadataChange } -> Envelope
-buildGroupMetadataUpdatedEvent config =
-    { id = config.eventId
-    , clientTimestamp = config.currentTime
-    , triggeredBy = config.memberId
-    , payload = GroupMetadataUpdated config.change
-    }
 
 
 encodeEnvelope : Envelope -> Encode.Value

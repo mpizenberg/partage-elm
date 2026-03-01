@@ -775,44 +775,24 @@ loadGroup model groupId =
 handleMemberDetailOutput : Model -> Storage.InitData -> LoadedGroup -> Page.MemberDetail.Output -> ( Model, Cmd Msg )
 handleMemberDetailOutput model readyData loaded output =
     let
-        submitMember =
+        submit =
             submitEvent (OnMemberActionSaved loaded.groupId) model readyData loaded
     in
     case output of
         Page.MemberDetail.RenameOutput data ->
-            submitMember
-                (\eventId identity ->
-                    Event.buildMemberRenamedEvent
-                        { eventId = eventId
-                        , memberId = identity.publicKeyHash
-                        , currentTime = model.currentTime
-                        , targetMemberId = data.memberId
-                        , oldName = data.oldName
-                        , newName = data.newName
-                        }
+            submit
+                (Event.MemberRenamed
+                    { memberId = data.memberId
+                    , oldName = data.oldName
+                    , newName = data.newName
+                    }
                 )
 
         Page.MemberDetail.RetireOutput memberId ->
-            submitMember
-                (\eventId identity ->
-                    Event.buildMemberRetiredEvent
-                        { eventId = eventId
-                        , memberId = identity.publicKeyHash
-                        , currentTime = model.currentTime
-                        , targetMemberId = memberId
-                        }
-                )
+            submit (Event.MemberRetired { memberId = memberId })
 
         Page.MemberDetail.UnretireOutput memberId ->
-            submitMember
-                (\eventId identity ->
-                    Event.buildMemberUnretiredEvent
-                        { eventId = eventId
-                        , memberId = identity.publicKeyHash
-                        , currentTime = model.currentTime
-                        , targetMemberId = memberId
-                        }
-                )
+            submit (Event.MemberUnretired { memberId = memberId })
 
         Page.MemberDetail.NavigateToEditMetadata ->
             case model.route of
@@ -835,11 +815,11 @@ handleMemberDetailOutput model readyData loaded output =
                     ( model, Cmd.none )
 
 
-submitEvent : (ConcurrentTask.Response Idb.Error Event.Envelope -> Msg) -> Model -> Storage.InitData -> LoadedGroup -> (Event.Id -> Identity -> Event.Envelope) -> ( Model, Cmd Msg )
-submitEvent onComplete model readyData loaded buildEnvelope =
+submitEvent : (ConcurrentTask.Response Idb.Error Event.Envelope -> Msg) -> Model -> Storage.InitData -> LoadedGroup -> Event.Payload -> ( Model, Cmd Msg )
+submitEvent onComplete model readyData loaded payload =
     case submitContext onComplete model readyData of
         Just ctx ->
-            applySubmitResult model (Submit.memberEvent ctx loaded buildEnvelope)
+            applySubmitResult model (Submit.event ctx loaded payload)
 
         Nothing ->
             ( model, Cmd.none )
@@ -861,14 +841,10 @@ submitMemberMetadata model readyData loaded output =
         model
         readyData
         loaded
-        (\eventId identity ->
-            Event.buildMemberMetadataUpdatedEvent
-                { eventId = eventId
-                , memberId = identity.publicKeyHash
-                , currentTime = model.currentTime
-                , targetMemberId = output.memberId
-                , metadata = output.metadata
-                }
+        (Event.MemberMetadataUpdated
+            { memberId = output.memberId
+            , metadata = output.metadata
+            }
         )
 
 
@@ -878,14 +854,7 @@ submitGroupMetadata model readyData loaded change =
         model
         readyData
         loaded
-        (\eventId identity ->
-            Event.buildGroupMetadataUpdatedEvent
-                { eventId = eventId
-                , memberId = identity.publicKeyHash
-                , currentTime = model.currentTime
-                , change = change
-                }
-        )
+        (Event.GroupMetadataUpdated change)
 
 
 {-| After a group metadata event is applied, sync the group name in the summary list and IndexedDB.
