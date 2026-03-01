@@ -1117,7 +1117,6 @@ viewGroupTab model readyData langSelector groupId tab loaded =
         { showDeleted = model.showDeleted }
         langSelector
         loaded.groupState
-        loaded.events
         tab
 
 

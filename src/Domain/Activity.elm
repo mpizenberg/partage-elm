@@ -1,13 +1,12 @@
-module Domain.Activity exposing (Activity, Detail(..), fromEvents)
+module Domain.Activity exposing (Activity, Detail(..), StateContext, fromEnvelope)
 
-{-| Build a human-readable activity feed from raw group events.
+{-| Activity feed types and logic. Built incrementally by GroupState.applyEvents.
 -}
 
-import Dict
 import Domain.Currency exposing (Currency)
 import Domain.Entry as Entry exposing (Kind(..))
 import Domain.Event as Event exposing (Payload(..))
-import Domain.GroupState as GroupState exposing (GroupState)
+import Domain.Group as Group
 import Domain.Member as Member
 import Time
 
@@ -40,83 +39,68 @@ type Detail
     | GroupMetadataUpdatedDetail { changedFields : List String }
 
 
-{-| Convert a list of event envelopes to activity items, newest first.
-Events are replayed chronologically so each activity can compare against
-the state before the event was applied. The result is reversed for display.
+{-| State lookups needed to build an activity from an event.
+Constructed by GroupState to avoid circular dependency.
 -}
-fromEvents : List Event.Envelope -> List Activity
-fromEvents envelopes =
-    envelopes
-        |> Event.sortEvents
-        |> List.foldl
-            (\envelope ( state, activities ) ->
-                let
-                    activity =
-                        envelopeToActivity state envelope
-
-                    newState =
-                        GroupState.applyEvents [ envelope ] state
-                in
-                ( newState, activity :: activities )
-            )
-            ( GroupState.empty, [] )
-        |> Tuple.second
-
-
-envelopeToActivity : GroupState -> Event.Envelope -> Activity
-envelopeToActivity stateBefore envelope =
-    { eventId = envelope.id
-    , timestamp = envelope.clientTimestamp
-    , actorId = envelope.triggeredBy
-    , detail = payloadToDetail stateBefore envelope.payload
+type alias StateContext =
+    { resolveName : Member.Id -> String
+    , memberMetadata : Member.Id -> Member.Metadata
+    , entryDescription : Entry.Id -> String
+    , previousVersion : Entry.Entry -> Maybe Entry.Entry
+    , groupMeta : { name : String, subtitle : Maybe String, description : Maybe String, links : List Group.Link }
     }
 
 
-payloadToDetail : GroupState -> Payload -> Detail
-payloadToDetail stateBefore payload =
+{-| Build an Activity from an event envelope, given the state before the event.
+-}
+fromEnvelope : StateContext -> Event.Envelope -> Activity
+fromEnvelope ctx envelope =
+    { eventId = envelope.id
+    , timestamp = envelope.clientTimestamp
+    , actorId = envelope.triggeredBy
+    , detail = payloadToDetail ctx envelope.payload
+    }
+
+
+payloadToDetail : StateContext -> Payload -> Detail
+payloadToDetail ctx payload =
     case payload of
         EntryAdded entry ->
             entryAddedDetail entry
 
         EntryModified entry ->
-            entryModifiedDetail stateBefore entry
+            entryModifiedDetail ctx entry
 
         EntryDeleted { rootId } ->
-            EntryDeletedDetail { entryDescription = lookupEntryDescription stateBefore rootId }
+            EntryDeletedDetail { entryDescription = ctx.entryDescription rootId }
 
         EntryUndeleted { rootId } ->
-            EntryUndeletedDetail { entryDescription = lookupEntryDescription stateBefore rootId }
+            EntryUndeletedDetail { entryDescription = ctx.entryDescription rootId }
 
         MemberCreated data ->
             MemberCreatedDetail { name = data.name, memberType = data.memberType }
 
         MemberReplaced { rootId } ->
-            MemberReplacedDetail { name = GroupState.resolveMemberName stateBefore rootId }
+            MemberReplacedDetail { name = ctx.resolveName rootId }
 
         MemberRenamed data ->
             MemberRenamedDetail { oldName = data.oldName, newName = data.newName }
 
         MemberRetired { rootId } ->
-            MemberRetiredDetail { name = GroupState.resolveMemberName stateBefore rootId }
+            MemberRetiredDetail { name = ctx.resolveName rootId }
 
         MemberUnretired { rootId } ->
-            MemberUnretiredDetail { name = GroupState.resolveMemberName stateBefore rootId }
+            MemberUnretiredDetail { name = ctx.resolveName rootId }
 
         MemberMetadataUpdated data ->
-            let
-                oldMetadata =
-                    Dict.get data.rootId stateBefore.members
-                        |> Maybe.map .metadata
-                        |> Maybe.withDefault Member.emptyMetadata
-            in
             MemberMetadataUpdatedDetail
-                { name = GroupState.resolveMemberName stateBefore data.rootId
-                , updatedFields = memberMetadataChanges oldMetadata data.metadata
+                { name = ctx.resolveName data.rootId
+                , updatedFields = memberMetadataChanges (ctx.memberMetadata data.rootId) data.metadata
                 }
 
         GroupMetadataUpdated change ->
             GroupMetadataUpdatedDetail
-                { changedFields = groupMetadataChangedFields stateBefore.groupMeta change }
+                { changedFields = groupMetadataChangedFields ctx.groupMeta change }
 
 
 entryAddedDetail : Entry.Entry -> Detail
@@ -129,11 +113,11 @@ entryAddedDetail entry =
             TransferAddedDetail { amount = data.amount, currency = data.currency }
 
 
-entryModifiedDetail : GroupState -> Entry.Entry -> Detail
-entryModifiedDetail state entry =
+entryModifiedDetail : StateContext -> Entry.Entry -> Detail
+entryModifiedDetail ctx entry =
     let
         previousEntry =
-            lookupPreviousVersion state entry
+            ctx.previousVersion entry
     in
     case entry.kind of
         Expense data ->
@@ -150,16 +134,6 @@ entryModifiedDetail state entry =
                 , currency = data.currency
                 , changes = transferChanges previousEntry data
                 }
-
-
-lookupPreviousVersion : GroupState -> Entry.Entry -> Maybe Entry.Entry
-lookupPreviousVersion state entry =
-    entry.meta.previousVersionId
-        |> Maybe.andThen
-            (\prevId ->
-                Dict.get entry.meta.rootId state.entries
-                    |> Maybe.andThen (\entryState -> Dict.get prevId entryState.allVersions)
-            )
 
 
 expenseChanges : Maybe Entry.Entry -> Entry.ExpenseData -> List String
@@ -280,7 +254,10 @@ memberMetadataChanges oldMeta newMeta =
         ]
 
 
-groupMetadataChangedFields : GroupState.GroupMetadata -> Event.GroupMetadataChange -> List String
+groupMetadataChangedFields :
+    { a | name : String, subtitle : Maybe String, description : Maybe String, links : List Group.Link }
+    -> Event.GroupMetadataChange
+    -> List String
 groupMetadataChangedFields oldMeta change =
     List.filterMap identity
         [ case change.name of
@@ -324,18 +301,3 @@ groupMetadataChangedFields oldMeta change =
             Nothing ->
                 Nothing
         ]
-
-
-lookupEntryDescription : GroupState -> Entry.Id -> String
-lookupEntryDescription state rootId =
-    case Dict.get rootId state.entries of
-        Just entryState ->
-            case entryState.currentVersion.kind of
-                Expense data ->
-                    data.description
-
-                Transfer _ ->
-                    "Transfer"
-
-        Nothing ->
-            rootId

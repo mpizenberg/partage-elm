@@ -15,8 +15,9 @@ module Domain.GroupState exposing
 -}
 
 import Dict exposing (Dict)
+import Domain.Activity as Activity exposing (Activity)
 import Domain.Balance as Balance exposing (MemberBalance)
-import Domain.Entry as Entry exposing (Entry)
+import Domain.Entry as Entry exposing (Entry, Kind(..))
 import Domain.Event as Event exposing (Envelope, Payload(..))
 import Domain.Group as Group
 import Domain.Member as Member
@@ -29,6 +30,7 @@ type alias GroupState =
     , entries : Dict Entry.Id EntryState
     , balances : Dict Member.Id MemberBalance
     , groupMeta : GroupMetadata
+    , activities : List Activity
     , rejectedEntries : List ( Entry.Entry, RejectionReason )
     }
 
@@ -82,6 +84,7 @@ empty =
         , description = Nothing
         , links = []
         }
+    , activities = []
     , rejectedEntries = []
     }
 
@@ -104,12 +107,26 @@ recomputeBalances state =
 
 
 {-| Apply a single event to the group state, without recomputing balances.
+Builds an activity item from the state before the event is applied, then
+mutates the state. Activities are stored newest-first (prepended).
 Invalid or duplicate events are silently ignored.
 Not exposed — use `applyEvents` which recomputes balances after all events.
 -}
 applyEvent : Envelope -> GroupState -> GroupState
 applyEvent envelope state =
-    case envelope.payload of
+    let
+        activity =
+            Activity.fromEnvelope (activityContext state) envelope
+
+        newState =
+            applyPayload envelope.payload state
+    in
+    { newState | activities = activity :: newState.activities }
+
+
+applyPayload : Payload -> GroupState -> GroupState
+applyPayload payload state =
+    case payload of
         MemberCreated data ->
             applyMemberCreated data state
 
@@ -440,6 +457,49 @@ applyGroupMetadataUpdated change state =
             }
     in
     { state | groupMeta = updated }
+
+
+
+-- ACTIVITY BUILDING
+
+
+activityContext : GroupState -> Activity.StateContext
+activityContext state =
+    { resolveName = resolveMemberName state
+    , memberMetadata =
+        \rootId ->
+            Dict.get rootId state.members
+                |> Maybe.map .metadata
+                |> Maybe.withDefault Member.emptyMetadata
+    , entryDescription = lookupEntryDescription state
+    , previousVersion = lookupPreviousVersion state
+    , groupMeta = state.groupMeta
+    }
+
+
+lookupPreviousVersion : GroupState -> Entry -> Maybe Entry
+lookupPreviousVersion state entry =
+    entry.meta.previousVersionId
+        |> Maybe.andThen
+            (\prevId ->
+                Dict.get entry.meta.rootId state.entries
+                    |> Maybe.andThen (\entryState -> Dict.get prevId entryState.allVersions)
+            )
+
+
+lookupEntryDescription : GroupState -> Entry.Id -> String
+lookupEntryDescription state rootId =
+    case Dict.get rootId state.entries of
+        Just entryState ->
+            case entryState.currentVersion.kind of
+                Expense data ->
+                    data.description
+
+                Transfer _ ->
+                    "Transfer"
+
+        Nothing ->
+            rootId
 
 
 

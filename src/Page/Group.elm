@@ -3,9 +3,7 @@ module Page.Group exposing (Context, view)
 {-| Group page shell with tab routing, using real group data.
 -}
 
-import Domain.Activity as Activity
 import Domain.Entry as Entry
-import Domain.Event as Event
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
 import Domain.Settlement as Settlement
@@ -35,14 +33,14 @@ type alias Context msg =
     }
 
 
-view : Context msg -> { showDeleted : Bool } -> Ui.Element msg -> GroupState -> List Event.Envelope -> GroupTab -> Ui.Element msg
-view ctx { showDeleted } headerExtra groupState events activeTab =
+view : Context msg -> { showDeleted : Bool } -> Ui.Element msg -> GroupState -> GroupTab -> Ui.Element msg
+view ctx { showDeleted } headerExtra groupState activeTab =
     UI.Shell.groupShell
         { groupName = groupState.groupMeta.name
         , headerExtra = headerExtra
         , activeTab = activeTab
         , onTabClick = ctx.onTabClick
-        , content = tabContent ctx showDeleted groupState events activeTab
+        , content = tabContent ctx showDeleted groupState activeTab
         , tabLabels =
             { balance = T.tabBalance ctx.i18n
             , entries = T.tabEntries ctx.i18n
@@ -52,8 +50,8 @@ view ctx { showDeleted } headerExtra groupState events activeTab =
         }
 
 
-tabContent : Context msg -> Bool -> GroupState -> List Event.Envelope -> GroupTab -> Ui.Element msg
-tabContent ctx showDeleted state events tab =
+tabContent : Context msg -> Bool -> GroupState -> GroupTab -> Ui.Element msg
+tabContent ctx showDeleted state tab =
     case tab of
         BalanceTab ->
             Page.Group.BalanceTab.view ctx.i18n ctx.currentUserRootId ctx.onSettleTransaction state
@@ -79,4 +77,4 @@ tabContent ctx showDeleted state events tab =
         ActivityTab ->
             Page.Group.ActivityTab.view ctx.i18n
                 (GroupState.resolveMemberName state)
-                (Activity.fromEvents events)
+                state.activities
