@@ -16,6 +16,7 @@ Local-first bill-splitting app built in Elm. Domain logic is event-sourced; fron
 - `pnpm dev` — elm-watch hot + HTML/JS/i18n watchers via run-pty
 - `pnpm build` — i18n gen + esbuild bundle + elm-watch make --optimize
 - `pnpm test` — elm-test-rs
+- `pnpm lint` — elm-review (NoUnused.Exports, NoUnused.Variables, NoUnused.CustomTypeConstructors, NoUnused.CustomTypeConstructorArgs, NoMissingTypeAnnotationInLetIn)
 - `pnpm i18n` — travelm-agency generates `src/Translations.elm` (gitignored) from `translations/messages.{en,fr}.json`
 
 ## Routes
@@ -131,7 +132,7 @@ src/
     GroupState.elm           -- Event replay engine, query functions (activeMembers, activeEntries, resolveMemberName, resolveMemberRootId)
     Balance.elm              -- Balance computation
     Settlement.elm           -- Settlement plan computation
-    Activity.elm             -- Activity feed types (placeholder)
+    Activity.elm             -- Activity feed: types, fromEnvelope, involvement detection, rich diffs
   Form/
     NewGroup.elm            -- Group creation form (dwayne/elm-form)
     NewEntry.elm            -- Entry creation form: amount parsing, date field
@@ -156,7 +157,7 @@ src/
       BalanceTab.elm        -- Balance cards + settlement plan (mark as paid)
       EntriesTab.elm        -- Entry cards, show/hide deleted toggle
       MembersTab.elm        -- Member rows, group info, add member button
-      ActivitiesTab.elm     -- Placeholder
+      ActivitiesTab.elm     -- Activity feed: involvement markers, expandable details with rich diffs
   UI/
     Theme.elm               -- Design tokens (colors, spacing, fonts, rounding)
     Shell.elm               -- App shell + group shell + tab bar
@@ -173,13 +174,12 @@ src/
 6. **Events use actual member IDs**: `triggeredBy`/`createdBy` store `publicKeyHash`; rootId resolution is a view concern
 7. **UUID v7 for event IDs** (time-sortable ordering), **UUID v4 for entity IDs** (members, entries, groups)
 8. **JSON codecs colocated** in each domain module; property-based roundtrip fuzz tests in `CodecTest.elm`
+9. **Form Error types are tag-only** (no payloads): per-field errors accessed via `Field.firstError` + `Field.errorToString` with i18n callbacks (blank → `fieldRequired`, syntax/validation → `fieldInvalidFormat`). Business logic errors (payer mismatch, etc.) via `errorWhen`.
+10. **Doc comments** on all exposed functions/types; **type annotations** on all `let` bindings (enforced by lint)
 
 ## Not Yet Implemented
 
-- Multiple payers / exact amount split / unequal shares
-- Multi-currency entries (exchange rates)
 - Invitation & joining flow (requires server sync + group symmetric key)
-- Activity feed
 - Filtering & sorting (entries by person/category/date)
 - Settlement preferences (per-member preferred payment recipients)
 - Import / Export (JSON with merge analysis)
