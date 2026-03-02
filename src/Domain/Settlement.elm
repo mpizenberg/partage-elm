@@ -235,8 +235,7 @@ processGreedyPass debtors creditors =
 
                                 else
                                     restDebtors
-                        in
-                        let
+
                             ( restTransactions, finalDebtors, finalCreditors ) =
                                 processGreedyPass updatedDebtors updatedCreditors
                         in

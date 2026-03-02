@@ -1,6 +1,9 @@
 module Form.EditGroupMetadata exposing
     ( Accessors
     , Form
+    , LinkAccessors
+    , LinkForm
+    , LinkState
     , Output
     , State
     , form

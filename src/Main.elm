@@ -1,4 +1,4 @@
-port module Main exposing (main)
+port module Main exposing (AppState, Flags, Model, Msg, main)
 
 import AppUrl exposing (AppUrl)
 import Browser

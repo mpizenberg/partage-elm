@@ -1,4 +1,4 @@
-module Page.Group.ActivityTab exposing (view)
+module Page.Group.ActivityTab exposing (Config, view)
 
 {-| Activity tab showing the group's event history with involvement markers
 and expandable detail views.
@@ -466,10 +466,6 @@ amountCurrencyDiffRows i18n groupCurrency old new =
         currencyChanged =
             old.oldCurrency /= new.newCurrency
 
-        amountChanged : Bool
-        amountChanged =
-            old.oldAmount /= new.newAmount
-
         formatDefaultAmount : Int -> String
         formatDefaultAmount amt =
             Format.formatCentsWithCurrency amt groupCurrency
@@ -488,19 +484,24 @@ amountCurrencyDiffRows i18n groupCurrency old new =
         amountRow : List (Ui.Element msg)
         amountRow =
             let
+                amountChanged : Bool
+                amountChanged =
+                    old.oldAmount /= new.newAmount
+
                 label : String
                 label =
                     T.newEntryAmountLabel i18n
-
-                oldFormatted : String
-                oldFormatted =
-                    Format.formatCentsWithCurrency old.oldAmount old.oldCurrency
 
                 newFormatted : String
                 newFormatted =
                     Format.formatCentsWithCurrency new.newAmount new.newCurrency
             in
             if amountChanged || currencyChanged then
+                let
+                    oldFormatted : String
+                    oldFormatted =
+                        Format.formatCentsWithCurrency old.oldAmount old.oldCurrency
+                in
                 [ diffRow label oldFormatted newFormatted ]
 
             else

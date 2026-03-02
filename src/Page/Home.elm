@@ -15,8 +15,8 @@ import Ui.Font
 view : I18n -> (Route -> msg) -> List GroupSummary -> Ui.Element msg
 view i18n onNavigate groups =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
-        ([ Ui.el [ Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text (T.homeYourGroups i18n)) ]
-            ++ (if List.isEmpty groups then
+        (Ui.el [ Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text (T.homeYourGroups i18n))
+            :: (if List.isEmpty groups then
                     [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
                         (Ui.text (T.homeNoGroups i18n))
                     ]

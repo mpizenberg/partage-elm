@@ -6,8 +6,8 @@ import Domain.Currency exposing (Currency(..))
 import Domain.Entry as Entry exposing (Beneficiary(..), Kind(..))
 import Expect
 import Fuzz
-import Test exposing (..)
-import TestHelpers exposing (..)
+import Test exposing (Test, describe, fuzz, test)
+import TestHelpers exposing (defaultExpenseData, defaultTransferData, makeExpenseEntry, makeTransferEntry)
 
 
 suite : Test

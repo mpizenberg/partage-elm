@@ -242,36 +242,37 @@ computeSharesSplit totalAmount beneficiaries =
         totalShares : Int
         totalShares =
             List.foldl (\( _, s ) acc -> acc + s) 0 shareItems
-
-        basePerShare : Int
-        basePerShare =
-            if totalShares > 0 then
-                totalAmount // totalShares
-
-            else
-                0
-
-        baseAllocated : List ( Member.Id, Int, Int )
-        baseAllocated =
-            List.map (\( mid, s ) -> ( mid, s, basePerShare * s )) shareItems
-
-        baseTotal : Int
-        baseTotal =
-            List.foldl (\( _, _, amt ) acc -> acc + amt) 0 baseAllocated
-
-        remainder : Int
-        remainder =
-            totalAmount - baseTotal
-
-        -- Sort by rootId for deterministic remainder distribution
-        sorted : List ( Member.Id, Int, Int )
-        sorted =
-            List.sortBy (\( mid, _, _ ) -> mid) baseAllocated
     in
     if totalShares == 0 then
         []
 
     else
+        let
+            basePerShare : Int
+            basePerShare =
+                if totalShares > 0 then
+                    totalAmount // totalShares
+
+                else
+                    0
+
+            baseAllocated : List ( Member.Id, Int, Int )
+            baseAllocated =
+                List.map (\( mid, s ) -> ( mid, s, basePerShare * s )) shareItems
+
+            baseTotal : Int
+            baseTotal =
+                List.foldl (\( _, _, amt ) acc -> acc + amt) 0 baseAllocated
+
+            remainder : Int
+            remainder =
+                totalAmount - baseTotal
+
+            -- Sort by rootId for deterministic remainder distribution
+            sorted : List ( Member.Id, Int, Int )
+            sorted =
+                List.sortBy (\( mid, _, _ ) -> mid) baseAllocated
+        in
         distributeRemainder remainder sorted []
 
 

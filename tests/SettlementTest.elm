@@ -6,7 +6,7 @@ import Domain.Member as Member
 import Domain.Settlement as Settlement exposing (Preference, Transaction)
 import Expect
 import Fuzz exposing (Fuzzer)
-import Test exposing (..)
+import Test exposing (Test, describe, fuzz, test)
 
 
 suite : Test

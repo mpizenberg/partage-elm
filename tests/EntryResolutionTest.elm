@@ -5,8 +5,8 @@ import Domain.Entry as Entry exposing (Beneficiary(..), Kind(..))
 import Domain.Event as Event exposing (Payload(..))
 import Domain.GroupState as GroupState exposing (RejectionReason(..))
 import Expect
-import Test exposing (..)
-import TestHelpers exposing (..)
+import Test exposing (Test, describe, test)
+import TestHelpers exposing (defaultExpenseData, makeEnvelope, makeExpenseEntry)
 
 
 suite : Test

@@ -79,50 +79,51 @@ groupInfoSection i18n state =
         meta =
             state.groupMeta
 
-        subtitleEl : Ui.Element msg
-        subtitleEl =
-            case meta.subtitle of
-                Just subtitle ->
-                    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-                        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold, Ui.Font.color Theme.neutral500 ]
-                            (Ui.text (T.groupInfoSubtitle i18n))
-                        , Ui.el [ Ui.Font.size Theme.fontSize.md ] (Ui.text subtitle)
-                        ]
-
-                Nothing ->
-                    Ui.none
-
-        descriptionEl : Ui.Element msg
-        descriptionEl =
-            case meta.description of
-                Just description ->
-                    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-                        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold, Ui.Font.color Theme.neutral500 ]
-                            (Ui.text (T.groupInfoDescription i18n))
-                        , Ui.el [ Ui.Font.size Theme.fontSize.md ] (Ui.text description)
-                        ]
-
-                Nothing ->
-                    Ui.none
-
-        linksEl : Ui.Element msg
-        linksEl =
-            if List.isEmpty meta.links then
-                Ui.none
-
-            else
-                Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-                    [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold, Ui.Font.color Theme.neutral500 ]
-                        (Ui.text (T.groupInfoLinks i18n))
-                    , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-                        (List.map viewLink meta.links)
-                    ]
-
         hasInfo : Bool
         hasInfo =
             meta.subtitle /= Nothing || meta.description /= Nothing || not (List.isEmpty meta.links)
     in
     if hasInfo then
+        let
+            subtitleEl : Ui.Element msg
+            subtitleEl =
+                case meta.subtitle of
+                    Just subtitle ->
+                        Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+                            [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold, Ui.Font.color Theme.neutral500 ]
+                                (Ui.text (T.groupInfoSubtitle i18n))
+                            , Ui.el [ Ui.Font.size Theme.fontSize.md ] (Ui.text subtitle)
+                            ]
+
+                    Nothing ->
+                        Ui.none
+
+            descriptionEl : Ui.Element msg
+            descriptionEl =
+                case meta.description of
+                    Just description ->
+                        Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+                            [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold, Ui.Font.color Theme.neutral500 ]
+                                (Ui.text (T.groupInfoDescription i18n))
+                            , Ui.el [ Ui.Font.size Theme.fontSize.md ] (Ui.text description)
+                            ]
+
+                    Nothing ->
+                        Ui.none
+
+            linksEl : Ui.Element msg
+            linksEl =
+                if List.isEmpty meta.links then
+                    Ui.none
+
+                else
+                    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+                        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold, Ui.Font.color Theme.neutral500 ]
+                            (Ui.text (T.groupInfoLinks i18n))
+                        , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+                            (List.map viewLink meta.links)
+                        ]
+        in
         Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
             [ subtitleEl, descriptionEl, linksEl ]
 

@@ -4,7 +4,10 @@ module Form.NewGroup exposing
     , Form
     , Output
     , State
+    , VMAccessors
+    , VMState
     , VirtualMemberError(..)
+    , VirtualMemberForm
     , form
     )
 

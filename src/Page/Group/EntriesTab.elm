@@ -33,32 +33,30 @@ type alias Msg msg =
 view : I18n -> Msg msg -> GroupState -> Ui.Element msg
 view i18n config state =
     let
-        resolveName : Member.Id -> String
-        resolveName =
-            GroupState.resolveMemberName state
-
-        activeEntries : List Entry.Entry
-        activeEntries =
-            GroupState.activeEntries state
-
         deletedCount : Int
         deletedCount =
             Dict.values state.entries
                 |> List.filter .isDeleted
                 |> List.length
 
-        allEntryStates : List GroupState.EntryState
-        allEntryStates =
-            Dict.values state.entries
-
         visibleEntries : List { entry : Entry.Entry, isDeleted : Bool }
         visibleEntries =
             (if config.showDeleted then
+                let
+                    allEntryStates : List GroupState.EntryState
+                    allEntryStates =
+                        Dict.values state.entries
+                in
                 List.map
                     (\es -> { entry = es.currentVersion, isDeleted = es.isDeleted })
                     allEntryStates
 
              else
+                let
+                    activeEntries : List Entry.Entry
+                    activeEntries =
+                        GroupState.activeEntries state
+                in
                 List.map
                     (\e -> { entry = e, isDeleted = False })
                     activeEntries
@@ -77,6 +75,11 @@ view i18n config state =
                 (Ui.text (T.entriesNone i18n))
 
           else
+            let
+                resolveName : Member.Id -> String
+                resolveName =
+                    GroupState.resolveMemberName state
+            in
             Ui.column [ Ui.width Ui.fill ]
                 (List.map (entryRow i18n resolveName config.onEntryClick) visibleEntries)
         , newEntryButton i18n config.onNewEntry

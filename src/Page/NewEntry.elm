@@ -189,14 +189,14 @@ initFromEntry config entry =
 
                 beneficiaryDict : Dict Member.Id Int
                 beneficiaryDict =
-                    List.filterMap
+                    List.map
                         (\b ->
                             case b of
                                 Entry.ShareBeneficiary s ->
-                                    Just ( s.memberId, s.shares )
+                                    ( s.memberId, s.shares )
 
                                 Entry.ExactBeneficiary e ->
-                                    Just ( e.memberId, 1 )
+                                    ( e.memberId, 1 )
                         )
                         data.beneficiaries
                         |> Dict.fromList
@@ -420,14 +420,6 @@ submitExpense data =
 
             else
                 let
-                    notes : Maybe String
-                    notes =
-                        if String.isEmpty (String.trim data.notes) then
-                            Nothing
-
-                        else
-                            Just (String.trim data.notes)
-
                     splitResult : Result () SplitData
                     splitResult =
                         case data.splitMode of
@@ -508,6 +500,14 @@ submitExpense data =
                 case ( splitResult, payersResult ) of
                     ( Ok splitData, Ok payers ) ->
                         let
+                            notes : Maybe String
+                            notes =
+                                if String.isEmpty (String.trim data.notes) then
+                                    Nothing
+
+                                else
+                                    Just (String.trim data.notes)
+
                             defaultCurrencyAmount : Maybe Int
                             defaultCurrencyAmount =
                                 if data.currency /= data.groupDefaultCurrency then
@@ -567,8 +567,7 @@ submitTransfer data =
 
                         else
                             Just (String.trim data.notes)
-                in
-                let
+
                     defaultCurrencyAmount : Maybe Int
                     defaultCurrencyAmount =
                         if data.currency /= data.groupDefaultCurrency then
@@ -807,7 +806,7 @@ payerField i18n activeMembers data =
                                 totalPayer =
                                     Dict.values data.payerAmounts
                                         |> List.filterMap parseAmountCents
-                                        |> List.foldl (+) 0
+                                        |> List.sum
 
                                 totalAmount : Int
                                 totalAmount =
@@ -890,7 +889,7 @@ beneficiariesField i18n activeMembers data =
                         totalExact =
                             Dict.keys data.beneficiaries
                                 |> List.filterMap (\mid -> Dict.get mid data.exactAmounts |> Maybe.andThen parseAmountCents)
-                                |> List.foldl (+) 0
+                                |> List.sum
 
                         totalAmount : Int
                         totalAmount =

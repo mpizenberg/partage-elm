@@ -7,8 +7,8 @@ import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
 import Expect
 import Fuzz exposing (Fuzzer)
-import Test exposing (..)
-import TestHelpers exposing (..)
+import Test exposing (Test, describe, fuzz, test)
+import TestHelpers exposing (makeEnvelope)
 import Time
 
 

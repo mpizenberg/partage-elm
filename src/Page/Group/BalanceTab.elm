@@ -77,10 +77,6 @@ balancesSection i18n state currentUserRootId =
 settlementSection : I18n -> Member.Id -> (Settlement.Transaction -> msg) -> GroupState -> Ui.Element msg
 settlementSection i18n currentUserRootId onSettle state =
     let
-        resolveName : Member.Id -> String
-        resolveName =
-            GroupState.resolveMemberName state
-
         transactions : List Settlement.Transaction
         transactions =
             Settlement.computeSettlement state.balances []
@@ -93,6 +89,10 @@ settlementSection i18n currentUserRootId onSettle state =
 
           else
             let
+                resolveName : Member.Id -> String
+                resolveName =
+                    GroupState.resolveMemberName state
+
                 settleTx : Settlement.Transaction -> Ui.Element msg
                 settleTx =
                     UI.Components.settlementRow i18n resolveName currentUserRootId onSettle

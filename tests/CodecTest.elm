@@ -11,7 +11,7 @@ import Fuzz exposing (Fuzzer)
 import Identity
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Test exposing (..)
+import Test exposing (Test, describe, fuzz)
 import Time
 
 
