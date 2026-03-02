@@ -1092,7 +1092,7 @@ viewReady model readyData =
             shell (T.shellNewGroup i18n)
                 (Page.NewGroup.view i18n NewGroupMsg model.newGroupModel)
 
-        GroupRoute groupId (Join _) ->
+        GroupRoute _ (Join _) ->
             shell (T.shellJoinGroup i18n)
                 (Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
                     (Ui.text (T.joinGroupComingSoon i18n))
