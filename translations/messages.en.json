@@ -214,6 +214,10 @@
   "settlementPreferencesShow": "Settlement preferences ▸",
   "settlementPreferencesHide": "Settlement preferences ▾",
   "settlementPreferencesHint": "Choose who you prefer to pay first. It is recommended to leave this untouched for a better settlement plan for the whole group.",
-  "settlementPreferPayFirst": "Prefer to pay first"
+  "settlementPreferPayFirst": "Prefer to pay first",
+  "homeExportGroup": "Export",
+  "homeImportGroup": "Import group",
+  "importErrorAlreadyExists": "This group already exists on your device.",
+  "importErrorInvalidFile": "Invalid file format."
 }
 

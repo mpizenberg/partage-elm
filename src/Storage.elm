@@ -2,7 +2,10 @@ module Storage exposing
     ( GroupSummary
     , InitData
     , deleteGroup
+    , encodeGroupSummary
     , errorToString
+    , groupSummaryDecoder
+    , importGroup
     , init
     , loadAllGroups
     , loadGroupEvents
@@ -178,6 +181,29 @@ deleteGroup db groupId =
         -- Delete group events
         , Idb.getKeysByIndex db eventsStore byGroupIdIndex (Idb.only (Idb.StringKey groupId))
             |> ConcurrentTask.andThen (\keys -> Idb.deleteMany db eventsStore keys)
+        ]
+        |> ConcurrentTask.map (\_ -> ())
+
+
+
+{-| Import a group by saving its summary, events, and optional encryption key.
+-}
+importGroup : Idb.Db -> GroupSummary -> Maybe String -> List Event.Envelope -> ConcurrentTask Idb.Error ()
+importGroup db summary maybeKey events =
+    let
+        saveKeyTask : ConcurrentTask Idb.Error ()
+        saveKeyTask =
+            case maybeKey of
+                Just key ->
+                    saveGroupKey db summary.id key
+
+                Nothing ->
+                    ConcurrentTask.succeed ()
+    in
+    ConcurrentTask.batch
+        [ saveGroupSummary db summary |> ConcurrentTask.map (\_ -> ())
+        , saveEvents db summary.id events
+        , saveKeyTask
         ]
         |> ConcurrentTask.map (\_ -> ())
 

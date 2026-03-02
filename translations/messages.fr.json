@@ -214,5 +214,9 @@
   "settlementPreferencesShow": "Préférences de remboursement ▸",
   "settlementPreferencesHide": "Préférences de remboursement ▾",
   "settlementPreferencesHint": "Choisissez à qui vous préférez payer en priorité. Il est recommandé de ne pas y toucher pour un meilleur plan de remboursement pour l'ensemble du groupe.",
-  "settlementPreferPayFirst": "Payer en priorité"
+  "settlementPreferPayFirst": "Payer en priorité",
+  "homeExportGroup": "Exporter",
+  "homeImportGroup": "Importer un groupe",
+  "importErrorAlreadyExists": "Ce groupe existe déjà sur votre appareil.",
+  "importErrorInvalidFile": "Format de fichier invalide."
 }
