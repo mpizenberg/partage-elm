@@ -14,10 +14,12 @@ import Ui.Font
 import Ui.Input
 
 
-{-| The validated output containing the member ID and updated metadata.
+{-| The validated output containing the member ID, new name, and updated metadata.
 -}
 type alias Output =
     { memberId : Member.Id
+    , oldName : String
+    , newName : String
     , metadata : Member.Metadata
     }
 
@@ -30,6 +32,7 @@ type Model
 
 type alias ModelData =
     { memberId : Member.Id
+    , originalName : String
     , form : MetadataForm.Form
     , submitted : Bool
     }
@@ -38,7 +41,8 @@ type alias ModelData =
 {-| Messages produced by user interaction on the metadata form.
 -}
 type Msg
-    = InputPhone String
+    = InputName String
+    | InputPhone String
     | InputEmail String
     | InputNotes String
     | InputIban String
@@ -52,13 +56,14 @@ type Msg
     | Submit
 
 
-{-| Initialize the model from an existing member's ID and metadata.
+{-| Initialize the model from an existing member's ID, name, and metadata.
 -}
-init : Member.Id -> Member.Metadata -> Model
-init memberId meta =
+init : Member.Id -> String -> Member.Metadata -> Model
+init memberId name meta =
     Model
         { memberId = memberId
-        , form = MetadataForm.form |> MetadataForm.initFromMetadata meta
+        , originalName = name
+        , form = MetadataForm.form |> MetadataForm.initFromMember name meta
         , submitted = False
         }
 
@@ -68,6 +73,9 @@ init memberId meta =
 update : Msg -> Model -> ( Model, Maybe Output )
 update msg (Model data) =
     case msg of
+        InputName s ->
+            ( Model { data | form = Form.modify .name (Field.setFromString s) data.form }, Nothing )
+
         InputPhone s ->
             ( Model { data | form = Form.modify .phone (Field.setFromString s) data.form }, Nothing )
 
@@ -135,7 +143,12 @@ update msg (Model data) =
                             }
                     in
                     ( Model data
-                    , Just { memberId = data.memberId, metadata = metadata }
+                    , Just
+                        { memberId = data.memberId
+                        , oldName = data.originalName
+                        , newName = output.name
+                        , metadata = metadata
+                        }
                     )
 
                 Nothing ->
@@ -148,6 +161,7 @@ view : I18n -> (Msg -> msg) -> Model -> Ui.Element msg
 view i18n toMsg (Model data) =
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text (T.memberMetadataTitle i18n))
+        , nameField i18n data
         , textField (T.memberMetadataPhone i18n) InputPhone .phone data.form
         , emailField i18n data
         , textField (T.memberMetadataNotes i18n) InputNotes .notes data.form
@@ -174,6 +188,34 @@ view i18n toMsg (Model data) =
             (Ui.text (T.memberMetadataSave i18n))
         ]
         |> Ui.map toMsg
+
+
+nameField : I18n -> ModelData -> Ui.Element Msg
+nameField i18n data =
+    let
+        label : String
+        label =
+            T.memberRenameLabel i18n
+
+        field : Field.Field String
+        field =
+            Form.get .name data.form
+    in
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ] (Ui.text label)
+        , Ui.Input.text [ Ui.width Ui.fill ]
+            { onChange = InputName
+            , text = Field.toRawString field
+            , placeholder = Nothing
+            , label = Ui.Input.labelHidden label
+            }
+        , if Field.isInvalid field && (data.submitted || Field.isDirty field) then
+            Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.danger ]
+                (Ui.text (T.fieldRequired i18n))
+
+          else
+            Ui.none
+        ]
 
 
 emailField : I18n -> ModelData -> Ui.Element Msg

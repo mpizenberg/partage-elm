@@ -240,7 +240,7 @@ init flags =
       , newEntryModel = Page.NewEntry.init { currentUserRootId = "", activeMembersRootIds = [], today = Date.posixToDate currentTime, defaultCurrency = Domain.Currency.EUR }
       , memberDetailModel = Page.MemberDetail.init dummyMemberChainState
       , addMemberModel = Page.AddMember.init
-      , editMemberMetadataModel = Page.EditMemberMetadata.init "" Member.emptyMetadata
+      , editMemberMetadataModel = Page.EditMemberMetadata.init "" "" Member.emptyMetadata
       , entryDetailModel = Page.EntryDetail.init
       , editGroupMetadataModel = Page.EditGroupMetadata.init GroupState.empty.groupMeta
       , loadedGroup = Nothing
@@ -464,16 +464,7 @@ update msg model =
                 Just updatedModel ->
                     case model.route of
                         GroupRoute _ (Tab BalanceTab) ->
-                            let
-                                ( modelWithToast, toastCmd ) =
-                                    addToast Toast.Success (T.toastSettlementRecorded model.i18n) updatedModel
-                            in
-                            ( modelWithToast
-                            , Cmd.batch
-                                [ Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab BalanceTab)))
-                                , toastCmd
-                                ]
-                            )
+                            addToast Toast.Success (T.toastSettlementRecorded model.i18n) updatedModel
 
                         _ ->
                             ( updatedModel
@@ -998,7 +989,7 @@ initPagesIfNeeded route model =
                 Just memberState ->
                     { model
                         | editMemberMetadataModel =
-                            Page.EditMemberMetadata.init memberState.rootId memberState.metadata
+                            Page.EditMemberMetadata.init memberState.rootId memberState.name memberState.metadata
                     }
 
                 Nothing ->
@@ -1130,15 +1121,36 @@ submitAddMember model readyData loaded output =
 
 submitMemberMetadata : Model -> Storage.InitData -> LoadedGroup -> Page.EditMemberMetadata.Output -> ( Model, Cmd Msg )
 submitMemberMetadata model readyData loaded output =
-    submitEvent (OnMemberActionSaved loaded.summary.id)
-        model
-        readyData
-        loaded
-        (Event.MemberMetadataUpdated
-            { rootId = output.memberId
-            , metadata = output.metadata
-            }
-        )
+    let
+        ( modelAfterMeta, metaCmd ) =
+            submitEvent (OnMemberActionSaved loaded.summary.id)
+                model
+                readyData
+                loaded
+                (Event.MemberMetadataUpdated
+                    { rootId = output.memberId
+                    , metadata = output.metadata
+                    }
+                )
+    in
+    if output.newName /= output.oldName then
+        let
+            ( modelAfterRename, renameCmd ) =
+                submitEvent (OnMemberActionSaved loaded.summary.id)
+                    modelAfterMeta
+                    readyData
+                    loaded
+                    (Event.MemberRenamed
+                        { rootId = output.memberId
+                        , oldName = output.oldName
+                        , newName = output.newName
+                        }
+                    )
+        in
+        ( modelAfterRename, Cmd.batch [ metaCmd, renameCmd ] )
+
+    else
+        ( modelAfterMeta, metaCmd )
 
 
 submitGroupMetadata : Model -> Storage.InitData -> LoadedGroup -> Event.GroupMetadataChange -> ( Model, Cmd Msg )

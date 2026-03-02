@@ -4,7 +4,7 @@ module Form.EditMemberMetadata exposing
     , Output
     , State
     , form
-    , initFromMetadata
+    , initFromMember
     )
 
 import Domain.Member as Member
@@ -21,7 +21,8 @@ type alias Form =
 {-| Form state for all member metadata fields (contact info and payment methods).
 -}
 type alias State =
-    { phone : Field (Maybe String)
+    { name : Field String
+    , phone : Field (Maybe String)
     , email : Field (Maybe String)
     , notes : Field (Maybe String)
     , iban : Field (Maybe String)
@@ -38,7 +39,8 @@ type alias State =
 {-| Accessors for reading and modifying each metadata field.
 -}
 type alias Accessors =
-    { phone : Accessor State (Field (Maybe String))
+    { name : Accessor State (Field String)
+    , phone : Accessor State (Field (Maybe String))
     , email : Accessor State (Field (Maybe String))
     , notes : Accessor State (Field (Maybe String))
     , iban : Accessor State (Field (Maybe String))
@@ -55,7 +57,8 @@ type alias Accessors =
 {-| Validated output of the member metadata form.
 -}
 type alias Output =
-    { phone : Maybe String
+    { name : String
+    , phone : Maybe String
     , email : Maybe String
     , notes : Maybe String
     , iban : Maybe String
@@ -112,10 +115,10 @@ form =
         }
 
 
-{-| Initialize the form fields from existing member metadata.
+{-| Initialize the form fields from an existing member's name and metadata.
 -}
-initFromMetadata : Member.Metadata -> Form -> Form
-initFromMetadata meta =
+initFromMember : String -> Member.Metadata -> Form -> Form
+initFromMember name meta =
     let
         setField : (Accessors -> Accessor State (Field (Maybe String))) -> Maybe String -> Form -> Form
         setField accessor maybeValue f =
@@ -130,7 +133,8 @@ initFromMetadata meta =
         payment =
             Maybe.withDefault Member.emptyPaymentInfo meta.payment
     in
-    setField .phone meta.phone
+    Form.modify .name (Field.setFromString name)
+        >> setField .phone meta.phone
         >> setField .email meta.email
         >> setField .notes meta.notes
         >> setField .iban payment.iban
@@ -145,7 +149,8 @@ initFromMetadata meta =
 
 init : State
 init =
-    { phone = Field.empty optionalString
+    { name = Field.empty Field.nonBlankString
+    , phone = Field.empty optionalString
     , email = Field.empty optionalEmail
     , notes = Field.empty optionalString
     , iban = Field.empty optionalString
@@ -165,7 +170,11 @@ init =
 
 accessors : Accessors
 accessors =
-    { phone =
+    { name =
+        { get = .name
+        , modify = \f state -> { state | name = f state.name }
+        }
+    , phone =
         { get = .phone
         , modify = \f state -> { state | phone = f state.phone }
         }
@@ -219,6 +228,7 @@ accessors =
 validate : State -> Field.Validation Field.Error Output
 validate state =
     Field.succeed Output
+        |> Field.applyValidation state.name
         |> Field.applyValidation state.phone
         |> Field.applyValidation state.email
         |> Field.applyValidation state.notes

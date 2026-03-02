@@ -1,4 +1,4 @@
-module Domain.Group exposing (Id, Link, UserId, encodeLink, linkDecoder)
+module Domain.Group exposing (Id, Link, encodeLink, linkDecoder)
 
 {-| Group identity, metadata, and configuration.
 -}
@@ -10,12 +10,6 @@ import Json.Encode as Encode
 {-| Unique identifier for a group.
 -}
 type alias Id =
-    String
-
-
-{-| Unique identifier for an authenticated user (distinct from Member.Id).
--}
-type alias UserId =
     String
 
 
