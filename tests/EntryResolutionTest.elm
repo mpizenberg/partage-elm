@@ -1,8 +1,8 @@
 module EntryResolutionTest exposing (suite)
 
 import Dict
-import Domain.Entry as Entry exposing (Beneficiary(..), Kind(..))
-import Domain.Event as Event exposing (Payload(..))
+import Domain.Entry as Entry exposing (Kind(..))
+import Domain.Event exposing (Payload(..))
 import Domain.GroupState as GroupState exposing (RejectionReason(..))
 import Expect
 import Test exposing (Test, describe, test)

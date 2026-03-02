@@ -11,7 +11,7 @@ module Form.NewGroup exposing
     , form
     )
 
-import Domain.Currency as Currency exposing (Currency(..))
+import Domain.Currency as Currency exposing (Currency)
 import Field exposing (Field, Validation)
 import Form exposing (Accessor)
 import Form.List exposing (Forms, Id)

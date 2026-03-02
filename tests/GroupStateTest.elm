@@ -1,15 +1,13 @@
 module GroupStateTest exposing (suite)
 
 import Dict
-import Domain.Entry as Entry exposing (Beneficiary(..), Kind(..))
-import Domain.Event as Event exposing (Envelope, Payload(..))
-import Domain.GroupState as GroupState exposing (GroupState)
+import Domain.Event exposing (Envelope, Payload(..))
+import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Expect
-import Fuzz exposing (Fuzzer)
+import Fuzz
 import Test exposing (Test, describe, fuzz, test)
 import TestHelpers exposing (makeEnvelope)
-import Time
 
 
 suite : Test

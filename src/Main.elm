@@ -1,6 +1,6 @@
 port module Main exposing (AppState, Flags, Model, Msg, main)
 
-import AppUrl exposing (AppUrl)
+import AppUrl
 import Browser
 import ConcurrentTask
 import Dict
@@ -9,7 +9,7 @@ import Domain.Date as Date
 import Domain.Entry as Entry
 import Domain.Event as Event
 import Domain.Group as Group
-import Domain.GroupState as GroupState exposing (GroupState)
+import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Domain.Settlement as Settlement
 import Form.NewGroup

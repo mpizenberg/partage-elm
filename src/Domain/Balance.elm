@@ -4,7 +4,7 @@ module Domain.Balance exposing (MemberBalance, Status(..), computeBalances, stat
 -}
 
 import Dict exposing (Dict)
-import Domain.Entry as Entry exposing (Beneficiary(..), Entry, Kind(..))
+import Domain.Entry exposing (Beneficiary(..), Entry, Kind(..))
 import Domain.Member as Member
 
 

@@ -1,6 +1,6 @@
 module CodecTest exposing (suite)
 
-import Domain.Currency as Currency exposing (Currency(..))
+import Domain.Currency as Currency exposing (Currency)
 import Domain.Date as Date exposing (Date)
 import Domain.Entry as Entry exposing (Beneficiary(..), Category(..), Kind(..))
 import Domain.Event as Event exposing (Payload(..))
@@ -8,7 +8,6 @@ import Domain.Group as Group
 import Domain.Member as Member
 import Expect
 import Fuzz exposing (Fuzzer)
-import Identity
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Test exposing (Test, describe, fuzz)

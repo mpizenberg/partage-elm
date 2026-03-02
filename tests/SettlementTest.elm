@@ -3,7 +3,7 @@ module SettlementTest exposing (suite)
 import Dict exposing (Dict)
 import Domain.Balance exposing (MemberBalance)
 import Domain.Member as Member
-import Domain.Settlement as Settlement exposing (Preference, Transaction)
+import Domain.Settlement as Settlement
 import Expect
 import Fuzz exposing (Fuzzer)
 import Test exposing (Test, describe, fuzz, test)

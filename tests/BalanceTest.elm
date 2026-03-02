@@ -3,7 +3,7 @@ module BalanceTest exposing (suite)
 import Dict
 import Domain.Balance as Balance exposing (MemberBalance, Status(..))
 import Domain.Currency exposing (Currency(..))
-import Domain.Entry as Entry exposing (Beneficiary(..), Kind(..))
+import Domain.Entry as Entry exposing (Beneficiary(..))
 import Expect
 import Fuzz
 import Test exposing (Test, describe, fuzz, test)

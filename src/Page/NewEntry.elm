@@ -2,7 +2,7 @@ module Page.NewEntry exposing (Config, EntryKind(..), Model, Msg, Output(..), Sp
 
 import Dict exposing (Dict)
 import Domain.Currency as Currency exposing (Currency)
-import Domain.Date as Date exposing (Date)
+import Domain.Date exposing (Date)
 import Domain.Entry as Entry
 import Domain.Member as Member
 import Field

@@ -5,7 +5,7 @@ module Page.EntryDetail exposing (Context, view)
 
 import Domain.Date as Date
 import Domain.Entry as Entry exposing (Entry, Kind(..))
-import Domain.GroupState as GroupState exposing (EntryState)
+import Domain.GroupState exposing (EntryState)
 import Domain.Member as Member
 import Format
 import Translations as T exposing (I18n)

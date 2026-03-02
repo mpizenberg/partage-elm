@@ -4,7 +4,7 @@ module Domain.Settlement exposing (Preference, Transaction, computeSettlement)
 -}
 
 import Dict exposing (Dict)
-import Domain.Balance exposing (MemberBalance, Status(..))
+import Domain.Balance exposing (MemberBalance)
 import Domain.Member as Member
 
 

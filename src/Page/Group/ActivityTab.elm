@@ -4,7 +4,7 @@ module Page.Group.ActivityTab exposing (Config, view)
 and expandable detail views.
 -}
 
-import Domain.Activity as Activity exposing (Activity, Detail(..), GroupMetadataSnapshot)
+import Domain.Activity exposing (Activity, Detail(..), GroupMetadataSnapshot)
 import Domain.Currency as Currency exposing (Currency)
 import Domain.Date as Date
 import Domain.Entry as Entry exposing (Kind(..))

@@ -10,7 +10,7 @@ module Form.NewEntry exposing
     , initDescription
     )
 
-import Domain.Date as Date exposing (Date)
+import Domain.Date exposing (Date)
 import Field exposing (Field, Validation)
 import Form exposing (Accessor)
 
