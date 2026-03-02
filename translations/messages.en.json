@@ -210,5 +210,7 @@
   "settlementMarkAsPaid": "Mark as Paid",
   "activityDetailOldValue": "was: {value}",
   "activityDetailNoValue": "none",
-  "activityDetailRemoved": "removed"
+  "activityDetailRemoved": "removed",
+  "activityMemberTypeLabel": "Member type",
+  "activityViewEntryDetails": "View entry details →"
 }

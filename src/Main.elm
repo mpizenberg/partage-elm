@@ -1130,6 +1130,7 @@ viewGroupTab model readyData langSelector groupId tab loaded =
         , currentUserRootId = currentUserRootId readyData loaded
         , onToggleActivityExpanded = ToggleActivityExpanded
         , expandedActivities = model.expandedActivities
+        , entryDetailPath = \entryId -> Route.toPath (GroupRoute groupId (EntryDetail entryId))
         }
         { showDeleted = model.showDeleted }
         langSelector

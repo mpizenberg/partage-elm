@@ -10,6 +10,7 @@ import Domain.Entry as Entry exposing (Kind(..))
 import Domain.Event as Event
 import Domain.Member as Member
 import Format
+import Json.Decode
 import Set exposing (Set)
 import Time
 import Translations as T exposing (I18n)
@@ -24,6 +25,8 @@ type alias Config msg =
     , currentUserRootId : Member.Id
     , expandedActivities : Set Event.Id
     , onToggleExpanded : Event.Id -> msg
+    , onEntryClick : Entry.Id -> msg
+    , entryDetailPath : Entry.Id -> String
     }
 
 
@@ -74,7 +77,7 @@ activityItem i18n config activity =
             , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
                 (Ui.text (formatTimestamp activity.timestamp))
             , if isExpanded then
-                detailPanel i18n config.resolveName activity.detail
+                detailPanel i18n config activity.detail
 
               else
                 Ui.none
@@ -243,8 +246,8 @@ translateField i18n field =
 -- DETAIL PANELS
 
 
-detailPanel : I18n -> (Member.Id -> String) -> Detail -> Ui.Element msg
-detailPanel i18n resolveName detail =
+detailPanel : I18n -> Config msg -> Detail -> Ui.Element msg
+detailPanel i18n config detail =
     Ui.column
         [ Ui.spacing Theme.spacing.sm
         , Ui.width Ui.fill
@@ -252,28 +255,40 @@ detailPanel i18n resolveName detail =
         , Ui.borderWith { left = Theme.borderWidth.sm, top = 0, right = 0, bottom = 0 }
         , Ui.borderColor Theme.neutral300
         ]
-        (detailContent i18n resolveName detail)
+        (detailContent i18n config detail)
 
 
-detailContent : I18n -> (Member.Id -> String) -> Detail -> List (Ui.Element msg)
-detailContent i18n resolveName detail =
+detailContent : I18n -> Config msg -> Detail -> List (Ui.Element msg)
+detailContent i18n config detail =
+    let
+        resolveName =
+            config.resolveName
+
+        withEntryLink entry rows =
+            rows ++ [ entryDetailLink i18n config entry ]
+    in
     case detail of
         EntryAddedDetail data ->
             entryDetailRows i18n resolveName data.entry
+                |> withEntryLink data.entry
 
         EntryModifiedDetail data ->
-            entryDetailRows i18n resolveName data.entry
+            entryModifiedDiffRows i18n resolveName data.entry data.previousEntry
+                |> withEntryLink data.entry
 
         TransferAddedDetail data ->
             entryDetailRows i18n resolveName data.entry
+                |> withEntryLink data.entry
 
         TransferModifiedDetail data ->
-            entryDetailRows i18n resolveName data.entry
+            entryModifiedDiffRows i18n resolveName data.entry data.previousEntry
+                |> withEntryLink data.entry
 
         EntryDeletedDetail data ->
             case data.entry of
                 Just entry ->
                     entryDetailRows i18n resolveName entry
+                        |> withEntryLink entry
 
                 Nothing ->
                     [ detailRow (T.newEntryDescriptionLabel i18n) data.entryDescription ]
@@ -282,13 +297,14 @@ detailContent i18n resolveName detail =
             case data.entry of
                 Just entry ->
                     entryDetailRows i18n resolveName entry
+                        |> withEntryLink entry
 
                 Nothing ->
                     [ detailRow (T.newEntryDescriptionLabel i18n) data.entryDescription ]
 
         MemberCreatedDetail data ->
             [ detailRow (T.changeFieldName i18n) data.name
-            , detailRow (T.newEntryKindLabel i18n)
+            , detailRow (T.activityMemberTypeLabel i18n)
                 (case data.memberType of
                     Member.Real ->
                         T.memberDetailTypeReal i18n
@@ -317,6 +333,19 @@ detailContent i18n resolveName detail =
             groupMetadataDiffRows i18n data.oldMeta data.newMeta
 
 
+entryDetailLink : I18n -> Config msg -> Entry.Entry -> Ui.Element msg
+entryDetailLink i18n config entry =
+    Ui.el
+        [ Ui.Font.size Theme.fontSize.sm
+        , Ui.Font.color Theme.primary
+        , Ui.pointer
+        , Ui.link (config.entryDetailPath entry.meta.rootId)
+        , Ui.Events.preventDefaultOn "click"
+            (Json.Decode.succeed ( config.onEntryClick entry.meta.rootId, True ))
+        ]
+        (Ui.text (T.activityViewEntryDetails i18n))
+
+
 entryDetailRows : I18n -> (Member.Id -> String) -> Entry.Entry -> List (Ui.Element msg)
 entryDetailRows i18n resolveName entry =
     case entry.kind of
@@ -341,6 +370,172 @@ entryDetailRows i18n resolveName entry =
                   ]
                 , optionalRow (T.entryDetailNotes i18n) data.notes
                 ]
+
+
+entryModifiedDiffRows : I18n -> (Member.Id -> String) -> Entry.Entry -> Maybe Entry.Entry -> List (Ui.Element msg)
+entryModifiedDiffRows i18n resolveName newEntry maybePreviousEntry =
+    case maybePreviousEntry of
+        Nothing ->
+            entryDetailRows i18n resolveName newEntry
+
+        Just oldEntry ->
+            case ( newEntry.kind, oldEntry.kind ) of
+                ( Expense new, Expense old ) ->
+                    expenseDiffRows i18n resolveName old new
+
+                ( Transfer new, Transfer old ) ->
+                    transferDiffRows i18n resolveName old new
+
+                _ ->
+                    entryDetailRows i18n resolveName newEntry
+
+
+expenseDiffRows : I18n -> (Member.Id -> String) -> Entry.ExpenseData -> Entry.ExpenseData -> List (Ui.Element msg)
+expenseDiffRows i18n resolveName old new =
+    List.concat
+        [ [ maybeDiffOrDetailRow (T.newEntryDescriptionLabel i18n) old.description new.description ]
+        , [ maybeDiffOrDetailRow (T.entryDetailDate i18n) (Date.toString old.date) (Date.toString new.date) ]
+        , [ amountDiffOrDetailRow i18n old new ]
+        , [ payerDiffOrDetailRow i18n resolveName old.payers new.payers ]
+        , [ beneficiaryDiffOrDetailRow i18n resolveName old.beneficiaries new.beneficiaries ]
+        , categoryDiffRow i18n old.category new.category
+        , notesDiffRow i18n old.notes new.notes
+        ]
+
+
+transferDiffRows : I18n -> (Member.Id -> String) -> Entry.TransferData -> Entry.TransferData -> List (Ui.Element msg)
+transferDiffRows i18n resolveName old new =
+    List.concat
+        [ [ maybeDiffOrDetailRow (T.entryDetailDate i18n) (Date.toString old.date) (Date.toString new.date) ]
+        , [ amountDiffOrDetailRowTransfer i18n old new ]
+        , [ maybeDiffOrDetailRow (T.entryDetailFrom i18n) (resolveName old.from) (resolveName new.from) ]
+        , [ maybeDiffOrDetailRow (T.entryDetailTo i18n) (resolveName old.to) (resolveName new.to) ]
+        , notesDiffRow i18n old.notes new.notes
+        ]
+
+
+maybeDiffOrDetailRow : String -> String -> String -> Ui.Element msg
+maybeDiffOrDetailRow label oldVal newVal =
+    if oldVal == newVal then
+        detailRow label newVal
+
+    else
+        diffRow label oldVal newVal
+
+
+amountDiffOrDetailRow : I18n -> Entry.ExpenseData -> Entry.ExpenseData -> Ui.Element msg
+amountDiffOrDetailRow i18n old new =
+    let
+        label =
+            T.newEntryAmountLabel i18n
+
+        oldFormatted =
+            Format.formatCentsWithCurrency old.amount old.currency
+
+        newFormatted =
+            Format.formatCentsWithCurrency new.amount new.currency
+    in
+    if old.amount == new.amount && old.currency == new.currency then
+        detailRow label newFormatted
+
+    else
+        diffRow label oldFormatted newFormatted
+
+
+amountDiffOrDetailRowTransfer : I18n -> Entry.TransferData -> Entry.TransferData -> Ui.Element msg
+amountDiffOrDetailRowTransfer i18n old new =
+    let
+        label =
+            T.newEntryAmountLabel i18n
+
+        oldFormatted =
+            Format.formatCentsWithCurrency old.amount old.currency
+
+        newFormatted =
+            Format.formatCentsWithCurrency new.amount new.currency
+    in
+    if old.amount == new.amount && old.currency == new.currency then
+        detailRow label newFormatted
+
+    else
+        diffRow label oldFormatted newFormatted
+
+
+payerDiffOrDetailRow : I18n -> (Member.Id -> String) -> List Entry.Payer -> List Entry.Payer -> Ui.Element msg
+payerDiffOrDetailRow i18n resolveName oldPayers newPayers =
+    let
+        label =
+            T.entryDetailPaidBy i18n
+
+        formatPayer p =
+            resolveName p.memberId
+
+        formatPayerWithAmount currency p =
+            resolveName p.memberId ++ " (" ++ Format.formatCentsWithCurrency p.amount currency ++ ")"
+    in
+    if oldPayers == newPayers then
+        detailRow label (payerNames resolveName newPayers)
+
+    else if List.length oldPayers == 1 && List.length newPayers == 1 then
+        diffRow label (payerNames resolveName oldPayers) (payerNames resolveName newPayers)
+
+    else
+        let
+            oldText =
+                oldPayers |> List.map formatPayer |> String.join ", "
+
+            newText =
+                newPayers |> List.map formatPayer |> String.join ", "
+        in
+        diffRow label oldText newText
+
+
+beneficiaryDiffOrDetailRow : I18n -> (Member.Id -> String) -> List Entry.Beneficiary -> List Entry.Beneficiary -> Ui.Element msg
+beneficiaryDiffOrDetailRow i18n resolveName oldBenefs newBenefs =
+    let
+        label =
+            T.entryDetailSplitAmong i18n
+    in
+    if oldBenefs == newBenefs then
+        detailRow label (beneficiaryNames resolveName newBenefs)
+
+    else
+        diffRow label (beneficiaryNames resolveName oldBenefs) (beneficiaryNames resolveName newBenefs)
+
+
+categoryDiffRow : I18n -> Maybe Entry.Category -> Maybe Entry.Category -> List (Ui.Element msg)
+categoryDiffRow i18n oldCat newCat =
+    if oldCat == newCat then
+        categoryRow i18n newCat
+
+    else
+        let
+            oldLabel =
+                oldCat |> Maybe.map (categoryLabel i18n) |> Maybe.withDefault (T.newEntryCategoryNone i18n)
+
+            newLabel =
+                newCat |> Maybe.map (categoryLabel i18n) |> Maybe.withDefault (T.newEntryCategoryNone i18n)
+        in
+        [ diffRow (T.entryDetailCategory i18n) oldLabel newLabel ]
+
+
+notesDiffRow : I18n -> Maybe String -> Maybe String -> List (Ui.Element msg)
+notesDiffRow i18n oldNotes newNotes =
+    if oldNotes == newNotes then
+        optionalRow (T.entryDetailNotes i18n) newNotes
+
+    else
+        let
+            label =
+                T.entryDetailNotes i18n
+
+            oldText =
+                Maybe.withDefault (T.activityDetailNoValue i18n) oldNotes
+
+            newText =
+                Maybe.withDefault (T.activityDetailRemoved i18n) newNotes
+        in
+        [ diffRow label oldText newText ]
 
 
 payerNames : (Member.Id -> String) -> List Entry.Payer -> String

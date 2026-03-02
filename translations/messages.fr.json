@@ -210,5 +210,7 @@
   "settlementMarkAsPaid": "Marquer comme payé",
   "activityDetailOldValue": "avant : {value}",
   "activityDetailNoValue": "aucun",
-  "activityDetailRemoved": "supprimé"
+  "activityDetailRemoved": "supprimé",
+  "activityMemberTypeLabel": "Type de membre",
+  "activityViewEntryDetails": "Voir les détails →"
 }

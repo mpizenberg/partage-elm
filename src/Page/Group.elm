@@ -34,6 +34,7 @@ type alias Context msg =
     , currentUserRootId : Member.Id
     , onToggleActivityExpanded : Event.Id -> msg
     , expandedActivities : Set Event.Id
+    , entryDetailPath : Entry.Id -> String
     }
 
 
@@ -84,5 +85,7 @@ tabContent ctx showDeleted state tab =
                 , currentUserRootId = ctx.currentUserRootId
                 , expandedActivities = ctx.expandedActivities
                 , onToggleExpanded = ctx.onToggleActivityExpanded
+                , onEntryClick = ctx.onEntryClick
+                , entryDetailPath = ctx.entryDetailPath
                 }
                 state.activities
