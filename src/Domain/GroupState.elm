@@ -472,9 +472,16 @@ activityContext state =
                 |> Maybe.map .metadata
                 |> Maybe.withDefault Member.emptyMetadata
     , entryDescription = lookupEntryDescription state
+    , entryCurrentVersion = lookupEntryCurrentVersion state
     , previousVersion = lookupPreviousVersion state
     , groupMeta = state.groupMeta
     }
+
+
+lookupEntryCurrentVersion : GroupState -> Entry.Id -> Maybe Entry
+lookupEntryCurrentVersion state rootId =
+    Dict.get rootId state.entries
+        |> Maybe.map .currentVersion
 
 
 lookupPreviousVersion : GroupState -> Entry -> Maybe Entry

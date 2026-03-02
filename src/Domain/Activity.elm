@@ -1,9 +1,8 @@
-module Domain.Activity exposing (Activity, Detail(..), StateContext, fromEnvelope)
+module Domain.Activity exposing (Activity, Detail(..), GroupMetadataSnapshot, StateContext, fromEnvelope)
 
 {-| Activity feed types and logic. Built incrementally by GroupState.applyEvents.
 -}
 
-import Domain.Currency exposing (Currency)
 import Domain.Entry as Entry exposing (Kind(..))
 import Domain.Event as Event exposing (Payload(..))
 import Domain.Group as Group
@@ -18,25 +17,36 @@ type alias Activity =
     , timestamp : Time.Posix
     , actorId : Member.Id
     , detail : Detail
+    , involvedMembers : List Member.Id
+    }
+
+
+{-| A snapshot of group metadata for diff display.
+-}
+type alias GroupMetadataSnapshot =
+    { name : String
+    , subtitle : Maybe String
+    , description : Maybe String
+    , links : List Group.Link
     }
 
 
 {-| What happened in this activity.
 -}
 type Detail
-    = EntryAddedDetail { description : String, amount : Int, currency : Currency }
-    | EntryModifiedDetail { description : String, amount : Int, currency : Currency, changes : List String }
-    | TransferAddedDetail { amount : Int, currency : Currency }
-    | TransferModifiedDetail { amount : Int, currency : Currency, changes : List String }
-    | EntryDeletedDetail { entryDescription : String }
-    | EntryUndeletedDetail { entryDescription : String }
+    = EntryAddedDetail { entry : Entry.Entry }
+    | EntryModifiedDetail { entry : Entry.Entry, previousEntry : Maybe Entry.Entry, changes : List String }
+    | TransferAddedDetail { entry : Entry.Entry }
+    | TransferModifiedDetail { entry : Entry.Entry, previousEntry : Maybe Entry.Entry, changes : List String }
+    | EntryDeletedDetail { entryDescription : String, entry : Maybe Entry.Entry }
+    | EntryUndeletedDetail { entryDescription : String, entry : Maybe Entry.Entry }
     | MemberCreatedDetail { name : String, memberType : Member.Type }
-    | MemberReplacedDetail { name : String }
-    | MemberRenamedDetail { oldName : String, newName : String }
-    | MemberRetiredDetail { name : String }
-    | MemberUnretiredDetail { name : String }
-    | MemberMetadataUpdatedDetail { name : String, updatedFields : List String }
-    | GroupMetadataUpdatedDetail { changedFields : List String }
+    | MemberReplacedDetail { name : String, rootId : Member.Id }
+    | MemberRenamedDetail { oldName : String, newName : String, rootId : Member.Id }
+    | MemberRetiredDetail { name : String, rootId : Member.Id }
+    | MemberUnretiredDetail { name : String, rootId : Member.Id }
+    | MemberMetadataUpdatedDetail { name : String, rootId : Member.Id, oldMetadata : Member.Metadata, newMetadata : Member.Metadata, updatedFields : List String }
+    | GroupMetadataUpdatedDetail { oldMeta : GroupMetadataSnapshot, newMeta : GroupMetadataSnapshot, changedFields : List String }
 
 
 {-| State lookups needed to build an activity from an event.
@@ -46,8 +56,9 @@ type alias StateContext =
     { resolveName : Member.Id -> String
     , memberMetadata : Member.Id -> Member.Metadata
     , entryDescription : Entry.Id -> String
+    , entryCurrentVersion : Entry.Id -> Maybe Entry.Entry
     , previousVersion : Entry.Entry -> Maybe Entry.Entry
-    , groupMeta : { name : String, subtitle : Maybe String, description : Maybe String, links : List Group.Link }
+    , groupMeta : GroupMetadataSnapshot
     }
 
 
@@ -55,11 +66,87 @@ type alias StateContext =
 -}
 fromEnvelope : StateContext -> Event.Envelope -> Activity
 fromEnvelope ctx envelope =
+    let
+        detail =
+            payloadToDetail ctx envelope.payload
+
+        involved =
+            involvedMembers ctx envelope.payload
+    in
     { eventId = envelope.id
     , timestamp = envelope.clientTimestamp
     , actorId = envelope.triggeredBy
-    , detail = payloadToDetail ctx envelope.payload
+    , detail = detail
+    , involvedMembers = involved
     }
+
+
+involvedMembers : StateContext -> Payload -> List Member.Id
+involvedMembers ctx payload =
+    case payload of
+        EntryAdded entry ->
+            entryInvolvedMembers entry
+
+        EntryModified entry ->
+            entryInvolvedMembers entry
+
+        EntryDeleted { rootId } ->
+            case ctx.entryCurrentVersion rootId of
+                Just entry ->
+                    entryInvolvedMembers entry
+
+                Nothing ->
+                    []
+
+        EntryUndeleted { rootId } ->
+            case ctx.entryCurrentVersion rootId of
+                Just entry ->
+                    entryInvolvedMembers entry
+
+                Nothing ->
+                    []
+
+        MemberCreated data ->
+            [ data.memberId ]
+
+        MemberReplaced data ->
+            [ data.rootId ]
+
+        MemberRenamed data ->
+            [ data.rootId ]
+
+        MemberRetired data ->
+            [ data.rootId ]
+
+        MemberUnretired data ->
+            [ data.rootId ]
+
+        MemberMetadataUpdated data ->
+            [ data.rootId ]
+
+        GroupMetadataUpdated _ ->
+            []
+
+
+entryInvolvedMembers : Entry.Entry -> List Member.Id
+entryInvolvedMembers entry =
+    case entry.kind of
+        Expense data ->
+            List.map .memberId data.payers
+                ++ List.map beneficiaryMemberId data.beneficiaries
+
+        Transfer data ->
+            [ data.from, data.to ]
+
+
+beneficiaryMemberId : Entry.Beneficiary -> Member.Id
+beneficiaryMemberId beneficiary =
+    case beneficiary of
+        Entry.ShareBeneficiary data ->
+            data.memberId
+
+        Entry.ExactBeneficiary data ->
+            data.memberId
 
 
 payloadToDetail : StateContext -> Payload -> Detail
@@ -72,45 +159,77 @@ payloadToDetail ctx payload =
             entryModifiedDetail ctx entry
 
         EntryDeleted { rootId } ->
-            EntryDeletedDetail { entryDescription = ctx.entryDescription rootId }
+            EntryDeletedDetail
+                { entryDescription = ctx.entryDescription rootId
+                , entry = ctx.entryCurrentVersion rootId
+                }
 
         EntryUndeleted { rootId } ->
-            EntryUndeletedDetail { entryDescription = ctx.entryDescription rootId }
+            EntryUndeletedDetail
+                { entryDescription = ctx.entryDescription rootId
+                , entry = ctx.entryCurrentVersion rootId
+                }
 
         MemberCreated data ->
             MemberCreatedDetail { name = data.name, memberType = data.memberType }
 
         MemberReplaced { rootId } ->
-            MemberReplacedDetail { name = ctx.resolveName rootId }
+            MemberReplacedDetail { name = ctx.resolveName rootId, rootId = rootId }
 
         MemberRenamed data ->
-            MemberRenamedDetail { oldName = data.oldName, newName = data.newName }
+            MemberRenamedDetail { oldName = data.oldName, newName = data.newName, rootId = data.rootId }
 
         MemberRetired { rootId } ->
-            MemberRetiredDetail { name = ctx.resolveName rootId }
+            MemberRetiredDetail { name = ctx.resolveName rootId, rootId = rootId }
 
         MemberUnretired { rootId } ->
-            MemberUnretiredDetail { name = ctx.resolveName rootId }
+            MemberUnretiredDetail { name = ctx.resolveName rootId, rootId = rootId }
 
         MemberMetadataUpdated data ->
+            let
+                oldMeta =
+                    ctx.memberMetadata data.rootId
+            in
             MemberMetadataUpdatedDetail
                 { name = ctx.resolveName data.rootId
-                , updatedFields = memberMetadataChanges (ctx.memberMetadata data.rootId) data.metadata
+                , rootId = data.rootId
+                , oldMetadata = oldMeta
+                , newMetadata = data.metadata
+                , updatedFields = memberMetadataChanges oldMeta data.metadata
                 }
 
         GroupMetadataUpdated change ->
+            let
+                oldMeta =
+                    ctx.groupMeta
+
+                newMeta =
+                    applyGroupMetadataChange oldMeta change
+            in
             GroupMetadataUpdatedDetail
-                { changedFields = groupMetadataChangedFields ctx.groupMeta change }
+                { oldMeta = oldMeta
+                , newMeta = newMeta
+                , changedFields = groupMetadataChangedFields oldMeta change
+                }
+
+
+applyGroupMetadataChange : GroupMetadataSnapshot -> Event.GroupMetadataChange -> GroupMetadataSnapshot
+applyGroupMetadataChange old change =
+    { name = Maybe.withDefault old.name change.name
+    , subtitle = Maybe.withDefault old.subtitle change.subtitle
+    , description = Maybe.withDefault old.description change.description
+    , links = Maybe.withDefault old.links change.links
+    }
 
 
 entryAddedDetail : Entry.Entry -> Detail
 entryAddedDetail entry =
     case entry.kind of
-        Expense data ->
-            EntryAddedDetail { description = data.description, amount = data.amount, currency = data.currency }
+        Expense _ ->
+            EntryAddedDetail { entry = entry }
 
-        Transfer data ->
-            TransferAddedDetail { amount = data.amount, currency = data.currency }
+        Transfer _ ->
+            TransferAddedDetail { entry = entry }
 
 
 entryModifiedDetail : StateContext -> Entry.Entry -> Detail
@@ -122,16 +241,15 @@ entryModifiedDetail ctx entry =
     case entry.kind of
         Expense data ->
             EntryModifiedDetail
-                { description = data.description
-                , amount = data.amount
-                , currency = data.currency
+                { entry = entry
+                , previousEntry = previousEntry
                 , changes = expenseChanges previousEntry data
                 }
 
         Transfer data ->
             TransferModifiedDetail
-                { amount = data.amount
-                , currency = data.currency
+                { entry = entry
+                , previousEntry = previousEntry
                 , changes = transferChanges previousEntry data
                 }
 

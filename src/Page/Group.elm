@@ -4,6 +4,7 @@ module Page.Group exposing (Context, view)
 -}
 
 import Domain.Entry as Entry
+import Domain.Event as Event
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
 import Domain.Settlement as Settlement
@@ -12,6 +13,7 @@ import Page.Group.BalanceTab
 import Page.Group.EntriesTab
 import Page.Group.MembersTab
 import Route exposing (GroupTab(..))
+import Set exposing (Set)
 import Translations as T exposing (I18n)
 import UI.Shell
 import Ui
@@ -30,6 +32,8 @@ type alias Context msg =
     , onEditGroupMetadata : msg
     , onSettleTransaction : Settlement.Transaction -> msg
     , currentUserRootId : Member.Id
+    , onToggleActivityExpanded : Event.Id -> msg
+    , expandedActivities : Set Event.Id
     }
 
 
@@ -76,5 +80,9 @@ tabContent ctx showDeleted state tab =
 
         ActivityTab ->
             Page.Group.ActivityTab.view ctx.i18n
-                (GroupState.resolveMemberName state)
+                { resolveName = GroupState.resolveMemberName state
+                , currentUserRootId = ctx.currentUserRootId
+                , expandedActivities = ctx.expandedActivities
+                , onToggleExpanded = ctx.onToggleActivityExpanded
+                }
                 state.activities

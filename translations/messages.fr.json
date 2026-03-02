@@ -207,5 +207,8 @@
   "groupInfoSubtitle": "Sous-titre",
   "groupInfoDescription": "Description",
   "groupInfoLinks": "Liens",
-  "settlementMarkAsPaid": "Marquer comme payé"
+  "settlementMarkAsPaid": "Marquer comme payé",
+  "activityDetailOldValue": "avant : {value}",
+  "activityDetailNoValue": "aucun",
+  "activityDetailRemoved": "supprimé"
 }

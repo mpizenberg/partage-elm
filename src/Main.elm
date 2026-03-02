@@ -35,6 +35,7 @@ import Page.NotFound
 import Page.Setup
 import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
+import Set exposing (Set)
 import Storage exposing (GroupSummary)
 import Submit exposing (LoadedGroup)
 import Time
@@ -87,6 +88,7 @@ type alias Model =
     , editGroupMetadataModel : Page.EditGroupMetadata.Model
     , loadedGroup : Maybe LoadedGroup
     , showDeleted : Bool
+    , expandedActivities : Set Event.Id
     }
 
 
@@ -118,6 +120,7 @@ type Msg
     | RestoreEntry Entry.Id
     | OnEntryActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | ToggleShowDeleted
+    | ToggleActivityExpanded Event.Id
       -- Member management
     | MemberDetailMsg Page.MemberDetail.Msg
     | AddMemberMsg Page.AddMember.Msg
@@ -210,6 +213,7 @@ init flags =
       , editGroupMetadataModel = Page.EditGroupMetadata.init GroupState.empty.groupMeta
       , loadedGroup = Nothing
       , showDeleted = False
+      , expandedActivities = Set.empty
       }
     , cmd
     )
@@ -461,6 +465,17 @@ update msg model =
 
         ToggleShowDeleted ->
             ( { model | showDeleted = not model.showDeleted }, Cmd.none )
+
+        ToggleActivityExpanded eventId ->
+            let
+                updated =
+                    if Set.member eventId model.expandedActivities then
+                        Set.remove eventId model.expandedActivities
+
+                    else
+                        Set.insert eventId model.expandedActivities
+            in
+            ( { model | expandedActivities = updated }, Cmd.none )
 
         MemberDetailMsg subMsg ->
             let
@@ -1113,6 +1128,8 @@ viewGroupTab model readyData langSelector groupId tab loaded =
         , onEditGroupMetadata = NavigateTo (GroupRoute groupId EditGroupMetadata)
         , onSettleTransaction = SettleTransaction
         , currentUserRootId = currentUserRootId readyData loaded
+        , onToggleActivityExpanded = ToggleActivityExpanded
+        , expandedActivities = model.expandedActivities
         }
         { showDeleted = model.showDeleted }
         langSelector

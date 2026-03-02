@@ -207,5 +207,8 @@
   "groupInfoSubtitle": "Subtitle",
   "groupInfoDescription": "Description",
   "groupInfoLinks": "Links",
-  "settlementMarkAsPaid": "Mark as Paid"
+  "settlementMarkAsPaid": "Mark as Paid",
+  "activityDetailOldValue": "was: {value}",
+  "activityDetailNoValue": "none",
+  "activityDetailRemoved": "removed"
 }
