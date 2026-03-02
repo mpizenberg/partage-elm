@@ -17,40 +17,13 @@ All local UI gaps have been addressed.
 
 ---
 
-## Phase 2: Filtering & Sorting
+## Phase 2: Filtering & Sorting (Done)
 
-### 2.1 Entry filters
+All filtering features have been implemented with collapsible filter bars and chip-based selection UI.
 
-Entries can be filtered by multiple criteria simultaneously:
-
-- **Person** (AND): entry must involve ALL selected persons.
-- **Category** (OR): entry must match ANY selected category. Transfers have a virtual "transfer" category.
-- **Currency** (OR): entry must use ANY selected currency.
-- **Date range** (OR): entry date must fall within ANY selected range.
-
-Cross-type combination: all active filter types combined with AND.
-
-**Design:**
-- Add a `FilterState` type holding active filters per dimension.
-- Add filter UI above the entry list (collapsible filter bar with chips/dropdowns).
-- Apply filters in `Page.Group.EntriesTab` before rendering.
-
-**Files:** new `src/Domain/Filter.elm` (types + predicate logic), `src/Page/Group/EntriesTab.elm` (UI + state), translations
-
-### 2.2 Date presets
-
-Predefined date ranges: Today, Yesterday, Last 7 days, Last 30 days, This month, Last month, Custom (user-defined start/end).
-
-**Files:** `src/Domain/Filter.elm`, `src/Page/Group/EntriesTab.elm`, translations
-
-### 2.3 Activity filters
-
-Activities can be filtered by:
-- Activity type (entry events, member events).
-- Actor (who performed the action).
-- Involved members.
-
-**Files:** `src/Page/Group/ActivitiesTab.elm`, translations
+- **2.1** Entry filters: person (AND), category (OR), currency (OR), date range (OR), cross-type AND. `Domain.Filter.elm` holds pure types and predicate logic. `Page.Group.EntriesTab` converted to stateful page with Model/Msg/update and collapsible filter bar with toggle chips.
+- **2.2** Date presets: Today, Yesterday, Last 7 days, Last 30 days, This month, Last month. Date arithmetic in `Domain.Date.elm` (addDays, startOfMonth, endOfMonth, previousMonth).
+- **2.3** Activity filters: activity type (entry/member/group events), actor, involved members. `Page.Group.ActivityTab` converted to stateful page with filter bar. `expandedActivities` moved from Main.elm into ActivityTab model.
 
 ---
 
