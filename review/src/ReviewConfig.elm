@@ -62,6 +62,8 @@ config =
         |> Rule.ignoreErrorsForFiles [ "src/Translations.elm" ]
     , NoUnused.Patterns.rule
     , NoUnused.Variables.rule
+        -- generated
+        |> Rule.ignoreErrorsForFiles [ "src/Translations.elm" ]
     , Simplify.rule Simplify.defaults
     ]
         |> List.map (Rule.ignoreErrorsForDirectories [ "vendor/" ])

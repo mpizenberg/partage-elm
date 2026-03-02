@@ -550,7 +550,6 @@ payerDiffOrDetailRow i18n resolveName oldPayers newPayers =
         formatPayer : Entry.Payer -> String
         formatPayer p =
             resolveName p.memberId
-
     in
     if oldPayers == newPayers then
         detailRow label (payerNames resolveName newPayers)
