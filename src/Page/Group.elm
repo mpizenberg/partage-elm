@@ -3,6 +3,7 @@ module Page.Group exposing (Context, view)
 {-| Group page shell with tab routing, using real group data.
 -}
 
+import Domain.Currency exposing (Currency)
 import Domain.Entry as Entry
 import Domain.Event as Event
 import Domain.GroupState as GroupState exposing (GroupState)
@@ -35,6 +36,7 @@ type alias Context msg =
     , onToggleActivityExpanded : Event.Id -> msg
     , expandedActivities : Set Event.Id
     , entryDetailPath : Entry.Id -> String
+    , groupDefaultCurrency : Currency
     }
 
 
@@ -87,5 +89,6 @@ tabContent ctx showDeleted state tab =
                 , onToggleExpanded = ctx.onToggleActivityExpanded
                 , onEntryClick = ctx.onEntryClick
                 , entryDetailPath = ctx.entryDetailPath
+                , groupDefaultCurrency = ctx.groupDefaultCurrency
                 }
                 state.activities

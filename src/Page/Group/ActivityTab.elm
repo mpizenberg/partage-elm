@@ -5,6 +5,7 @@ and expandable detail views.
 -}
 
 import Domain.Activity as Activity exposing (Activity, Detail(..), GroupMetadataSnapshot)
+import Domain.Currency as Currency exposing (Currency)
 import Domain.Date as Date
 import Domain.Entry as Entry exposing (Kind(..))
 import Domain.Event as Event
@@ -27,6 +28,7 @@ type alias Config msg =
     , onToggleExpanded : Event.Id -> msg
     , onEntryClick : Entry.Id -> msg
     , entryDetailPath : Entry.Id -> String
+    , groupDefaultCurrency : Currency
     }
 
 
@@ -269,25 +271,25 @@ detailContent i18n config detail =
     in
     case detail of
         EntryAddedDetail data ->
-            entryDetailRows i18n resolveName data.entry
+            entryDetailRows i18n config.groupDefaultCurrency resolveName data.entry
                 |> withEntryLink data.entry
 
         EntryModifiedDetail data ->
-            entryModifiedDiffRows i18n resolveName data.entry data.previousEntry
+            entryModifiedDiffRows i18n config.groupDefaultCurrency resolveName data.entry data.previousEntry
                 |> withEntryLink data.entry
 
         TransferAddedDetail data ->
-            entryDetailRows i18n resolveName data.entry
+            entryDetailRows i18n config.groupDefaultCurrency resolveName data.entry
                 |> withEntryLink data.entry
 
         TransferModifiedDetail data ->
-            entryModifiedDiffRows i18n resolveName data.entry data.previousEntry
+            entryModifiedDiffRows i18n config.groupDefaultCurrency resolveName data.entry data.previousEntry
                 |> withEntryLink data.entry
 
         EntryDeletedDetail data ->
             case data.entry of
                 Just entry ->
-                    entryDetailRows i18n resolveName entry
+                    entryDetailRows i18n config.groupDefaultCurrency resolveName entry
                         |> withEntryLink entry
 
                 Nothing ->
@@ -296,7 +298,7 @@ detailContent i18n config detail =
         EntryUndeletedDetail data ->
             case data.entry of
                 Just entry ->
-                    entryDetailRows i18n resolveName entry
+                    entryDetailRows i18n config.groupDefaultCurrency resolveName entry
                         |> withEntryLink entry
 
                 Nothing ->
@@ -346,15 +348,17 @@ entryDetailLink i18n config entry =
         (Ui.text (T.activityViewEntryDetails i18n))
 
 
-entryDetailRows : I18n -> (Member.Id -> String) -> Entry.Entry -> List (Ui.Element msg)
-entryDetailRows i18n resolveName entry =
+entryDetailRows : I18n -> Currency -> (Member.Id -> String) -> Entry.Entry -> List (Ui.Element msg)
+entryDetailRows i18n groupCurrency resolveName entry =
     case entry.kind of
         Expense data ->
             List.concat
                 [ [ detailRow (T.newEntryDescriptionLabel i18n) data.description
                   , detailRow (T.entryDetailDate i18n) (Date.toString data.date)
                   , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency data.amount data.currency)
-                  , detailRow (T.entryDetailPaidBy i18n) (payerNames resolveName data.payers)
+                  ]
+                , defaultCurrencyAmountRow groupCurrency data.defaultCurrencyAmount
+                , [ detailRow (T.entryDetailPaidBy i18n) (payerNames resolveName data.payers)
                   , detailRow (T.entryDetailSplitAmong i18n) (beneficiaryNames resolveName data.beneficiaries)
                   ]
                 , categoryRow i18n data.category
@@ -365,37 +369,53 @@ entryDetailRows i18n resolveName entry =
             List.concat
                 [ [ detailRow (T.entryDetailDate i18n) (Date.toString data.date)
                   , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency data.amount data.currency)
-                  , detailRow (T.entryDetailFrom i18n) (resolveName data.from)
+                  ]
+                , defaultCurrencyAmountRow groupCurrency data.defaultCurrencyAmount
+                , [ detailRow (T.entryDetailFrom i18n) (resolveName data.from)
                   , detailRow (T.entryDetailTo i18n) (resolveName data.to)
                   ]
                 , optionalRow (T.entryDetailNotes i18n) data.notes
                 ]
 
 
-entryModifiedDiffRows : I18n -> (Member.Id -> String) -> Entry.Entry -> Maybe Entry.Entry -> List (Ui.Element msg)
-entryModifiedDiffRows i18n resolveName newEntry maybePreviousEntry =
+defaultCurrencyAmountRow : Currency -> Maybe Int -> List (Ui.Element msg)
+defaultCurrencyAmountRow groupCurrency maybeAmount =
+    case maybeAmount of
+        Just amount ->
+            [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
+                (Ui.text ("≈ " ++ Format.formatCentsWithCurrency amount groupCurrency))
+            ]
+
+        Nothing ->
+            []
+
+
+entryModifiedDiffRows : I18n -> Currency -> (Member.Id -> String) -> Entry.Entry -> Maybe Entry.Entry -> List (Ui.Element msg)
+entryModifiedDiffRows i18n groupCurrency resolveName newEntry maybePreviousEntry =
     case maybePreviousEntry of
         Nothing ->
-            entryDetailRows i18n resolveName newEntry
+            entryDetailRows i18n groupCurrency resolveName newEntry
 
         Just oldEntry ->
             case ( newEntry.kind, oldEntry.kind ) of
                 ( Expense new, Expense old ) ->
-                    expenseDiffRows i18n resolveName old new
+                    expenseDiffRows i18n groupCurrency resolveName old new
 
                 ( Transfer new, Transfer old ) ->
-                    transferDiffRows i18n resolveName old new
+                    transferDiffRows i18n groupCurrency resolveName old new
 
                 _ ->
-                    entryDetailRows i18n resolveName newEntry
+                    entryDetailRows i18n groupCurrency resolveName newEntry
 
 
-expenseDiffRows : I18n -> (Member.Id -> String) -> Entry.ExpenseData -> Entry.ExpenseData -> List (Ui.Element msg)
-expenseDiffRows i18n resolveName old new =
+expenseDiffRows : I18n -> Currency -> (Member.Id -> String) -> Entry.ExpenseData -> Entry.ExpenseData -> List (Ui.Element msg)
+expenseDiffRows i18n groupCurrency resolveName old new =
     List.concat
         [ [ maybeDiffOrDetailRow (T.newEntryDescriptionLabel i18n) old.description new.description ]
         , [ maybeDiffOrDetailRow (T.entryDetailDate i18n) (Date.toString old.date) (Date.toString new.date) ]
-        , [ amountDiffOrDetailRow i18n old new ]
+        , amountCurrencyDiffRows i18n groupCurrency
+            { oldAmount = old.amount, oldCurrency = old.currency, oldDefaultCurrencyAmount = old.defaultCurrencyAmount }
+            { newAmount = new.amount, newCurrency = new.currency, newDefaultCurrencyAmount = new.defaultCurrencyAmount }
         , [ payerDiffOrDetailRow i18n resolveName old.payers new.payers ]
         , [ beneficiaryDiffOrDetailRow i18n resolveName old.beneficiaries new.beneficiaries ]
         , categoryDiffRow i18n old.category new.category
@@ -403,11 +423,13 @@ expenseDiffRows i18n resolveName old new =
         ]
 
 
-transferDiffRows : I18n -> (Member.Id -> String) -> Entry.TransferData -> Entry.TransferData -> List (Ui.Element msg)
-transferDiffRows i18n resolveName old new =
+transferDiffRows : I18n -> Currency -> (Member.Id -> String) -> Entry.TransferData -> Entry.TransferData -> List (Ui.Element msg)
+transferDiffRows i18n groupCurrency resolveName old new =
     List.concat
         [ [ maybeDiffOrDetailRow (T.entryDetailDate i18n) (Date.toString old.date) (Date.toString new.date) ]
-        , [ amountDiffOrDetailRowTransfer i18n old new ]
+        , amountCurrencyDiffRows i18n groupCurrency
+            { oldAmount = old.amount, oldCurrency = old.currency, oldDefaultCurrencyAmount = old.defaultCurrencyAmount }
+            { newAmount = new.amount, newCurrency = new.currency, newDefaultCurrencyAmount = new.defaultCurrencyAmount }
         , [ maybeDiffOrDetailRow (T.entryDetailFrom i18n) (resolveName old.from) (resolveName new.from) ]
         , [ maybeDiffOrDetailRow (T.entryDetailTo i18n) (resolveName old.to) (resolveName new.to) ]
         , notesDiffRow i18n old.notes new.notes
@@ -423,42 +445,79 @@ maybeDiffOrDetailRow label oldVal newVal =
         diffRow label oldVal newVal
 
 
-amountDiffOrDetailRow : I18n -> Entry.ExpenseData -> Entry.ExpenseData -> Ui.Element msg
-amountDiffOrDetailRow i18n old new =
+amountCurrencyDiffRows :
+    I18n
+    -> Currency
+    -> { oldAmount : Int, oldCurrency : Currency, oldDefaultCurrencyAmount : Maybe Int }
+    -> { newAmount : Int, newCurrency : Currency, newDefaultCurrencyAmount : Maybe Int }
+    -> List (Ui.Element msg)
+amountCurrencyDiffRows i18n groupCurrency old new =
     let
-        label =
-            T.newEntryAmountLabel i18n
+        currencyChanged =
+            old.oldCurrency /= new.newCurrency
 
-        oldFormatted =
-            Format.formatCentsWithCurrency old.amount old.currency
+        amountChanged =
+            old.oldAmount /= new.newAmount
 
-        newFormatted =
-            Format.formatCentsWithCurrency new.amount new.currency
+        formatDefaultAmount amt =
+            Format.formatCentsWithCurrency amt groupCurrency
+
+        currencyRow =
+            if currencyChanged then
+                [ diffRow (T.newEntryCurrencyLabel i18n)
+                    (Currency.currencyCode old.oldCurrency)
+                    (Currency.currencyCode new.newCurrency)
+                ]
+
+            else
+                []
+
+        amountRow =
+            let
+                label =
+                    T.newEntryAmountLabel i18n
+
+                oldFormatted =
+                    Format.formatCentsWithCurrency old.oldAmount old.oldCurrency
+
+                newFormatted =
+                    Format.formatCentsWithCurrency new.newAmount new.newCurrency
+            in
+            if amountChanged || currencyChanged then
+                [ diffRow label oldFormatted newFormatted ]
+
+            else
+                [ detailRow label newFormatted ]
+
+        defaultAmountRow =
+            let
+                label =
+                    "≈ " ++ T.newEntryAmountLabel i18n
+            in
+            case ( old.oldDefaultCurrencyAmount, new.newDefaultCurrencyAmount ) of
+                ( Nothing, Nothing ) ->
+                    []
+
+                ( Nothing, Just newAmt ) ->
+                    [ detailRow label (formatDefaultAmount newAmt) ]
+
+                ( Just oldAmt, Nothing ) ->
+                    [ diffRow label
+                        (formatDefaultAmount oldAmt)
+                        (T.activityDetailRemoved i18n)
+                    ]
+
+                ( Just oldAmt, Just newAmt ) ->
+                    if oldAmt == newAmt && not currencyChanged then
+                        [ detailRow label (formatDefaultAmount newAmt) ]
+
+                    else
+                        [ diffRow label
+                            (formatDefaultAmount oldAmt)
+                            (formatDefaultAmount newAmt)
+                        ]
     in
-    if old.amount == new.amount && old.currency == new.currency then
-        detailRow label newFormatted
-
-    else
-        diffRow label oldFormatted newFormatted
-
-
-amountDiffOrDetailRowTransfer : I18n -> Entry.TransferData -> Entry.TransferData -> Ui.Element msg
-amountDiffOrDetailRowTransfer i18n old new =
-    let
-        label =
-            T.newEntryAmountLabel i18n
-
-        oldFormatted =
-            Format.formatCentsWithCurrency old.amount old.currency
-
-        newFormatted =
-            Format.formatCentsWithCurrency new.amount new.currency
-    in
-    if old.amount == new.amount && old.currency == new.currency then
-        detailRow label newFormatted
-
-    else
-        diffRow label oldFormatted newFormatted
+    currencyRow ++ amountRow ++ defaultAmountRow
 
 
 payerDiffOrDetailRow : I18n -> (Member.Id -> String) -> List Entry.Payer -> List Entry.Payer -> Ui.Element msg

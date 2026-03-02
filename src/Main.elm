@@ -1131,6 +1131,7 @@ viewGroupTab model readyData langSelector groupId tab loaded =
         , onToggleActivityExpanded = ToggleActivityExpanded
         , expandedActivities = model.expandedActivities
         , entryDetailPath = \entryId -> Route.toPath (GroupRoute groupId (EntryDetail entryId))
+        , groupDefaultCurrency = loaded.summary.defaultCurrency
         }
         { showDeleted = model.showDeleted }
         langSelector
