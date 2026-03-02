@@ -218,6 +218,19 @@
   "homeExportGroup": "Export",
   "homeImportGroup": "Import group",
   "importErrorAlreadyExists": "This group already exists on your device.",
-  "importErrorInvalidFile": "Invalid file format."
+  "importErrorInvalidFile": "Invalid file format.",
+  "toastGroupCreateError": "Failed to create group.",
+  "toastEntrySaveError": "Failed to save entry.",
+  "toastEntryDeleted": "Entry deleted.",
+  "toastEntryRestored": "Entry restored.",
+  "toastEntryActionError": "Failed to update entry.",
+  "toastMemberActionError": "Failed to update member.",
+  "toastGroupSettingsError": "Failed to save group settings.",
+  "toastGroupRemoved": "Group removed.",
+  "toastGroupRemoveError": "Failed to remove group.",
+  "toastImportSuccess": "Group imported successfully.",
+  "toastImportError": "Failed to import group.",
+  "toastExportError": "Failed to export group.",
+  "toastSettlementRecorded": "Settlement recorded."
 }
 

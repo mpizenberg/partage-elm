@@ -185,7 +185,6 @@ deleteGroup db groupId =
         |> ConcurrentTask.map (\_ -> ())
 
 
-
 {-| Import a group by saving its summary, events, and optional encryption key.
 -}
 importGroup : Idb.Db -> GroupSummary -> Maybe String -> List Event.Envelope -> ConcurrentTask Idb.Error ()

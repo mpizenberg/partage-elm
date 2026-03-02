@@ -44,6 +44,7 @@ import Translations as T exposing (I18n, Language(..))
 import UI.Components
 import UI.Shell
 import UI.Theme as Theme
+import UI.Toast as Toast
 import UUID
 import Ui
 import Ui.Font
@@ -92,6 +93,7 @@ type alias Model =
     , showSettlementPreferences : Bool
     , expandedActivities : Set Event.Id
     , homeModel : Page.Home.Model
+    , toastModel : Toast.Model
     }
 
 
@@ -143,6 +145,8 @@ type Msg
     | ExportGroup Group.Id
     | OnExportDataLoaded Group.Id (ConcurrentTask.Response Idb.Error ( List Event.Envelope, Maybe String ))
     | OnGroupImported Storage.GroupSummary (ConcurrentTask.Response Idb.Error ())
+      -- Toast notifications
+    | DismissToast Toast.ToastId
 
 
 subscriptions : Model -> Sub Msg
@@ -232,6 +236,7 @@ init flags =
       , showSettlementPreferences = False
       , expandedActivities = Set.empty
       , homeModel = Page.Home.init
+      , toastModel = Toast.init
       }
     , cmd
     )
@@ -246,6 +251,12 @@ dummyMemberChainState =
     , currentMember = { id = "", previousId = Nothing, depth = 0, memberType = Member.Virtual }
     , allMembers = Dict.empty
     }
+
+
+addToast : Toast.ToastLevel -> String -> Model -> ( Model, Cmd Msg )
+addToast level message model =
+    Toast.push DismissToast level message model.toastModel
+        |> Tuple.mapFirst (\toast -> { model | toastModel = toast })
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -432,30 +443,34 @@ update msg model =
                     ( model, Cmd.none )
 
         OnGroupCreated _ ->
-            ( model, Cmd.none )
+            addToast Toast.Error (T.toastGroupCreateError model.i18n) model
 
         OnEntrySaved groupId (ConcurrentTask.Success envelope) ->
             case appendEventAndRecompute model groupId envelope of
                 Just updatedModel ->
-                    let
-                        targetRoute : Route
-                        targetRoute =
-                            case model.route of
-                                GroupRoute _ (Tab BalanceTab) ->
-                                    GroupRoute groupId (Tab BalanceTab)
+                    case model.route of
+                        GroupRoute _ (Tab BalanceTab) ->
+                            let
+                                ( modelWithToast, toastCmd ) =
+                                    addToast Toast.Success (T.toastSettlementRecorded model.i18n) updatedModel
+                            in
+                            ( modelWithToast
+                            , Cmd.batch
+                                [ Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab BalanceTab)))
+                                , toastCmd
+                                ]
+                            )
 
-                                _ ->
-                                    GroupRoute groupId (Tab EntriesTab)
-                    in
-                    ( updatedModel
-                    , Navigation.pushUrl navCmd (Route.toAppUrl targetRoute)
-                    )
+                        _ ->
+                            ( updatedModel
+                            , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab EntriesTab)))
+                            )
 
                 Nothing ->
                     ( model, Cmd.none )
 
         OnEntrySaved _ _ ->
-            ( model, Cmd.none )
+            addToast Toast.Error (T.toastEntrySaveError model.i18n) model
 
         SettleTransaction tx ->
             case ( model.appState, model.loadedGroup ) of
@@ -497,13 +512,21 @@ update msg model =
             submitEntryAction model (\ctx loaded -> Submit.restoreEntry ctx loaded rootId)
 
         OnEntryActionSaved groupId (ConcurrentTask.Success envelope) ->
-            ( appendEventAndRecompute model groupId envelope
-                |> Maybe.withDefault model
-            , Cmd.none
-            )
+            let
+                updatedModel : Model
+                updatedModel =
+                    appendEventAndRecompute model groupId envelope
+                        |> Maybe.withDefault model
+            in
+            case Toast.entryActionMessage model.i18n envelope.payload of
+                Just message ->
+                    addToast Toast.Success message updatedModel
+
+                Nothing ->
+                    ( updatedModel, Cmd.none )
 
         OnEntryActionSaved _ _ ->
-            ( model, Cmd.none )
+            addToast Toast.Error (T.toastEntryActionError model.i18n) model
 
         ToggleShowDeleted ->
             ( { model | showDeleted = not model.showDeleted }, Cmd.none )
@@ -594,7 +617,7 @@ update msg model =
                     ( model, Cmd.none )
 
         OnMemberActionSaved _ _ ->
-            ( model, Cmd.none )
+            addToast Toast.Error (T.toastMemberActionError model.i18n) model
 
         -- Group metadata editing
         EditGroupMetadataMsg subMsg ->
@@ -641,23 +664,29 @@ update msg model =
                     ( model, Cmd.none )
 
         OnGroupMetadataActionSaved _ _ ->
-            ( model, Cmd.none )
+            addToast Toast.Error (T.toastGroupSettingsError model.i18n) model
 
         OnGroupRemoved groupId (ConcurrentTask.Success _) ->
             case model.appState of
                 Ready readyData ->
-                    ( { model
-                        | appState = Ready { readyData | groups = Dict.remove groupId readyData.groups }
-                        , loadedGroup = Nothing
-                      }
-                    , Navigation.pushUrl navCmd (Route.toAppUrl Home)
+                    let
+                        ( modelWithToast, toastCmd ) =
+                            addToast Toast.Success
+                                (T.toastGroupRemoved model.i18n)
+                                { model
+                                    | appState = Ready { readyData | groups = Dict.remove groupId readyData.groups }
+                                    , loadedGroup = Nothing
+                                }
+                    in
+                    ( modelWithToast
+                    , Cmd.batch [ Navigation.pushUrl navCmd (Route.toAppUrl Home), toastCmd ]
                     )
 
                 _ ->
                     ( model, Cmd.none )
 
         OnGroupRemoved _ _ ->
-            ( model, Cmd.none )
+            addToast Toast.Error (T.toastGroupRemoveError model.i18n) model
 
         OnGroupSummarySaved (ConcurrentTask.Success _) ->
             ( model, Cmd.none )
@@ -714,7 +743,7 @@ update msg model =
                     ( model, Cmd.none )
 
         OnExportDataLoaded _ _ ->
-            ( model, Cmd.none )
+            addToast Toast.Error (T.toastExportError model.i18n) model
 
         HomeMsg homeMsg ->
             case model.appState of
@@ -757,20 +786,30 @@ update msg model =
                         newRoute : Route
                         newRoute =
                             GroupRoute summary.id (Tab BalanceTab)
+
+                        ( modelWithToast, toastCmd ) =
+                            addToast Toast.Success
+                                (T.toastImportSuccess model.i18n)
+                                { model
+                                    | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
+                                    , loadedGroup = Nothing
+                                    , homeModel = Page.Home.init
+                                }
                     in
-                    ( { model
-                        | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
-                        , loadedGroup = Nothing
-                        , homeModel = Page.Home.init
-                      }
-                    , Navigation.pushUrl navCmd (Route.toAppUrl newRoute)
+                    ( modelWithToast
+                    , Cmd.batch [ Navigation.pushUrl navCmd (Route.toAppUrl newRoute), toastCmd ]
                     )
 
                 _ ->
                     ( model, Cmd.none )
 
         OnGroupImported _ _ ->
-            ( model, Cmd.none )
+            addToast Toast.Error (T.toastImportError model.i18n) model
+
+        DismissToast toastId ->
+            ( { model | toastModel = Toast.dismiss toastId model.toastModel }
+            , Cmd.none
+            )
 
 
 submitContext : (ConcurrentTask.Response Idb.Error Event.Envelope -> Msg) -> Model -> Storage.InitData -> Maybe (Submit.Context Msg)
@@ -1128,7 +1167,6 @@ mapLoadedGroup f groupId model =
             Nothing
 
 
-
 applyRouteGuard : Maybe Identity -> Route -> ( Route, Cmd Msg )
 applyRouteGuard identity route =
     case identity of
@@ -1157,7 +1195,11 @@ applyRouteGuard identity route =
 
 view : Model -> Html Msg
 view model =
-    Ui.layout Ui.default [ Ui.height Ui.fill ] (viewPage model)
+    Ui.layout Ui.default
+        [ Ui.height Ui.fill
+        , Ui.inFront (Toast.view model.toastModel)
+        ]
+        (viewPage model)
 
 
 viewPage : Model -> Ui.Element Msg
