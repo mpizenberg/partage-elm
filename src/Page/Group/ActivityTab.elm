@@ -1,7 +1,7 @@
-module Page.Group.ActivityTab exposing (Config, view)
+module Page.Group.ActivityTab exposing (Config, Model, Msg, init, update, view)
 
-{-| Activity tab showing the group's event history with involvement markers
-and expandable detail views.
+{-| Activity tab showing the group's event history with involvement markers,
+expandable detail views, and filtering.
 -}
 
 import Domain.Activity exposing (Activity, Detail(..), GroupMetadataSnapshot)
@@ -9,6 +9,7 @@ import Domain.Currency as Currency exposing (Currency)
 import Domain.Date as Date
 import Domain.Entry as Entry exposing (Kind(..))
 import Domain.Event as Event
+import Domain.Filter as Filter exposing (ActivityFilters, ActivityType(..))
 import Domain.Member as Member
 import Format
 import Json.Decode
@@ -21,35 +22,258 @@ import Ui.Events
 import Ui.Font
 
 
+type Model
+    = Model
+        { filters : ActivityFilters
+        , showFilters : Bool
+        , expandedActivities : Set Event.Id
+        }
+
+
+type Msg
+    = ToggleFilters
+    | ToggleActivityType String
+    | ToggleActor Member.Id
+    | ToggleInvolvedMember Member.Id
+    | ClearAllFilters
+    | ToggleExpanded Event.Id
+
+
 type alias Config msg =
     { resolveName : Member.Id -> String
     , currentUserRootId : Member.Id
-    , expandedActivities : Set Event.Id
-    , onToggleExpanded : Event.Id -> msg
     , onEntryClick : Entry.Id -> msg
     , entryDetailPath : Entry.Id -> String
     , groupDefaultCurrency : Currency
+    , toMsg : Msg -> msg
+    , allMembers : List ( Member.Id, String )
     }
 
 
-{-| Render the activity tab with a chronological list of group events.
+init : Model
+init =
+    Model
+        { filters = Filter.emptyActivityFilters
+        , showFilters = False
+        , expandedActivities = Set.empty
+        }
+
+
+update : Msg -> Model -> Model
+update msg (Model data) =
+    case msg of
+        ToggleFilters ->
+            Model { data | showFilters = not data.showFilters }
+
+        ToggleActivityType typeStr ->
+            Model (updateFilters (\f -> { f | activityTypes = toggleSet typeStr f.activityTypes }) data)
+
+        ToggleActor memberId ->
+            Model (updateFilters (\f -> { f | actors = toggleSet memberId f.actors }) data)
+
+        ToggleInvolvedMember memberId ->
+            Model (updateFilters (\f -> { f | involvedMembers = toggleSet memberId f.involvedMembers }) data)
+
+        ClearAllFilters ->
+            Model { data | filters = Filter.emptyActivityFilters }
+
+        ToggleExpanded eventId ->
+            Model
+                { data
+                    | expandedActivities =
+                        if Set.member eventId data.expandedActivities then
+                            Set.remove eventId data.expandedActivities
+
+                        else
+                            Set.insert eventId data.expandedActivities
+                }
+
+
+updateFilters : (ActivityFilters -> ActivityFilters) -> { a | filters : ActivityFilters } -> { a | filters : ActivityFilters }
+updateFilters transform data =
+    { data | filters = transform data.filters }
+
+
+toggleSet : comparable -> Set comparable -> Set comparable
+toggleSet item set =
+    if Set.member item set then
+        Set.remove item set
+
+    else
+        Set.insert item set
+
+
+{-| Render the activity tab with filtering and a chronological list of group events.
 -}
-view : I18n -> Config msg -> List Activity -> Ui.Element msg
-view i18n config activities =
+view : I18n -> Config msg -> Model -> List Activity -> Ui.Element msg
+view i18n config (Model data) activities =
+    let
+        filteredActivities : List Activity
+        filteredActivities =
+            List.filter (Filter.matchesActivityFilters data.filters) activities
+    in
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.md ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.activityTabTitle i18n))
-        , if List.isEmpty activities then
+        , activityFilterToggle i18n config.toMsg data.showFilters data.filters
+        , if data.showFilters then
+            activityFilterBar i18n config data.filters
+
+          else
+            Ui.none
+        , if List.isEmpty filteredActivities then
             Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
                 (Ui.text (T.activityComingSoon i18n))
 
           else
             Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-                (List.map (activityItem i18n config) activities)
+                (List.map (activityItem i18n config data.expandedActivities) filteredActivities)
         ]
 
 
-activityItem : I18n -> Config msg -> Activity -> Ui.Element msg
-activityItem i18n config activity =
+activityFilterToggle : I18n -> (Msg -> msg) -> Bool -> ActivityFilters -> Ui.Element msg
+activityFilterToggle i18n toMsg showFilters filters =
+    let
+        label : String
+        label =
+            if showFilters then
+                T.filterToggleHide i18n
+
+            else
+                T.filterToggleShow i18n
+
+        activeCount : Int
+        activeCount =
+            Filter.countActiveActivityFilters filters
+    in
+    Ui.row [ Ui.spacing Theme.spacing.sm ]
+        [ Ui.el
+            [ Ui.pointer
+            , Ui.Events.onClick (toMsg ToggleFilters)
+            , Ui.Font.size Theme.fontSize.sm
+            , Ui.Font.color Theme.primary
+            ]
+            (Ui.text label)
+        , if not showFilters && activeCount > 0 then
+            Ui.el
+                [ Ui.Font.size Theme.fontSize.sm
+                , Ui.Font.color Theme.neutral500
+                ]
+                (Ui.text (T.filterActiveCount (String.fromInt activeCount) i18n))
+
+          else
+            Ui.none
+        ]
+
+
+activityFilterBar : I18n -> Config msg -> ActivityFilters -> Ui.Element msg
+activityFilterBar i18n config filters =
+    Ui.column
+        [ Ui.spacing Theme.spacing.sm
+        , Ui.width Ui.fill
+        , Ui.padding Theme.spacing.sm
+        , Ui.rounded Theme.rounding.sm
+        , Ui.background Theme.neutral200
+        ]
+        [ activityTypeFilterSection i18n config.toMsg filters.activityTypes
+        , actorFilterSection i18n config filters.actors
+        , involvedFilterSection i18n config filters.involvedMembers
+        , if Filter.isActivityFilterActive filters then
+            Ui.el
+                [ Ui.pointer
+                , Ui.Events.onClick (config.toMsg ClearAllFilters)
+                , Ui.Font.size Theme.fontSize.sm
+                , Ui.Font.color Theme.danger
+                ]
+                (Ui.text (T.filterClearAll i18n))
+
+          else
+            Ui.none
+        ]
+
+
+activityTypeFilterSection : I18n -> (Msg -> msg) -> Set String -> Ui.Element msg
+activityTypeFilterSection i18n toMsg selected =
+    let
+        types : List ( String, String )
+        types =
+            [ ( Filter.activityTypeToString EntryActivity, T.filterActivityEntry i18n )
+            , ( Filter.activityTypeToString MemberActivity, T.filterActivityMember i18n )
+            , ( Filter.activityTypeToString GroupActivity, T.filterActivityGroup i18n )
+            ]
+    in
+    filterSection (T.filterActivityTypeLabel i18n)
+        (List.map
+            (\( key, label ) ->
+                filterChip toMsg (ToggleActivityType key) label (Set.member key selected)
+            )
+            types
+        )
+
+
+actorFilterSection : I18n -> Config msg -> Set Member.Id -> Ui.Element msg
+actorFilterSection i18n config selected =
+    filterSection (T.filterActorLabel i18n)
+        (List.map
+            (\( id, name ) ->
+                filterChip config.toMsg (ToggleActor id) name (Set.member id selected)
+            )
+            config.allMembers
+        )
+
+
+involvedFilterSection : I18n -> Config msg -> Set Member.Id -> Ui.Element msg
+involvedFilterSection i18n config selected =
+    filterSection (T.filterInvolvedLabel i18n)
+        (List.map
+            (\( id, name ) ->
+                filterChip config.toMsg (ToggleInvolvedMember id) name (Set.member id selected)
+            )
+            config.allMembers
+        )
+
+
+filterSection : String -> List (Ui.Element msg) -> Ui.Element msg
+filterSection label chips =
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ] (Ui.text label)
+        , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.xs ] chips
+        ]
+
+
+filterChip : (Msg -> msg) -> Msg -> String -> Bool -> Ui.Element msg
+filterChip toMsg msg label isActive =
+    let
+        bgColor : Ui.Attribute msg
+        bgColor =
+            if isActive then
+                Ui.background Theme.primaryLight
+
+            else
+                Ui.background Theme.white
+
+        borderColor : Ui.Attribute msg
+        borderColor =
+            if isActive then
+                Ui.borderColor Theme.primary
+
+            else
+                Ui.borderColor Theme.neutral300
+    in
+    Ui.el
+        [ Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
+        , Ui.rounded Theme.rounding.sm
+        , Ui.border Theme.borderWidth.sm
+        , bgColor
+        , borderColor
+        , Ui.pointer
+        , Ui.Font.size Theme.fontSize.sm
+        , Ui.Events.onClick (toMsg msg)
+        ]
+        (Ui.text label)
+
+
+activityItem : I18n -> Config msg -> Set Event.Id -> Activity -> Ui.Element msg
+activityItem i18n config expandedActivities activity =
     let
         isInvolved : Bool
         isInvolved =
@@ -57,7 +281,7 @@ activityItem i18n config activity =
 
         isExpanded : Bool
         isExpanded =
-            Set.member activity.eventId config.expandedActivities
+            Set.member activity.eventId expandedActivities
 
         innerAttrs : List (Ui.Attribute msg)
         innerAttrs =
@@ -76,7 +300,7 @@ activityItem i18n config activity =
         , Ui.borderColor Theme.neutral200
         , Ui.paddingXY 0 Theme.spacing.xs
         , Ui.pointer
-        , Ui.Events.onClick (config.onToggleExpanded activity.eventId)
+        , Ui.Events.onClick (config.toMsg (ToggleExpanded activity.eventId))
         ]
         [ Ui.column
             ([ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ] ++ innerAttrs)

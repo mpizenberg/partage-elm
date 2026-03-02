@@ -237,6 +237,27 @@
   "entryRestoreWarning": "This will restore the deleted entry.",
   "entryRestoreConfirm": "Confirm Restore",
   "toastCopied": "Copied to clipboard.",
-  "balancePayThem": "Pay Them"
+  "balancePayThem": "Pay Them",
+  "filterToggleShow": "Filters ▸",
+  "filterToggleHide": "Filters ▾",
+  "filterActiveCount": "{count} filters active",
+  "filterClearAll": "Clear filters",
+  "filterPersonLabel": "Person",
+  "filterCategoryLabel": "Category",
+  "filterCurrencyLabel": "Currency",
+  "filterDateLabel": "Date",
+  "filterCategoryTransfer": "Transfer",
+  "filterDateToday": "Today",
+  "filterDateYesterday": "Yesterday",
+  "filterDateLast7": "Last 7 days",
+  "filterDateLast30": "Last 30 days",
+  "filterDateThisMonth": "This month",
+  "filterDateLastMonth": "Last month",
+  "filterActivityTypeLabel": "Type",
+  "filterActivityEntry": "Entry events",
+  "filterActivityMember": "Member events",
+  "filterActivityGroup": "Group events",
+  "filterActorLabel": "Actor",
+  "filterInvolvedLabel": "Involved"
 }
 

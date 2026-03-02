@@ -1,11 +1,11 @@
-module Page.Group exposing (Context, view)
+module Page.Group exposing (Context, TabState, view)
 
 {-| Group page shell with tab routing, using real group data.
 -}
 
 import Domain.Currency exposing (Currency)
+import Domain.Date exposing (Date)
 import Domain.Entry as Entry
-import Domain.Event as Event
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
 import Domain.Settlement as Settlement
@@ -14,7 +14,6 @@ import Page.Group.BalanceTab
 import Page.Group.EntriesTab
 import Page.Group.MembersTab
 import Route exposing (GroupTab(..))
-import Set exposing (Set)
 import Translations as T exposing (I18n)
 import UI.Shell
 import Ui
@@ -36,23 +35,33 @@ type alias Context msg =
     , onSaveSettlementPreferences : { memberRootId : Member.Id, preferredRecipients : List Member.Id } -> msg
     , onToggleSettlementPreferences : msg
     , currentUserRootId : Member.Id
-    , onToggleActivityExpanded : Event.Id -> msg
-    , expandedActivities : Set Event.Id
     , entryDetailPath : Entry.Id -> String
     , groupDefaultCurrency : Currency
+    , today : Date
+    , onEntriesTabMsg : Page.Group.EntriesTab.Msg -> msg
+    , onActivityTabMsg : Page.Group.ActivityTab.Msg -> msg
+    }
+
+
+{-| Mutable tab state grouped with the active tab.
+-}
+type alias TabState =
+    { activeTab : GroupTab
+    , entriesTabModel : Page.Group.EntriesTab.Model
+    , activityTabModel : Page.Group.ActivityTab.Model
     }
 
 
 {-| Render the group page shell with tabs and the active tab's content.
 -}
-view : Context msg -> { showDeleted : Bool, showSettlementPreferences : Bool } -> Ui.Element msg -> GroupState -> GroupTab -> Ui.Element msg
-view ctx { showDeleted, showSettlementPreferences } headerExtra groupState activeTab =
+view : Context msg -> { showDeleted : Bool, showSettlementPreferences : Bool } -> Ui.Element msg -> GroupState -> TabState -> Ui.Element msg
+view ctx { showDeleted, showSettlementPreferences } headerExtra groupState tabState =
     UI.Shell.groupShell
         { groupName = groupState.groupMeta.name
         , headerExtra = headerExtra
-        , activeTab = activeTab
+        , activeTab = tabState.activeTab
         , onTabClick = ctx.onTabClick
-        , content = tabContent ctx showDeleted showSettlementPreferences groupState activeTab
+        , content = tabContent ctx showDeleted showSettlementPreferences groupState tabState
         , tabLabels =
             { balance = T.tabBalance ctx.i18n
             , entries = T.tabEntries ctx.i18n
@@ -62,9 +71,9 @@ view ctx { showDeleted, showSettlementPreferences } headerExtra groupState activ
         }
 
 
-tabContent : Context msg -> Bool -> Bool -> GroupState -> GroupTab -> Ui.Element msg
-tabContent ctx showDeleted showSettlementPreferences state tab =
-    case tab of
+tabContent : Context msg -> Bool -> Bool -> GroupState -> TabState -> Ui.Element msg
+tabContent ctx showDeleted showSettlementPreferences state tabState =
+    case tabState.activeTab of
         BalanceTab ->
             Page.Group.BalanceTab.view ctx.i18n
                 { onSettle = ctx.onSettleTransaction
@@ -82,7 +91,10 @@ tabContent ctx showDeleted showSettlementPreferences state tab =
                 , onEntryClick = ctx.onEntryClick
                 , showDeleted = showDeleted
                 , onToggleDeleted = ctx.onToggleDeleted
+                , toMsg = ctx.onEntriesTabMsg
                 }
+                ctx.today
+                tabState.entriesTabModel
                 state
 
         MembersTab ->
@@ -95,13 +107,21 @@ tabContent ctx showDeleted showSettlementPreferences state tab =
                 state
 
         ActivityTab ->
+            let
+                allMembers : List ( Member.Id, String )
+                allMembers =
+                    GroupState.activeMembers state
+                        |> List.map (\m -> ( m.rootId, m.name ))
+                        |> List.sortBy Tuple.second
+            in
             Page.Group.ActivityTab.view ctx.i18n
                 { resolveName = GroupState.resolveMemberName state
                 , currentUserRootId = ctx.currentUserRootId
-                , expandedActivities = ctx.expandedActivities
-                , onToggleExpanded = ctx.onToggleActivityExpanded
                 , onEntryClick = ctx.onEntryClick
                 , entryDetailPath = ctx.entryDetailPath
                 , groupDefaultCurrency = ctx.groupDefaultCurrency
+                , toMsg = ctx.onActivityTabMsg
+                , allMembers = allMembers
                 }
+                tabState.activityTabModel
                 state.activities

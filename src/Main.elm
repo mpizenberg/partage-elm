@@ -26,6 +26,8 @@ import Page.EditGroupMetadata
 import Page.EditMemberMetadata
 import Page.EntryDetail
 import Page.Group
+import Page.Group.ActivityTab
+import Page.Group.EntriesTab
 import Page.Home
 import Page.InitError
 import Page.Loading
@@ -95,7 +97,8 @@ type alias Model =
     , loadedGroup : Maybe LoadedGroup
     , showDeleted : Bool
     , showSettlementPreferences : Bool
-    , expandedActivities : Set Event.Id
+    , entriesTabModel : Page.Group.EntriesTab.Model
+    , activityTabModel : Page.Group.ActivityTab.Model
     , homeModel : Page.Home.Model
     , toastModel : Toast.Model
     , pendingTransfer : Maybe { toMemberId : Member.Id, amountCents : Int }
@@ -132,7 +135,8 @@ type Msg
     | OnEntryActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | ToggleShowDeleted
     | ToggleShowSettlementPreferences
-    | ToggleActivityExpanded Event.Id
+    | EntriesTabMsg Page.Group.EntriesTab.Msg
+    | ActivityTabMsg Page.Group.ActivityTab.Msg
       -- Member management
     | MemberDetailMsg Page.MemberDetail.Msg
     | AddMemberMsg Page.AddMember.Msg
@@ -242,7 +246,8 @@ init flags =
       , loadedGroup = Nothing
       , showDeleted = False
       , showSettlementPreferences = False
-      , expandedActivities = Set.empty
+      , entriesTabModel = Page.Group.EntriesTab.init
+      , activityTabModel = Page.Group.ActivityTab.init
       , homeModel = Page.Home.init
       , toastModel = Toast.init
       , pendingTransfer = Nothing
@@ -592,17 +597,11 @@ update msg model =
         ToggleShowSettlementPreferences ->
             ( { model | showSettlementPreferences = not model.showSettlementPreferences }, Cmd.none )
 
-        ToggleActivityExpanded eventId ->
-            let
-                updated : Set Event.Id
-                updated =
-                    if Set.member eventId model.expandedActivities then
-                        Set.remove eventId model.expandedActivities
+        EntriesTabMsg subMsg ->
+            ( { model | entriesTabModel = Page.Group.EntriesTab.update subMsg model.entriesTabModel }, Cmd.none )
 
-                    else
-                        Set.insert eventId model.expandedActivities
-            in
-            ( { model | expandedActivities = updated }, Cmd.none )
+        ActivityTabMsg subMsg ->
+            ( { model | activityTabModel = Page.Group.ActivityTab.update subMsg model.activityTabModel }, Cmd.none )
 
         MemberDetailMsg subMsg ->
             let
@@ -1406,17 +1405,21 @@ viewGroupTab model readyData langSelector groupId tab loaded =
         , onSaveSettlementPreferences = SaveSettlementPreferences
         , onToggleSettlementPreferences = ToggleShowSettlementPreferences
         , currentUserRootId = currentUserRootId readyData loaded
-        , onToggleActivityExpanded = ToggleActivityExpanded
-        , expandedActivities = model.expandedActivities
         , entryDetailPath = \entryId -> Route.toPath (GroupRoute groupId (EntryDetail entryId))
         , groupDefaultCurrency = loaded.summary.defaultCurrency
+        , today = Date.posixToDate model.currentTime
+        , onEntriesTabMsg = EntriesTabMsg
+        , onActivityTabMsg = ActivityTabMsg
         }
         { showDeleted = model.showDeleted
         , showSettlementPreferences = model.showSettlementPreferences
         }
         langSelector
         loaded.groupState
-        tab
+        { activeTab = tab
+        , entriesTabModel = model.entriesTabModel
+        , activityTabModel = model.activityTabModel
+        }
 
 
 viewGroupNewEntry : Model -> LoadedGroup -> Ui.Element Msg
