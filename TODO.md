@@ -10,13 +10,15 @@ Small gaps between the spec and the current local-only implementation.
 
 ### 1.1 Full currency picker in group creation form
 
-The `Form.NewGroup` view only shows 4 currencies (EUR, USD, GBP, CHF) as radio buttons. All 10 supported currencies (`Domain.Currency.allCurrencies`) should be selectable. Consider a dropdown or scrollable list since 10 radio buttons may be too many.
+The `Form.NewGroup` view only shows 4 currencies (EUR, USD, GBP, CHF) as radio buttons. All 10 supported currencies (`Domain.Currency.allCurrencies`) should be selectable. Use radio buttons for now.
 
 **Files:** `src/Form/NewGroup.elm`, `src/Page/NewGroup.elm`
 
 ### 1.2 Toast notification system
 
 The spec requires in-app toast notifications for success/error feedback (entry added, error saving, etc.). Currently there is no toast system.
+Evaluate if it’s possible to use our elm-animator vendored dependency for that, and prioritize fully stateless animations.
+We do not want stateful threading of time through the update loop.
 
 **Design:**
 - Add a `toasts : List Toast` field to `Model` (each with id, message, level, expiry time).
@@ -36,13 +38,7 @@ Group deletion already has a two-stage confirm. Entry deletion and entry restora
 
 **Files:** `src/Main.elm` (add a `pendingConfirmation` field to model), `src/Page/EntryDetail.elm`
 
-### 1.4 "All settled up" message
-
-When all balances are zero (no settlement transactions needed), display an "All settled up" message with a checkmark on the Balance tab. Currently the settlement section is simply empty.
-
-**Files:** `src/Page/Group/BalanceTab.elm`, translations
-
-### 1.5 "Pay Them" button on balance cards
+### 1.4 "Pay Them" button on balance cards
 
 The spec says a "Pay Them" button should appear on balance cards of creditors, enabling quick settlement. Currently balance cards are display-only.
 
@@ -50,15 +46,22 @@ The spec says a "Pay Them" button should appear on balance cards of creditors, e
 
 **Files:** `src/UI/Components.elm` (balanceCard), `src/Page/Group/BalanceTab.elm`, `src/Page/NewEntry.elm` (accept pre-fill parameters via init)
 
-### 1.6 Clickable payment links and phone numbers
+### 1.5 Clickable payment links and phone numbers
 
 The spec says some payment methods generate clickable links (Lydia, Revolut, PayPal, Venmo, Bitcoin) and phone numbers are clickable `tel:` links. Currently metadata is displayed as plain text.
 
+- `https://pay.lydia.me/l?t=${normalized}`
+- `https://revolut.me/${normalized}`
+- `https://paypal.me/${normalized}`
+- `https://venmo.com/${normalized}`
+- `bitcoin:${value}`
+
 **Files:** `src/Page/MemberDetail.elm`
 
-### 1.7 Copiable payment details
+### 1.6 Copiable payment details
 
-Payment details should be displayed as copiable text (click-to-copy or copy button). Requires a port or the Clipboard API.
+Payment details should be displayed as copiable text (click-to-copy or copy button). May require a port or the Clipboard API.
+Cleanest approach might be using a custom element web component.
 
 **Files:** `src/Page/MemberDetail.elm`, `public/index.js` (port for clipboard)
 
@@ -121,11 +124,11 @@ Detect relationship between local and imported data (`new`, `local_subset`, `imp
 
 ### 4.1 Add `messages.es.json`
 
-Translate all ~221 keys from English to Spanish.
+Translate all ~221 keys from English and French to Spanish.
 
 ### 4.2 Add Spanish to language selector
 
-Add a Spanish flag option (🇪🇸) to the language selector. Update `Language` type if needed (depends on `travelm-agency` generation).
+Add a Spanish flag option (🇪🇸) to the language selector.
 
 **Files:** `translations/messages.es.json`, `src/UI/Components.elm` (languageSelector), possibly `src/Main.elm`
 
@@ -142,10 +145,8 @@ Track locally (never sent to server):
 
 **Design:**
 - Add a `usageStats` IndexedDB store.
-- Increment byte counters on each sync operation (deferred until sync exists; can stub with storage-only tracking for now).
-- Estimate storage via `navigator.storage.estimate()` through a port.
-
-**Files:** `src/Storage.elm` (new store), `public/index.js` (storage estimate port), `src/Main.elm`
+- Use `PerformanceResourceTiming` API with `transferSize` to monitor (start and observer) network usage.
+- For storage costs, estimate total storage of all local groups, and update a total storage cost since last checked with a linear increase.
 
 ### 5.2 Cost estimation display
 
@@ -212,16 +213,14 @@ On group creation: solve PoW, create group record, create user account, authenti
 ### 7.4 Event push/pull sync
 
 - Push: encrypt local events, POST to server.
-- Pull: GET events since last sync cursor (`created` field), decrypt, apply.
+- Pull: GET events since last sync cursor, decrypt, apply.
 - Track sync cursor per group in IndexedDB.
 
 **Files:** `src/Server.elm`, `src/Storage.elm` (sync cursor), `src/Main.elm`
 
 ### 7.5 Real-time subscriptions
 
-WebSocket connection to PocketBase `/api/realtime` for live event updates. Subscribe per-group, filter by `groupId`.
-
-**Files:** `public/index.js` (WebSocket port), `src/Main.elm` (subscription handling)
+Server-sent events (SSE) connection to PocketBase `/api/realtime` for live event updates. Subscribe per-group.
 
 ### 7.6 Offline queue
 
@@ -229,15 +228,12 @@ Events created while offline are queued in a `pendingEvents` IndexedDB store. On
 
 **Files:** `src/Storage.elm` (new store), `src/Main.elm`
 
-### 7.7 Connectivity detection & banner
-
-Detect online/offline status. Show an accessible offline banner (`role="alert"`, `aria-live="polite"`). Auto-resync on reconnect.
-
-**Files:** `public/index.js` (online/offline event ports), `src/Main.elm`, translations
-
 ---
 
 ## Phase 8: Invitation & Group Joining
+
+Same page for invite link and joining.
+Display either depending if you are a member of the group already.
 
 ### 8.1 Invite link generation
 
@@ -271,6 +267,8 @@ Implement `JoinGroupScreen` (currently shows "coming soon"):
 ---
 
 ## Phase 9: Progressive Web App
+
+Vendor elm-pwa: https://github.com/mpizenberg/elm-pwa
 
 ### 9.1 Web app manifest
 
@@ -314,3 +312,9 @@ Service worker update detection. Handle `SKIP_WAITING` for seamless transitions.
 Add `apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style`, and apple touch icon to `index.html`.
 
 **Files:** `public/index.html`
+
+### 9.7 Connectivity detection & banner
+
+Detect online/offline status. Show an accessible offline banner (`role="alert"`, `aria-live="polite"`). Auto-resync on reconnect.
+
+**Files:** `public/index.js` (online/offline event ports), `src/Main.elm`, translations
