@@ -4,66 +4,16 @@ Features not yet implemented, ordered local-first. Server sync, encryption, and 
 
 ---
 
-## Phase 1: Local UI Completions
+## Phase 1: Local UI Completions (Done)
 
-Small gaps between the spec and the current local-only implementation.
+All local UI gaps have been addressed.
 
-### 1.1 Full currency picker in group creation form
-
-The `Form.NewGroup` view only shows 4 currencies (EUR, USD, GBP, CHF) as radio buttons. All 10 supported currencies (`Domain.Currency.allCurrencies`) should be selectable. Use radio buttons for now.
-
-**Files:** `src/Form/NewGroup.elm`, `src/Page/NewGroup.elm`
-
-### 1.2 Toast notification system
-
-The spec requires in-app toast notifications for success/error feedback (entry added, error saving, etc.). Currently there is no toast system.
-Evaluate if it’s possible to use our elm-animator vendored dependency for that, and prioritize fully stateless animations.
-We do not want stateful threading of time through the update loop.
-
-**Design:**
-- Add a `toasts : List Toast` field to `Model` (each with id, message, level, expiry time).
-- Render as a fixed overlay at the top or bottom of the screen.
-- Auto-dismiss after a configurable duration.
-- Wire into submission handlers (entry saved, member added, import success/failure, etc.).
-
-**Files:** new `UI/Toast.elm`, `src/Main.elm` (model + view + subscriptions for auto-dismiss)
-
-### 1.3 Confirmation dialogs for destructive actions
-
-Group deletion already has a two-stage confirm. Entry deletion and entry restoration currently happen immediately. The spec says destructive actions require explicit confirmation.
-
-**Scope:**
-- Entry delete: show a confirmation before creating the delete event.
-- Entry restore: show a confirmation before creating the undelete event.
-
-**Files:** `src/Main.elm` (add a `pendingConfirmation` field to model), `src/Page/EntryDetail.elm`
-
-### 1.4 "Pay Them" button on balance cards
-
-The spec says a "Pay Them" button should appear on balance cards of creditors, enabling quick settlement. Currently balance cards are display-only.
-
-**Design:** The button navigates to the new-entry form pre-filled as a transfer from the current user to the creditor, with the owed amount.
-
-**Files:** `src/UI/Components.elm` (balanceCard), `src/Page/Group/BalanceTab.elm`, `src/Page/NewEntry.elm` (accept pre-fill parameters via init)
-
-### 1.5 Clickable payment links and phone numbers
-
-The spec says some payment methods generate clickable links (Lydia, Revolut, PayPal, Venmo, Bitcoin) and phone numbers are clickable `tel:` links. Currently metadata is displayed as plain text.
-
-- `https://pay.lydia.me/l?t=${normalized}`
-- `https://revolut.me/${normalized}`
-- `https://paypal.me/${normalized}`
-- `https://venmo.com/${normalized}`
-- `bitcoin:${value}`
-
-**Files:** `src/Page/MemberDetail.elm`
-
-### 1.6 Copiable payment details
-
-Payment details should be displayed as copiable text (click-to-copy or copy button). May require a port or the Clipboard API.
-Cleanest approach might be using a custom element web component.
-
-**Files:** `src/Page/MemberDetail.elm`, `public/index.js` (port for clipboard)
+- **1.1** Full currency picker: all 10 currencies from `Domain.Currency.allCurrencies` shown with wrapped radio buttons in the new group form.
+- **1.2** Toast notifications: `UI/Toast.elm` with CSS keyframe animations, auto-dismiss (4s success, 6s error), wired into all submission handlers. Clipboard copy also triggers a toast via an `onClipboardCopy` port.
+- **1.3** Entry delete/restore confirmation: `Page.EntryDetail` refactored to a stateful page with two-stage inline confirmation (warning + confirm button), same pattern as group deletion.
+- **1.4** "Pay Them" button on balance cards: appears on non-current-user creditor cards, navigates to the new-entry form pre-filled as a locked transfer with the owed amount via `Page.NewEntry.initTransfer`.
+- **1.5** Clickable payment links: phone (`tel:`), email (`mailto:`), Lydia, Revolut, PayPal, Venmo, Bitcoin rendered as `Ui.linkNewTab` in `Page.MemberDetail`.
+- **1.6** Copiable payment details: `<copy-button>` custom element in `public/index.js` with a clipboard icon next to each value; copy success notifies Elm via port for toast.
 
 ---
 
