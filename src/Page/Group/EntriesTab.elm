@@ -6,6 +6,7 @@ module Page.Group.EntriesTab exposing (Msg, view)
 import Dict
 import Domain.Entry as Entry
 import Domain.GroupState as GroupState exposing (GroupState)
+import Time
 import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
@@ -41,15 +42,17 @@ view i18n config state =
             Dict.values state.entries
 
         visibleEntries =
-            if config.showDeleted then
+            (if config.showDeleted then
                 List.map
                     (\es -> { entry = es.currentVersion, isDeleted = es.isDeleted })
                     allEntryStates
 
-            else
+             else
                 List.map
                     (\e -> { entry = e, isDeleted = False })
                     activeEntries
+            )
+                |> List.sortBy (\{ entry } -> entrySortKey entry)
     in
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.entriesTabTitle i18n))
@@ -124,3 +127,20 @@ newEntryButton i18n onNewEntry =
         , Ui.pointer
         ]
         (Ui.text (T.shellNewEntry i18n))
+
+
+entrySortKey : Entry.Entry -> ( Int, Int, String )
+entrySortKey entry =
+    let
+        d =
+            case entry.kind of
+                Entry.Expense data ->
+                    data.date
+
+                Entry.Transfer data ->
+                    data.date
+    in
+    ( -(d.year * 10000 + d.month * 100 + d.day)
+    , -(Time.posixToMillis entry.meta.createdAt)
+    , entry.meta.id
+    )
