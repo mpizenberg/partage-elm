@@ -1055,8 +1055,23 @@ submitButton i18n =
 fieldError : I18n -> Bool -> Field.Field a -> Ui.Element msg
 fieldError i18n submitted field =
     if Field.isInvalid field && (submitted || Field.isDirty field) then
+        let
+            message : String
+            message =
+                case Field.firstError field of
+                    Just err ->
+                        Field.errorToString
+                            { onBlank = T.fieldRequired i18n
+                            , onSyntaxError = \_ -> T.fieldInvalidFormat i18n
+                            , onValidationError = \_ -> T.fieldInvalidFormat i18n
+                            }
+                            err
+
+                    Nothing ->
+                        T.fieldRequired i18n
+        in
         Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.danger ]
-            (Ui.text (T.fieldRequired i18n))
+            (Ui.text message)
 
     else
         Ui.none

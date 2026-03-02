@@ -50,10 +50,10 @@ type alias Accessors =
 {-| Validation errors for the new group form.
 -}
 type Error
-    = NameError Field.Error
-    | CreatorNameError Field.Error
-    | CurrencyError Field.Error
-    | VirtualMemberError Id VirtualMemberError
+    = NameError
+    | CreatorNameError
+    | CurrencyError
+    | VirtualMemberError
 
 
 {-| Validated output of the new group form.
@@ -85,7 +85,7 @@ type alias VMAccessors =
 {-| Validation errors for a virtual member sub-form.
 -}
 type VirtualMemberError
-    = VMNameError Field.Error
+    = VMNameError
 
 
 virtualMemberForm : VirtualMemberForm
@@ -100,7 +100,7 @@ virtualMemberForm =
             }
         , validate =
             \state ->
-                Field.validate identity (Field.mapError VMNameError state.name)
+                Field.validate identity (Field.mapError (\_ -> VMNameError) state.name)
         }
 
 
@@ -205,7 +205,7 @@ validate : State -> Validation Error Output
 validate state =
     V.map4
         Output
-        (Field.validate identity (Field.mapError NameError state.name))
-        (Field.validate identity (Field.mapError CreatorNameError state.creatorName))
-        (Field.validate identity (Field.mapError CurrencyError state.currency))
-        (Form.List.validate VirtualMemberError state.virtualMembers)
+        (Field.validate identity (Field.mapError (\_ -> NameError) state.name))
+        (Field.validate identity (Field.mapError (\_ -> CreatorNameError) state.creatorName))
+        (Field.validate identity (Field.mapError (\_ -> CurrencyError) state.currency))
+        (Form.List.validate (\_ _ -> VirtualMemberError) state.virtualMembers)

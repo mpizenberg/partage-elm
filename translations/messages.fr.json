@@ -88,6 +88,7 @@
   "newGroupRemoveMember": "Supprimer",
   "newGroupSubmit": "Créer le groupe",
   "fieldRequired": "Ce champ est requis.",
+  "fieldInvalidFormat": "Format invalide.",
   "fieldInvalidEmail": "Adresse email invalide.",
   "fieldInvalidUrl": "Doit commencer par http:// ou https://",
   "newEntryTitle": "Nouvelle écriture",

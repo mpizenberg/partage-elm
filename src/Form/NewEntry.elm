@@ -42,9 +42,9 @@ type alias Accessors =
 {-| Validation errors for the new entry form.
 -}
 type Error
-    = DescriptionError Field.Error
-    | AmountError Field.Error
-    | DateError Field.Error
+    = DescriptionError
+    | AmountError
+    | DateError
 
 
 {-| Validated output of the new entry form.
@@ -83,7 +83,7 @@ amountFromString =
                         Ok cents
 
                     else
-                        Err (Field.customError "Amount must be positive.")
+                        Err (Field.validationError s)
 
                 Nothing ->
                     Err (Field.syntaxError s)
@@ -215,6 +215,6 @@ accessors =
 validate : State -> Validation Error Output
 validate state =
     Field.succeed Output
-        |> Field.applyValidation (state.description |> Field.mapError DescriptionError)
-        |> Field.applyValidation (state.amount |> Field.mapError AmountError)
-        |> Field.applyValidation (state.date |> Field.mapError DateError)
+        |> Field.applyValidation (state.description |> Field.mapError (\_ -> DescriptionError))
+        |> Field.applyValidation (state.amount |> Field.mapError (\_ -> AmountError))
+        |> Field.applyValidation (state.date |> Field.mapError (\_ -> DateError))

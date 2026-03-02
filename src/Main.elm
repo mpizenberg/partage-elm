@@ -129,7 +129,6 @@ type Msg
       -- Group metadata editing
     | EditGroupMetadataMsg Page.EditGroupMetadata.Msg
     | OnGroupMetadataActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
-    | RemoveGroup Group.Id
     | OnGroupRemoved Group.Id (ConcurrentTask.Response Idb.Error ())
     | OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)
       -- Group loading
@@ -357,6 +356,9 @@ update msg model =
 
         OnInitComplete (ConcurrentTask.UnexpectedError _) ->
             ( { model | appState = InitError "Unexpected error during initialization" }, Cmd.none )
+
+        OnIdentitySaved (ConcurrentTask.Success _) ->
+            ( model, Cmd.none )
 
         OnIdentitySaved _ ->
             ( model, Cmd.none )
@@ -614,9 +616,6 @@ update msg model =
         OnGroupMetadataActionSaved _ _ ->
             ( model, Cmd.none )
 
-        RemoveGroup groupId ->
-            deleteGroup model groupId
-
         OnGroupRemoved groupId (ConcurrentTask.Success _) ->
             case model.appState of
                 Ready readyData ->
@@ -633,12 +632,15 @@ update msg model =
         OnGroupRemoved _ _ ->
             ( model, Cmd.none )
 
+        OnGroupSummarySaved (ConcurrentTask.Success _) ->
+            ( model, Cmd.none )
+
         OnGroupSummarySaved _ ->
             ( model, Cmd.none )
 
         -- Group loading
-        OnGroupEventsLoaded _ (ConcurrentTask.Success events) ->
-            ( applyLoadedGroup events model
+        OnGroupEventsLoaded groupId (ConcurrentTask.Success events) ->
+            ( applyLoadedGroup groupId events model
                 |> Maybe.map (initPagesIfNeeded model.route)
                 |> Maybe.withDefault model
             , Cmd.none
@@ -977,18 +979,13 @@ appendEventAndRecompute model groupId envelope =
         model
 
 
-applyLoadedGroup : List Event.Envelope -> Model -> Maybe Model
-applyLoadedGroup events model =
+applyLoadedGroup : Group.Id -> List Event.Envelope -> Model -> Maybe Model
+applyLoadedGroup groupId events model =
     case model.appState of
         Ready readyData ->
-            case model.route of
-                GroupRoute groupId _ ->
-                    Dict.get groupId readyData.groups
-                        |> Maybe.map (Submit.initLoadedGroup events)
-                        |> Maybe.map (\loaded -> { model | loadedGroup = Just loaded })
-
-                _ ->
-                    Nothing
+            Dict.get groupId readyData.groups
+                |> Maybe.map (Submit.initLoadedGroup events)
+                |> Maybe.map (\loaded -> { model | loadedGroup = Just loaded })
 
         _ ->
             Nothing
