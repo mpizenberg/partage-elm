@@ -4,6 +4,8 @@ module Page.MemberDetail exposing (Model, Msg, Output(..), init, update, view)
 -}
 
 import Domain.Member as Member
+import Html
+import Html.Attributes
 import Translations as T exposing (I18n)
 import UI.Theme as Theme
 import Ui
@@ -207,8 +209,8 @@ metadataSection i18n member =
         rows : List (Ui.Element msg)
         rows =
             List.filterMap identity
-                [ Maybe.map (\v -> metadataRow (T.memberMetadataPhone i18n) v) meta.phone
-                , Maybe.map (\v -> metadataRow (T.memberMetadataEmail i18n) v) meta.email
+                [ Maybe.map (\v -> metadataLinkRow (T.memberMetadataPhone i18n) v ("tel:" ++ stripSpaces v)) meta.phone
+                , Maybe.map (\v -> metadataLinkRow (T.memberMetadataEmail i18n) v ("mailto:" ++ v)) meta.email
                 , Maybe.map (\v -> metadataRow (T.memberMetadataNotes i18n) v) meta.notes
                 ]
 
@@ -217,14 +219,14 @@ metadataSection i18n member =
             case meta.payment of
                 Just payment ->
                     List.filterMap identity
-                        [ Maybe.map (\v -> metadataRow (T.memberMetadataIban i18n) v) payment.iban
-                        , Maybe.map (\v -> metadataRow (T.memberMetadataWero i18n) v) payment.wero
-                        , Maybe.map (\v -> metadataRow (T.memberMetadataLydia i18n) v) payment.lydia
-                        , Maybe.map (\v -> metadataRow (T.memberMetadataRevolut i18n) v) payment.revolut
-                        , Maybe.map (\v -> metadataRow (T.memberMetadataPaypal i18n) v) payment.paypal
-                        , Maybe.map (\v -> metadataRow (T.memberMetadataVenmo i18n) v) payment.venmo
-                        , Maybe.map (\v -> metadataRow (T.memberMetadataBtc i18n) v) payment.btcAddress
-                        , Maybe.map (\v -> metadataRow (T.memberMetadataAda i18n) v) payment.adaAddress
+                        [ Maybe.map (\v -> metadataCopyRow (T.memberMetadataIban i18n) v) payment.iban
+                        , Maybe.map (\v -> metadataCopyRow (T.memberMetadataWero i18n) v) payment.wero
+                        , Maybe.map (\v -> metadataLinkRow (T.memberMetadataLydia i18n) v ("https://pay.lydia.me/l?t=" ++ normalizeHandle v)) payment.lydia
+                        , Maybe.map (\v -> metadataLinkRow (T.memberMetadataRevolut i18n) v ("https://revolut.me/" ++ normalizeHandle v)) payment.revolut
+                        , Maybe.map (\v -> metadataLinkRow (T.memberMetadataPaypal i18n) v ("https://paypal.me/" ++ normalizeHandle v)) payment.paypal
+                        , Maybe.map (\v -> metadataLinkRow (T.memberMetadataVenmo i18n) v ("https://venmo.com/" ++ normalizeHandle v)) payment.venmo
+                        , Maybe.map (\v -> metadataLinkRow (T.memberMetadataBtc i18n) v ("bitcoin:" ++ v)) payment.btcAddress
+                        , Maybe.map (\v -> metadataCopyRow (T.memberMetadataAda i18n) v) payment.adaAddress
                         ]
 
                 Nothing ->
@@ -241,12 +243,69 @@ metadataSection i18n member =
         Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ] allRows
 
 
+{-| Strip leading '@' and whitespace from a handle/username.
+-}
+normalizeHandle : String -> String
+normalizeHandle value =
+    value |> String.trim |> String.replace "@" ""
+
+
+{-| Strip spaces from a string (used for phone numbers in tel: links).
+-}
+stripSpaces : String -> String
+stripSpaces =
+    String.filter (\c -> c /= ' ')
+
+
+{-| Plain text metadata row (no link, no copy).
+-}
 metadataRow : String -> String -> Ui.Element msg
 metadataRow label value =
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ] (Ui.text label)
         , Ui.el [ Ui.Font.size Theme.fontSize.md ] (Ui.text value)
         ]
+
+
+{-| Metadata row with a clickable link and a copy button.
+-}
+metadataLinkRow : String -> String -> String -> Ui.Element msg
+metadataLinkRow label value url =
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ] (Ui.text label)
+        , Ui.row [ Ui.spacing Theme.spacing.xs ]
+            [ Ui.el [ Ui.linkNewTab url, Ui.Font.size Theme.fontSize.md, Ui.Font.color Theme.primary ] (Ui.text value)
+            , copyButton value
+            ]
+        ]
+
+
+{-| Metadata row with a copy button but no link.
+-}
+metadataCopyRow : String -> String -> Ui.Element msg
+metadataCopyRow label value =
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ] (Ui.text label)
+        , Ui.row [ Ui.spacing Theme.spacing.xs ]
+            [ Ui.el [ Ui.Font.size Theme.fontSize.md ] (Ui.text value)
+            , copyButton value
+            ]
+        ]
+
+
+{-| A small copy icon rendered as a <copy-button> custom element.
+-}
+copyButton : String -> Ui.Element msg
+copyButton value =
+    Ui.html
+        (Html.node "copy-button"
+            [ Html.Attributes.attribute "data-copy" value
+            , Html.Attributes.style "cursor" "pointer"
+            , Html.Attributes.style "opacity" "0.5"
+            , Html.Attributes.style "font-size" (String.fromInt Theme.fontSize.sm ++ "px")
+            ]
+            [ Html.text "\u{1F4CB}" ]
+        )
 
 
 actionButtons : I18n -> Member.Id -> Member.ChainState -> Ui.Element Msg

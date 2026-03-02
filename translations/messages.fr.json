@@ -231,5 +231,10 @@
   "toastImportSuccess": "Groupe importé avec succès.",
   "toastImportError": "Échec de l'importation du groupe.",
   "toastExportError": "Échec de l'exportation du groupe.",
-  "toastSettlementRecorded": "Règlement enregistré."
+  "toastSettlementRecorded": "Règlement enregistré.",
+  "entryDeleteWarning": "Cette écriture sera marquée comme supprimée.",
+  "entryDeleteConfirm": "Confirmer la suppression",
+  "entryRestoreWarning": "Cette écriture sera restaurée.",
+  "entryRestoreConfirm": "Confirmer la restauration",
+  "toastCopied": "Copié dans le presse-papiers."
 }

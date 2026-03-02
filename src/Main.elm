@@ -64,6 +64,9 @@ port sendTask : Json.Encode.Value -> Cmd msg
 port receiveTask : (Json.Decode.Value -> msg) -> Sub msg
 
 
+port onClipboardCopy : (() -> msg) -> Sub msg
+
+
 type alias Flags =
     { initialUrl : String
     , language : String
@@ -87,6 +90,7 @@ type alias Model =
     , memberDetailModel : Page.MemberDetail.Model
     , addMemberModel : Page.AddMember.Model
     , editMemberMetadataModel : Page.EditMemberMetadata.Model
+    , entryDetailModel : Page.EntryDetail.Model
     , editGroupMetadataModel : Page.EditGroupMetadata.Model
     , loadedGroup : Maybe LoadedGroup
     , showDeleted : Bool
@@ -122,8 +126,7 @@ type Msg
       -- Entry actions
     | SettleTransaction Settlement.Transaction
     | SaveSettlementPreferences { memberRootId : Member.Id, preferredRecipients : List Member.Id }
-    | DeleteEntry Entry.Id
-    | RestoreEntry Entry.Id
+    | EntryDetailMsg Page.EntryDetail.Msg
     | OnEntryActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | ToggleShowDeleted
     | ToggleShowSettlementPreferences
@@ -146,6 +149,7 @@ type Msg
     | OnExportDataLoaded Group.Id (ConcurrentTask.Response Idb.Error ( List Event.Envelope, Maybe String ))
     | OnGroupImported Storage.GroupSummary (ConcurrentTask.Response Idb.Error ())
       -- Toast notifications
+    | ClipboardCopied
     | DismissToast Toast.ToastId
 
 
@@ -159,6 +163,7 @@ subscriptions model =
             , onProgress = OnTaskProgress
             }
             model.pool
+        , onClipboardCopy (\() -> ClipboardCopied)
         ]
 
 
@@ -230,6 +235,7 @@ init flags =
       , memberDetailModel = Page.MemberDetail.init dummyMemberChainState
       , addMemberModel = Page.AddMember.init
       , editMemberMetadataModel = Page.EditMemberMetadata.init "" Member.emptyMetadata
+      , entryDetailModel = Page.EntryDetail.init
       , editGroupMetadataModel = Page.EditGroupMetadata.init GroupState.empty.groupMeta
       , loadedGroup = Nothing
       , showDeleted = False
@@ -505,11 +511,50 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
 
-        DeleteEntry rootId ->
-            submitEntryAction model (\ctx loaded -> Submit.deleteEntry ctx loaded rootId)
+        EntryDetailMsg subMsg ->
+            let
+                ( entryDetailModel, maybeOutput ) =
+                    Page.EntryDetail.update subMsg model.entryDetailModel
 
-        RestoreEntry rootId ->
-            submitEntryAction model (\ctx loaded -> Submit.restoreEntry ctx loaded rootId)
+                modelWithPage : Model
+                modelWithPage =
+                    { model | entryDetailModel = entryDetailModel }
+            in
+            case maybeOutput of
+                Just Page.EntryDetail.DeleteRequested ->
+                    case model.route of
+                        GroupRoute _ (EntryDetail entryId) ->
+                            submitEntryAction modelWithPage (\ctx loaded -> Submit.deleteEntry ctx loaded entryId)
+
+                        _ ->
+                            ( modelWithPage, Cmd.none )
+
+                Just Page.EntryDetail.RestoreRequested ->
+                    case model.route of
+                        GroupRoute _ (EntryDetail entryId) ->
+                            submitEntryAction modelWithPage (\ctx loaded -> Submit.restoreEntry ctx loaded entryId)
+
+                        _ ->
+                            ( modelWithPage, Cmd.none )
+
+                Just Page.EntryDetail.EditRequested ->
+                    case model.route of
+                        GroupRoute groupId (EntryDetail entryId) ->
+                            ( modelWithPage, Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (EditEntry entryId))) )
+
+                        _ ->
+                            ( modelWithPage, Cmd.none )
+
+                Just Page.EntryDetail.BackRequested ->
+                    case model.route of
+                        GroupRoute groupId _ ->
+                            ( modelWithPage, Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab EntriesTab))) )
+
+                        _ ->
+                            ( modelWithPage, Cmd.none )
+
+                Nothing ->
+                    ( modelWithPage, Cmd.none )
 
         OnEntryActionSaved groupId (ConcurrentTask.Success envelope) ->
             let
@@ -806,6 +851,9 @@ update msg model =
         OnGroupImported _ _ ->
             addToast Toast.Error (T.toastImportError model.i18n) model
 
+        ClipboardCopied ->
+            addToast Toast.Success (T.toastCopied model.i18n) model
+
         DismissToast toastId ->
             ( { model | toastModel = Toast.dismiss toastId model.toastModel }
             , Cmd.none
@@ -896,6 +944,9 @@ initPagesIfNeeded route model =
                 | newEntryModel =
                     Page.NewEntry.init (entryFormConfig readyData loaded model.currentTime)
             }
+
+        ( GroupRoute _ (EntryDetail _), _, _ ) ->
+            { model | entryDetailModel = Page.EntryDetail.init }
 
         ( GroupRoute _ (EditEntry entryId), Ready readyData, Just loaded ) ->
             case Dict.get entryId loaded.groupState.entries of
@@ -1277,7 +1328,7 @@ viewReady model readyData =
                     case Dict.get entryId loaded.groupState.entries of
                         Just entryState ->
                             shell (T.entryDetailTitle i18n)
-                                (viewGroupEntryDetail model readyData groupId entryId loaded entryState)
+                                (viewGroupEntryDetail model readyData loaded entryState)
 
                         Nothing ->
                             shell (T.shellPartage i18n) (Page.NotFound.view i18n)
@@ -1350,16 +1401,14 @@ viewGroupNewEntry model loaded =
         model.newEntryModel
 
 
-viewGroupEntryDetail : Model -> Storage.InitData -> Group.Id -> Entry.Id -> LoadedGroup -> GroupState.EntryState -> Ui.Element Msg
-viewGroupEntryDetail model readyData groupId entryId loaded entryState =
+viewGroupEntryDetail : Model -> Storage.InitData -> LoadedGroup -> GroupState.EntryState -> Ui.Element Msg
+viewGroupEntryDetail model readyData loaded entryState =
     Page.EntryDetail.view model.i18n
-        { onEdit = NavigateTo (GroupRoute groupId (EditEntry entryId))
-        , onDelete = DeleteEntry entryId
-        , onRestore = RestoreEntry entryId
-        , onBack = NavigateTo (GroupRoute groupId (Tab EntriesTab))
-        , currentUserRootId = currentUserRootId readyData loaded
+        { currentUserRootId = currentUserRootId readyData loaded
         , resolveName = GroupState.resolveMemberName loaded.groupState
         }
+        EntryDetailMsg
+        model.entryDetailModel
         entryState
 
 

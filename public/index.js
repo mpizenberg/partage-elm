@@ -2,6 +2,21 @@ import * as ConcurrentTask from "@andrewmacmurray/elm-concurrent-task";
 import { createTasks as createWebCryptoTasks } from "../vendor/elm-webcrypto/js/src/index.js";
 import { createTasks as createIndexedDbTasks } from "../vendor/elm-indexeddb/js/src/index.js";
 
+// Copy-to-clipboard custom element
+class CopyButton extends HTMLElement {
+  connectedCallback() {
+    this.addEventListener("click", () => {
+      const text = this.getAttribute("data-copy") || "";
+      navigator.clipboard.writeText(text).then(() => {
+        if (app && app.ports && app.ports.onClipboardCopy) {
+          app.ports.onClipboardCopy.send(null);
+        }
+      });
+    });
+  }
+}
+customElements.define("copy-button", CopyButton);
+
 // elm-url-navigation-port JS companion
 function initNavigation(ports) {
   function sendNavigation(state) {

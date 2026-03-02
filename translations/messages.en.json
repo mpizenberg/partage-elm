@@ -231,6 +231,11 @@
   "toastImportSuccess": "Group imported successfully.",
   "toastImportError": "Failed to import group.",
   "toastExportError": "Failed to export group.",
-  "toastSettlementRecorded": "Settlement recorded."
+  "toastSettlementRecorded": "Settlement recorded.",
+  "entryDeleteWarning": "This will mark the entry as deleted.",
+  "entryDeleteConfirm": "Confirm Delete",
+  "entryRestoreWarning": "This will restore the deleted entry.",
+  "entryRestoreConfirm": "Confirm Restore",
+  "toastCopied": "Copied to clipboard."
 }
 

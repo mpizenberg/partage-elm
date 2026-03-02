@@ -1,6 +1,6 @@
 module Page.NewGroup exposing (Model, Msg, init, update, view)
 
-import Domain.Currency as Currency exposing (Currency(..))
+import Domain.Currency as Currency exposing (Currency)
 import Field
 import Form
 import Form.List
@@ -155,15 +155,12 @@ currencyField i18n form =
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
             (Ui.text (T.newGroupCurrencyLabel i18n))
-        , Ui.Input.chooseOne Ui.row
+        , Ui.Input.chooseOne (\attrs -> Ui.row (Ui.wrap :: attrs))
             [ Ui.spacing Theme.spacing.sm ]
             { onChange = InputCurrency << currencyToString
             , options =
-                [ Ui.Input.option EUR (Ui.text "EUR")
-                , Ui.Input.option USD (Ui.text "USD")
-                , Ui.Input.option GBP (Ui.text "GBP")
-                , Ui.Input.option CHF (Ui.text "CHF")
-                ]
+                List.map (\c -> Ui.Input.option c (Ui.text (Currency.currencyCode c)))
+                    Currency.allCurrencies
             , selected = selected
             , label = Ui.Input.labelHidden (T.newGroupCurrencyLabel i18n)
             }
