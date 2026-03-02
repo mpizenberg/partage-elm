@@ -1,13 +1,13 @@
 # Partage — Implementation Summary
 
-Local-first bill-splitting app built in Elm. Domain logic is event-sourced; frontend is a SPA with IndexedDB persistence. 102 tests (domain + codec roundtrip).
+Local-first bill-splitting app built in Elm. Domain logic is event-sourced; frontend is a SPA with IndexedDB persistence. 103 tests (domain + codec roundtrip).
 
 ## Dependencies
 
 **Git submodules** (in `vendor/`):
 - `elm-ui` (branch `2.0`), `elm-animator` (branch `v2`), `elm-webcrypto`, `elm-indexeddb`, `elm-uuid` (branch `v7`)
 
-**Elm packages**: `mpizenberg/elm-url-navigation-port`, `elmcraft/core-extra`, `andrewMacmurray/elm-concurrent-task`, `dwayne/elm-form`, `dwayne/elm-field`, `dwayne/elm-validation`
+**Elm packages**: `mpizenberg/elm-url-navigation-port`, `elmcraft/core-extra`, `andrewMacmurray/elm-concurrent-task`, `dwayne/elm-form`, `dwayne/elm-field`, `dwayne/elm-validation`, `elm/file`
 
 **pnpm**: `@andrewmacmurray/elm-concurrent-task` (runtime), devDeps: `elm-watch`, `run-pty`, `travelm-agency`, `esbuild`, `rimraf`, `shx`
 
@@ -58,11 +58,11 @@ Route guards: no identity → redirect to `/setup`; has identity → redirect aw
 
 **Entry chain model** (`EntryState`): groups all versions under a rootId. `pickVersion` resolves concurrent edits (deepest wins, ID breaks ties). Entries have `isDeleted` flag toggled by delete/undelete events.
 
-**Event payloads** (11 variants): `MemberCreated`, `MemberRenamed`, `MemberRetired`, `MemberUnretired`, `MemberReplaced`, `MemberMetadataUpdated`, `EntryAdded`, `EntryModified`, `EntryDeleted`, `EntryUndeleted`, `GroupMetadataUpdated`.
+**Event payloads** (12 variants): `MemberCreated`, `MemberRenamed`, `MemberRetired`, `MemberUnretired`, `MemberReplaced`, `MemberMetadataUpdated`, `SettlementPreferencesUpdated`, `EntryAdded`, `EntryModified`, `EntryDeleted`, `EntryUndeleted`, `GroupMetadataUpdated`.
 
 **Balance**: `computeBalances : List Entry -> Dict Member.Id MemberBalance`. No resolver needed — entries use rootIds directly.
 
-**Settlement**: greedy algorithm producing `List Transaction { from, to, amount }`.
+**Settlement**: greedy algorithm producing `List Transaction { from, to, amount }`. Supports per-member preferred payment recipients via `SettlementPreferencesUpdated` events (stored in `GroupState.settlementPreferences`).
 
 ## Storage (IndexedDB)
 
@@ -77,13 +77,15 @@ Database `"partage"`, version 1:
 
 `Storage.InitData`: `{ db, identity : Maybe Identity, groups : Dict Group.Id GroupSummary }`
 
+**Import/Export**: `GroupExport` handles JSON serialization of groups (`partage-group-v1` format: group summary + events + optional groupKey). Export downloads via `elm/file`; import validates format and rejects duplicate group IDs. `Storage.importGroup` batch-writes summary, events, and key to IndexedDB.
+
 ## App Architecture
 
 **`Browser.element`** with port-based navigation (`elm-url-navigation-port`). 4 ports: `navCmd`, `onNavEvent`, `sendTask`, `receiveTask`.
 
 **`AppState`**: `Loading | Ready InitData | InitError String`. Identity generation via `elm-webcrypto` + `elm-concurrent-task`.
 
-**Page-owned form state**: form pages (`Page.NewGroup`, `Page.NewEntry`, `Page.MemberDetail`, `Page.AddMember`, `Page.EditMemberMetadata`, `Page.EditGroupMetadata`) expose opaque `Model/Msg/init/update/view`. `update` returns `( Model, Maybe Output )`. Main checks for `Just output` to run submission logic.
+**Page-owned form state**: form pages (`Page.Home`, `Page.NewGroup`, `Page.NewEntry`, `Page.MemberDetail`, `Page.AddMember`, `Page.EditMemberMetadata`, `Page.EditGroupMetadata`) expose opaque `Model/Msg/init/update/view`. `update` returns `( Model, Maybe Output )` (or `( Model, Cmd Msg, Maybe Output )` when the page issues its own Cmds, e.g. file selection). Main checks for `Just output` to run submission logic.
 
 **`Submit` module**: centralizes event submission — UUID generation, envelope wrapping, IndexedDB persistence. Functions: `newGroup`, `newEntry`, `editEntry`, `addMember`, `deleteEntry`, `restoreEntry`, `event` (generic).
 
@@ -118,7 +120,8 @@ src/
   Route.elm                 -- Route types + URL parsing/serialization
   Format.elm                -- Currency/amount formatting
   Identity.elm              -- Identity type, crypto generation, JSON codecs
-  Storage.elm               -- IndexedDB schema, InitData, GroupSummary, CRUD + deleteGroup
+  GroupExport.elm             -- Group import/export: encode/decode payload, downloadGroup, validateImport
+  Storage.elm               -- IndexedDB schema, InitData, GroupSummary, CRUD + deleteGroup + importGroup
   Submit.elm                -- Event submission: UUID gen + wrap + IndexedDB save
   UuidGen.elm               -- UUID v4/v7 generation helpers
   Translations.elm          -- (generated, gitignored)
@@ -142,7 +145,7 @@ src/
     Loading.elm             -- Loading spinner
     InitError.elm           -- Error display
     Setup.elm               -- Generate Identity button
-    Home.elm                -- Group list + new group button
+    Home.elm                -- Group list, import/export UI: Model/Msg/init/update/view with Output
     About.elm               -- App info
     NotFound.elm            -- 404
     NewGroup.elm            -- Group creation: Model/Msg/init/update/view
@@ -181,7 +184,6 @@ src/
 
 - Invitation & joining flow (requires server sync + group symmetric key)
 - Filtering & sorting (entries by person/category/date)
-- Settlement preferences (per-member preferred payment recipients)
-- Import / Export (JSON with merge analysis)
+- Import merge analysis (currently rejects duplicate group IDs)
 - PoW challenge for group creation
 - PWA & service worker
