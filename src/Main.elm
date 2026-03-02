@@ -184,7 +184,7 @@ init flags =
         initialSeed : Random.Seed
         initialSeed =
             List.foldl
-                (\n acc -> Random.step (Random.int Random.minInt Random.maxInt) acc |> Tuple.second)
+                (\_ acc -> Random.step (Random.int Random.minInt Random.maxInt) acc |> Tuple.second)
                 (Random.initialSeed (List.sum flags.randomSeed))
                 flags.randomSeed
 

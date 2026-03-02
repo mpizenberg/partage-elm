@@ -22,14 +22,14 @@ view i18n onNavigate groups =
                     ]
 
                 else
-                    List.map (groupCard i18n onNavigate) groups
+                    List.map (groupCard onNavigate) groups
                )
             ++ [ newGroupButton i18n onNavigate ]
         )
 
 
-groupCard : I18n -> (Route -> msg) -> GroupSummary -> Ui.Element msg
-groupCard i18n onNavigate summary =
+groupCard : (Route -> msg) -> GroupSummary -> Ui.Element msg
+groupCard onNavigate summary =
     let
         groupRoute : Route
         groupRoute =

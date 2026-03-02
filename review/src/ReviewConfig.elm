@@ -59,6 +59,9 @@ config =
     -- , NoUnused.Dependencies.rule
     -- , NoUnused.Exports.rule
     , NoUnused.Parameters.rule
+        -- generated
+        |> Rule.ignoreErrorsForFiles [ "src/Translations.elm" ]
+
     -- , NoUnused.Patterns.rule
     -- , NoUnused.Variables.rule
     , Simplify.rule Simplify.defaults

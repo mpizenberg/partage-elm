@@ -666,8 +666,8 @@ transferFields i18n activeMembers data =
     , currencyField i18n data
     , defaultCurrencyAmountField i18n data
     , dateField i18n data
-    , memberDropdown i18n (T.newEntryFromLabel i18n) InputFromMember activeMembers data.fromMemberId
-    , memberDropdown i18n (T.newEntryToLabel i18n) InputToMember activeMembers data.toMemberId
+    , memberDropdown (T.newEntryFromLabel i18n) InputFromMember activeMembers data.fromMemberId
+    , memberDropdown (T.newEntryToLabel i18n) InputToMember activeMembers data.toMemberId
     , errorWhen (data.submitted && data.fromMemberId == data.toMemberId) (T.newEntrySameFromTo i18n)
     , notesField i18n data
     ]
@@ -795,7 +795,7 @@ payerField i18n activeMembers data =
         payerContent =
             case data.payerMode of
                 SinglePayer ->
-                    [ memberDropdown i18n (T.newEntryPayerLabel i18n) InputPayer activeMembers data.payerId ]
+                    [ memberDropdown (T.newEntryPayerLabel i18n) InputPayer activeMembers data.payerId ]
 
                 MultiPayer ->
                     let
@@ -1016,8 +1016,8 @@ notesField i18n data =
         ]
 
 
-memberDropdown : I18n -> String -> (Member.Id -> Msg) -> List Member.ChainState -> Member.Id -> Ui.Element Msg
-memberDropdown _ label onChange activeMembers selectedId =
+memberDropdown : String -> (Member.Id -> Msg) -> List Member.ChainState -> Member.Id -> Ui.Element Msg
+memberDropdown label onChange activeMembers selectedId =
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
             (Ui.text label)
@@ -1102,8 +1102,8 @@ centsToDecimalString cents =
 
 {-| Convert a validated Output into an Entry.Kind for storage.
 -}
-outputToKind : Currency -> Output -> Entry.Kind
-outputToKind _ output =
+outputToKind : Output -> Entry.Kind
+outputToKind output =
     case output of
         ExpenseOutput data ->
             Entry.Expense

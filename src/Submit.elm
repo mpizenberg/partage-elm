@@ -180,7 +180,7 @@ newEntry ctx loaded output =
 
         kind : Entry.Kind
         kind =
-            Page.NewEntry.outputToKind loaded.summary.defaultCurrency output
+            Page.NewEntry.outputToKind output
 
         entry : Entry.Entry
         entry =
@@ -215,7 +215,7 @@ editEntry ctx loaded originalEntryId output =
 
                 newKind : Entry.Kind
                 newKind =
-                    Page.NewEntry.outputToKind loaded.summary.defaultCurrency output
+                    Page.NewEntry.outputToKind output
 
                 entry : Entry.Entry
                 entry =
