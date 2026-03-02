@@ -32,6 +32,7 @@ type alias Context msg =
     , onAddMember : msg
     , onEditGroupMetadata : msg
     , onSettleTransaction : Settlement.Transaction -> msg
+    , onPayMember : { toMemberId : Member.Id, amountCents : Int } -> msg
     , onSaveSettlementPreferences : { memberRootId : Member.Id, preferredRecipients : List Member.Id } -> msg
     , onToggleSettlementPreferences : msg
     , currentUserRootId : Member.Id
@@ -66,12 +67,13 @@ tabContent ctx showDeleted showSettlementPreferences state tab =
     case tab of
         BalanceTab ->
             Page.Group.BalanceTab.view ctx.i18n
-                ctx.currentUserRootId
-                ctx.onSettleTransaction
-                { onSavePreferences = ctx.onSaveSettlementPreferences
+                { onSettle = ctx.onSettleTransaction
+                , onPayMember = ctx.onPayMember
+                , onSavePreferences = ctx.onSaveSettlementPreferences
                 , showPreferences = showSettlementPreferences
                 , onTogglePreferences = ctx.onToggleSettlementPreferences
                 }
+                ctx.currentUserRootId
                 state
 
         EntriesTab ->

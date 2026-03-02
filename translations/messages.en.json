@@ -236,6 +236,7 @@
   "entryDeleteConfirm": "Confirm Delete",
   "entryRestoreWarning": "This will restore the deleted entry.",
   "entryRestoreConfirm": "Confirm Restore",
-  "toastCopied": "Copied to clipboard."
+  "toastCopied": "Copied to clipboard.",
+  "balancePayThem": "Pay Them"
 }
 

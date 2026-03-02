@@ -98,6 +98,7 @@ type alias Model =
     , expandedActivities : Set Event.Id
     , homeModel : Page.Home.Model
     , toastModel : Toast.Model
+    , pendingTransfer : Maybe { toMemberId : Member.Id, amountCents : Int }
     }
 
 
@@ -124,6 +125,7 @@ type Msg
     | OnGroupCreated (ConcurrentTask.Response Idb.Error GroupSummary)
     | OnEntrySaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
       -- Entry actions
+    | PayMember { toMemberId : Member.Id, amountCents : Int }
     | SettleTransaction Settlement.Transaction
     | SaveSettlementPreferences { memberRootId : Member.Id, preferredRecipients : List Member.Id }
     | EntryDetailMsg Page.EntryDetail.Msg
@@ -243,6 +245,7 @@ init flags =
       , expandedActivities = Set.empty
       , homeModel = Page.Home.init
       , toastModel = Toast.init
+      , pendingTransfer = Nothing
       }
     , cmd
     )
@@ -477,6 +480,16 @@ update msg model =
 
         OnEntrySaved _ _ ->
             addToast Toast.Error (T.toastEntrySaveError model.i18n) model
+
+        PayMember payData ->
+            case model.route of
+                GroupRoute groupId _ ->
+                    ( { model | pendingTransfer = Just payData }
+                    , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId NewEntry))
+                    )
+
+                _ ->
+                    ( model, Cmd.none )
 
         SettleTransaction tx ->
             case ( model.appState, model.loadedGroup ) of
@@ -940,10 +953,22 @@ initPagesIfNeeded : Route -> Model -> Model
 initPagesIfNeeded route model =
     case ( route, model.appState, model.loadedGroup ) of
         ( GroupRoute _ NewEntry, Ready readyData, Just loaded ) ->
-            { model
-                | newEntryModel =
-                    Page.NewEntry.init (entryFormConfig readyData loaded model.currentTime)
-            }
+            let
+                config : Page.NewEntry.Config
+                config =
+                    entryFormConfig readyData loaded model.currentTime
+            in
+            case model.pendingTransfer of
+                Just payData ->
+                    { model
+                        | newEntryModel = Page.NewEntry.initTransfer config payData
+                        , pendingTransfer = Nothing
+                    }
+
+                Nothing ->
+                    { model
+                        | newEntryModel = Page.NewEntry.init config
+                    }
 
         ( GroupRoute _ (EntryDetail _), _, _ ) ->
             { model | entryDetailModel = Page.EntryDetail.init }
@@ -1377,6 +1402,7 @@ viewGroupTab model readyData langSelector groupId tab loaded =
         , onAddMember = NavigateTo (GroupRoute groupId AddVirtualMember)
         , onEditGroupMetadata = NavigateTo (GroupRoute groupId EditGroupMetadata)
         , onSettleTransaction = SettleTransaction
+        , onPayMember = PayMember
         , onSaveSettlementPreferences = SaveSettlementPreferences
         , onToggleSettlementPreferences = ToggleShowSettlementPreferences
         , currentUserRootId = currentUserRootId readyData loaded

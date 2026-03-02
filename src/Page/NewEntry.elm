@@ -1,4 +1,4 @@
-module Page.NewEntry exposing (Config, EntryKind, Model, Msg, Output(..), SplitData, init, initFromEntry, outputToKind, update, view)
+module Page.NewEntry exposing (Config, EntryKind, Model, Msg, Output(..), SplitData, init, initFromEntry, initTransfer, outputToKind, update, view)
 
 import Dict exposing (Dict)
 import Domain.Currency as Currency exposing (Currency)
@@ -164,6 +164,25 @@ init config =
         , currency = config.defaultCurrency
         , groupDefaultCurrency = config.defaultCurrency
         , defaultCurrencyAmount = ""
+        }
+
+
+{-| Initialize as a transfer to a specific member with a pre-filled amount.
+Used by the "Pay Them" button on balance cards.
+-}
+initTransfer : Config -> { toMemberId : Member.Id, amountCents : Int } -> Model
+initTransfer config { toMemberId, amountCents } =
+    let
+        (Model data) =
+            init config
+    in
+    Model
+        { data
+            | kind = TransferKind
+            , kindLocked = True
+            , fromMemberId = config.currentUserRootId
+            , toMemberId = toMemberId
+            , form = data.form |> NewEntry.initAmount amountCents
         }
 
 

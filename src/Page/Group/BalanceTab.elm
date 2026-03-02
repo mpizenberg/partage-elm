@@ -1,10 +1,10 @@
-module Page.Group.BalanceTab exposing (view)
+module Page.Group.BalanceTab exposing (Config, view)
 
 {-| Balance tab showing per-member balances and settlement plan.
 -}
 
 import Dict
-import Domain.Balance exposing (MemberBalance)
+import Domain.Balance as Balance exposing (MemberBalance)
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
 import Domain.Settlement as Settlement
@@ -16,10 +16,12 @@ import Ui.Events
 import Ui.Font
 
 
-{-| Configuration for the settlement preferences section.
+{-| Configuration for callbacks used by the balance tab.
 -}
-type alias PreferencesConfig msg =
-    { onSavePreferences : { memberRootId : Member.Id, preferredRecipients : List Member.Id } -> msg
+type alias Config msg =
+    { onSettle : Settlement.Transaction -> msg
+    , onPayMember : { toMemberId : Member.Id, amountCents : Int } -> msg
+    , onSavePreferences : { memberRootId : Member.Id, preferredRecipients : List Member.Id } -> msg
     , showPreferences : Bool
     , onTogglePreferences : msg
     }
@@ -27,8 +29,8 @@ type alias PreferencesConfig msg =
 
 {-| Render the balance tab with per-member balances and a settlement plan.
 -}
-view : I18n -> Member.Id -> (Settlement.Transaction -> msg) -> PreferencesConfig msg -> GroupState -> Ui.Element msg
-view i18n currentUserRootId onSettle prefsConfig state =
+view : I18n -> Config msg -> Member.Id -> GroupState -> Ui.Element msg
+view i18n config currentUserRootId state =
     if Dict.isEmpty state.entries then
         Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
             [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.balanceTabTitle i18n))
@@ -38,14 +40,14 @@ view i18n currentUserRootId onSettle prefsConfig state =
 
     else
         Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
-            [ balancesSection i18n state currentUserRootId
-            , settlementSection i18n currentUserRootId onSettle state
-            , preferencesSection i18n currentUserRootId prefsConfig state
+            [ balancesSection i18n config.onPayMember currentUserRootId state
+            , settlementSection i18n config.onSettle currentUserRootId state
+            , preferencesSection i18n config currentUserRootId state
             ]
 
 
-balancesSection : I18n -> GroupState -> Member.Id -> Ui.Element msg
-balancesSection i18n state currentUserRootId =
+balancesSection : I18n -> ({ toMemberId : Member.Id, amountCents : Int } -> msg) -> Member.Id -> GroupState -> Ui.Element msg
+balancesSection i18n onPayMember currentUserRootId state =
     let
         resolveName : Member.Id -> String
         resolveName =
@@ -74,10 +76,24 @@ balancesSection i18n state currentUserRootId =
         , Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
             (List.map
                 (\b ->
+                    let
+                        isCurrentUser : Bool
+                        isCurrentUser =
+                            b.memberRootId == currentUserRootId
+
+                        onPay : Maybe msg
+                        onPay =
+                            if not isCurrentUser && Balance.status b == Balance.Creditor then
+                                Just (onPayMember { toMemberId = b.memberRootId, amountCents = b.netBalance })
+
+                            else
+                                Nothing
+                    in
                     UI.Components.balanceCard i18n
+                        onPay
                         { name = resolveName b.memberRootId
                         , balance = b
-                        , isCurrentUser = b.memberRootId == currentUserRootId
+                        , isCurrentUser = isCurrentUser
                         }
                 )
                 sorted
@@ -85,8 +101,8 @@ balancesSection i18n state currentUserRootId =
         ]
 
 
-settlementSection : I18n -> Member.Id -> (Settlement.Transaction -> msg) -> GroupState -> Ui.Element msg
-settlementSection i18n currentUserRootId onSettle state =
+settlementSection : I18n -> (Settlement.Transaction -> msg) -> Member.Id -> GroupState -> Ui.Element msg
+settlementSection i18n onSettle currentUserRootId state =
     let
         transactions : List Settlement.Transaction
         transactions =
@@ -113,8 +129,8 @@ settlementSection i18n currentUserRootId onSettle state =
         ]
 
 
-preferencesSection : I18n -> Member.Id -> PreferencesConfig msg -> GroupState -> Ui.Element msg
-preferencesSection i18n currentUserRootId config state =
+preferencesSection : I18n -> Config msg -> Member.Id -> GroupState -> Ui.Element msg
+preferencesSection i18n config currentUserRootId state =
     let
         toggleLabel : String
         toggleLabel =

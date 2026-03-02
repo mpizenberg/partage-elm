@@ -236,5 +236,6 @@
   "entryDeleteConfirm": "Confirmer la suppression",
   "entryRestoreWarning": "Cette écriture sera restaurée.",
   "entryRestoreConfirm": "Confirmer la restauration",
-  "toastCopied": "Copié dans le presse-papiers."
+  "toastCopied": "Copié dans le presse-papiers.",
+  "balancePayThem": "Rembourser"
 }

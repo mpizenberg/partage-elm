@@ -304,7 +304,7 @@ copyButton value =
             , Html.Attributes.style "opacity" "0.5"
             , Html.Attributes.style "font-size" (String.fromInt Theme.fontSize.sm ++ "px")
             ]
-            [ Html.text "\u{1F4CB}" ]
+            [ Html.text "📋" ]
         )
 
 

@@ -16,9 +16,10 @@ import Ui.Font
 
 
 {-| A card showing a member's balance with color coding.
+Shows a "Pay Them" button for non-current-user creditors.
 -}
-balanceCard : I18n -> { name : String, balance : MemberBalance, isCurrentUser : Bool } -> Ui.Element msg
-balanceCard i18n config =
+balanceCard : I18n -> Maybe msg -> { name : String, balance : MemberBalance, isCurrentUser : Bool } -> Ui.Element msg
+balanceCard i18n onPay config =
     let
         balanceStatus : Balance.Status
         balanceStatus =
@@ -78,8 +79,26 @@ balanceCard i18n config =
             , Ui.el [ Ui.alignRight, Ui.Font.color fgColor, Ui.Font.bold, Ui.Font.size Theme.fontSize.lg ]
                 (Ui.text (Format.formatCents (abs config.balance.netBalance)))
             ]
-        , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral700 ]
-            (Ui.text statusText)
+        , Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
+            [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral700 ]
+                (Ui.text statusText)
+            , case onPay of
+                Just msg ->
+                    Ui.el
+                        [ Ui.alignRight
+                        , Ui.Font.size Theme.fontSize.sm
+                        , Ui.Font.color Theme.white
+                        , Ui.background Theme.primary
+                        , Ui.rounded Theme.rounding.sm
+                        , Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
+                        , Ui.pointer
+                        , Ui.Events.onClick msg
+                        ]
+                        (Ui.text (T.balancePayThem i18n))
+
+                Nothing ->
+                    Ui.none
+            ]
         ]
 
 
