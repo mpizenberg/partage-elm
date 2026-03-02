@@ -49,7 +49,7 @@
 ### 2.1 Identity Creation
 
 - On first launch, the user is presented with a **setup screen**.
-- The application generates a **cryptographic keypair** (ECDSA, P-256 curve) locally in the browser.
+- The application generates a **cryptographic keypair** locally in the browser. The signing algorithm is implementation-defined (suggested: ECDSA P-256 or Ed25519).
 - The keypair is used for **digital signatures** (to authenticate operations).
 - The **public key hash** (SHA-256 of the public key) serves as the user's anonymous, unique identifier.
 - No username, email, or password is required.
@@ -131,6 +131,7 @@ Members are managed through an **immutable event log**. The current state of eac
 | `member_unretired` | A retired member is reactivated. |
 | `member_replaced` | A new real member claims an existing member's identity (see [Member Aliases](#44-member-aliases)). Records the new member's ID and the claimed member's ID (stored as `previousId` on the new member). Any member type (virtual or real) can be claimed. This is one of the recovery mechanisms for lost identities, and is safe given the group's trust assumptions. |
 | `member_metadata_updated` | A member's contact or payment information is updated. |
+| `settlement_preferences_updated` | A member's settlement preferences are updated (preferred payment recipients). |
 
 ### 4.3 Computed Member State
 
@@ -177,7 +178,7 @@ Each member can have optional contact and payment information:
 
 | Category | Fields |
 |---|---|
-| **Contact** | Phone number |
+| **Contact** | Phone number, email address |
 | **Payment methods** | IBAN, Wero, Lydia, Revolut, PayPal, Venmo, Bitcoin (BTC address), Cardano (ADA address) |
 | **Notes** | Free-text information field |
 
@@ -213,7 +214,7 @@ Each member can have optional contact and payment information:
 | Payers | Yes | One or more members who paid, each with their paid amount. |
 | Beneficiaries | Yes | One or more members who benefit, with split configuration. |
 | Category | No | One of: food, transport, accommodation, entertainment, shopping, groceries, utilities, healthcare, other. |
-| Location | No | Where the expense occurred. |
+| Location | No | Where the expense occurred. *(Modeled in domain; UI deferred to a future release.)* |
 | Notes | No | Additional free-text notes. |
 | Default currency amount | Conditional | Required if the entry currency differs from the group's default currency. |
 
@@ -254,7 +255,7 @@ Each member can have optional contact and payment information:
 - Entries can be **modified**, by creating a new entry linked to the original.
 - Each entry version has its own unique ID (UUID). The version history is linked via `previousVersionId` (UUID of the prior version) and `rootId` (UUID of the original entry in the chain).
 - The modification records: who modified it, when, and the full new data.
-- **Current version rule:** For a given `rootId`, the current version is the **non-deleted version with the latest client timestamp** (with client-generated event UUID as tiebreaker). This makes concurrent modifications resolve deterministically via last-writer-wins. The `previousVersionId` is used for audit trail display and diff computation, not for determining the current version.
+- **Current version rule:** For a given `rootId`, the current version is the **non-deleted version with the latest UUID v7** (which encodes creation timestamp). This makes concurrent modifications resolve deterministically via last-writer-wins. The `previousVersionId` is used for audit trail display and diff computation, not for determining the current version.
 
 ### 5.7 Entry Deletion & Restoration
 
@@ -427,7 +428,7 @@ Activities can be filtered by:
 
 ### 10.1 Supported Currencies
 
-The application supports 20+ currencies including: USD, EUR, GBP, JPY, AUD, CAD, CHF, CNY, SEK, NZD, MXN, SGD, HKD, NOK, KRW, TRY, INR, RUB, BRL, ZAR.
+The application supports 10 currencies: EUR, USD, GBP, CHF, JPY, AUD, CAD, NZD, BRL, ARS.
 
 ### 10.2 Currency Behavior
 
@@ -444,7 +445,8 @@ The application supports 20+ currencies including: USD, EUR, GBP, JPY, AUD, CAD,
 
 ### 10.4 Currency Formatting
 
-- Amounts are formatted using **locale-aware currency formatting** (e.g., "$1,234.56" in English, "1 234,56 EUR" in French).
+- Amounts are currently formatted as plain decimal strings with currency code suffix (e.g., "10.50 EUR").
+- **Future work:** Locale-aware currency formatting via `Intl.NumberFormat` (e.g., "$1,234.56" in English, "1 234,56 EUR" in French).
 - The default currency is pre-selected based on the user's language (EUR for French, USD otherwise).
 
 ---
@@ -465,7 +467,7 @@ The application uses a **two-layer encryption model**:
 | Purpose | Algorithm | Parameters |
 |---|---|---|
 | Data encryption | AES-256-GCM | 256-bit key, 12-byte random IV, built-in authentication tag. |
-| Digital signatures | ECDSA | P-256 curve, SHA-256 hash. |
+| Digital signatures | Implementation-defined | Suggested: ECDSA P-256 or Ed25519. |
 | Hashing | SHA-256 | Used for public key hashing, PoW, password derivation. |
 
 ### 11.3 Key Management
@@ -534,29 +536,15 @@ When a user opens an invite link:
 
 ### 13.1 Export
 
-- Users can select one or more groups from the group selection screen and export them.
+- Users can export a single group from the group selection screen.
 - Export format: **JSON** containing all decrypted data (entries, members, metadata, events, audit trail).
 - Metadata includes export timestamp and version.
 
 ### 13.2 Import
 
 - Users can import a previously exported JSON file.
-- The application analyzes the relationship between local and imported data for each group:
-
-| Relationship | Meaning |
-|---|---|
-| `new` | The group doesn't exist locally. It will be created. |
-| `local_subset` | The local copy already has more recent data. Nothing to merge. |
-| `import_subset` | The imported data is older than local. Nothing to merge. |
-| `diverged` | Both local and imported data have unique changes. They will be merged by taking the union of all events (deduplicated by event ID) and replaying in deterministic order. |
-
-### 13.3 Import Preview
-
-- Before importing, a **preview modal** shows:
-  - Each group with its relationship status.
-  - Entry and member counts.
-  - Currency information.
-- The user confirms each group before the import is applied.
+- If the group already exists locally, the import is rejected (duplicate group ID).
+- **Future work:** Merge analysis for overlapping groups (detect `local_subset`, `import_subset`, `diverged` relationships and merge by taking the union of all events deduplicated by event ID).
 
 ---
 
@@ -594,7 +582,7 @@ The following data is stored locally per group:
 
 All group state is derived by replaying the **immutable event log** in a deterministic total order.
 
-**Ordering rule:** Events are sorted by `(clientTimestamp, clientEventId)`. Both values are part of the encrypted event payload, generated by the client at event creation time. The client timestamp (millisecond-precision Unix timestamp) provides the primary ordering; the client-generated event UUID (lexicographic comparison) breaks ties. Since groups are trusted, client-provided timestamps are authoritative. All clients use the same comparison function after decryption, guaranteeing convergence.
+**Ordering rule:** Each event is assigned a **UUID v7** identifier at creation time. UUID v7 embeds a millisecond-precision timestamp in its most significant bits, followed by random bits. Events are sorted by UUID v7 lexicographic order, which provides a deterministic total order that naturally reflects creation time. Since groups are trusted, client-generated UUIDs are authoritative. All clients use the same comparison function after decryption, guaranteeing convergence.
 
 **State computation:** Events are replayed in sort order. Each event is validated against the current state at the point of replay. Invalid events are **silently ignored** (see [4.5](#45-member-operation-rules)). This ensures all clients converge to identical state regardless of the order in which events were received over the network.
 
@@ -751,7 +739,7 @@ The app estimates the user's share of infrastructure costs:
 | `/groups/:groupId` | Group view (default: Balance tab) | Yes |
 | `/groups/:groupId/entries` | Group view - Entries tab | Yes |
 | `/groups/:groupId/members` | Group view - Members tab | Yes |
-| `/groups/:groupId/activities` | Group view - Activities tab | Yes |
+| `/groups/:groupId/activity` | Group view - Activities tab | Yes |
 | `/about` | About & usage stats | No |
 | `*` (catch-all) | Redirects to `/` | - |
 
@@ -900,7 +888,7 @@ The server is a **PocketBase** instance (Go-based backend-as-a-service) with an 
 | `eventData` | string (max 1 MB) | Base64-encoded, AES-256-GCM encrypted event payload. |
 | `created` | datetime (auto) | PocketBase auto-generated creation timestamp. Used only as a sync cursor by clients. |
 
-The encrypted `eventData` payload contains all application-level data, including the **client timestamp** and **client-generated event UUID** used for deterministic ordering (see [14.4](#144-event-ordering--conflict-resolution)). The server never sees these values.
+The encrypted `eventData` payload contains all application-level data, including the **UUID v7 event identifier** used for deterministic ordering (see [14.4](#144-event-ordering--conflict-resolution)). The server never sees these values.
 
 ### C.3 Server API Endpoints
 
@@ -970,7 +958,7 @@ The client handles **all** application logic:
 | Responsibility | Details |
 |---|---|
 | **Cryptography** | Key generation (ECDSA P-256), AES-256-GCM encryption/decryption, password derivation, PoW solving. |
-| **Event sourcing** | Encoding changes as immutable events, replaying events in deterministic order (by client timestamp + client event UUID after decryption), computing current state from the event log. |
+| **Event sourcing** | Encoding changes as immutable events, replaying events in deterministic order (by UUID v7 after decryption), computing current state from the event log. |
 | **Business logic** | Entry management, member state computation, balance calculation, settlement planning, activity feed generation. |
 | **Local storage** | IndexedDB for identity, group keys, event log, computed state cache, pending events, and usage statistics. |
 | **Sync management** | Pushing local events, pulling remote events (using PocketBase `created` as sync cursor), offline queue, real-time subscription handling. |
