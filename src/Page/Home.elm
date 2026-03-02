@@ -10,6 +10,8 @@ import Ui.Events
 import Ui.Font
 
 
+{-| Render the home page listing existing groups and a button to create a new one.
+-}
 view : I18n -> (Route -> msg) -> List GroupSummary -> Ui.Element msg
 view i18n onNavigate groups =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
@@ -29,6 +31,7 @@ view i18n onNavigate groups =
 groupCard : I18n -> (Route -> msg) -> GroupSummary -> Ui.Element msg
 groupCard i18n onNavigate summary =
     let
+        groupRoute : Route
         groupRoute =
             Route.GroupRoute summary.id (Route.Tab Route.BalanceTab)
     in
@@ -51,6 +54,7 @@ groupCard i18n onNavigate summary =
 newGroupButton : I18n -> (Route -> msg) -> Ui.Element msg
 newGroupButton i18n onNavigate =
     let
+        route : Route
         route =
             Route.NewGroup
     in

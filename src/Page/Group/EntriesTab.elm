@@ -4,8 +4,10 @@ module Page.Group.EntriesTab exposing (Msg, view)
 -}
 
 import Dict
+import Domain.Date exposing (Date)
 import Domain.Entry as Entry
 import Domain.GroupState as GroupState exposing (GroupState)
+import Domain.Member as Member
 import Time
 import Translations as T exposing (I18n)
 import UI.Components
@@ -16,6 +18,8 @@ import Ui.Font
 import Ui.Input
 
 
+{-| Callback messages for entry interactions on this tab.
+-}
 type alias Msg msg =
     { onNewEntry : msg
     , onEntryClick : Entry.Id -> msg
@@ -24,23 +28,30 @@ type alias Msg msg =
     }
 
 
+{-| Render the entries tab with expense/transfer cards and a new entry button.
+-}
 view : I18n -> Msg msg -> GroupState -> Ui.Element msg
 view i18n config state =
     let
+        resolveName : Member.Id -> String
         resolveName =
             GroupState.resolveMemberName state
 
+        activeEntries : List Entry.Entry
         activeEntries =
             GroupState.activeEntries state
 
+        deletedCount : Int
         deletedCount =
             Dict.values state.entries
                 |> List.filter .isDeleted
                 |> List.length
 
+        allEntryStates : List GroupState.EntryState
         allEntryStates =
             Dict.values state.entries
 
+        visibleEntries : List { entry : Entry.Entry, isDeleted : Bool }
         visibleEntries =
             (if config.showDeleted then
                 List.map
@@ -75,6 +86,7 @@ view i18n config state =
 entryRow : I18n -> (Entry.Id -> String) -> (Entry.Id -> msg) -> { entry : Entry.Entry, isDeleted : Bool } -> Ui.Element msg
 entryRow i18n resolveName onEntryClick { entry, isDeleted } =
     let
+        card : Ui.Element msg
         card =
             UI.Components.entryCard i18n resolveName (onEntryClick entry.meta.rootId) entry
     in
@@ -132,6 +144,7 @@ newEntryButton i18n onNewEntry =
 entrySortKey : Entry.Entry -> ( Int, Int, String )
 entrySortKey entry =
     let
+        d : Date
         d =
             case entry.kind of
                 Entry.Expense data ->

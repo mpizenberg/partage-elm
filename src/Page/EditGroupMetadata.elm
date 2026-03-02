@@ -18,6 +18,8 @@ type alias Output =
     Event.GroupMetadataChange
 
 
+{-| Page model holding form state for editing group metadata.
+-}
 type Model
     = Model ModelData
 
@@ -30,6 +32,8 @@ type alias ModelData =
     }
 
 
+{-| Messages produced by user interaction on the group metadata form.
+-}
 type Msg
     = InputName String
     | InputSubtitle String
@@ -43,6 +47,8 @@ type Msg
     | ConfirmDelete
 
 
+{-| Initialize the model from existing group metadata.
+-}
 init : GroupState.GroupMetadata -> Model
 init meta =
     Model
@@ -65,6 +71,8 @@ noOutput model =
     { model = model, metadataOutput = Nothing, deleteRequested = False }
 
 
+{-| Handle form input, submission, and delete confirmation.
+-}
 update : Msg -> Model -> UpdateResult
 update msg (Model data) =
     case msg of
@@ -136,6 +144,8 @@ buildChange original output =
     }
 
 
+{-| Render the group metadata editing form with save and delete options.
+-}
 view : I18n -> (Msg -> msg) -> Model -> Ui.Element msg
 view i18n toMsg (Model data) =
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
@@ -153,6 +163,7 @@ view i18n toMsg (Model data) =
 nameField : I18n -> ModelData -> Ui.Element Msg
 nameField i18n data =
     let
+        field : Field.Field String
         field =
             Form.get .name data.form
     in
@@ -209,12 +220,15 @@ linksSection i18n submitted formData =
 linkRow : I18n -> Bool -> Form.List.Id -> MetaForm.Form -> Ui.Element Msg
 linkRow i18n submitted id formData =
     let
+        labelField : Field.Field String
         labelField =
             Form.get (\a -> a.linkLabel id) formData
 
+        urlField : Field.Field String
         urlField =
             Form.get (\a -> a.linkUrl id) formData
 
+        showError : Field.Field a -> Bool
         showError field =
             Field.isInvalid field && (submitted || Field.isDirty field)
     in

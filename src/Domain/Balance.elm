@@ -47,22 +47,27 @@ Member IDs in entries are assumed to be root IDs.
 computeBalances : List Entry -> Dict Member.Id MemberBalance
 computeBalances entries =
     let
+        emptyAccum : { paid : Int, owed : Int }
         emptyAccum =
             { paid = 0, owed = 0 }
 
         accumulate : Entry -> Dict Member.Id { paid : Int, owed : Int } -> Dict Member.Id { paid : Int, owed : Int }
         accumulate entry acc =
             let
+                paidUpdates : List ( Member.Id, Int )
                 paidUpdates =
                     computeEntryPaid entry
 
+                owedUpdates : List ( Member.Id, Int )
                 owedUpdates =
                     computeEntryOwed entry
 
+                addPaid : ( Member.Id, Int ) -> Dict Member.Id { paid : Int, owed : Int } -> Dict Member.Id { paid : Int, owed : Int }
                 addPaid ( memberId, amount ) d =
                     Dict.update memberId
                         (\mv ->
                             let
+                                cur : { paid : Int, owed : Int }
                                 cur =
                                     Maybe.withDefault emptyAccum mv
                             in
@@ -70,10 +75,12 @@ computeBalances entries =
                         )
                         d
 
+                addOwed : ( Member.Id, Int ) -> Dict Member.Id { paid : Int, owed : Int } -> Dict Member.Id { paid : Int, owed : Int }
                 addOwed ( memberId, amount ) d =
                     Dict.update memberId
                         (\mv ->
                             let
+                                cur : { paid : Int, owed : Int }
                                 cur =
                                     Maybe.withDefault emptyAccum mv
                             in
@@ -85,6 +92,7 @@ computeBalances entries =
                 |> (\a -> List.foldl addPaid a paidUpdates)
                 |> (\a -> List.foldl addOwed a owedUpdates)
 
+        accumulated : Dict Member.Id { paid : Int, owed : Int }
         accumulated =
             List.foldl accumulate Dict.empty entries
     in
@@ -106,12 +114,14 @@ For multi-currency entries, payer amounts are converted proportionally.
 computeEntryPaid : Entry -> List ( Member.Id, Int )
 computeEntryPaid entry =
     let
+        totalAmount : Int
         totalAmount =
             entryDefaultCurrencyAmount entry
     in
     case entry.kind of
         Expense data ->
             let
+                payerTotal : Int
                 payerTotal =
                     List.foldl (\p acc -> acc + p.amount) 0 data.payers
             in
@@ -137,6 +147,7 @@ computeEntryPaid entry =
 computeEntryOwed : Entry -> List ( Member.Id, Int )
 computeEntryOwed entry =
     let
+        totalAmount : Int
         totalAmount =
             entryDefaultCurrencyAmount entry
     in
@@ -171,6 +182,7 @@ computeBeneficiarySplit totalAmount beneficiaries =
         (ExactBeneficiary _) :: _ ->
             -- Exact split: use exact amounts, but normalize to default currency proportionally
             let
+                exactTotal : Int
                 exactTotal =
                     List.foldl
                         (\b acc ->
@@ -184,6 +196,7 @@ computeBeneficiarySplit totalAmount beneficiaries =
                         0
                         beneficiaries
 
+                items : List ( Member.Id, Int )
                 items =
                     List.filterMap
                         (\b ->
@@ -213,6 +226,7 @@ with max N remainder cents per member (N = their share count).
 computeSharesSplit : Int -> List Beneficiary -> List ( Member.Id, Int )
 computeSharesSplit totalAmount beneficiaries =
     let
+        shareItems : List ( Member.Id, Int )
         shareItems =
             List.filterMap
                 (\b ->
@@ -225,9 +239,11 @@ computeSharesSplit totalAmount beneficiaries =
                 )
                 beneficiaries
 
+        totalShares : Int
         totalShares =
             List.foldl (\( _, s ) acc -> acc + s) 0 shareItems
 
+        basePerShare : Int
         basePerShare =
             if totalShares > 0 then
                 totalAmount // totalShares
@@ -235,16 +251,20 @@ computeSharesSplit totalAmount beneficiaries =
             else
                 0
 
+        baseAllocated : List ( Member.Id, Int, Int )
         baseAllocated =
             List.map (\( mid, s ) -> ( mid, s, basePerShare * s )) shareItems
 
+        baseTotal : Int
         baseTotal =
             List.foldl (\( _, _, amt ) acc -> acc + amt) 0 baseAllocated
 
+        remainder : Int
         remainder =
             totalAmount - baseTotal
 
         -- Sort by rootId for deterministic remainder distribution
+        sorted : List ( Member.Id, Int, Int )
         sorted =
             List.sortBy (\( mid, _, _ ) -> mid) baseAllocated
     in
@@ -263,6 +283,7 @@ distributeRemainder rem items acc =
 
         ( mid, shares, amt ) :: rest ->
             let
+                extra : Int
                 extra =
                     min shares rem
             in
@@ -274,6 +295,7 @@ distributeRemainder rem items acc =
 distributeProportionally : Int -> List ( Member.Id, Int ) -> Int -> List ( Member.Id, Int )
 distributeProportionally totalAmount items itemTotal =
     let
+        baseAllocated : List ( Member.Id, Int )
         baseAllocated =
             List.map
                 (\( mid, amt ) ->
@@ -281,12 +303,15 @@ distributeProportionally totalAmount items itemTotal =
                 )
                 items
 
+        baseTotal : Int
         baseTotal =
             List.foldl (\( _, amt ) acc -> acc + amt) 0 baseAllocated
 
+        remainder : Int
         remainder =
             totalAmount - baseTotal
 
+        sorted : List ( Member.Id, Int )
         sorted =
             List.sortBy Tuple.first baseAllocated
     in

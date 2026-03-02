@@ -166,6 +166,8 @@ andMap =
     Decode.map2 (|>)
 
 
+{-| Encode a Category as a JSON string.
+-}
 encodeCategory : Category -> Encode.Value
 encodeCategory category =
     Encode.string
@@ -199,6 +201,8 @@ encodeCategory category =
         )
 
 
+{-| Decode a Category from a JSON string.
+-}
 categoryDecoder : Decode.Decoder Category
 categoryDecoder =
     Decode.string
@@ -237,6 +241,8 @@ categoryDecoder =
             )
 
 
+{-| Encode a Payer as a JSON object.
+-}
 encodePayer : Payer -> Encode.Value
 encodePayer payer =
     Encode.object
@@ -245,6 +251,8 @@ encodePayer payer =
         ]
 
 
+{-| Decode a Payer from JSON.
+-}
 payerDecoder : Decode.Decoder Payer
 payerDecoder =
     Decode.map2 Payer
@@ -252,6 +260,8 @@ payerDecoder =
         (Decode.field "amount" Decode.int)
 
 
+{-| Encode a Beneficiary as a tagged JSON object.
+-}
 encodeBeneficiary : Beneficiary -> Encode.Value
 encodeBeneficiary beneficiary =
     case beneficiary of
@@ -270,6 +280,8 @@ encodeBeneficiary beneficiary =
                 ]
 
 
+{-| Decode a Beneficiary from a tagged JSON object.
+-}
 beneficiaryDecoder : Decode.Decoder Beneficiary
 beneficiaryDecoder =
     Decode.field "type" Decode.string
@@ -291,6 +303,8 @@ beneficiaryDecoder =
             )
 
 
+{-| Encode entry Metadata as a JSON object.
+-}
 encodeMetadata : Metadata -> Encode.Value
 encodeMetadata meta =
     Encode.object
@@ -311,6 +325,8 @@ encodeMetadata meta =
         )
 
 
+{-| Decode entry Metadata from JSON.
+-}
 entryMetadataDecoder : Decode.Decoder Metadata
 entryMetadataDecoder =
     Decode.map7 Metadata
@@ -323,6 +339,8 @@ entryMetadataDecoder =
         (Decode.field "createdAt" (Decode.map Time.millisToPosix Decode.int))
 
 
+{-| Encode ExpenseData as a JSON object, omitting Nothing fields.
+-}
 encodeExpenseData : ExpenseData -> Encode.Value
 encodeExpenseData data =
     Encode.object
@@ -342,6 +360,8 @@ encodeExpenseData data =
         )
 
 
+{-| Decode ExpenseData from JSON using applicative-style decoding.
+-}
 expenseDataDecoder : Decode.Decoder ExpenseData
 expenseDataDecoder =
     Decode.succeed ExpenseData
@@ -357,6 +377,8 @@ expenseDataDecoder =
         |> andMap (Decode.maybe (Decode.field "notes" Decode.string))
 
 
+{-| Encode TransferData as a JSON object, omitting Nothing fields.
+-}
 encodeTransferData : TransferData -> Encode.Value
 encodeTransferData data =
     Encode.object
@@ -373,6 +395,8 @@ encodeTransferData data =
         )
 
 
+{-| Decode TransferData from JSON.
+-}
 transferDataDecoder : Decode.Decoder TransferData
 transferDataDecoder =
     Decode.map7 TransferData
@@ -385,6 +409,8 @@ transferDataDecoder =
         (Decode.maybe (Decode.field "notes" Decode.string))
 
 
+{-| Encode a Kind as a tagged JSON object with "type" and "data" fields.
+-}
 encodeKind : Kind -> Encode.Value
 encodeKind kind =
     case kind of
@@ -401,6 +427,8 @@ encodeKind kind =
                 ]
 
 
+{-| Decode a Kind from a tagged JSON object.
+-}
 kindDecoder : Decode.Decoder Kind
 kindDecoder =
     Decode.field "type" Decode.string
@@ -418,6 +446,8 @@ kindDecoder =
             )
 
 
+{-| Encode an Entry as a JSON object with "meta" and "kind" fields.
+-}
 encodeEntry : Entry -> Encode.Value
 encodeEntry entry =
     Encode.object
@@ -426,6 +456,8 @@ encodeEntry entry =
         ]
 
 
+{-| Decode an Entry from JSON.
+-}
 entryDecoder : Decode.Decoder Entry
 entryDecoder =
     Decode.map2 Entry

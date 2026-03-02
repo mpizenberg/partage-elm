@@ -54,6 +54,7 @@ computeSettlement balances preferences =
                 ( [], [] )
                 balances
 
+        prefMap : List ( Member.Id, List Member.Id )
         prefMap =
             List.foldl
                 (\p acc -> ( p.memberRootId, p.preferredRecipients ) :: acc)
@@ -61,11 +62,13 @@ computeSettlement balances preferences =
                 preferences
 
         -- Pass 1: preference-aware (smallest debtors first)
+        debtorsWithPrefs : List ( Member.Id, Int )
         debtorsWithPrefs =
             debtors
                 |> List.filter (\( mid, _ ) -> List.any (\p -> p.memberRootId == mid) preferences)
                 |> List.sortBy Tuple.second
 
+        debtorsWithoutPrefs : List ( Member.Id, Int )
         debtorsWithoutPrefs =
             debtors
                 |> List.filter (\( mid, _ ) -> not (List.any (\p -> p.memberRootId == mid) preferences))
@@ -74,6 +77,7 @@ computeSettlement balances preferences =
             processPreferencePass debtorsWithPrefs creditors prefMap
 
         -- Pass 2: greedy (largest debtors first)
+        allRemainingDebtors : List ( Member.Id, Int )
         allRemainingDebtors =
             (remainingDebtors1 ++ debtorsWithoutPrefs)
                 |> List.sortBy Tuple.second
@@ -97,6 +101,7 @@ processPreferencePass debtors creditors prefMap =
 
         ( debtorId, debtorAmt ) :: restDebtors ->
             let
+                preferredIds : List Member.Id
                 preferredIds =
                     List.foldl
                         (\( mid, prefs ) acc ->
@@ -115,6 +120,7 @@ processPreferencePass debtors creditors prefMap =
                 ( restTransactions, remainingDebtors, finalCreditors ) =
                     processPreferencePass restDebtors updatedCreditors prefMap
 
+                allRemainingDebtors : List ( Member.Id, Int )
                 allRemainingDebtors =
                     if remainingAmt > 0 then
                         ( debtorId, remainingAmt ) :: remainingDebtors
@@ -147,18 +153,23 @@ matchWithPreferred debtorId debtorAmt preferredIds creditors =
 
                     Just creditorAmt ->
                         let
+                            transferAmt : Int
                             transferAmt =
                                 min debtorAmt creditorAmt
 
+                            transaction : Transaction
                             transaction =
                                 { from = debtorId, to = prefId, amount = transferAmt }
 
+                            newDebtorAmt : Int
                             newDebtorAmt =
                                 debtorAmt - transferAmt
 
+                            newCreditorAmt : Int
                             newCreditorAmt =
                                 creditorAmt - transferAmt
 
+                            updatedCreditors : List ( Member.Id, Int )
                             updatedCreditors =
                                 if newCreditorAmt > 0 then
                                     updateCreditor prefId newCreditorAmt creditors
@@ -193,18 +204,23 @@ processGreedyPass debtors creditors =
 
                     Just ( creditorId, creditorAmt ) ->
                         let
+                            transferAmt : Int
                             transferAmt =
                                 min debtorAmt creditorAmt
 
+                            transaction : Transaction
                             transaction =
                                 { from = debtorId, to = creditorId, amount = transferAmt }
 
+                            newDebtorAmt : Int
                             newDebtorAmt =
                                 debtorAmt - transferAmt
 
+                            newCreditorAmt : Int
                             newCreditorAmt =
                                 creditorAmt - transferAmt
 
+                            updatedCreditors : List ( Member.Id, Int )
                             updatedCreditors =
                                 if newCreditorAmt > 0 then
                                     updateCreditor creditorId newCreditorAmt creditors
@@ -212,6 +228,7 @@ processGreedyPass debtors creditors =
                                 else
                                     removeCreditor creditorId creditors
 
+                            updatedDebtors : List ( Member.Id, Int )
                             updatedDebtors =
                                 if newDebtorAmt > 0 then
                                     ( debtorId, newDebtorAmt ) :: restDebtors

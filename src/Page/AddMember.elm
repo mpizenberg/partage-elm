@@ -10,24 +10,34 @@ import Ui.Font
 import Ui.Input
 
 
+{-| The validated output returned on successful submission.
+-}
 type alias Output =
     { name : String }
 
 
+{-| Page model holding the form state.
+-}
 type Model
     = Model { name : String, submitted : Bool }
 
 
+{-| Messages produced by user interaction on this page.
+-}
 type Msg
     = InputName String
     | Submit
 
 
+{-| Initial model with an empty name field.
+-}
 init : Model
 init =
     Model { name = "", submitted = False }
 
 
+{-| Handle form input and submission, returning a validated Output on success.
+-}
 update : Msg -> Model -> ( Model, Maybe Output )
 update msg (Model data) =
     case msg of
@@ -36,6 +46,7 @@ update msg (Model data) =
 
         Submit ->
             let
+                trimmed : String
                 trimmed =
                     String.trim data.name
             in
@@ -48,6 +59,8 @@ update msg (Model data) =
                 )
 
 
+{-| Render the add member form with a name input and submit button.
+-}
 view : I18n -> (Msg -> msg) -> Model -> Ui.Element msg
 view i18n toMsg (Model data) =
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]

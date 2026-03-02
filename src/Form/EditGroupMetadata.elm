@@ -14,10 +14,14 @@ import Form.List exposing (Forms, Id)
 import Validation as V
 
 
+{-| The group metadata editing form type.
+-}
 type alias Form =
     Form.Form State Accessors Field.Error Output
 
 
+{-| Form state for group metadata fields (name, subtitle, description, links).
+-}
 type alias State =
     { name : Field String
     , subtitle : Field (Maybe String)
@@ -26,6 +30,8 @@ type alias State =
     }
 
 
+{-| Accessors for reading and modifying each group metadata field.
+-}
 type alias Accessors =
     { name : Accessor State (Field String)
     , subtitle : Accessor State (Field (Maybe String))
@@ -38,6 +44,8 @@ type alias Accessors =
     }
 
 
+{-| Validated output of the group metadata form.
+-}
 type alias Output =
     { name : String
     , subtitle : Maybe String
@@ -124,6 +132,8 @@ initLinkForm link =
 -- Form
 
 
+{-| The group metadata editing form definition.
+-}
 form : Form
 form =
     Form.new
@@ -133,6 +143,8 @@ form =
         }
 
 
+{-| Initialize the form fields from existing group metadata.
+-}
 initFromMetadata : { name : String, subtitle : Maybe String, description : Maybe String, links : List Group.Link } -> Form -> Form
 initFromMetadata meta =
     Form.modify .name (Field.setFromString meta.name)

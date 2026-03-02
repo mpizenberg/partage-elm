@@ -59,9 +59,11 @@ type alias GroupMetadataChange =
 compareEnvelopes : Envelope -> Envelope -> Order
 compareEnvelopes a b =
     let
+        ta : Int
         ta =
             Time.posixToMillis a.clientTimestamp
 
+        tb : Int
         tb =
             Time.posixToMillis b.clientTimestamp
     in
@@ -97,10 +99,12 @@ GroupMetadataUpdated + MemberCreated for the creator + MemberCreated for each vi
 createGroup : { name : String, creator : ( Member.Id, String ), virtualMembers : List ( Member.Id, String ) } -> List Payload
 createGroup { name, creator, virtualMembers } =
     let
+        groupMetadata : Payload
         groupMetadata =
             GroupMetadataUpdated
                 { name = Just name, subtitle = Nothing, description = Nothing, links = Nothing }
 
+        memberPayload : Member.Type -> ( Member.Id, String ) -> Payload
         memberPayload memberType ( memberId, memberName ) =
             MemberCreated
                 { memberId = memberId
@@ -114,6 +118,8 @@ createGroup { name, creator, virtualMembers } =
         :: List.map (memberPayload Member.Virtual) virtualMembers
 
 
+{-| Encode an Envelope as a JSON object.
+-}
 encodeEnvelope : Envelope -> Encode.Value
 encodeEnvelope envelope =
     Encode.object
@@ -124,6 +130,8 @@ encodeEnvelope envelope =
         ]
 
 
+{-| Decode an Envelope from JSON.
+-}
 envelopeDecoder : Decode.Decoder Envelope
 envelopeDecoder =
     Decode.map4 Envelope
@@ -133,6 +141,8 @@ envelopeDecoder =
         (Decode.field "payload" payloadDecoder)
 
 
+{-| Encode a Payload as a tagged JSON object with a "type" discriminator.
+-}
 encodePayload : Payload -> Encode.Value
 encodePayload payload =
     case payload of
@@ -211,6 +221,8 @@ encodePayload payload =
                 ]
 
 
+{-| Decode a Payload from a tagged JSON object.
+-}
 payloadDecoder : Decode.Decoder Payload
 payloadDecoder =
     Decode.field "type" Decode.string
@@ -302,6 +314,8 @@ payloadDecoder =
             )
 
 
+{-| Encode a GroupMetadataChange as a JSON object, omitting unchanged fields.
+-}
 encodeGroupMetadataChange : GroupMetadataChange -> Encode.Value
 encodeGroupMetadataChange change =
     Encode.object
@@ -326,6 +340,8 @@ encodeMaybeString fieldName maybeValue =
             ( fieldName, Encode.string s )
 
 
+{-| Decode a GroupMetadataChange from JSON.
+-}
 groupMetadataChangeDecoder : Decode.Decoder GroupMetadataChange
 groupMetadataChangeDecoder =
     Decode.map4 GroupMetadataChange

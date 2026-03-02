@@ -10,6 +10,8 @@ import Ui.Events
 import Ui.Font
 
 
+{-| Labels for each tab in the group tab bar.
+-}
 type alias TabLabels =
     { balance : String
     , entries : String
@@ -102,6 +104,7 @@ tabBar labels activeTab onTabClick =
 tab : GroupTab -> (GroupTab -> msg) -> GroupTab -> String -> Ui.Element msg
 tab activeTab onTabClick thisTab label =
     let
+        isActive : Bool
         isActive =
             thisTab == activeTab
     in

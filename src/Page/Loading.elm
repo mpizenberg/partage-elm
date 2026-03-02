@@ -6,6 +6,8 @@ import Ui
 import Ui.Font
 
 
+{-| Render a centered loading indicator.
+-}
 view : I18n -> Ui.Element msg
 view i18n =
     Ui.el

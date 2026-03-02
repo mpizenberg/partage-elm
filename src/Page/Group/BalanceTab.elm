@@ -4,6 +4,7 @@ module Page.Group.BalanceTab exposing (view)
 -}
 
 import Dict
+import Domain.Balance exposing (MemberBalance)
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
 import Domain.Settlement as Settlement
@@ -14,6 +15,8 @@ import Ui
 import Ui.Font
 
 
+{-| Render the balance tab with per-member balances and a settlement plan.
+-}
 view : I18n -> Member.Id -> (Settlement.Transaction -> msg) -> GroupState -> Ui.Element msg
 view i18n currentUserRootId onSettle state =
     if Dict.isEmpty state.entries then
@@ -33,13 +36,16 @@ view i18n currentUserRootId onSettle state =
 balancesSection : I18n -> GroupState -> Member.Id -> Ui.Element msg
 balancesSection i18n state currentUserRootId =
     let
+        resolveName : Member.Id -> String
         resolveName =
             GroupState.resolveMemberName state
 
+        balances : List MemberBalance
         balances =
             Dict.values state.balances
 
         -- Current user first, then sorted by name
+        sorted : List MemberBalance
         sorted =
             balances
                 |> List.sortBy (\b -> ( boolToInt (b.memberRootId /= currentUserRootId), resolveName b.memberRootId ))
@@ -71,9 +77,11 @@ balancesSection i18n state currentUserRootId =
 settlementSection : I18n -> Member.Id -> (Settlement.Transaction -> msg) -> GroupState -> Ui.Element msg
 settlementSection i18n currentUserRootId onSettle state =
     let
+        resolveName : Member.Id -> String
         resolveName =
             GroupState.resolveMemberName state
 
+        transactions : List Settlement.Transaction
         transactions =
             Settlement.computeSettlement state.balances []
     in
@@ -85,6 +93,7 @@ settlementSection i18n currentUserRootId onSettle state =
 
           else
             let
+                settleTx : Settlement.Transaction -> Ui.Element msg
                 settleTx =
                     UI.Components.settlementRow i18n resolveName currentUserRootId onSettle
             in

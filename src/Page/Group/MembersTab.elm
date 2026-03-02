@@ -4,7 +4,7 @@ module Page.Group.MembersTab exposing (Msg, view)
 -}
 
 import Dict
-import Domain.GroupState exposing (GroupState)
+import Domain.GroupState exposing (GroupMetadata, GroupState)
 import Domain.Member as Member
 import Translations as T exposing (I18n)
 import UI.Components
@@ -14,6 +14,8 @@ import Ui.Font
 import Ui.Input
 
 
+{-| Callback messages for member interactions on this tab.
+-}
 type alias Msg msg =
     { onMemberClick : Member.Id -> msg
     , onAddMember : msg
@@ -21,22 +23,28 @@ type alias Msg msg =
     }
 
 
+{-| Render the members tab with active and retired member lists.
+-}
 view : I18n -> Msg msg -> Member.Id -> GroupState -> Ui.Element msg
 view i18n msg currentUserRootId state =
     let
+        allMembers : List Member.ChainState
         allMembers =
             Dict.values state.members
 
+        active : List Member.ChainState
         active =
             allMembers
                 |> List.filter (not << .isRetired)
                 |> List.sortBy (\m -> ( boolToInt (m.rootId /= currentUserRootId), String.toLower m.name ))
 
+        retired : List Member.ChainState
         retired =
             allMembers
                 |> List.filter .isRetired
                 |> List.sortBy (\m -> String.toLower m.name)
 
+        viewMember : Member.ChainState -> Ui.Element msg
         viewMember member =
             UI.Components.memberRow i18n
                 (msg.onMemberClick member.rootId)
@@ -67,9 +75,11 @@ view i18n msg currentUserRootId state =
 groupInfoSection : I18n -> GroupState -> Ui.Element msg
 groupInfoSection i18n state =
     let
+        meta : GroupMetadata
         meta =
             state.groupMeta
 
+        subtitleEl : Ui.Element msg
         subtitleEl =
             case meta.subtitle of
                 Just subtitle ->
@@ -82,6 +92,7 @@ groupInfoSection i18n state =
                 Nothing ->
                     Ui.none
 
+        descriptionEl : Ui.Element msg
         descriptionEl =
             case meta.description of
                 Just description ->
@@ -94,6 +105,7 @@ groupInfoSection i18n state =
                 Nothing ->
                     Ui.none
 
+        linksEl : Ui.Element msg
         linksEl =
             if List.isEmpty meta.links then
                 Ui.none
@@ -106,6 +118,7 @@ groupInfoSection i18n state =
                         (List.map viewLink meta.links)
                     ]
 
+        hasInfo : Bool
         hasInfo =
             meta.subtitle /= Nothing || meta.description /= Nothing || not (List.isEmpty meta.links)
     in
@@ -120,6 +133,7 @@ groupInfoSection i18n state =
 viewLink : { label : String, url : String } -> Ui.Element msg
 viewLink link =
     let
+        displayLabel : String
         displayLabel =
             if String.isEmpty link.label then
                 link.url

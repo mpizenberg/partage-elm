@@ -149,6 +149,8 @@ subscriptions model =
         ]
 
 
+{-| Application entry point.
+-}
 main : Program Flags Model Msg
 main =
     Browser.element
@@ -162,20 +164,24 @@ main =
 init : Flags -> ( Model, Cmd Msg )
 init flags =
     let
+        route : Route
         route =
             flags.initialUrl
                 |> Url.fromString
                 |> Maybe.map (AppUrl.fromUrl >> Route.fromAppUrl)
                 |> Maybe.withDefault NotFound
 
+        language : Language
         language =
             flags.language
                 |> T.languageFromString
                 |> Maybe.withDefault En
 
+        i18n : I18n
         i18n =
             T.init language
 
+        initialSeed : Random.Seed
         initialSeed =
             List.foldl
                 (\n acc -> Random.step (Random.int Random.minInt Random.maxInt) acc |> Tuple.second)
@@ -185,6 +191,7 @@ init flags =
         ( uuidState, seedAfterV7 ) =
             Random.step UUID.initialV7State initialSeed
 
+        currentTime : Time.Posix
         currentTime =
             Time.millisToPosix flags.currentTime
 
@@ -235,6 +242,7 @@ update msg model =
     case msg of
         OnNavEvent event ->
             let
+                route : Route
                 route =
                     Route.fromAppUrl event.appUrl
 
@@ -249,6 +257,7 @@ update msg model =
                 ( modelAfterGuard, loadCmd ) =
                     ensureGroupLoaded { model | route = guardedRoute } guardedRoute
 
+                modelWithPages : Model
                 modelWithPages =
                     initPagesIfNeeded guardedRoute modelAfterGuard
             in
@@ -261,6 +270,7 @@ update msg model =
             case model.route of
                 GroupRoute groupId _ ->
                     let
+                        newRoute : Route
                         newRoute =
                             GroupRoute groupId (Tab tab)
                     in
@@ -295,6 +305,7 @@ update msg model =
             case model.appState of
                 Ready readyData ->
                     let
+                        updatedReadyData : Storage.InitData
                         updatedReadyData =
                             { readyData | identity = Just identity }
 
@@ -356,6 +367,7 @@ update msg model =
                 ( newGroupModel, maybeOutput ) =
                     Page.NewGroup.update subMsg model.newGroupModel
 
+                modelWithForm : Model
                 modelWithForm =
                     { model | newGroupModel = newGroupModel }
             in
@@ -371,6 +383,7 @@ update msg model =
                 ( newEntryModel, maybeOutput ) =
                     Page.NewEntry.update subMsg model.newEntryModel
 
+                modelWithForm : Model
                 modelWithForm =
                     { model | newEntryModel = newEntryModel }
             in
@@ -390,6 +403,7 @@ update msg model =
             case model.appState of
                 Ready readyData ->
                     let
+                        newRoute : Route
                         newRoute =
                             GroupRoute summary.id (Tab EntriesTab)
                     in
@@ -410,6 +424,7 @@ update msg model =
             case appendEventAndRecompute model groupId envelope of
                 Just updatedModel ->
                     let
+                        targetRoute : Route
                         targetRoute =
                             case model.route of
                                 GroupRoute _ (Tab BalanceTab) ->
@@ -432,6 +447,7 @@ update msg model =
             case ( model.appState, model.loadedGroup ) of
                 ( Ready readyData, Just loaded ) ->
                     let
+                        output : Page.NewEntry.Output
                         output =
                             Page.NewEntry.TransferOutput
                                 { amountCents = tx.amount
@@ -468,6 +484,7 @@ update msg model =
 
         ToggleActivityExpanded eventId ->
             let
+                updated : Set Event.Id
                 updated =
                     if Set.member eventId model.expandedActivities then
                         Set.remove eventId model.expandedActivities
@@ -482,6 +499,7 @@ update msg model =
                 ( memberDetailModel, maybeOutput ) =
                     Page.MemberDetail.update subMsg model.memberDetailModel
 
+                modelWithPage : Model
                 modelWithPage =
                     { model | memberDetailModel = memberDetailModel }
             in
@@ -497,6 +515,7 @@ update msg model =
                 ( addMemberModel, maybeOutput ) =
                     Page.AddMember.update subMsg model.addMemberModel
 
+                modelWithPage : Model
                 modelWithPage =
                     { model | addMemberModel = addMemberModel }
             in
@@ -512,6 +531,7 @@ update msg model =
                 ( editModel, maybeOutput ) =
                     Page.EditMemberMetadata.update subMsg model.editMemberMetadataModel
 
+                modelWithPage : Model
                 modelWithPage =
                     { model | editMemberMetadataModel = editModel }
             in
@@ -553,6 +573,7 @@ update msg model =
                 result =
                     Page.EditGroupMetadata.update subMsg model.editGroupMetadataModel
 
+                modelWithPage : Model
                 modelWithPage =
                     { model | editGroupMetadataModel = result.model }
             in
@@ -806,6 +827,7 @@ loadGroup model groupId =
 handleMemberDetailOutput : Model -> Storage.InitData -> LoadedGroup -> Page.MemberDetail.Output -> ( Model, Cmd Msg )
 handleMemberDetailOutput model readyData loaded output =
     let
+        submit : Event.Payload -> ( Model, Cmd Msg )
         submit =
             submitEvent (OnMemberActionSaved loaded.summary.id) model readyData loaded
     in
@@ -895,6 +917,7 @@ syncGroupSummaryName groupId model =
     case ( model.loadedGroup, model.appState ) of
         ( Just loaded, Ready readyData ) ->
             let
+                updatedSummary : GroupSummary
                 updatedSummary =
                     { id = groupId
                     , name = loaded.groupState.groupMeta.name
@@ -1035,18 +1058,23 @@ viewPage model =
 viewReady : Model -> Storage.InitData -> Ui.Element Msg
 viewReady model readyData =
     let
+        i18n : I18n
         i18n =
             model.i18n
 
+        langSelector : Ui.Element Msg
         langSelector =
             UI.Components.languageSelector SwitchLanguage model.language
 
+        shell : String -> Ui.Element Msg -> Ui.Element Msg
         shell title content =
             UI.Shell.appShell { title = title, headerExtra = langSelector, content = content }
 
+        withGroup : Group.Id -> (LoadedGroup -> Ui.Element Msg) -> Ui.Element Msg
         withGroup groupId viewFn =
             viewWithLoadedGroup model groupId langSelector viewFn
 
+        withGroupShell : Group.Id -> String -> (LoadedGroup -> Ui.Element Msg) -> Ui.Element Msg
         withGroupShell groupId title contentFn =
             withGroup groupId (\loaded -> shell title (contentFn loaded))
     in
@@ -1179,6 +1207,7 @@ viewGroupMemberDetail model readyData loaded =
 viewWithLoadedGroup : Model -> Group.Id -> Ui.Element Msg -> (LoadedGroup -> Ui.Element Msg) -> Ui.Element Msg
 viewWithLoadedGroup model groupId langSelector viewFn =
     let
+        loadingShell : Ui.Element Msg
         loadingShell =
             UI.Shell.appShell
                 { title = T.shellPartage model.i18n

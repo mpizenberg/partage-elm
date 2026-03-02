@@ -75,61 +75,85 @@ fontSize =
 -- COLORS
 
 
+{-| Primary brand color (blue).
+-}
 primary : Ui.Color
 primary =
     Ui.rgb 37 99 235
 
 
+{-| Light variant of the primary color.
+-}
 primaryLight : Ui.Color
 primaryLight =
     Ui.rgb 219 234 254
 
 
+{-| Success color (green).
+-}
 success : Ui.Color
 success =
     Ui.rgb 22 163 74
 
 
+{-| Light variant of the success color.
+-}
 successLight : Ui.Color
 successLight =
     Ui.rgb 220 252 231
 
 
+{-| Danger color (red).
+-}
 danger : Ui.Color
 danger =
     Ui.rgb 220 38 38
 
 
+{-| Light variant of the danger color.
+-}
 dangerLight : Ui.Color
 dangerLight =
     Ui.rgb 254 226 226
 
 
+{-| White color.
+-}
 white : Ui.Color
 white =
     Ui.rgb 255 255 255
 
 
+{-| Neutral gray 200.
+-}
 neutral200 : Ui.Color
 neutral200 =
     Ui.rgb 229 231 235
 
 
+{-| Neutral gray 300.
+-}
 neutral300 : Ui.Color
 neutral300 =
     Ui.rgb 209 213 219
 
 
+{-| Neutral gray 500.
+-}
 neutral500 : Ui.Color
 neutral500 =
     Ui.rgb 107 114 128
 
 
+{-| Neutral gray 700.
+-}
 neutral700 : Ui.Color
 neutral700 =
     Ui.rgb 55 65 81
 
 
+{-| Neutral gray 900.
+-}
 neutral900 : Ui.Color
 neutral900 =
     Ui.rgb 17 24 39

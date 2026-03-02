@@ -114,6 +114,8 @@ emptyPaymentInfo =
     }
 
 
+{-| Encode a member Type as a JSON string.
+-}
 encodeType : Type -> Encode.Value
 encodeType memberType =
     Encode.string
@@ -126,6 +128,8 @@ encodeType memberType =
         )
 
 
+{-| Decode a member Type from a JSON string.
+-}
 typeDecoder : Decode.Decoder Type
 typeDecoder =
     Decode.string
@@ -143,6 +147,8 @@ typeDecoder =
             )
 
 
+{-| Encode PaymentInfo as a JSON object, omitting Nothing fields.
+-}
 encodePaymentInfo : PaymentInfo -> Encode.Value
 encodePaymentInfo info =
     Encode.object
@@ -159,6 +165,8 @@ encodePaymentInfo info =
         )
 
 
+{-| Decode PaymentInfo from JSON, with all fields optional.
+-}
 paymentInfoDecoder : Decode.Decoder PaymentInfo
 paymentInfoDecoder =
     Decode.map8 PaymentInfo
@@ -172,6 +180,8 @@ paymentInfoDecoder =
         (Decode.maybe (Decode.field "adaAddress" Decode.string))
 
 
+{-| Encode member Metadata as a JSON object, omitting Nothing fields.
+-}
 encodeMetadata : Metadata -> Encode.Value
 encodeMetadata meta =
     Encode.object
@@ -184,6 +194,8 @@ encodeMetadata meta =
         )
 
 
+{-| Decode member Metadata from JSON, with all fields optional.
+-}
 metadataDecoder : Decode.Decoder Metadata
 metadataDecoder =
     Decode.map4 Metadata

@@ -13,10 +13,14 @@ import Ui.Input
 import Validation as V
 
 
+{-| Page model holding the new group form and submission state.
+-}
 type Model
     = Model NewGroup.Form Bool
 
 
+{-| Messages produced by user interaction on the new group form.
+-}
 type Msg
     = InputName String
     | InputCreatorName String
@@ -27,11 +31,15 @@ type Msg
     | Submit
 
 
+{-| Initial model with an empty form.
+-}
 init : Model
 init =
     Model NewGroup.form False
 
 
+{-| Handle form input and submission, returning validated Output on success.
+-}
 update : Msg -> Model -> ( Model, Maybe Output )
 update msg (Model form submitted) =
     case msg of
@@ -74,6 +82,8 @@ update msg (Model form submitted) =
                     ( Model form True, Nothing )
 
 
+{-| Render the new group creation form.
+-}
 view : I18n -> (Msg -> msg) -> Model -> Ui.Element msg
 view i18n toMsg (Model form submitted) =
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
@@ -90,6 +100,7 @@ view i18n toMsg (Model form submitted) =
 nameField : I18n -> Bool -> NewGroup.Form -> Ui.Element Msg
 nameField i18n submitted form =
     let
+        field : Field.Field String
         field =
             Form.get .name form
     in
@@ -111,6 +122,7 @@ nameField i18n submitted form =
 creatorNameField : I18n -> Bool -> NewGroup.Form -> Ui.Element Msg
 creatorNameField i18n submitted form =
     let
+        field : Field.Field String
         field =
             Form.get .creatorName form
     in
@@ -132,9 +144,11 @@ creatorNameField i18n submitted form =
 currencyField : I18n -> NewGroup.Form -> Ui.Element Msg
 currencyField i18n form =
     let
+        field : Field.Field Currency
         field =
             Form.get .currency form
 
+        selected : Maybe Currency
         selected =
             Field.toMaybe field
     in
@@ -187,6 +201,7 @@ virtualMembersSection i18n form =
 virtualMemberRow : I18n -> Form.List.Id -> NewGroup.Form -> Ui.Element Msg
 virtualMemberRow i18n id form =
     let
+        field : Field.Field String
         field =
             Form.get (\a -> a.virtualMemberName id) form
     in

@@ -31,6 +31,8 @@ import UUID
 import UuidGen
 
 
+{-| Dependencies needed to submit events: task pool, identity, DB, and RNG state.
+-}
 type alias Context msg =
     { pool : ConcurrentTask.Pool msg
     , sendTask : Json.Encode.Value -> Cmd msg
@@ -43,6 +45,8 @@ type alias Context msg =
     }
 
 
+{-| Returned state after a submission, with updated pool and RNG state.
+-}
 type alias State msg =
     { pool : ConcurrentTask.Pool msg
     , randomSeed : Random.Seed
@@ -50,6 +54,8 @@ type alias State msg =
     }
 
 
+{-| A fully loaded group with its events, computed state, and summary.
+-}
 type alias LoadedGroup =
     { events : List Event.Envelope
     , groupState : GroupState.GroupState
@@ -57,6 +63,8 @@ type alias LoadedGroup =
     }
 
 
+{-| Build a LoadedGroup from raw events and a summary, applying all events to compute state.
+-}
 initLoadedGroup : List Event.Envelope -> GroupSummary -> LoadedGroup
 initLoadedGroup events summary =
     -- We store the events in reverse order for efficient prepending of new events
@@ -69,6 +77,7 @@ initLoadedGroup events summary =
 attempt : Context msg -> Event.Envelope -> Group.Id -> ( State msg, Cmd msg )
 attempt ctx envelope groupId =
     let
+        task : ConcurrentTask.ConcurrentTask Idb.Error Event.Envelope
         task =
             Storage.saveEvents ctx.db groupId [ envelope ]
                 |> ConcurrentTask.map (\_ -> envelope)
@@ -93,6 +102,8 @@ attempt ctx envelope groupId =
 -- New Group
 
 
+{-| Submit a new group creation with its initial members and events.
+-}
 newGroup : Context msg -> (ConcurrentTask.Response Idb.Error GroupSummary -> msg) -> Form.NewGroup.Output -> ( State msg, Cmd msg )
 newGroup ctx onComplete output =
     let
@@ -105,6 +116,7 @@ newGroup ctx onComplete output =
         ( eventIds, uuidStateAfter ) =
             UuidGen.v7batch (2 + List.length output.virtualMembers) ctx.currentTime ctx.uuidState
 
+        payloads : List Event.Payload
         payloads =
             Event.createGroup
                 { name = output.name
@@ -112,17 +124,20 @@ newGroup ctx onComplete output =
                 , virtualMembers = List.map2 Tuple.pair virtualMemberIds output.virtualMembers
                 }
 
+        allEvents : List Event.Envelope
         allEvents =
             List.map2 (\eventId -> Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash)
                 eventIds
                 payloads
 
+        summary : GroupSummary
         summary =
             { id = groupId
             , name = output.name
             , defaultCurrency = output.currency
             }
 
+        task : ConcurrentTask.ConcurrentTask Idb.Error GroupSummary
         task =
             Storage.saveGroupSummary ctx.db summary
                 |> ConcurrentTask.andThen (\_ -> Storage.saveEvents ctx.db groupId allEvents)
@@ -148,6 +163,8 @@ newGroup ctx onComplete output =
 -- New Entry
 
 
+{-| Submit a new entry (expense or transfer) to a group.
+-}
 newEntry : Context msg -> LoadedGroup -> Page.NewEntry.Output -> ( State msg, Cmd msg )
 newEntry ctx loaded output =
     let
@@ -157,15 +174,19 @@ newEntry ctx loaded output =
         ( eventId, uuidStateAfter ) =
             UuidGen.v7 ctx.currentTime ctx.uuidState
 
+        meta : Entry.Metadata
         meta =
             Entry.newMetadata entryId ctx.identity.publicKeyHash ctx.currentTime
 
+        kind : Entry.Kind
         kind =
             Page.NewEntry.outputToKind loaded.summary.defaultCurrency output
 
+        entry : Entry.Entry
         entry =
             { meta = meta, kind = kind }
 
+        envelope : Event.Envelope
         envelope =
             Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash (Event.EntryAdded entry)
     in
@@ -176,6 +197,8 @@ newEntry ctx loaded output =
 -- Edit Entry
 
 
+{-| Submit an edit to an existing entry. Returns Nothing if the entry is not found.
+-}
 editEntry : Context msg -> LoadedGroup -> Entry.Id -> Page.NewEntry.Output -> Maybe ( State msg, Cmd msg )
 editEntry ctx loaded originalEntryId output =
     case Dict.get originalEntryId loaded.groupState.entries of
@@ -190,12 +213,15 @@ editEntry ctx loaded originalEntryId output =
                 ( eventId, uuidStateAfter ) =
                     UuidGen.v7 ctx.currentTime ctx.uuidState
 
+                newKind : Entry.Kind
                 newKind =
                     Page.NewEntry.outputToKind loaded.summary.defaultCurrency output
 
+                entry : Entry.Entry
                 entry =
                     Entry.replace entryState.currentVersion.meta newEntryId newKind
 
+                envelope : Event.Envelope
                 envelope =
                     Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash (Event.EntryModified entry)
             in
@@ -206,11 +232,15 @@ editEntry ctx loaded originalEntryId output =
 -- Delete / Restore Entry
 
 
+{-| Submit a soft-delete for an entry.
+-}
 deleteEntry : Context msg -> LoadedGroup -> Entry.Id -> ( State msg, Cmd msg )
 deleteEntry ctx loaded rootId =
     simpleEvent ctx loaded (Event.EntryDeleted { rootId = rootId })
 
 
+{-| Submit an un-delete (restore) for a previously deleted entry.
+-}
 restoreEntry : Context msg -> LoadedGroup -> Entry.Id -> ( State msg, Cmd msg )
 restoreEntry ctx loaded rootId =
     simpleEvent ctx loaded (Event.EntryUndeleted { rootId = rootId })
@@ -222,6 +252,7 @@ simpleEvent ctx loaded payload =
         ( eventId, uuidStateAfter ) =
             UuidGen.v7 ctx.currentTime ctx.uuidState
 
+        envelope : Event.Envelope
         envelope =
             Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash payload
     in
@@ -232,6 +263,8 @@ simpleEvent ctx loaded payload =
 -- Member Event (generic)
 
 
+{-| Submit a generic event payload to a group.
+-}
 event : Context msg -> LoadedGroup -> Event.Payload -> ( State msg, Cmd msg )
 event =
     simpleEvent
@@ -241,6 +274,8 @@ event =
 -- Add Member
 
 
+{-| Submit a new virtual member creation to a group.
+-}
 addMember : Context msg -> LoadedGroup -> { name : String } -> ( State msg, Cmd msg )
 addMember ctx loaded output =
     let
@@ -250,6 +285,7 @@ addMember ctx loaded output =
         ( eventId, uuidStateAfter ) =
             UuidGen.v7 ctx.currentTime ctx.uuidState
 
+        payload : Event.Payload
         payload =
             Event.MemberCreated
                 { memberId = newMemberId
@@ -258,6 +294,7 @@ addMember ctx loaded output =
                 , addedBy = ctx.identity.publicKeyHash
                 }
 
+        envelope : Event.Envelope
         envelope =
             Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash payload
     in

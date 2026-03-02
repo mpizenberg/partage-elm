@@ -13,6 +13,7 @@ e.g., formatMinorUnits EUR 1050 -> "10.50", formatMinorUnits JPY 1050 -> "1050"
 formatMinorUnits : Currency -> Int -> String
 formatMinorUnits currency amount =
     let
+        p : Int
         p =
             Currency.precision currency
     in
@@ -21,12 +22,15 @@ formatMinorUnits currency amount =
 
     else
         let
+            divisor : Int
             divisor =
                 10 ^ p
 
+            abs_ : Int
             abs_ =
                 abs amount
 
+            sign : String
             sign =
                 if amount < 0 then
                     "-"
@@ -34,9 +38,11 @@ formatMinorUnits currency amount =
                 else
                     ""
 
+            whole : Int
             whole =
                 abs_ // divisor
 
+            frac : Int
             frac =
                 remainderBy divisor abs_
         in
@@ -49,9 +55,11 @@ e.g., 1050 -> "10.50", -300 -> "-3.00", 0 -> "0.00"
 formatCents : Int -> String
 formatCents cents =
     let
+        abs_ : Int
         abs_ =
             abs cents
 
+        sign : String
         sign =
             if cents < 0 then
                 "-"
@@ -59,9 +67,11 @@ formatCents cents =
             else
                 ""
 
+        whole : Int
         whole =
             abs_ // 100
 
+        frac : Int
         frac =
             remainderBy 100 abs_
     in

@@ -16,6 +16,8 @@ import Ui.Font
 import Ui.Input
 
 
+{-| Configuration for entry detail actions and name resolution.
+-}
 type alias Context msg =
     { onEdit : msg
     , onDelete : msg
@@ -26,9 +28,12 @@ type alias Context msg =
     }
 
 
+{-| Render the full entry detail view with edit, delete, and restore actions.
+-}
 view : I18n -> Context msg -> EntryState -> Ui.Element msg
 view i18n ctx entryState =
     let
+        entry : Entry
         entry =
             entryState.currentVersion
     in
@@ -229,9 +234,11 @@ categoryLabel i18n category =
 metadataFooter : I18n -> Context msg -> Entry -> Ui.Element msg
 metadataFooter i18n ctx entry =
     let
+        createdByName : String
         createdByName =
             ctx.resolveName entry.meta.createdBy
 
+        editedIndicator : Ui.Element msg
         editedIndicator =
             if entry.meta.depth > 0 then
                 Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500, Ui.Font.italic ]

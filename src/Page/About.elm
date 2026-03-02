@@ -6,6 +6,8 @@ import Ui
 import Ui.Font
 
 
+{-| Render the about page with title, description, and privacy info.
+-}
 view : I18n -> Ui.Element msg
 view i18n =
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.md ]

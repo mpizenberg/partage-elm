@@ -15,10 +15,14 @@ import Form.List exposing (Forms, Id)
 import Validation as V
 
 
+{-| The new group form type combining state, accessors, errors, and output.
+-}
 type alias Form =
     Form.Form State Accessors Error Output
 
 
+{-| Form state for creating a new group (name, creator, currency, virtual members).
+-}
 type alias State =
     { name : Field String
     , creatorName : Field String
@@ -27,6 +31,8 @@ type alias State =
     }
 
 
+{-| Accessors for reading and modifying each new group form field.
+-}
 type alias Accessors =
     { name : Accessor State (Field String)
     , creatorName : Accessor State (Field String)
@@ -38,6 +44,8 @@ type alias Accessors =
     }
 
 
+{-| Validation errors for the new group form.
+-}
 type Error
     = NameError Field.Error
     | CreatorNameError Field.Error
@@ -45,6 +53,8 @@ type Error
     | VirtualMemberError Id VirtualMemberError
 
 
+{-| Validated output of the new group form.
+-}
 type alias Output =
     { name : String
     , creatorName : String
@@ -69,6 +79,8 @@ type alias VMAccessors =
     { name : Accessor VMState (Field String) }
 
 
+{-| Validation errors for a virtual member sub-form.
+-}
 type VirtualMemberError
     = VMNameError Field.Error
 
@@ -123,6 +135,8 @@ currencyType =
 -- Form
 
 
+{-| The new group form definition.
+-}
 form : Form
 form =
     Form.new

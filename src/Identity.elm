@@ -7,12 +7,16 @@ import WebCrypto
 import WebCrypto.Signature as Signature
 
 
+{-| A user's identity, consisting of a public key hash and signing key pair.
+-}
 type alias Identity =
     { publicKeyHash : String
     , signingKeyPair : Signature.SerializedSigningKeyPair
     }
 
 
+{-| Generate a new identity by creating a signing key pair and hashing the public key.
+-}
 generate : ConcurrentTask WebCrypto.Error Identity
 generate =
     Signature.generateSigningKeyPair
@@ -20,6 +24,7 @@ generate =
         |> ConcurrentTask.andThen
             (\kp ->
                 let
+                    serialized : Signature.SerializedSigningKeyPair
                     serialized =
                         Signature.exportSigningKeyPair kp
                 in
@@ -33,6 +38,8 @@ generate =
             )
 
 
+{-| Encode an Identity to JSON.
+-}
 encode : Identity -> Encode.Value
 encode identity =
     Encode.object
@@ -41,6 +48,8 @@ encode identity =
         ]
 
 
+{-| Decode an Identity from JSON.
+-}
 decoder : Decode.Decoder Identity
 decoder =
     Decode.map2 Identity

@@ -22,11 +22,15 @@ type Currency
     | ARS
 
 
+{-| All supported currencies, ordered with EUR first.
+-}
 allCurrencies : List Currency
 allCurrencies =
     [ EUR, USD, GBP, CHF, JPY, AUD, CAD, NZD, BRL, ARS ]
 
 
+{-| Get the uppercase ISO 4217 code for a currency.
+-}
 currencyCode : Currency -> String
 currencyCode currency =
     case currency of
@@ -73,11 +77,15 @@ precision currency =
             2
 
 
+{-| Encode a Currency as a lowercase JSON string.
+-}
 encodeCurrency : Currency -> Encode.Value
 encodeCurrency currency =
     Encode.string (String.toLower (currencyCode currency))
 
 
+{-| Decode a Currency from a lowercase JSON string.
+-}
 currencyDecoder : Decode.Decoder Currency
 currencyDecoder =
     Decode.string

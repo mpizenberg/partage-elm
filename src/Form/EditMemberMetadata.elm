@@ -12,10 +12,14 @@ import Field exposing (Field)
 import Form exposing (Accessor)
 
 
+{-| The member metadata editing form type.
+-}
 type alias Form =
     Form.Form State Accessors Field.Error Output
 
 
+{-| Form state for all member metadata fields (contact info and payment methods).
+-}
 type alias State =
     { phone : Field (Maybe String)
     , email : Field (Maybe String)
@@ -31,6 +35,8 @@ type alias State =
     }
 
 
+{-| Accessors for reading and modifying each metadata field.
+-}
 type alias Accessors =
     { phone : Accessor State (Field (Maybe String))
     , email : Accessor State (Field (Maybe String))
@@ -46,6 +52,8 @@ type alias Accessors =
     }
 
 
+{-| Validated output of the member metadata form.
+-}
 type alias Output =
     { phone : Maybe String
     , email : Maybe String
@@ -93,6 +101,8 @@ optionalEmail =
 -- Form
 
 
+{-| The member metadata editing form definition.
+-}
 form : Form
 form =
     Form.new
@@ -102,9 +112,12 @@ form =
         }
 
 
+{-| Initialize the form fields from existing member metadata.
+-}
 initFromMetadata : Member.Metadata -> Form -> Form
 initFromMetadata meta =
     let
+        setField : (Accessors -> Accessor State (Field (Maybe String))) -> Maybe String -> Form -> Form
         setField accessor maybeValue f =
             case maybeValue of
                 Just v ->
@@ -113,6 +126,7 @@ initFromMetadata meta =
                 Nothing ->
                     f
 
+        payment : Member.PaymentInfo
         payment =
             Maybe.withDefault Member.emptyPaymentInfo meta.payment
     in

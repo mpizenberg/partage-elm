@@ -40,6 +40,8 @@ type alias Context msg =
     }
 
 
+{-| Render the group page shell with tabs and the active tab's content.
+-}
 view : Context msg -> { showDeleted : Bool } -> Ui.Element msg -> GroupState -> GroupTab -> Ui.Element msg
 view ctx { showDeleted } headerExtra groupState activeTab =
     UI.Shell.groupShell

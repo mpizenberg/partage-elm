@@ -115,9 +115,11 @@ Not exposed — use `applyEvents` which recomputes balances after all events.
 applyEvent : Envelope -> GroupState -> GroupState
 applyEvent envelope state =
     let
+        activity : Activity
         activity =
             Activity.fromEnvelope (activityContext state) envelope
 
+        newState : GroupState
         newState =
             applyPayload envelope.payload state
     in
@@ -173,6 +175,7 @@ applyMemberCreated data state =
 
     else
         let
+            memberInfo : Member.Info
             memberInfo =
                 { id = data.memberId
                 , previousId = Nothing
@@ -180,6 +183,7 @@ applyMemberCreated data state =
                 , memberType = data.memberType
                 }
 
+            chain : Member.ChainState
             chain =
                 { rootId = data.memberId
                 , name = data.name
@@ -200,6 +204,7 @@ applyMemberRenamed data state =
 
         Just chain ->
             let
+                updated : Member.ChainState
                 updated =
                     { chain | name = data.newName }
             in
@@ -215,6 +220,7 @@ applyMemberRetired data state =
         Just chain ->
             if not chain.isRetired then
                 let
+                    updated : Member.ChainState
                     updated =
                         { chain | isRetired = True }
                 in
@@ -234,6 +240,7 @@ applyMemberUnretired data state =
         Just chain ->
             if chain.isRetired then
                 let
+                    updated : Member.ChainState
                     updated =
                         { chain | isRetired = False }
                 in
@@ -268,6 +275,7 @@ applyMemberReplaced data state =
 
                         else
                             let
+                                newMemberInfo : Member.Info
                                 newMemberInfo =
                                     { id = data.newId
                                     , previousId = Just data.previousId
@@ -275,12 +283,15 @@ applyMemberReplaced data state =
                                     , memberType = Member.Real
                                     }
 
+                                updatedAllMembers : Dict Member.Id Member.Info
                                 updatedAllMembers =
                                     Dict.insert data.newId newMemberInfo chain.allMembers
 
+                                current : Member.Info
                                 current =
                                     Member.pickCurrent chain.currentMember newMemberInfo
 
+                                updatedChain : Member.ChainState
                                 updatedChain =
                                     { chain
                                         | allMembers = updatedAllMembers
@@ -298,6 +309,7 @@ applyMemberMetadataUpdated data state =
 
         Just chain ->
             let
+                updated : Member.ChainState
                 updated =
                     { chain | metadata = data.metadata }
             in
@@ -314,6 +326,7 @@ Invalid entries are silently ignored.
 applyEntryUpsert : Entry -> GroupState -> GroupState
 applyEntryUpsert ({ meta } as entry) state =
     let
+        reject : RejectionReason -> GroupState
         reject reason =
             { state | rejectedEntries = ( entry, reason ) :: state.rejectedEntries }
     in
@@ -327,6 +340,7 @@ applyEntryUpsert ({ meta } as entry) state =
 
         else
             let
+                entryState : EntryState
                 entryState =
                     { rootId = meta.id
                     , currentVersion = entry
@@ -374,12 +388,15 @@ applyEntryUpsert ({ meta } as entry) state =
 
                                     else
                                         let
+                                            updatedVersions : Dict Entry.Id Entry
                                             updatedVersions =
                                                 Dict.insert meta.id entry entryState.allVersions
 
+                                            current : Entry
                                             current =
                                                 pickVersion entryState.currentVersion entry
 
+                                            updatedEntryState : EntryState
                                             updatedEntryState =
                                                 { entryState
                                                     | allVersions = updatedVersions
@@ -418,6 +435,7 @@ applyEntryDeleted data state =
 
         Just entryState ->
             let
+                updated : EntryState
                 updated =
                     { entryState | isDeleted = True }
             in
@@ -432,6 +450,7 @@ applyEntryUndeleted data state =
 
         Just entryState ->
             let
+                updated : EntryState
                 updated =
                     { entryState | isDeleted = False }
             in
@@ -445,9 +464,11 @@ applyEntryUndeleted data state =
 applyGroupMetadataUpdated : Event.GroupMetadataChange -> GroupState -> GroupState
 applyGroupMetadataUpdated change state =
     let
+        meta : GroupMetadata
         meta =
             state.groupMeta
 
+        updated : GroupMetadata
         updated =
             { meta
                 | name = Maybe.withDefault meta.name change.name

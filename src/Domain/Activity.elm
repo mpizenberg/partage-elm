@@ -67,9 +67,11 @@ type alias StateContext =
 fromEnvelope : StateContext -> Event.Envelope -> Activity
 fromEnvelope ctx envelope =
     let
+        detail : Detail
         detail =
             payloadToDetail ctx envelope.payload
 
+        involved : List Member.Id
         involved =
             involvedMembers ctx envelope.payload
     in
@@ -187,6 +189,7 @@ payloadToDetail ctx payload =
 
         MemberMetadataUpdated data ->
             let
+                oldMeta : Member.Metadata
                 oldMeta =
                     ctx.memberMetadata data.rootId
             in
@@ -200,9 +203,11 @@ payloadToDetail ctx payload =
 
         GroupMetadataUpdated change ->
             let
+                oldMeta : GroupMetadataSnapshot
                 oldMeta =
                     ctx.groupMeta
 
+                newMeta : GroupMetadataSnapshot
                 newMeta =
                     applyGroupMetadataChange oldMeta change
             in
@@ -235,6 +240,7 @@ entryAddedDetail entry =
 entryModifiedDetail : StateContext -> Entry.Entry -> Detail
 entryModifiedDetail ctx entry =
     let
+        previousEntry : Maybe Entry.Entry
         previousEntry =
             ctx.previousVersion entry
     in

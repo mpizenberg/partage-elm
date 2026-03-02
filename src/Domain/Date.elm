@@ -19,6 +19,8 @@ type alias Date =
     }
 
 
+{-| Encode a Date as a JSON value.
+-}
 encodeDate : Date -> Encode.Value
 encodeDate date =
     Encode.object
@@ -28,6 +30,8 @@ encodeDate date =
         ]
 
 
+{-| Decode a Date from JSON.
+-}
 dateDecoder : Decode.Decoder Date
 dateDecoder =
     Decode.map3 Date
@@ -47,6 +51,8 @@ toString date =
         ++ String.padLeft 2 '0' (String.fromInt date.day)
 
 
+{-| Convert a POSIX timestamp to a calendar Date using UTC.
+-}
 posixToDate : Time.Posix -> Date
 posixToDate posix =
     { year = Time.toYear Time.utc posix

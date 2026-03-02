@@ -20,9 +20,11 @@ import Ui.Font
 balanceCard : I18n -> { name : String, balance : MemberBalance, isCurrentUser : Bool } -> Ui.Element msg
 balanceCard i18n config =
     let
+        balanceStatus : Balance.Status
         balanceStatus =
             Balance.status config.balance
 
+        bgColor : Ui.Color
         bgColor =
             case balanceStatus of
                 Balance.Creditor ->
@@ -34,9 +36,11 @@ balanceCard i18n config =
                 Balance.Settled ->
                     Theme.neutral200
 
+        fgColor : Ui.Color
         fgColor =
             Theme.balanceColor balanceStatus
 
+        statusText : String
         statusText =
             case ( balanceStatus, config.isCurrentUser ) of
                 ( Balance.Creditor, True ) ->
@@ -54,6 +58,7 @@ balanceCard i18n config =
                 ( Balance.Settled, _ ) ->
                     T.balanceSettled i18n
 
+        nameLabel : String
         nameLabel =
             if config.isCurrentUser then
                 T.nameYouSuffix config.name i18n
@@ -83,6 +88,7 @@ balanceCard i18n config =
 entryCard : I18n -> (Member.Id -> String) -> msg -> Entry -> Ui.Element msg
 entryCard i18n resolveName onClick entry =
     let
+        rowAttrs : List (Ui.Attribute msg)
         rowAttrs =
             [ Ui.width Ui.fill
             , Ui.padding Theme.spacing.md
@@ -135,6 +141,7 @@ payerSummary i18n resolveName payers =
 memberRow : I18n -> msg -> { member : Member.ChainState, isCurrentUser : Bool } -> Ui.Element msg
 memberRow i18n onClick config =
     let
+        nameLabel : String
         nameLabel =
             if config.isCurrentUser then
                 T.nameYouSuffix config.member.name i18n
@@ -142,6 +149,7 @@ memberRow i18n onClick config =
             else
                 config.member.name
 
+        typeLabel : String
         typeLabel =
             case config.member.currentMember.memberType of
                 Member.Virtual ->
@@ -170,9 +178,11 @@ and highlighting when the current user is involved.
 settlementRow : I18n -> (Member.Id -> String) -> Member.Id -> (Settlement.Transaction -> msg) -> Settlement.Transaction -> Ui.Element msg
 settlementRow i18n resolveName currentUserRootId onSettle t =
     let
+        isCurrentUser : Bool
         isCurrentUser =
             t.from == currentUserRootId || t.to == currentUserRootId
 
+        bgColor : Ui.Color
         bgColor =
             if isCurrentUser then
                 Theme.primaryLight

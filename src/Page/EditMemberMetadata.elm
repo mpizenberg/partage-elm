@@ -14,12 +14,16 @@ import Ui.Font
 import Ui.Input
 
 
+{-| The validated output containing the member ID and updated metadata.
+-}
 type alias Output =
     { memberId : Member.Id
     , metadata : Member.Metadata
     }
 
 
+{-| Page model holding form state for editing member metadata.
+-}
 type Model
     = Model ModelData
 
@@ -31,6 +35,8 @@ type alias ModelData =
     }
 
 
+{-| Messages produced by user interaction on the metadata form.
+-}
 type Msg
     = InputPhone String
     | InputEmail String
@@ -46,6 +52,8 @@ type Msg
     | Submit
 
 
+{-| Initialize the model from an existing member's ID and metadata.
+-}
 init : Member.Id -> Member.Metadata -> Model
 init memberId meta =
     Model
@@ -55,6 +63,8 @@ init memberId meta =
         }
 
 
+{-| Handle form input and submission, returning validated Output on success.
+-}
 update : Msg -> Model -> ( Model, Maybe Output )
 update msg (Model data) =
     case msg of
@@ -95,6 +105,7 @@ update msg (Model data) =
             case Form.validateAsMaybe data.form of
                 Just output ->
                     let
+                        paymentInfo : Member.PaymentInfo
                         paymentInfo =
                             { iban = output.iban
                             , wero = output.wero
@@ -106,9 +117,11 @@ update msg (Model data) =
                             , adaAddress = output.adaAddress
                             }
 
+                        hasPayment : Bool
                         hasPayment =
                             paymentInfo /= Member.emptyPaymentInfo
 
+                        metadata : Member.Metadata
                         metadata =
                             { phone = output.phone
                             , email = output.email
@@ -129,6 +142,8 @@ update msg (Model data) =
                     ( Model { data | submitted = True }, Nothing )
 
 
+{-| Render the member metadata editing form.
+-}
 view : I18n -> (Msg -> msg) -> Model -> Ui.Element msg
 view i18n toMsg (Model data) =
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
@@ -164,9 +179,11 @@ view i18n toMsg (Model data) =
 emailField : I18n -> ModelData -> Ui.Element Msg
 emailField i18n data =
     let
+        label : String
         label =
             T.memberMetadataEmail i18n
 
+        field : Field.Field (Maybe String)
         field =
             Form.get .email data.form
     in

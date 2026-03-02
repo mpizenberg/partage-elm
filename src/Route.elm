@@ -116,6 +116,8 @@ toAppUrl route =
             AppUrl.fromPath (toPathSegments route)
 
 
+{-| Convert a Route to a list of URL path segments.
+-}
 toPathSegments : Route -> List String
 toPathSegments route =
     case route of

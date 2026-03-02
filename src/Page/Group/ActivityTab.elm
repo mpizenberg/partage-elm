@@ -32,6 +32,8 @@ type alias Config msg =
     }
 
 
+{-| Render the activity tab with a chronological list of group events.
+-}
 view : I18n -> Config msg -> List Activity -> Ui.Element msg
 view i18n config activities =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.md ]
@@ -49,12 +51,15 @@ view i18n config activities =
 activityItem : I18n -> Config msg -> Activity -> Ui.Element msg
 activityItem i18n config activity =
     let
+        isInvolved : Bool
         isInvolved =
             List.member config.currentUserRootId activity.involvedMembers
 
+        isExpanded : Bool
         isExpanded =
             Set.member activity.eventId config.expandedActivities
 
+        innerAttrs : List (Ui.Attribute msg)
         innerAttrs =
             if isInvolved then
                 [ Ui.borderWith { left = 3, top = 0, right = 0, bottom = 0 }
@@ -263,9 +268,11 @@ detailPanel i18n config detail =
 detailContent : I18n -> Config msg -> Detail -> List (Ui.Element msg)
 detailContent i18n config detail =
     let
+        resolveName : Member.Id -> String
         resolveName =
             config.resolveName
 
+        withEntryLink : Entry.Entry -> List (Ui.Element msg) -> List (Ui.Element msg)
         withEntryLink entry rows =
             rows ++ [ entryDetailLink i18n config entry ]
     in
@@ -413,7 +420,8 @@ expenseDiffRows i18n groupCurrency resolveName old new =
     List.concat
         [ [ maybeDiffOrDetailRow (T.newEntryDescriptionLabel i18n) old.description new.description ]
         , [ maybeDiffOrDetailRow (T.entryDetailDate i18n) (Date.toString old.date) (Date.toString new.date) ]
-        , amountCurrencyDiffRows i18n groupCurrency
+        , amountCurrencyDiffRows i18n
+            groupCurrency
             { oldAmount = old.amount, oldCurrency = old.currency, oldDefaultCurrencyAmount = old.defaultCurrencyAmount }
             { newAmount = new.amount, newCurrency = new.currency, newDefaultCurrencyAmount = new.defaultCurrencyAmount }
         , [ payerDiffOrDetailRow i18n resolveName old.payers new.payers ]
@@ -427,7 +435,8 @@ transferDiffRows : I18n -> Currency -> (Member.Id -> String) -> Entry.TransferDa
 transferDiffRows i18n groupCurrency resolveName old new =
     List.concat
         [ [ maybeDiffOrDetailRow (T.entryDetailDate i18n) (Date.toString old.date) (Date.toString new.date) ]
-        , amountCurrencyDiffRows i18n groupCurrency
+        , amountCurrencyDiffRows i18n
+            groupCurrency
             { oldAmount = old.amount, oldCurrency = old.currency, oldDefaultCurrencyAmount = old.defaultCurrencyAmount }
             { newAmount = new.amount, newCurrency = new.currency, newDefaultCurrencyAmount = new.defaultCurrencyAmount }
         , [ maybeDiffOrDetailRow (T.entryDetailFrom i18n) (resolveName old.from) (resolveName new.from) ]
@@ -453,15 +462,19 @@ amountCurrencyDiffRows :
     -> List (Ui.Element msg)
 amountCurrencyDiffRows i18n groupCurrency old new =
     let
+        currencyChanged : Bool
         currencyChanged =
             old.oldCurrency /= new.newCurrency
 
+        amountChanged : Bool
         amountChanged =
             old.oldAmount /= new.newAmount
 
+        formatDefaultAmount : Int -> String
         formatDefaultAmount amt =
             Format.formatCentsWithCurrency amt groupCurrency
 
+        currencyRow : List (Ui.Element msg)
         currencyRow =
             if currencyChanged then
                 [ diffRow (T.newEntryCurrencyLabel i18n)
@@ -472,14 +485,18 @@ amountCurrencyDiffRows i18n groupCurrency old new =
             else
                 []
 
+        amountRow : List (Ui.Element msg)
         amountRow =
             let
+                label : String
                 label =
                     T.newEntryAmountLabel i18n
 
+                oldFormatted : String
                 oldFormatted =
                     Format.formatCentsWithCurrency old.oldAmount old.oldCurrency
 
+                newFormatted : String
                 newFormatted =
                     Format.formatCentsWithCurrency new.newAmount new.newCurrency
             in
@@ -489,8 +506,10 @@ amountCurrencyDiffRows i18n groupCurrency old new =
             else
                 [ detailRow label newFormatted ]
 
+        defaultAmountRow : List (Ui.Element msg)
         defaultAmountRow =
             let
+                label : String
                 label =
                     "≈ " ++ T.newEntryAmountLabel i18n
             in
@@ -523,12 +542,15 @@ amountCurrencyDiffRows i18n groupCurrency old new =
 payerDiffOrDetailRow : I18n -> (Member.Id -> String) -> List Entry.Payer -> List Entry.Payer -> Ui.Element msg
 payerDiffOrDetailRow i18n resolveName oldPayers newPayers =
     let
+        label : String
         label =
             T.entryDetailPaidBy i18n
 
+        formatPayer : Entry.Payer -> String
         formatPayer p =
             resolveName p.memberId
 
+        formatPayerWithAmount : Currency -> Entry.Payer -> String
         formatPayerWithAmount currency p =
             resolveName p.memberId ++ " (" ++ Format.formatCentsWithCurrency p.amount currency ++ ")"
     in
@@ -540,9 +562,11 @@ payerDiffOrDetailRow i18n resolveName oldPayers newPayers =
 
     else
         let
+            oldText : String
             oldText =
                 oldPayers |> List.map formatPayer |> String.join ", "
 
+            newText : String
             newText =
                 newPayers |> List.map formatPayer |> String.join ", "
         in
@@ -552,6 +576,7 @@ payerDiffOrDetailRow i18n resolveName oldPayers newPayers =
 beneficiaryDiffOrDetailRow : I18n -> (Member.Id -> String) -> List Entry.Beneficiary -> List Entry.Beneficiary -> Ui.Element msg
 beneficiaryDiffOrDetailRow i18n resolveName oldBenefs newBenefs =
     let
+        label : String
         label =
             T.entryDetailSplitAmong i18n
     in
@@ -569,9 +594,11 @@ categoryDiffRow i18n oldCat newCat =
 
     else
         let
+            oldLabel : String
             oldLabel =
                 oldCat |> Maybe.map (categoryLabel i18n) |> Maybe.withDefault (T.newEntryCategoryNone i18n)
 
+            newLabel : String
             newLabel =
                 newCat |> Maybe.map (categoryLabel i18n) |> Maybe.withDefault (T.newEntryCategoryNone i18n)
         in
@@ -585,12 +612,15 @@ notesDiffRow i18n oldNotes newNotes =
 
     else
         let
+            label : String
             label =
                 T.entryDetailNotes i18n
 
+            oldText : String
             oldText =
                 Maybe.withDefault (T.activityDetailNoValue i18n) oldNotes
 
+            newText : String
             newText =
                 Maybe.withDefault (T.activityDetailRemoved i18n) newNotes
         in
@@ -691,12 +721,15 @@ paymentDiffRows i18n oldPayment newPayment =
 
     else
         let
+            old : Member.PaymentInfo
             old =
                 Maybe.withDefault emptyPayment oldPayment
 
+            new : Member.PaymentInfo
             new =
                 Maybe.withDefault emptyPayment newPayment
 
+            rows : List (Ui.Element msg)
             rows =
                 List.filterMap identity
                     [ maybeDiffRow (T.memberMetadataIban i18n) old.iban new.iban
@@ -802,18 +835,23 @@ diffRow label oldValue newValue =
 formatTimestamp : Time.Posix -> String
 formatTimestamp posix =
     let
+        year : String
         year =
             String.fromInt (Time.toYear Time.utc posix)
 
+        month : String
         month =
             String.padLeft 2 '0' (String.fromInt (monthToInt (Time.toMonth Time.utc posix)))
 
+        day : String
         day =
             String.padLeft 2 '0' (String.fromInt (Time.toDay Time.utc posix))
 
+        hour : String
         hour =
             String.padLeft 2 '0' (String.fromInt (Time.toHour Time.utc posix))
 
+        minute : String
         minute =
             String.padLeft 2 '0' (String.fromInt (Time.toMinute Time.utc posix))
     in

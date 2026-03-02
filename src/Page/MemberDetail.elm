@@ -12,6 +12,8 @@ import Ui.Font
 import Ui.Input
 
 
+{-| Actions that can be triggered from the member detail page.
+-}
 type Output
     = RenameOutput { memberId : Member.Id, oldName : String, newName : String }
     | RetireOutput Member.Id
@@ -20,6 +22,8 @@ type Output
     | NavigateBack
 
 
+{-| Page model holding the member data and rename form state.
+-}
 type Model
     = Model ModelData
 
@@ -31,6 +35,8 @@ type alias ModelData =
     }
 
 
+{-| Messages produced by user interaction on the member detail page.
+-}
 type Msg
     = StartRename
     | CancelRename
@@ -42,6 +48,8 @@ type Msg
     | GoBack
 
 
+{-| Initialize the model from a member's chain state.
+-}
 init : Member.ChainState -> Model
 init member =
     Model
@@ -51,6 +59,8 @@ init member =
         }
 
 
+{-| Handle user actions like rename, retire, and navigation.
+-}
 update : Msg -> Model -> ( Model, Maybe Output )
 update msg (Model data) =
     case msg of
@@ -65,6 +75,7 @@ update msg (Model data) =
 
         SubmitRename ->
             let
+                trimmed : String
                 trimmed =
                     String.trim data.renameText
             in
@@ -95,6 +106,8 @@ update msg (Model data) =
             ( Model data, Just NavigateBack )
 
 
+{-| Render the member detail view with name, info, metadata, and action buttons.
+-}
 view : I18n -> Member.Id -> (Msg -> msg) -> Model -> Ui.Element msg
 view i18n currentUserRootId toMsg (Model data) =
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
@@ -161,6 +174,7 @@ nameSection i18n data =
 infoSection : I18n -> Member.ChainState -> Ui.Element msg
 infoSection i18n member =
     let
+        typeLabel : String
         typeLabel =
             case member.currentMember.memberType of
                 Member.Real ->
@@ -169,6 +183,7 @@ infoSection i18n member =
                 Member.Virtual ->
                     T.memberDetailTypeVirtual i18n
 
+        statusLabel : String
         statusLabel =
             if member.isRetired then
                 T.memberDetailStatusRetired i18n
@@ -185,9 +200,11 @@ infoSection i18n member =
 metadataSection : I18n -> Member.ChainState -> Ui.Element msg
 metadataSection i18n member =
     let
+        meta : Member.Metadata
         meta =
             member.metadata
 
+        rows : List (Ui.Element msg)
         rows =
             List.filterMap identity
                 [ Maybe.map (\v -> metadataRow (T.memberMetadataPhone i18n) v) meta.phone
@@ -195,6 +212,7 @@ metadataSection i18n member =
                 , Maybe.map (\v -> metadataRow (T.memberMetadataNotes i18n) v) meta.notes
                 ]
 
+        paymentRows : List (Ui.Element msg)
         paymentRows =
             case meta.payment of
                 Just payment ->
@@ -212,6 +230,7 @@ metadataSection i18n member =
                 Nothing ->
                     []
 
+        allRows : List (Ui.Element msg)
         allRows =
             rows ++ paymentRows
     in
@@ -233,6 +252,7 @@ metadataRow label value =
 actionButtons : I18n -> Member.Id -> Member.ChainState -> Ui.Element Msg
 actionButtons i18n currentUserRootId member =
     let
+        renameBtn : Ui.Element Msg
         renameBtn =
             Ui.el
                 [ Ui.Input.button StartRename
@@ -247,6 +267,7 @@ actionButtons i18n currentUserRootId member =
                 ]
                 (Ui.text (T.memberRenameButton i18n))
 
+        editMetadataBtn : Ui.Element Msg
         editMetadataBtn =
             Ui.el
                 [ Ui.Input.button GoEditMetadata
@@ -261,6 +282,7 @@ actionButtons i18n currentUserRootId member =
                 ]
                 (Ui.text (T.memberEditMetadataButton i18n))
 
+        lifecycleBtn : Ui.Element Msg
         lifecycleBtn =
             if member.isRetired then
                 Ui.el

@@ -6,6 +6,8 @@ import Ui
 import Ui.Font
 
 
+{-| Render the 404 not found page.
+-}
 view : I18n -> Ui.Element msg
 view i18n =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.xl ]

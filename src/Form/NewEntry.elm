@@ -15,10 +15,14 @@ import Field exposing (Field, Validation)
 import Form exposing (Accessor)
 
 
+{-| The new entry form type combining state, accessors, errors, and output.
+-}
 type alias Form =
     Form.Form State Accessors Error Output
 
 
+{-| Form state holding the description, amount, and date fields.
+-}
 type alias State =
     { description : Field String
     , amount : Field Int
@@ -26,6 +30,8 @@ type alias State =
     }
 
 
+{-| Accessors for reading and modifying each form field.
+-}
 type alias Accessors =
     { description : Accessor State (Field String)
     , amount : Accessor State (Field Int)
@@ -33,12 +39,16 @@ type alias Accessors =
     }
 
 
+{-| Validation errors for the new entry form.
+-}
 type Error
     = DescriptionError Field.Error
     | AmountError Field.Error
     | DateError Field.Error
 
 
+{-| Validated output of the new entry form.
+-}
 type alias Output =
     { description : String
     , amountCents : Int
@@ -65,6 +75,7 @@ amountFromString =
             case String.toFloat s of
                 Just f ->
                     let
+                        cents : Int
                         cents =
                             round (f * 100)
                     in
@@ -82,9 +93,11 @@ amountFromString =
 amountToString : Int -> String
 amountToString cents =
     let
+        whole : Int
         whole =
             cents // 100
 
+        remainder : Int
         remainder =
             modBy 100 (abs cents)
     in
@@ -134,6 +147,8 @@ dateToString date =
 -- Form
 
 
+{-| The new entry form definition.
+-}
 form : Form
 form =
     Form.new

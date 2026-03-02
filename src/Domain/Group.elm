@@ -43,6 +43,8 @@ type alias Link =
     }
 
 
+{-| Encode a Link as a JSON value.
+-}
 encodeLink : Link -> Encode.Value
 encodeLink link =
     Encode.object
@@ -51,6 +53,8 @@ encodeLink link =
         ]
 
 
+{-| Decode a Link from JSON.
+-}
 linkDecoder : Decode.Decoder Link
 linkDecoder =
     Decode.map2 Link

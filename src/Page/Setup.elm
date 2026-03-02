@@ -7,6 +7,8 @@ import Ui.Events
 import Ui.Font
 
 
+{-| Render the setup page with welcome message and key generation button.
+-}
 view : I18n -> { onGenerate : msg, isGenerating : Bool } -> Ui.Element msg
 view i18n config =
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.xl ]
@@ -20,6 +22,7 @@ view i18n config =
 generateButton : I18n -> { onGenerate : msg, isGenerating : Bool } -> Ui.Element msg
 generateButton i18n config =
     let
+        label : String
         label =
             if config.isGenerating then
                 T.setupGenerating i18n
