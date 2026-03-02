@@ -1,4 +1,4 @@
-module Route exposing (GroupTab(..), GroupView(..), Route(..), fromAppUrl, toAppUrl, toPath, toPathSegments)
+module Route exposing (GroupTab(..), GroupView(..), Route(..), fromAppUrl, toAppUrl, toPath)
 
 {-| Application routing types with URL parsing and serialization.
 -}

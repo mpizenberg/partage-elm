@@ -53,16 +53,15 @@ config =
     , NoMissingTypeExpose.rule
     , NoSimpleLetBody.rule
     , NoPrematureLetComputation.rule
-
-    -- , NoUnused.CustomTypeConstructors.rule []
-    -- , NoUnused.CustomTypeConstructorArgs.rule
-    -- , NoUnused.Dependencies.rule
-    -- , NoUnused.Exports.rule
+    , NoUnused.CustomTypeConstructors.rule []
+    , NoUnused.CustomTypeConstructorArgs.rule
+    , NoUnused.Dependencies.rule
+    , NoUnused.Exports.rule
     , NoUnused.Parameters.rule
         -- generated
         |> Rule.ignoreErrorsForFiles [ "src/Translations.elm" ]
-
-    -- , NoUnused.Patterns.rule
-    -- , NoUnused.Variables.rule
+    , NoUnused.Patterns.rule
+    , NoUnused.Variables.rule
     , Simplify.rule Simplify.defaults
     ]
+        |> List.map (Rule.ignoreErrorsForDirectories [ "vendor/" ])

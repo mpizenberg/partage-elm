@@ -1,4 +1,4 @@
-module Page.NewEntry exposing (Config, EntryKind(..), Model, Msg, Output(..), SplitData(..), init, initFromEntry, outputToKind, update, view)
+module Page.NewEntry exposing (Config, EntryKind, Model, Msg, Output(..), SplitData, init, initFromEntry, outputToKind, update, view)
 
 import Dict exposing (Dict)
 import Domain.Currency as Currency exposing (Currency)

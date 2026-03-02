@@ -9,7 +9,6 @@ module UI.Theme exposing
     , neutral300
     , neutral500
     , neutral700
-    , neutral900
     , primary
     , primaryLight
     , rounding
@@ -150,13 +149,6 @@ neutral500 =
 neutral700 : Ui.Color
 neutral700 =
     Ui.rgb 55 65 81
-
-
-{-| Neutral gray 900.
--}
-neutral900 : Ui.Color
-neutral900 =
-    Ui.rgb 17 24 39
 
 
 {-| Map a balance status to its display color.

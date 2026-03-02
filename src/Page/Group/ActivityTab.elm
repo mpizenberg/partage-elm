@@ -551,9 +551,6 @@ payerDiffOrDetailRow i18n resolveName oldPayers newPayers =
         formatPayer p =
             resolveName p.memberId
 
-        formatPayerWithAmount : Currency -> Entry.Payer -> String
-        formatPayerWithAmount currency p =
-            resolveName p.memberId ++ " (" ++ Format.formatCentsWithCurrency p.amount currency ++ ")"
     in
     if oldPayers == newPayers then
         detailRow label (payerNames resolveName newPayers)

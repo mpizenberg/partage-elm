@@ -1,31 +1,16 @@
 module TestHelpers exposing
     ( defaultExpenseData
     , defaultTransferData
-    , makeEntry
-    , makeEntryMeta
     , makeEnvelope
     , makeExpenseEntry
     , makeTransferEntry
-    , memberIdFuzzer
-    , timestampFuzzer
     )
 
 import Domain.Currency exposing (Currency(..))
 import Domain.Entry as Entry exposing (Beneficiary(..), Entry, Kind(..))
 import Domain.Event exposing (Envelope, Payload)
 import Domain.Member as Member
-import Fuzz exposing (Fuzzer)
 import Time
-
-
-memberIdFuzzer : Fuzzer String
-memberIdFuzzer =
-    Fuzz.map (\i -> "member-" ++ String.fromInt (abs i)) Fuzz.int
-
-
-timestampFuzzer : Fuzzer Time.Posix
-timestampFuzzer =
-    Fuzz.map (\i -> Time.millisToPosix (abs i)) Fuzz.int
 
 
 makeEnvelope : String -> Int -> Member.Id -> Payload -> Envelope
@@ -70,11 +55,6 @@ defaultTransferData =
     , to = "bob"
     , notes = Nothing
     }
-
-
-makeEntry : Entry.Metadata -> Kind -> Entry
-makeEntry meta kind =
-    { meta = meta, kind = kind }
 
 
 makeExpenseEntry : String -> Int -> Entry.ExpenseData -> Entry

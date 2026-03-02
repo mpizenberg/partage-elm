@@ -1,6 +1,6 @@
 module Form.NewEntry exposing
     ( Accessors
-    , Error(..)
+    , Error
     , Form
     , Output
     , State

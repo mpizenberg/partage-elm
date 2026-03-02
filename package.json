@@ -14,7 +14,7 @@
     "dev": "pnpm prebuild && run-pty % elm-watch hot % pnpm watch:html % pnpm watch:js % pnpm watch:i18n",
     "test": "elm-test",
     "format": "elm-format --yes src/ tests/ review/",
-    "lint": "elm-review src/ tests/"
+    "lint": "elm-review"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

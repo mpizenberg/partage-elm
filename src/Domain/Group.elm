@@ -1,12 +1,10 @@
-module Domain.Group exposing (Group, Id, Link, UserId, encodeLink, linkDecoder)
+module Domain.Group exposing (Id, Link, UserId, encodeLink, linkDecoder)
 
 {-| Group identity, metadata, and configuration.
 -}
 
-import Domain.Currency exposing (Currency)
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Time
 
 
 {-| Unique identifier for a group.
@@ -19,20 +17,6 @@ type alias Id =
 -}
 type alias UserId =
     String
-
-
-{-| A shared expense group with its metadata and configuration.
--}
-type alias Group =
-    { id : Id
-    , name : String
-    , subtitle : Maybe String
-    , description : Maybe String
-    , links : List Link
-    , defaultCurrency : Currency
-    , createdAt : Time.Posix
-    , createdBy : UserId
-    }
 
 
 {-| An external link attached to a group (e.g. shared document, planning page).

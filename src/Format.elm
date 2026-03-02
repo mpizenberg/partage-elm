@@ -1,4 +1,4 @@
-module Format exposing (formatCents, formatCentsWithCurrency, formatMinorUnits)
+module Format exposing (formatCents, formatCentsWithCurrency)
 
 {-| Formatting helpers for currency amounts stored as smallest currency units.
 -}
