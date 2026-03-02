@@ -12,9 +12,6 @@ import Domain.Group as Group
 import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Domain.Settlement as Settlement
-import File
-import File.Download
-import File.Select
 import Form.NewGroup
 import GroupExport
 import Html exposing (Html)
@@ -42,7 +39,6 @@ import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import Set exposing (Set)
 import Storage exposing (GroupSummary)
 import Submit exposing (LoadedGroup)
-import Task
 import Time
 import Translations as T exposing (I18n, Language(..))
 import UI.Components
@@ -95,7 +91,7 @@ type alias Model =
     , showDeleted : Bool
     , showSettlementPreferences : Bool
     , expandedActivities : Set Event.Id
-    , importError : Maybe String
+    , homeModel : Page.Home.Model
     }
 
 
@@ -143,11 +139,9 @@ type Msg
       -- Group loading
     | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error (List Event.Envelope))
       -- Import / Export
+    | HomeMsg Page.Home.Msg
     | ExportGroup Group.Id
     | OnExportDataLoaded Group.Id (ConcurrentTask.Response Idb.Error ( List Event.Envelope, Maybe String ))
-    | ImportGroup
-    | ImportGroupFileSelected File.File
-    | ImportGroupFileLoaded String
     | OnGroupImported Storage.GroupSummary (ConcurrentTask.Response Idb.Error ())
 
 
@@ -237,7 +231,7 @@ init flags =
       , showDeleted = False
       , showSettlementPreferences = False
       , expandedActivities = Set.empty
-      , importError = Nothing
+      , homeModel = Page.Home.init
       }
     , cmd
     )
@@ -711,20 +705,7 @@ update msg model =
                 Ready readyData ->
                     case Dict.get groupId readyData.groups of
                         Just summary ->
-                            let
-                                json : String
-                                json =
-                                    GroupExport.encode model.currentTime
-                                        { group = summary
-                                        , groupKey = maybeKey
-                                        , events = events
-                                        }
-
-                                filename : String
-                                filename =
-                                    "partage-" ++ sanitizeFilename summary.name ++ ".json"
-                            in
-                            ( model, File.Download.string filename "application/json" json )
+                            ( model, GroupExport.downloadGroup model.currentTime summary events maybeKey )
 
                         Nothing ->
                             ( model, Cmd.none )
@@ -735,39 +716,39 @@ update msg model =
         OnExportDataLoaded _ _ ->
             ( model, Cmd.none )
 
-        ImportGroup ->
-            ( { model | importError = Nothing }
-            , File.Select.file [ "application/json" ] ImportGroupFileSelected
-            )
+        HomeMsg homeMsg ->
+            case model.appState of
+                Ready readyData ->
+                    let
+                        existingIds : Set Group.Id
+                        existingIds =
+                            Dict.keys readyData.groups |> Set.fromList
 
-        ImportGroupFileSelected file ->
-            ( model, Task.perform ImportGroupFileLoaded (File.toString file) )
+                        ( homeModel, homeCmd, maybeOutput ) =
+                            Page.Home.update model.i18n existingIds homeMsg model.homeModel
+                    in
+                    case maybeOutput of
+                        Just (Page.Home.ImportReady exportData) ->
+                            let
+                                ( pool, cmd ) =
+                                    ConcurrentTask.attempt
+                                        { pool = model.pool
+                                        , send = sendTask
+                                        , onComplete = OnGroupImported exportData.group
+                                        }
+                                        (Storage.importGroup readyData.db exportData.group exportData.groupKey exportData.events)
+                            in
+                            ( { model | homeModel = homeModel, pool = pool }
+                            , Cmd.batch [ Cmd.map HomeMsg homeCmd, cmd ]
+                            )
 
-        ImportGroupFileLoaded jsonString ->
-            case Json.Decode.decodeString GroupExport.decoder jsonString of
-                Err _ ->
-                    ( { model | importError = Just (T.importErrorInvalidFile model.i18n) }, Cmd.none )
+                        Nothing ->
+                            ( { model | homeModel = homeModel }
+                            , Cmd.map HomeMsg homeCmd
+                            )
 
-                Ok exportData ->
-                    case model.appState of
-                        Ready readyData ->
-                            if Dict.member exportData.group.id readyData.groups then
-                                ( { model | importError = Just (T.importErrorAlreadyExists model.i18n) }, Cmd.none )
-
-                            else
-                                let
-                                    ( pool, cmd ) =
-                                        ConcurrentTask.attempt
-                                            { pool = model.pool
-                                            , send = sendTask
-                                            , onComplete = OnGroupImported exportData.group
-                                            }
-                                            (Storage.importGroup readyData.db exportData.group exportData.groupKey exportData.events)
-                                in
-                                ( { model | pool = pool }, cmd )
-
-                        _ ->
-                            ( model, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
 
         OnGroupImported summary (ConcurrentTask.Success _) ->
             case model.appState of
@@ -780,7 +761,7 @@ update msg model =
                     ( { model
                         | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
                         , loadedGroup = Nothing
-                        , importError = Nothing
+                        , homeModel = Page.Home.init
                       }
                     , Navigation.pushUrl navCmd (Route.toAppUrl newRoute)
                     )
@@ -1147,21 +1128,6 @@ mapLoadedGroup f groupId model =
             Nothing
 
 
-{-| Replace non-alphanumeric characters with hyphens for safe filenames.
--}
-sanitizeFilename : String -> String
-sanitizeFilename name =
-    String.toList name
-        |> List.map
-            (\c ->
-                if Char.isAlphaNum c then
-                    c
-
-                else
-                    '-'
-            )
-        |> String.fromList
-
 
 applyRouteGuard : Maybe Identity -> Route -> ( Route, Cmd Msg )
 applyRouteGuard identity route =
@@ -1244,9 +1210,9 @@ viewReady model readyData =
                 (Page.Home.view i18n
                     { onNavigate = NavigateTo
                     , onExport = ExportGroup
-                    , onImport = ImportGroup
                     }
-                    model.importError
+                    HomeMsg
+                    model.homeModel
                     (Dict.values readyData.groups)
                 )
 

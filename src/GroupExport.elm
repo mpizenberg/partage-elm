@@ -1,11 +1,14 @@
-module GroupExport exposing (ExportData, decoder, encode)
+module GroupExport exposing (ExportData, ImportError(..), downloadGroup, validateImport)
 
 {-| Encode and decode group export payloads for backup and sharing.
 -}
 
 import Domain.Event as Event
+import Domain.Group as Group
+import File.Download
 import Json.Decode as Decode
 import Json.Encode as Encode
+import Set exposing (Set)
 import Storage exposing (GroupSummary)
 import Time
 
@@ -49,6 +52,65 @@ decoder =
                 else
                     Decode.fail ("Unknown format: " ++ format)
             )
+
+
+{-| Download a group export as a JSON file.
+-}
+downloadGroup : Time.Posix -> GroupSummary -> List Event.Envelope -> Maybe String -> Cmd msg
+downloadGroup now summary events maybeKey =
+    let
+        json : String
+        json =
+            encode now
+                { group = summary
+                , groupKey = maybeKey
+                , events = events
+                }
+
+        filename : String
+        filename =
+            "partage-" ++ sanitizeFilename summary.name ++ ".json"
+    in
+    File.Download.string filename "application/json" json
+
+
+{-| Errors that can occur when importing a group.
+-}
+type ImportError
+    = AlreadyExists
+    | InvalidFile
+
+
+{-| Validate and decode a JSON string as an import, checking for duplicates.
+-}
+validateImport : Set Group.Id -> String -> Result ImportError ExportData
+validateImport existingGroupIds jsonString =
+    case Decode.decodeString decoder jsonString of
+        Err _ ->
+            Err InvalidFile
+
+        Ok exportData ->
+            if Set.member exportData.group.id existingGroupIds then
+                Err AlreadyExists
+
+            else
+                Ok exportData
+
+
+{-| Replace non-alphanumeric characters with hyphens for safe filenames.
+-}
+sanitizeFilename : String -> String
+sanitizeFilename name =
+    String.toList name
+        |> List.map
+            (\c ->
+                if Char.isAlphaNum c then
+                    c
+
+                else
+                    '-'
+            )
+        |> String.fromList
 
 
 maybeEncode : (a -> Encode.Value) -> Maybe a -> Encode.Value

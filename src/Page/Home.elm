@@ -1,9 +1,14 @@
-module Page.Home exposing (Context, view)
+module Page.Home exposing (Context, Model, Msg, Output(..), init, update, view)
 
 import Domain.Group as Group
+import File
+import File.Select
+import GroupExport
 import Json.Decode
 import Route exposing (Route)
+import Set exposing (Set)
 import Storage exposing (GroupSummary)
+import Task
 import Translations as T exposing (I18n)
 import UI.Theme as Theme
 import Ui
@@ -11,22 +16,72 @@ import Ui.Events
 import Ui.Font
 
 
-{-| Callbacks for the home page.
--}
 type alias Context msg =
     { onNavigate : Route -> msg
     , onExport : Group.Id -> msg
-    , onImport : msg
     }
 
 
-{-| Render the home page listing existing groups and a button to create a new one.
--}
-view : I18n -> Context msg -> Maybe String -> List GroupSummary -> Ui.Element msg
-view i18n ctx importError groups =
+type Output
+    = ImportReady GroupExport.ExportData
+
+
+type Model
+    = Model { importError : Maybe String }
+
+
+type Msg
+    = StartImport
+    | FileSelected File.File
+    | FileLoaded String
+
+
+init : Model
+init =
+    Model { importError = Nothing }
+
+
+update : I18n -> Set Group.Id -> Msg -> Model -> ( Model, Cmd Msg, Maybe Output )
+update i18n existingGroupIds msg (Model data) =
+    case msg of
+        StartImport ->
+            ( Model { data | importError = Nothing }
+            , File.Select.file [ "application/json" ] FileSelected
+            , Nothing
+            )
+
+        FileSelected file ->
+            ( Model data
+            , Task.perform FileLoaded (File.toString file)
+            , Nothing
+            )
+
+        FileLoaded jsonString ->
+            case GroupExport.validateImport existingGroupIds jsonString of
+                Err GroupExport.InvalidFile ->
+                    ( Model { data | importError = Just (T.importErrorInvalidFile i18n) }
+                    , Cmd.none
+                    , Nothing
+                    )
+
+                Err GroupExport.AlreadyExists ->
+                    ( Model { data | importError = Just (T.importErrorAlreadyExists i18n) }
+                    , Cmd.none
+                    , Nothing
+                    )
+
+                Ok exportData ->
+                    ( Model { data | importError = Nothing }
+                    , Cmd.none
+                    , Just (ImportReady exportData)
+                    )
+
+
+view : I18n -> Context msg -> (Msg -> msg) -> Model -> List GroupSummary -> Ui.Element msg
+view i18n ctx toMsg (Model data) groups =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         (Ui.el [ Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text (T.homeYourGroups i18n))
-            :: (case importError of
+            :: (case data.importError of
                     Just error ->
                         [ Ui.el
                             [ Ui.Font.size Theme.fontSize.sm
@@ -49,7 +104,7 @@ view i18n ctx importError groups =
                )
             ++ [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
                     [ newGroupButton i18n ctx.onNavigate
-                    , importButton i18n ctx.onImport
+                    , importButton i18n toMsg
                     ]
                ]
         )
@@ -113,8 +168,8 @@ newGroupButton i18n onNavigate =
         (Ui.text (T.homeNewGroup i18n))
 
 
-importButton : I18n -> msg -> Ui.Element msg
-importButton i18n onImport =
+importButton : I18n -> (Msg -> msg) -> Ui.Element msg
+importButton i18n toMsg =
     Ui.el
         [ Ui.width Ui.fill
         , Ui.padding Theme.spacing.md
@@ -125,6 +180,6 @@ importButton i18n onImport =
         , Ui.Font.center
         , Ui.Font.bold
         , Ui.pointer
-        , Ui.Events.onClick onImport
+        , Ui.Events.onClick (toMsg StartImport)
         ]
         (Ui.text (T.homeImportGroup i18n))
