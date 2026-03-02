@@ -13,6 +13,7 @@ module Submit exposing
     )
 
 import ConcurrentTask
+import Crypto
 import Dict
 import Domain.Entry as Entry
 import Domain.Event as Event
@@ -29,6 +30,7 @@ import Storage exposing (GroupSummary)
 import Time
 import UUID
 import UuidGen
+import WebCrypto.Symmetric as Symmetric
 
 
 {-| Dependencies needed to submit events: task pool, identity, DB, and RNG state.
@@ -54,23 +56,25 @@ type alias State msg =
     }
 
 
-{-| A fully loaded group with its events, computed state, and summary.
+{-| A fully loaded group with its events, computed state, summary, and encryption key.
 -}
 type alias LoadedGroup =
     { events : List Event.Envelope
     , groupState : GroupState.GroupState
     , summary : GroupSummary
+    , groupKey : Symmetric.Key
     }
 
 
-{-| Build a LoadedGroup from raw events and a summary, applying all events to compute state.
+{-| Build a LoadedGroup from raw events, a summary, and the group key, applying all events to compute state.
 -}
-initLoadedGroup : List Event.Envelope -> GroupSummary -> LoadedGroup
-initLoadedGroup events summary =
+initLoadedGroup : List Event.Envelope -> GroupSummary -> Symmetric.Key -> LoadedGroup
+initLoadedGroup events summary key =
     -- We store the events in reverse order for efficient prepending of new events
     { events = List.reverse events
     , groupState = GroupState.applyEvents events GroupState.empty
     , summary = summary
+    , groupKey = key
     }
 
 
@@ -139,9 +143,14 @@ newGroup ctx onComplete output =
 
         task : ConcurrentTask.ConcurrentTask Idb.Error GroupSummary
         task =
-            Storage.saveGroupSummary ctx.db summary
-                |> ConcurrentTask.andThen (\_ -> Storage.saveEvents ctx.db groupId allEvents)
-                |> ConcurrentTask.map (\_ -> summary)
+            Crypto.generateGroupKey
+                |> ConcurrentTask.andThen
+                    (\key ->
+                        Storage.saveGroupSummary ctx.db summary
+                            |> ConcurrentTask.andThen (\_ -> Storage.saveGroupKey ctx.db groupId (Symmetric.exportKey key))
+                            |> ConcurrentTask.andThen (\_ -> Storage.saveEvents ctx.db groupId allEvents)
+                            |> ConcurrentTask.map (\_ -> summary)
+                    )
 
         ( pool, cmd ) =
             ConcurrentTask.attempt

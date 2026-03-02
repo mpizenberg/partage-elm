@@ -52,6 +52,7 @@ import Ui
 import Ui.Font
 import Url
 import WebCrypto
+import WebCrypto.Symmetric as Symmetric
 
 
 port navCmd : Navigation.CommandPort msg
@@ -148,7 +149,7 @@ type Msg
     | OnGroupRemoved Group.Id (ConcurrentTask.Response Idb.Error ())
     | OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)
       -- Group loading
-    | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error (List Event.Envelope))
+    | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error ( List Event.Envelope, Symmetric.Key ))
       -- Import / Export
     | HomeMsg Page.Home.Msg
     | ExportGroup Group.Id
@@ -743,8 +744,8 @@ update msg model =
             ( model, Cmd.none )
 
         -- Group loading
-        OnGroupEventsLoaded groupId (ConcurrentTask.Success events) ->
-            ( applyLoadedGroup groupId events model
+        OnGroupEventsLoaded groupId (ConcurrentTask.Success ( events, groupKey )) ->
+            ( applyLoadedGroup groupId events groupKey model
                 |> Maybe.map (initPagesIfNeeded model.route)
                 |> Maybe.withDefault model
             , Cmd.none
@@ -1041,18 +1042,40 @@ loadGroup model groupId =
     case model.appState of
         Ready readyData ->
             let
+                task : ConcurrentTask.ConcurrentTask Idb.Error ( List Event.Envelope, Symmetric.Key )
+                task =
+                    ConcurrentTask.map2 Tuple.pair
+                        (Storage.loadGroupEvents readyData.db groupId)
+                        (loadGroupKeyRequired readyData.db groupId)
+
                 ( pool, cmd ) =
                     ConcurrentTask.attempt
                         { pool = model.pool
                         , send = sendTask
                         , onComplete = OnGroupEventsLoaded groupId
                         }
-                        (Storage.loadGroupEvents readyData.db groupId)
+                        task
             in
             ( { model | pool = pool, loadedGroup = Nothing }, cmd )
 
         _ ->
             ( model, Cmd.none )
+
+
+{-| Load the group encryption key. Fails if the key is missing.
+-}
+loadGroupKeyRequired : Idb.Db -> Group.Id -> ConcurrentTask.ConcurrentTask Idb.Error Symmetric.Key
+loadGroupKeyRequired db groupId =
+    Storage.loadGroupKey db groupId
+        |> ConcurrentTask.andThen
+            (\maybeKeyStr ->
+                case maybeKeyStr of
+                    Just keyStr ->
+                        ConcurrentTask.succeed (Symmetric.importKey keyStr)
+
+                    Nothing ->
+                        ConcurrentTask.fail (Idb.DatabaseError ("Missing encryption key for group " ++ groupId))
+            )
 
 
 handleMemberDetailOutput : Model -> Storage.InitData -> LoadedGroup -> Page.MemberDetail.Output -> ( Model, Cmd Msg )
@@ -1228,12 +1251,12 @@ appendEventAndRecompute model groupId envelope =
         model
 
 
-applyLoadedGroup : Group.Id -> List Event.Envelope -> Model -> Maybe Model
-applyLoadedGroup groupId events model =
+applyLoadedGroup : Group.Id -> List Event.Envelope -> Symmetric.Key -> Model -> Maybe Model
+applyLoadedGroup groupId events groupKey model =
     case model.appState of
         Ready readyData ->
             Dict.get groupId readyData.groups
-                |> Maybe.map (Submit.initLoadedGroup events)
+                |> Maybe.map (\summary -> Submit.initLoadedGroup events summary groupKey)
                 |> Maybe.map (\loaded -> { model | loadedGroup = Just loaded })
 
         _ ->
