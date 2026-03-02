@@ -200,6 +200,7 @@ textField label placeholder onChange accessor formData =
 linksSection : I18n -> Bool -> MetaForm.Form -> Ui.Element Msg
 linksSection i18n submitted formData =
     let
+        linkEntries : List ( Form.List.Id, MetaForm.LinkForm )
         linkEntries =
             Form.List.toList (Form.get .links formData)
     in

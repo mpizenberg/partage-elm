@@ -836,6 +836,7 @@ payerRow payerAmounts member =
         isSelected =
             Dict.member member.rootId payerAmounts
 
+        checkLabel : { element : Ui.Element Msg, id : Ui.Input.Label }
         checkLabel =
             Ui.Input.label ("payer-" ++ member.rootId) [] (Ui.text member.name)
 
@@ -923,6 +924,7 @@ beneficiariesField i18n activeMembers data =
 beneficiaryRow : I18n -> SplitMode -> Dict Member.Id Int -> Dict Member.Id String -> Member.ChainState -> Ui.Element Msg
 beneficiaryRow i18n splitMode selectedBeneficiaries exactAmounts member =
     let
+        checkLabel : { element : Ui.Element Msg, id : Ui.Input.Label }
         checkLabel =
             Ui.Input.label ("beneficiary-" ++ member.rootId) [] (Ui.text member.name)
 

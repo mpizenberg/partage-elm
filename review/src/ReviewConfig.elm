@@ -44,8 +44,12 @@ config =
     , NoImportingEverything.rule []
     , NoMissingTypeAnnotation.rule
         |> Rule.ignoreErrorsForDirectories [ "tests/" ]
+        -- generated
+        |> Rule.ignoreErrorsForFiles [ "src/Translations.elm" ]
     , NoMissingTypeAnnotationInLetIn.rule
         |> Rule.ignoreErrorsForDirectories [ "tests/" ]
+        -- generated
+        |> Rule.ignoreErrorsForFiles [ "src/Translations.elm" ]
     , NoMissingTypeExpose.rule
     , NoSimpleLetBody.rule
     , NoPrematureLetComputation.rule

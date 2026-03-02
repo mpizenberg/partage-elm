@@ -570,6 +570,7 @@ update msg model =
         -- Group metadata editing
         EditGroupMetadataMsg subMsg ->
             let
+                result : Page.EditGroupMetadata.UpdateResult
                 result =
                     Page.EditGroupMetadata.update subMsg model.editGroupMetadataModel
 

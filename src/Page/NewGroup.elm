@@ -180,6 +180,7 @@ currencyToString c =
 virtualMembersSection : I18n -> NewGroup.Form -> Ui.Element Msg
 virtualMembersSection i18n form =
     let
+        members : List ( Form.List.Id, NewGroup.VirtualMemberForm )
         members =
             Form.toState form |> .virtualMembers |> Form.List.toList
     in
