@@ -186,6 +186,9 @@ detailSummaryText i18n detail =
             T.activityGroupMetadataUpdated i18n
                 ++ changesText i18n data.changedFields
 
+        SettlementPreferencesUpdatedDetail data ->
+            T.activitySettlementPreferencesUpdated data.name i18n
+
 
 changesText : I18n -> List String -> String
 changesText i18n fields =
@@ -340,6 +343,23 @@ detailContent i18n config detail =
 
         GroupMetadataUpdatedDetail data ->
             groupMetadataDiffRows i18n data.oldMeta data.newMeta
+
+        SettlementPreferencesUpdatedDetail data ->
+            let
+                formatRecipients : List String -> String
+                formatRecipients recipients =
+                    case recipients of
+                        [] ->
+                            T.activityDetailNoValue i18n
+
+                        _ ->
+                            String.join ", " recipients
+            in
+            [ detailRow (T.changeFieldName i18n) data.name
+            , diffRow (T.settlementPreferPayFirst i18n)
+                (formatRecipients data.oldRecipients)
+                (formatRecipients data.newRecipients)
+            ]
 
 
 entryDetailLink : I18n -> Config msg -> Entry.Entry -> Ui.Element msg

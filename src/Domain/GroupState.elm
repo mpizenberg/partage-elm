@@ -21,6 +21,7 @@ import Domain.Entry as Entry exposing (Entry, Kind(..))
 import Domain.Event as Event exposing (Envelope, Payload(..))
 import Domain.Group as Group
 import Domain.Member as Member
+import Domain.Settlement as Settlement
 
 
 {-| The full state of a group, computed by replaying events.
@@ -32,6 +33,7 @@ type alias GroupState =
     , groupMeta : GroupMetadata
     , activities : List Activity
     , rejectedEntries : List ( Entry.Entry, RejectionReason )
+    , settlementPreferences : List Settlement.Preference
     }
 
 
@@ -86,6 +88,7 @@ empty =
         }
     , activities = []
     , rejectedEntries = []
+    , settlementPreferences = []
     }
 
 
@@ -161,6 +164,9 @@ applyPayload payload state =
 
         GroupMetadataUpdated change ->
             applyGroupMetadataUpdated change state
+
+        SettlementPreferencesUpdated data ->
+            applySettlementPreferencesUpdated data state
 
 
 
@@ -481,6 +487,31 @@ applyGroupMetadataUpdated change state =
 
 
 
+-- SETTLEMENT PREFERENCES
+
+
+applySettlementPreferencesUpdated : { memberRootId : Member.Id, preferredRecipients : List Member.Id } -> GroupState -> GroupState
+applySettlementPreferencesUpdated data state =
+    let
+        updatedPreferences : List Settlement.Preference
+        updatedPreferences =
+            if List.isEmpty data.preferredRecipients then
+                List.filter (\p -> p.memberRootId /= data.memberRootId) state.settlementPreferences
+
+            else
+                let
+                    newPref : Settlement.Preference
+                    newPref =
+                        { memberRootId = data.memberRootId
+                        , preferredRecipients = data.preferredRecipients
+                        }
+                in
+                newPref :: List.filter (\p -> p.memberRootId /= data.memberRootId) state.settlementPreferences
+    in
+    { state | settlementPreferences = updatedPreferences }
+
+
+
 -- ACTIVITY BUILDING
 
 
@@ -496,6 +527,7 @@ activityContext state =
     , entryCurrentVersion = lookupEntryCurrentVersion state
     , previousVersion = lookupPreviousVersion state
     , groupMeta = state.groupMeta
+    , settlementPreference = lookupSettlementPreference state
     }
 
 
@@ -528,6 +560,15 @@ lookupEntryDescription state rootId =
 
         Nothing ->
             rootId
+
+
+lookupSettlementPreference : GroupState -> Member.Id -> List Member.Id
+lookupSettlementPreference state memberRootId =
+    state.settlementPreferences
+        |> List.filter (\p -> p.memberRootId == memberRootId)
+        |> List.head
+        |> Maybe.map .preferredRecipients
+        |> Maybe.withDefault []
 
 
 

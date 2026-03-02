@@ -47,6 +47,7 @@ type Detail
     | MemberUnretiredDetail { name : String, rootId : Member.Id }
     | MemberMetadataUpdatedDetail { name : String, rootId : Member.Id, oldMetadata : Member.Metadata, newMetadata : Member.Metadata, updatedFields : List String }
     | GroupMetadataUpdatedDetail { oldMeta : GroupMetadataSnapshot, newMeta : GroupMetadataSnapshot, changedFields : List String }
+    | SettlementPreferencesUpdatedDetail { name : String, memberRootId : Member.Id, oldRecipients : List String, newRecipients : List String }
 
 
 {-| State lookups needed to build an activity from an event.
@@ -59,6 +60,7 @@ type alias StateContext =
     , entryCurrentVersion : Entry.Id -> Maybe Entry.Entry
     , previousVersion : Entry.Entry -> Maybe Entry.Entry
     , groupMeta : GroupMetadataSnapshot
+    , settlementPreference : Member.Id -> List Member.Id
     }
 
 
@@ -128,6 +130,9 @@ involvedMembers ctx payload =
 
         GroupMetadataUpdated _ ->
             []
+
+        SettlementPreferencesUpdated data ->
+            [ data.memberRootId ]
 
 
 entryInvolvedMembers : Entry.Entry -> List Member.Id
@@ -215,6 +220,14 @@ payloadToDetail ctx payload =
                 { oldMeta = oldMeta
                 , newMeta = newMeta
                 , changedFields = groupMetadataChangedFields oldMeta change
+                }
+
+        SettlementPreferencesUpdated data ->
+            SettlementPreferencesUpdatedDetail
+                { name = ctx.resolveName data.memberRootId
+                , memberRootId = data.memberRootId
+                , oldRecipients = List.map ctx.resolveName (ctx.settlementPreference data.memberRootId)
+                , newRecipients = List.map ctx.resolveName data.preferredRecipients
                 }
 
 

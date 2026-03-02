@@ -43,6 +43,7 @@
   "activityMemberUnretired": "a réactivé {name}",
   "activityMemberMetadataUpdated": "a mis à jour les coordonnées de {name}",
   "activityGroupMetadataUpdated": "a mis à jour les paramètres du groupe",
+  "activitySettlementPreferencesUpdated": "a mis à jour les préférences de remboursement pour {name}",
   "changeFieldDescription": "description",
   "changeFieldAmount": "montant",
   "changeFieldDate": "date",
@@ -209,5 +210,9 @@
   "activityDetailNoValue": "aucun",
   "activityDetailRemoved": "supprimé",
   "activityMemberTypeLabel": "Type de membre",
-  "activityViewEntryDetails": "Voir les détails →"
+  "activityViewEntryDetails": "Voir les détails →",
+  "settlementPreferencesShow": "Préférences de remboursement ▸",
+  "settlementPreferencesHide": "Préférences de remboursement ▾",
+  "settlementPreferencesHint": "Choisissez à qui vous préférez payer en priorité. Il est recommandé de ne pas y toucher pour un meilleur plan de remboursement pour l'ensemble du groupe.",
+  "settlementPreferPayFirst": "Payer en priorité"
 }

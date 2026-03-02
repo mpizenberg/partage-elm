@@ -41,6 +41,7 @@ type Payload
     | EntryDeleted { rootId : Entry.Id }
     | EntryUndeleted { rootId : Entry.Id }
     | GroupMetadataUpdated GroupMetadataChange
+    | SettlementPreferencesUpdated { memberRootId : Member.Id, preferredRecipients : List Member.Id }
 
 
 {-| A partial update to group metadata. Nothing fields are left unchanged,
@@ -220,6 +221,13 @@ encodePayload payload =
                 , ( "change", encodeGroupMetadataChange change )
                 ]
 
+        SettlementPreferencesUpdated data ->
+            Encode.object
+                [ ( "type", Encode.string "SettlementPreferencesUpdated" )
+                , ( "memberRootId", Encode.string data.memberRootId )
+                , ( "preferredRecipients", Encode.list Encode.string data.preferredRecipients )
+                ]
+
 
 {-| Decode a Payload from a tagged JSON object.
 -}
@@ -308,6 +316,17 @@ payloadDecoder =
                     "GroupMetadataUpdated" ->
                         Decode.map GroupMetadataUpdated
                             (Decode.field "change" groupMetadataChangeDecoder)
+
+                    "SettlementPreferencesUpdated" ->
+                        Decode.map2
+                            (\rid prefs ->
+                                SettlementPreferencesUpdated
+                                    { memberRootId = rid
+                                    , preferredRecipients = prefs
+                                    }
+                            )
+                            (Decode.field "memberRootId" Decode.string)
+                            (Decode.field "preferredRecipients" (Decode.list Decode.string))
 
                     _ ->
                         Decode.fail ("Unknown payload type: " ++ t)

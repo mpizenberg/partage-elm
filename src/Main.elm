@@ -88,6 +88,7 @@ type alias Model =
     , editGroupMetadataModel : Page.EditGroupMetadata.Model
     , loadedGroup : Maybe LoadedGroup
     , showDeleted : Bool
+    , showSettlementPreferences : Bool
     , expandedActivities : Set Event.Id
     }
 
@@ -116,10 +117,12 @@ type Msg
     | OnEntrySaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
       -- Entry actions
     | SettleTransaction Settlement.Transaction
+    | SaveSettlementPreferences { memberRootId : Member.Id, preferredRecipients : List Member.Id }
     | DeleteEntry Entry.Id
     | RestoreEntry Entry.Id
     | OnEntryActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | ToggleShowDeleted
+    | ToggleShowSettlementPreferences
     | ToggleActivityExpanded Event.Id
       -- Member management
     | MemberDetailMsg Page.MemberDetail.Msg
@@ -219,6 +222,7 @@ init flags =
       , editGroupMetadataModel = Page.EditGroupMetadata.init GroupState.empty.groupMeta
       , loadedGroup = Nothing
       , showDeleted = False
+      , showSettlementPreferences = False
       , expandedActivities = Set.empty
       }
     , cmd
@@ -466,6 +470,18 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
 
+        SaveSettlementPreferences prefData ->
+            case ( model.appState, model.loadedGroup ) of
+                ( Ready readyData, Just loaded ) ->
+                    submitEvent (OnEntryActionSaved loaded.summary.id)
+                        model
+                        readyData
+                        loaded
+                        (Event.SettlementPreferencesUpdated prefData)
+
+                _ ->
+                    ( model, Cmd.none )
+
         DeleteEntry rootId ->
             submitEntryAction model (\ctx loaded -> Submit.deleteEntry ctx loaded rootId)
 
@@ -483,6 +499,9 @@ update msg model =
 
         ToggleShowDeleted ->
             ( { model | showDeleted = not model.showDeleted }, Cmd.none )
+
+        ToggleShowSettlementPreferences ->
+            ( { model | showSettlementPreferences = not model.showSettlementPreferences }, Cmd.none )
 
         ToggleActivityExpanded eventId ->
             let
@@ -1153,13 +1172,17 @@ viewGroupTab model readyData langSelector groupId tab loaded =
         , onAddMember = NavigateTo (GroupRoute groupId AddVirtualMember)
         , onEditGroupMetadata = NavigateTo (GroupRoute groupId EditGroupMetadata)
         , onSettleTransaction = SettleTransaction
+        , onSaveSettlementPreferences = SaveSettlementPreferences
+        , onToggleSettlementPreferences = ToggleShowSettlementPreferences
         , currentUserRootId = currentUserRootId readyData loaded
         , onToggleActivityExpanded = ToggleActivityExpanded
         , expandedActivities = model.expandedActivities
         , entryDetailPath = \entryId -> Route.toPath (GroupRoute groupId (EntryDetail entryId))
         , groupDefaultCurrency = loaded.summary.defaultCurrency
         }
-        { showDeleted = model.showDeleted }
+        { showDeleted = model.showDeleted
+        , showSettlementPreferences = model.showSettlementPreferences
+        }
         langSelector
         loaded.groupState
         tab

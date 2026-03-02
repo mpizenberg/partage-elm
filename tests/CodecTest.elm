@@ -6,6 +6,7 @@ import Domain.Entry as Entry exposing (Beneficiary(..), Category(..), Kind(..))
 import Domain.Event as Event exposing (Payload(..))
 import Domain.Group as Group
 import Domain.Member as Member
+import Domain.Settlement as Settlement
 import Expect
 import Fuzz exposing (Fuzzer)
 import Json.Decode as Decode
@@ -32,6 +33,7 @@ suite =
         , kindTests
         , entryTests
         , groupMetadataChangeTests
+        , settlementPreferenceTests
         , payloadTests
         , envelopeTests
         ]
@@ -184,6 +186,13 @@ entryFuzzer =
         kindFuzzer
 
 
+settlementPreferenceFuzzer : Fuzzer Settlement.Preference
+settlementPreferenceFuzzer =
+    Fuzz.map2 Settlement.Preference
+        Fuzz.string
+        (Fuzz.list Fuzz.string)
+
+
 groupMetadataChangeFuzzer : Fuzzer Event.GroupMetadataChange
 groupMetadataChangeFuzzer =
     Fuzz.map4 Event.GroupMetadataChange
@@ -214,6 +223,9 @@ payloadFuzzer =
         , Fuzz.map (\rid -> EntryDeleted { rootId = rid }) Fuzz.string
         , Fuzz.map (\rid -> EntryUndeleted { rootId = rid }) Fuzz.string
         , Fuzz.map GroupMetadataUpdated groupMetadataChangeFuzzer
+        , Fuzz.map2 (\rid prefs -> SettlementPreferencesUpdated { memberRootId = rid, preferredRecipients = prefs })
+            Fuzz.string
+            (Fuzz.list Fuzz.string)
         ]
 
 
@@ -330,6 +342,12 @@ groupMetadataChangeTests : Test
 groupMetadataChangeTests =
     fuzz groupMetadataChangeFuzzer "GroupMetadataChange roundtrips" <|
         roundtrip Event.encodeGroupMetadataChange Event.groupMetadataChangeDecoder
+
+
+settlementPreferenceTests : Test
+settlementPreferenceTests =
+    fuzz settlementPreferenceFuzzer "Settlement.Preference roundtrips" <|
+        roundtrip Settlement.encodePreference Settlement.decodePreference
 
 
 payloadTests : Test

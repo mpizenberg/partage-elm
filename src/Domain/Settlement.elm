@@ -1,4 +1,4 @@
-module Domain.Settlement exposing (Preference, Transaction, computeSettlement)
+module Domain.Settlement exposing (Preference, Transaction, computeSettlement, decodePreference, encodePreference)
 
 {-| Settlement algorithm that computes who pays whom to settle debts.
 -}
@@ -6,6 +6,8 @@ module Domain.Settlement exposing (Preference, Transaction, computeSettlement)
 import Dict exposing (Dict)
 import Domain.Balance exposing (MemberBalance)
 import Domain.Member as Member
+import Json.Decode as Decode
+import Json.Encode as Encode
 
 
 {-| A settlement payment from one member to another.
@@ -240,6 +242,25 @@ processGreedyPass debtors creditors =
                                 processGreedyPass updatedDebtors updatedCreditors
                         in
                         ( transaction :: restTransactions, finalDebtors, finalCreditors )
+
+
+{-| Encode a Preference as a JSON object.
+-}
+encodePreference : Preference -> Encode.Value
+encodePreference pref =
+    Encode.object
+        [ ( "memberRootId", Encode.string pref.memberRootId )
+        , ( "preferredRecipients", Encode.list Encode.string pref.preferredRecipients )
+        ]
+
+
+{-| Decode a Preference from JSON.
+-}
+decodePreference : Decode.Decoder Preference
+decodePreference =
+    Decode.map2 Preference
+        (Decode.field "memberRootId" Decode.string)
+        (Decode.field "preferredRecipients" (Decode.list Decode.string))
 
 
 

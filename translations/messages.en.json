@@ -43,6 +43,7 @@
   "activityMemberUnretired": "reactivated {name}",
   "activityMemberMetadataUpdated": "updated contact info for {name}",
   "activityGroupMetadataUpdated": "updated group settings",
+  "activitySettlementPreferencesUpdated": "updated settlement preferences for {name}",
   "changeFieldDescription": "description",
   "changeFieldAmount": "amount",
   "changeFieldDate": "date",
@@ -209,5 +210,10 @@
   "activityDetailNoValue": "none",
   "activityDetailRemoved": "removed",
   "activityMemberTypeLabel": "Member type",
-  "activityViewEntryDetails": "View entry details →"
+  "activityViewEntryDetails": "View entry details →",
+  "settlementPreferencesShow": "Settlement preferences ▸",
+  "settlementPreferencesHide": "Settlement preferences ▾",
+  "settlementPreferencesHint": "Choose who you prefer to pay first. It is recommended to leave this untouched for a better settlement plan for the whole group.",
+  "settlementPreferPayFirst": "Prefer to pay first"
 }
+

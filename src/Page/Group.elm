@@ -32,6 +32,8 @@ type alias Context msg =
     , onAddMember : msg
     , onEditGroupMetadata : msg
     , onSettleTransaction : Settlement.Transaction -> msg
+    , onSaveSettlementPreferences : { memberRootId : Member.Id, preferredRecipients : List Member.Id } -> msg
+    , onToggleSettlementPreferences : msg
     , currentUserRootId : Member.Id
     , onToggleActivityExpanded : Event.Id -> msg
     , expandedActivities : Set Event.Id
@@ -42,14 +44,14 @@ type alias Context msg =
 
 {-| Render the group page shell with tabs and the active tab's content.
 -}
-view : Context msg -> { showDeleted : Bool } -> Ui.Element msg -> GroupState -> GroupTab -> Ui.Element msg
-view ctx { showDeleted } headerExtra groupState activeTab =
+view : Context msg -> { showDeleted : Bool, showSettlementPreferences : Bool } -> Ui.Element msg -> GroupState -> GroupTab -> Ui.Element msg
+view ctx { showDeleted, showSettlementPreferences } headerExtra groupState activeTab =
     UI.Shell.groupShell
         { groupName = groupState.groupMeta.name
         , headerExtra = headerExtra
         , activeTab = activeTab
         , onTabClick = ctx.onTabClick
-        , content = tabContent ctx showDeleted groupState activeTab
+        , content = tabContent ctx showDeleted showSettlementPreferences groupState activeTab
         , tabLabels =
             { balance = T.tabBalance ctx.i18n
             , entries = T.tabEntries ctx.i18n
@@ -59,11 +61,18 @@ view ctx { showDeleted } headerExtra groupState activeTab =
         }
 
 
-tabContent : Context msg -> Bool -> GroupState -> GroupTab -> Ui.Element msg
-tabContent ctx showDeleted state tab =
+tabContent : Context msg -> Bool -> Bool -> GroupState -> GroupTab -> Ui.Element msg
+tabContent ctx showDeleted showSettlementPreferences state tab =
     case tab of
         BalanceTab ->
-            Page.Group.BalanceTab.view ctx.i18n ctx.currentUserRootId ctx.onSettleTransaction state
+            Page.Group.BalanceTab.view ctx.i18n
+                ctx.currentUserRootId
+                ctx.onSettleTransaction
+                { onSavePreferences = ctx.onSaveSettlementPreferences
+                , showPreferences = showSettlementPreferences
+                , onTogglePreferences = ctx.onToggleSettlementPreferences
+                }
+                state
 
         EntriesTab ->
             Page.Group.EntriesTab.view ctx.i18n
