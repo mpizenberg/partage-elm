@@ -1,4 +1,4 @@
-module Page.Group exposing (Context, Model, Msg, Output(..), init, update, view)
+module Page.Group exposing (Context, InitPageContext, Model, Msg, Output(..), init, initPageIfNeeded, update, view)
 
 {-| Group page shell with tab routing, using real group data.
 -}
@@ -101,6 +101,62 @@ init =
     , entryDetailModel = Page.Group.EntryDetail.init
     , editGroupMetadataModel = Page.Group.EditGroupMetadata.init GroupState.empty.groupMeta
     }
+
+
+{-| Context needed to initialize sub-page models when navigating to a group view.
+-}
+type alias InitPageContext =
+    { entryFormConfig : Page.Group.NewEntry.Config
+    , pendingTransfer : Maybe { toMemberId : Member.Id, amountCents : Int }
+    , groupState : GroupState
+    }
+
+
+{-| Initialize the sub-page model for a given group view, if the needed data is available.
+-}
+initPageIfNeeded : InitPageContext -> GroupView -> Model -> Model
+initPageIfNeeded ctx groupView model =
+    case groupView of
+        NewEntry ->
+            case ctx.pendingTransfer of
+                Just payData ->
+                    { model | newEntryModel = Page.Group.NewEntry.initTransfer ctx.entryFormConfig payData }
+
+                Nothing ->
+                    { model | newEntryModel = Page.Group.NewEntry.init ctx.entryFormConfig }
+
+        EntryDetail _ ->
+            { model | entryDetailModel = Page.Group.EntryDetail.init }
+
+        EditEntry entryId ->
+            case Dict.get entryId ctx.groupState.entries of
+                Just entryState ->
+                    { model | newEntryModel = Page.Group.NewEntry.initFromEntry ctx.entryFormConfig entryState.currentVersion }
+
+                Nothing ->
+                    model
+
+        MemberDetail memberId ->
+            case Dict.get memberId ctx.groupState.members of
+                Just memberState ->
+                    { model | memberDetailModel = Page.Group.MemberDetail.init memberState }
+
+                Nothing ->
+                    model
+
+        EditMemberMetadata memberId ->
+            case Dict.get memberId ctx.groupState.members of
+                Just memberState ->
+                    { model | editMemberMetadataModel = Page.Group.EditMemberMetadata.init memberState.rootId memberState.name memberState.metadata }
+
+                Nothing ->
+                    model
+
+        EditGroupMetadata ->
+            { model | editGroupMetadataModel = Page.Group.EditGroupMetadata.init ctx.groupState.groupMeta }
+
+        _ ->
+            model
 
 
 update : Msg -> Model -> ( Model, Maybe Output )

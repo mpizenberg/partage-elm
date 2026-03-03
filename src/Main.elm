@@ -1072,65 +1072,27 @@ submitEditEntry model readyData loaded originalEntryId output =
 initPagesIfNeeded : Route -> Model -> Model
 initPagesIfNeeded route model =
     case ( route, model.appState, model.loadedGroup ) of
-        ( GroupRoute _ NewEntry, Ready readyData, Just loaded ) ->
+        ( GroupRoute _ groupView, Ready readyData, Just loaded ) ->
             let
-                config : Page.Group.NewEntry.Config
-                config =
-                    Submit.entryFormConfig readyData loaded model.currentTime
+                context : Page.Group.InitPageContext
+                context =
+                    { entryFormConfig = Submit.entryFormConfig readyData loaded model.currentTime
+                    , pendingTransfer = model.pendingTransfer
+                    , groupState = loaded.groupState
+                    }
+
+                consumePendingTransfer =
+                    groupView == NewEntry && model.pendingTransfer /= Nothing
             in
-            case model.pendingTransfer of
-                Just payData ->
-                    updateGroupModel (\gm -> { gm | newEntryModel = Page.Group.NewEntry.initTransfer config payData })
-                        { model | pendingTransfer = Nothing }
+            { model
+                | groupModel = Page.Group.initPageIfNeeded context groupView model.groupModel
+                , pendingTransfer =
+                    if consumePendingTransfer then
+                        Nothing
 
-                Nothing ->
-                    updateGroupModel (\gm -> { gm | newEntryModel = Page.Group.NewEntry.init config }) model
-
-        ( GroupRoute _ (EntryDetail _), _, _ ) ->
-            updateGroupModel (\gm -> { gm | entryDetailModel = Page.Group.EntryDetail.init }) model
-
-        ( GroupRoute _ (EditEntry entryId), Ready readyData, Just loaded ) ->
-            case Dict.get entryId loaded.groupState.entries of
-                Just entryState ->
-                    updateGroupModel
-                        (\gm ->
-                            { gm
-                                | newEntryModel =
-                                    Page.Group.NewEntry.initFromEntry
-                                        (Submit.entryFormConfig readyData loaded model.currentTime)
-                                        entryState.currentVersion
-                            }
-                        )
-                        model
-
-                Nothing ->
-                    model
-
-        ( GroupRoute _ (MemberDetail memberId), _, Just loaded ) ->
-            case Dict.get memberId loaded.groupState.members of
-                Just memberState ->
-                    updateGroupModel (\gm -> { gm | memberDetailModel = Page.Group.MemberDetail.init memberState }) model
-
-                Nothing ->
-                    model
-
-        ( GroupRoute _ (EditMemberMetadata memberId), _, Just loaded ) ->
-            case Dict.get memberId loaded.groupState.members of
-                Just memberState ->
-                    updateGroupModel
-                        (\gm ->
-                            { gm
-                                | editMemberMetadataModel =
-                                    Page.Group.EditMemberMetadata.init memberState.rootId memberState.name memberState.metadata
-                            }
-                        )
-                        model
-
-                Nothing ->
-                    model
-
-        ( GroupRoute _ EditGroupMetadata, _, Just loaded ) ->
-            updateGroupModel (\gm -> { gm | editGroupMetadataModel = Page.Group.EditGroupMetadata.init loaded.groupState.groupMeta }) model
+                    else
+                        model.pendingTransfer
+            }
 
         _ ->
             model
