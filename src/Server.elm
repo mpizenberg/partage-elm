@@ -371,9 +371,10 @@ serverEventRecordDecoder =
 {-| Subscribe to realtime events for the "events" collection.
 Events arrive via the onPocketbaseEvent port.
 -}
-subscribeToGroup : PocketBase.Client -> ConcurrentTask Never ()
+subscribeToGroup : PocketBase.Client -> ConcurrentTask a ()
 subscribeToGroup client =
     PocketBase.Realtime.subscribe client "events"
+        |> ConcurrentTask.mapError never
 
 
 {-| Decode the groupId and eventData fields from a realtime event record.

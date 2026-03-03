@@ -2,7 +2,7 @@ port module Main exposing (AppState, Flags, Model, Msg, main)
 
 import AppUrl
 import Browser
-import ConcurrentTask
+import ConcurrentTask exposing (ConcurrentTask)
 import Dict
 import Domain.Currency
 import Domain.Date as Date
@@ -169,7 +169,7 @@ type Msg
     | OnPbClientInitialized (ConcurrentTask.Response PocketBase.Error PocketBase.Client)
     | OnServerGroupCreated Group.Id (ConcurrentTask.Response Server.Error ())
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
-    | OnRealtimeSubscribed (ConcurrentTask.Response Never ())
+    | PostSyncTasksDone (ConcurrentTask.Response Idb.Error ())
     | OnPocketbaseEvent Json.Decode.Value
       -- Toast notifications
     | ClipboardCopied
@@ -998,72 +998,67 @@ update msg model =
                                     , unpushedIds = remainingUnpushedIds
                                 }
 
-                            -- Save new events, cursor, and updated unpushed IDs to IndexedDB
-                            persistTasks : List (ConcurrentTask.ConcurrentTask Idb.Error ())
-                            persistTasks =
-                                Storage.saveUnpushedIds readyData.db groupId remainingUnpushedIds
-                                    :: (if not (List.isEmpty newEvents) then
-                                            [ Storage.saveEvents readyData.db groupId newEvents ]
+                            saveEventsTask : Maybe (ConcurrentTask Idb.Error ())
+                            saveEventsTask =
+                                if List.isEmpty newEvents then
+                                    Nothing
 
-                                        else
-                                            []
-                                       )
-                                    ++ (if pullResult.cursor /= "" then
-                                            [ Storage.saveSyncCursor readyData.db groupId pullResult.cursor ]
+                                else
+                                    Just <| Storage.saveEvents readyData.db groupId newEvents
 
-                                        else
-                                            []
-                                       )
+                            saveSyncCursorTask : Maybe (ConcurrentTask Idb.Error ())
+                            saveSyncCursorTask =
+                                if pullResult.cursor /= "" then
+                                    Just <| Storage.saveSyncCursor readyData.db groupId pullResult.cursor
 
-                            ( pool, cmd ) =
+                                else
+                                    Nothing
+
+                            subscribeToGroupTask : Maybe (ConcurrentTask a ())
+                            subscribeToGroupTask =
+                                case ( loaded.syncCursor, model.pbClient ) of
+                                    ( Nothing, Just client ) ->
+                                        Just <| Server.subscribeToGroup client
+
+                                    _ ->
+                                        Nothing
+
+                            allTasks : List (ConcurrentTask Idb.Error ())
+                            allTasks =
+                                List.filterMap identity
+                                    [ Just <| Storage.saveUnpushedIds readyData.db groupId remainingUnpushedIds
+                                    , saveEventsTask
+                                    , saveSyncCursorTask
+                                    , subscribeToGroupTask
+                                    ]
+
+                            ( taskPool, taskCmds ) =
                                 ConcurrentTask.attempt
                                     { pool = model.pool
                                     , send = sendTask
-                                    , onComplete = OnGroupSummarySaved
+                                    , onComplete = PostSyncTasksDone
                                     }
-                                    (ConcurrentTask.batch persistTasks
-                                        |> ConcurrentTask.map (\_ -> Idb.StringKey "")
-                                    )
-
-                            -- Subscribe to realtime on first successful sync
-                            ( poolAfterSub, subCmd ) =
-                                if loaded.syncCursor == Nothing then
-                                    case model.pbClient of
-                                        Just client ->
-                                            ConcurrentTask.attempt
-                                                { pool = pool
-                                                , send = sendTask
-                                                , onComplete = OnRealtimeSubscribed
-                                                }
-                                                (Server.subscribeToGroup client
-                                                    |> ConcurrentTask.mapError never
-                                                )
-
-                                        Nothing ->
-                                            ( pool, Cmd.none )
-
-                                else
-                                    ( pool, Cmd.none )
+                                    (ConcurrentTask.batch allTasks |> ConcurrentTask.map (\_ -> ()))
 
                             modelAfterSync : Model
                             modelAfterSync =
                                 { model
                                     | loadedGroup = Just updatedLoaded
-                                    , pool = poolAfterSub
+                                    , pool = taskPool
                                     , syncInProgress = False
                                 }
                                     |> initPagesIfNeeded model.route
                         in
                         -- If new events were added during sync, trigger follow-up
                         if Set.isEmpty remainingUnpushedIds then
-                            ( modelAfterSync, Cmd.batch [ cmd, subCmd ] )
+                            ( modelAfterSync, Cmd.batch [ taskCmds ] )
 
                         else
                             let
                                 ( followUpModel, followUpCmd ) =
                                     triggerSync modelAfterSync groupId
                             in
-                            ( followUpModel, Cmd.batch [ cmd, subCmd, followUpCmd ] )
+                            ( followUpModel, Cmd.batch [ taskCmds, followUpCmd ] )
 
                     else
                         ( { model | syncInProgress = False }, Cmd.none )
@@ -1078,10 +1073,10 @@ update msg model =
         OnGroupSynced _ _ (ConcurrentTask.UnexpectedError _) ->
             ( { model | syncInProgress = False }, Cmd.none )
 
-        OnRealtimeSubscribed (ConcurrentTask.Success ()) ->
+        PostSyncTasksDone (ConcurrentTask.Success ()) ->
             ( model, Cmd.none )
 
-        OnRealtimeSubscribed _ ->
+        PostSyncTasksDone _ ->
             ( model, Cmd.none )
 
         OnPocketbaseEvent value ->
