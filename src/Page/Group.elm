@@ -1,14 +1,16 @@
 module Page.Group exposing
     ( InitConfig
     , Model
-    , Msg(..)
+    , Msg
     , Output(..)
     , UpdateConfig
     , ViewConfig
     , handleNavigation
     , init
+    , pocketbaseEventMsg
     , resetLoadedGroup
     , setIdentityHash
+    , taskSubscription
     , triggerSync
     , update
     , view
@@ -138,6 +140,21 @@ type alias Model =
 
 
 -- MSG
+
+
+taskSubscription : { send : Json.Encode.Value -> Cmd Msg, receive : (Json.Decode.Value -> Msg) -> Sub Msg } -> Model -> Sub Msg
+taskSubscription ports model =
+    ConcurrentTask.onProgress
+        { send = ports.send
+        , receive = ports.receive
+        , onProgress = OnTaskProgress
+        }
+        model.pool
+
+
+pocketbaseEventMsg : Json.Decode.Value -> Msg
+pocketbaseEventMsg =
+    OnPocketbaseEvent
 
 
 type

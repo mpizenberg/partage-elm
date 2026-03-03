@@ -7,6 +7,7 @@
     "prepare:dist": "rimraf dist && shx mkdir dist && pnpm bundle:html",
     "bundle:html": "shx cp public/index.html dist/",
     "bundle:js": "esbuild public/index.js --bundle --outfile=dist/index.js --format=iife",
+    "make": "elm-watch make",
     "prebuild": "pnpm i18n && pnpm prepare:dist && pnpm bundle:js",
     "build": "pnpm prebuild && elm-watch make",
     "build:optimize": "pnpm prebuild && elm-watch make --optimize",

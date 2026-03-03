@@ -130,15 +130,14 @@ subscriptions model =
             , onProgress = OnTaskProgress
             }
             model.pool
-        , ConcurrentTask.onProgress
+        , Page.Group.taskSubscription
             { send = sendTask
             , receive = receiveTask
-            , onProgress = Page.Group.OnTaskProgress
             }
-            model.groupModel.pool
+            model.groupModel
             |> Sub.map GroupMsg
         , onClipboardCopy (\() -> ClipboardCopied)
-        , onPocketbaseEvent (Page.Group.OnPocketbaseEvent >> GroupMsg)
+        , onPocketbaseEvent (GroupMsg << Page.Group.pocketbaseEventMsg)
         ]
 
 
@@ -541,28 +540,16 @@ update msg model =
             addToast Toast.Error (T.toastGroupCreateError model.i18n) model
 
         GroupMsg subMsg ->
-            case subMsg of
-                Page.Group.OnTaskProgress ( pool, cmd ) ->
+            case buildGroupConfig model of
+                Just config ->
                     let
-                        gm : Page.Group.Model
-                        gm =
-                            model.groupModel
+                        ( groupModel, groupCmd, outputs ) =
+                            Page.Group.update config subMsg model.groupModel
                     in
-                    ( { model | groupModel = { gm | pool = pool } }
-                    , Cmd.map GroupMsg cmd
-                    )
+                    processGroupOutputs { model | groupModel = groupModel } groupCmd outputs
 
-                _ ->
-                    case buildGroupConfig model of
-                        Just config ->
-                            let
-                                ( groupModel, groupCmd, outputs ) =
-                                    Page.Group.update config subMsg model.groupModel
-                            in
-                            processGroupOutputs { model | groupModel = groupModel } groupCmd outputs
-
-                        Nothing ->
-                            ( model, Cmd.none )
+                Nothing ->
+                    ( model, Cmd.none )
 
         -- Import / Export
         ExportGroup groupId ->
