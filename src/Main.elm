@@ -22,7 +22,6 @@ import Navigation
 import Page.About
 import Page.Group
 import Page.Group.AddMember
-import Page.Group.EditGroupMetadata
 import Page.Group.EditMemberMetadata
 import Page.Group.EntryDetail
 import Page.Group.MemberDetail
@@ -97,7 +96,6 @@ type alias Model =
     , groupModel : Page.Group.Model
     , homeModel : Page.Home.Model
     , toastModel : Toast.Model
-    , pendingTransfer : Maybe { toMemberId : Member.Id, amountCents : Int }
     , serverUrl : String
     , pbClient : Maybe PocketBase.Client
     , syncInProgress : Bool
@@ -236,7 +234,6 @@ init flags =
       , groupModel = Page.Group.init
       , homeModel = Page.Home.init
       , toastModel = Toast.init
-      , pendingTransfer = Nothing
       , serverUrl = flags.serverUrl
       , pbClient = Nothing
       , syncInProgress = False
@@ -270,12 +267,10 @@ update msg model =
 
                 ( modelAfterGuard, loadCmd ) =
                     ensureGroupLoaded { model | route = guardedRoute } guardedRoute
-
-                modelWithPages : Model
-                modelWithPages =
-                    initPagesIfNeeded guardedRoute modelAfterGuard
             in
-            ( modelWithPages, Cmd.batch [ guardCmd, loadCmd ] )
+            ( initPagesIfNeeded guardedRoute modelAfterGuard
+            , Cmd.batch [ guardCmd, loadCmd ]
+            )
 
         NavigateTo route ->
             ( model, Navigation.pushUrl navCmd (Route.toAppUrl route) )
@@ -479,7 +474,7 @@ update msg model =
         PayMember payData ->
             case model.route of
                 GroupRoute groupId _ ->
-                    ( { model | pendingTransfer = Just payData }
+                    ( updateGroupModel (\gm -> { gm | pendingTransfer = Just payData }) model
                     , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId NewEntry))
                     )
 
@@ -1077,22 +1072,10 @@ initPagesIfNeeded route model =
                 context : Page.Group.InitPageContext
                 context =
                     { entryFormConfig = Submit.entryFormConfig readyData loaded model.currentTime
-                    , pendingTransfer = model.pendingTransfer
                     , groupState = loaded.groupState
                     }
-
-                consumePendingTransfer =
-                    groupView == NewEntry && model.pendingTransfer /= Nothing
             in
-            { model
-                | groupModel = Page.Group.initPageIfNeeded context groupView model.groupModel
-                , pendingTransfer =
-                    if consumePendingTransfer then
-                        Nothing
-
-                    else
-                        model.pendingTransfer
-            }
+            { model | groupModel = Page.Group.initPageIfNeeded context groupView model.groupModel }
 
         _ ->
             model

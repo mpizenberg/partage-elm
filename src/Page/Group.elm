@@ -65,6 +65,7 @@ type alias Model =
     -- Entry pages
     , newEntryModel : Page.Group.NewEntry.Model
     , entryDetailModel : Page.Group.EntryDetail.Model
+    , pendingTransfer : Maybe { toMemberId : Member.Id, amountCents : Int }
 
     -- Group pages
     , editGroupMetadataModel : Page.Group.EditGroupMetadata.Model
@@ -99,6 +100,7 @@ init =
     , editMemberMetadataModel = Page.Group.EditMemberMetadata.init "" "" Member.emptyMetadata
     , newEntryModel = Page.Group.NewEntry.init { currentUserRootId = "", activeMembersRootIds = [], today = { year = 2000, month = 1, day = 1 }, defaultCurrency = EUR }
     , entryDetailModel = Page.Group.EntryDetail.init
+    , pendingTransfer = Nothing
     , editGroupMetadataModel = Page.Group.EditGroupMetadata.init GroupState.empty.groupMeta
     }
 
@@ -107,7 +109,6 @@ init =
 -}
 type alias InitPageContext =
     { entryFormConfig : Page.Group.NewEntry.Config
-    , pendingTransfer : Maybe { toMemberId : Member.Id, amountCents : Int }
     , groupState : GroupState
     }
 
@@ -118,9 +119,9 @@ initPageIfNeeded : InitPageContext -> GroupView -> Model -> Model
 initPageIfNeeded ctx groupView model =
     case groupView of
         NewEntry ->
-            case ctx.pendingTransfer of
+            case model.pendingTransfer of
                 Just payData ->
-                    { model | newEntryModel = Page.Group.NewEntry.initTransfer ctx.entryFormConfig payData }
+                    { model | newEntryModel = Page.Group.NewEntry.initTransfer ctx.entryFormConfig payData, pendingTransfer = Nothing }
 
                 Nothing ->
                     { model | newEntryModel = Page.Group.NewEntry.init ctx.entryFormConfig }
