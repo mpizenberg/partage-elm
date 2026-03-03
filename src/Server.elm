@@ -6,6 +6,7 @@ module Server exposing
     , authenticate
     , createGroupOnServer
     , errorToString
+    , realtimeEventDecoder
     , subscribeToGroup
     , syncGroup
     )
@@ -373,3 +374,12 @@ Events arrive via the onPocketbaseEvent port.
 subscribeToGroup : PocketBase.Client -> ConcurrentTask Never ()
 subscribeToGroup client =
     PocketBase.Realtime.subscribe client "events"
+
+
+{-| Decode the groupId and eventData fields from a realtime event record.
+-}
+realtimeEventDecoder : Decode.Decoder { groupId : String, eventData : String }
+realtimeEventDecoder =
+    Decode.map2 (\gid ed -> { groupId = gid, eventData = ed })
+        (Decode.field "groupId" Decode.string)
+        (Decode.field "eventData" Decode.string)

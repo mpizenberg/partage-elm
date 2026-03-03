@@ -1,4 +1,4 @@
-module Domain.Member exposing (ChainState, Id, Info, Metadata, PaymentInfo, Type(..), emptyMetadata, emptyPaymentInfo, encodeMetadata, encodePaymentInfo, encodeType, metadataDecoder, paymentInfoDecoder, pickCurrent, typeDecoder)
+module Domain.Member exposing (ChainState, Id, Info, Metadata, PaymentInfo, Type(..), emptyChainState, emptyMetadata, emptyPaymentInfo, encodeMetadata, encodePaymentInfo, encodeType, metadataDecoder, paymentInfoDecoder, pickCurrent, typeDecoder)
 
 {-| Group members, their lifecycle, and contact metadata.
 -}
@@ -85,6 +85,19 @@ type alias PaymentInfo =
     , venmo : Maybe String
     , btcAddress : Maybe String
     , adaAddress : Maybe String
+    }
+
+
+{-| A ChainState with all fields set to empty defaults.
+-}
+emptyChainState : ChainState
+emptyChainState =
+    { rootId = ""
+    , name = ""
+    , isRetired = False
+    , metadata = emptyMetadata
+    , currentMember = { id = "", previousId = Nothing, depth = 0, memberType = Virtual }
+    , allMembers = Dict.empty
     }
 
 

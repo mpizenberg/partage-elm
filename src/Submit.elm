@@ -3,8 +3,10 @@ module Submit exposing
     , LoadedGroup
     , State
     , addMember
+    , currentUserRootId
     , deleteEntry
     , editEntry
+    , entryFormConfig
     , event
     , initLoadedGroup
     , newEntry
@@ -15,6 +17,7 @@ module Submit exposing
 import ConcurrentTask
 import Crypto
 import Dict
+import Domain.Date as Date
 import Domain.Entry as Entry
 import Domain.Event as Event
 import Domain.Group as Group
@@ -321,3 +324,26 @@ addMember ctx loaded output =
             Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash payload
     in
     attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter } envelope loaded.summary.id
+
+
+
+-- Helpers
+
+
+{-| Resolve the current user's member root ID within a loaded group.
+-}
+currentUserRootId : Storage.InitData -> LoadedGroup -> Member.Id
+currentUserRootId readyData loaded =
+    GroupState.resolveMemberRootId loaded.groupState
+        (readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault "")
+
+
+{-| Build the configuration needed by the new-entry form from a loaded group.
+-}
+entryFormConfig : Storage.InitData -> LoadedGroup -> Time.Posix -> Page.NewEntry.Config
+entryFormConfig readyData loaded currentTime =
+    { currentUserRootId = currentUserRootId readyData loaded
+    , activeMembersRootIds = List.map .rootId (GroupState.activeMembers loaded.groupState)
+    , today = Date.posixToDate currentTime
+    , defaultCurrency = loaded.summary.defaultCurrency
+    }

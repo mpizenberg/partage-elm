@@ -256,7 +256,7 @@ init flags =
       , currentTime = currentTime
       , newGroupModel = Page.NewGroup.init
       , newEntryModel = Page.NewEntry.init { currentUserRootId = "", activeMembersRootIds = [], today = Date.posixToDate currentTime, defaultCurrency = Domain.Currency.EUR }
-      , memberDetailModel = Page.MemberDetail.init dummyMemberChainState
+      , memberDetailModel = Page.MemberDetail.init Member.emptyChainState
       , addMemberModel = Page.AddMember.init
       , editMemberMetadataModel = Page.EditMemberMetadata.init "" "" Member.emptyMetadata
       , entryDetailModel = Page.EntryDetail.init
@@ -275,17 +275,6 @@ init flags =
       }
     , cmd
     )
-
-
-dummyMemberChainState : Member.ChainState
-dummyMemberChainState =
-    { rootId = ""
-    , name = ""
-    , isRetired = False
-    , metadata = Member.emptyMetadata
-    , currentMember = { id = "", previousId = Nothing, depth = 0, memberType = Member.Virtual }
-    , allMembers = Dict.empty
-    }
 
 
 addToast : Toast.ToastLevel -> String -> Model -> ( Model, Cmd Msg )
@@ -484,7 +473,7 @@ update msg model =
                                         , send = sendTask
                                         , onComplete = OnServerGroupCreated summary.id
                                         }
-                                        (loadGroupKeyRequired readyData.db summary.id
+                                        (Storage.loadGroupKeyRequired readyData.db summary.id
                                             |> ConcurrentTask.mapError (\_ -> Server.PbError (PocketBase.ServerError "Failed to load group key in IndexedDB"))
                                             |> ConcurrentTask.andThen
                                                 (\key ->
@@ -1209,7 +1198,7 @@ triggerSync model groupId =
 -}
 handleRealtimeRecord : LoadedGroup -> Json.Decode.Value -> Model -> ( Model, Cmd Msg )
 handleRealtimeRecord loaded record model =
-    case Json.Decode.decodeValue serverEventFromRealtimeDecoder record of
+    case Json.Decode.decodeValue Server.realtimeEventDecoder record of
         Ok serverEvt ->
             if serverEvt.groupId == loaded.summary.id then
                 case Json.Decode.decodeString Symmetric.encryptedDataDecoder serverEvt.eventData of
@@ -1240,13 +1229,6 @@ addUnpushedIdToModel eventId model =
 
         Nothing ->
             model
-
-
-serverEventFromRealtimeDecoder : Json.Decode.Decoder { groupId : String, eventData : String }
-serverEventFromRealtimeDecoder =
-    Json.Decode.map2 (\gid ed -> { groupId = gid, eventData = ed })
-        (Json.Decode.field "groupId" Json.Decode.string)
-        (Json.Decode.field "eventData" Json.Decode.string)
 
 
 applySubmitResult : Model -> ( Submit.State Msg, Cmd Msg ) -> ( Model, Cmd Msg )
@@ -1315,7 +1297,7 @@ initPagesIfNeeded route model =
             let
                 config : Page.NewEntry.Config
                 config =
-                    entryFormConfig readyData loaded model.currentTime
+                    Submit.entryFormConfig readyData loaded model.currentTime
             in
             case model.pendingTransfer of
                 Just payData ->
@@ -1338,7 +1320,7 @@ initPagesIfNeeded route model =
                     { model
                         | newEntryModel =
                             Page.NewEntry.initFromEntry
-                                (entryFormConfig readyData loaded model.currentTime)
+                                (Submit.entryFormConfig readyData loaded model.currentTime)
                                 entryState.currentVersion
                     }
 
@@ -1371,21 +1353,6 @@ initPagesIfNeeded route model =
             model
 
 
-currentUserRootId : Storage.InitData -> LoadedGroup -> Member.Id
-currentUserRootId readyData loaded =
-    GroupState.resolveMemberRootId loaded.groupState
-        (readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault "")
-
-
-entryFormConfig : Storage.InitData -> LoadedGroup -> Time.Posix -> Page.NewEntry.Config
-entryFormConfig readyData loaded currentTime =
-    { currentUserRootId = currentUserRootId readyData loaded
-    , activeMembersRootIds = List.map .rootId (GroupState.activeMembers loaded.groupState)
-    , today = Date.posixToDate currentTime
-    , defaultCurrency = loaded.summary.defaultCurrency
-    }
-
-
 ensureGroupLoaded : Model -> Route -> ( Model, Cmd Msg )
 ensureGroupLoaded model route =
     case route of
@@ -1414,7 +1381,7 @@ loadGroup model groupId =
                 task =
                     ConcurrentTask.map4 (\events key cursor unpushed -> { events = events, groupKey = key, syncCursor = cursor, unpushedIds = unpushed })
                         (Storage.loadGroupEvents readyData.db groupId)
-                        (loadGroupKeyRequired readyData.db groupId)
+                        (Storage.loadGroupKeyRequired readyData.db groupId)
                         (Storage.loadSyncCursor readyData.db groupId)
                         (Storage.loadUnpushedIds readyData.db groupId)
 
@@ -1430,22 +1397,6 @@ loadGroup model groupId =
 
         _ ->
             ( model, Cmd.none )
-
-
-{-| Load the group encryption key. Fails if the key is missing.
--}
-loadGroupKeyRequired : Idb.Db -> Group.Id -> ConcurrentTask.ConcurrentTask Idb.Error Symmetric.Key
-loadGroupKeyRequired db groupId =
-    Storage.loadGroupKey db groupId
-        |> ConcurrentTask.andThen
-            (\maybeKeyStr ->
-                case maybeKeyStr of
-                    Just keyStr ->
-                        ConcurrentTask.succeed (Symmetric.importKey keyStr)
-
-                    Nothing ->
-                        ConcurrentTask.fail (Idb.DatabaseError ("Missing encryption key for group " ++ groupId))
-            )
 
 
 handleMemberDetailOutput : Model -> Storage.InitData -> LoadedGroup -> Page.MemberDetail.Output -> ( Model, Cmd Msg )
@@ -1809,7 +1760,7 @@ viewGroupTab model readyData langSelector groupId tab loaded =
         , onPayMember = PayMember
         , onSaveSettlementPreferences = SaveSettlementPreferences
         , onToggleSettlementPreferences = ToggleShowSettlementPreferences
-        , currentUserRootId = currentUserRootId readyData loaded
+        , currentUserRootId = Submit.currentUserRootId readyData loaded
         , entryDetailPath = \entryId -> Route.toPath (GroupRoute groupId (EntryDetail entryId))
         , groupDefaultCurrency = loaded.summary.defaultCurrency
         , today = Date.posixToDate model.currentTime
@@ -1838,7 +1789,7 @@ viewGroupNewEntry model loaded =
 viewGroupEntryDetail : Model -> Storage.InitData -> LoadedGroup -> GroupState.EntryState -> Ui.Element Msg
 viewGroupEntryDetail model readyData loaded entryState =
     Page.EntryDetail.view model.i18n
-        { currentUserRootId = currentUserRootId readyData loaded
+        { currentUserRootId = Submit.currentUserRootId readyData loaded
         , resolveName = GroupState.resolveMemberName loaded.groupState
         }
         EntryDetailMsg
@@ -1857,7 +1808,7 @@ viewGroupEditEntry model loaded =
 viewGroupMemberDetail : Model -> Storage.InitData -> LoadedGroup -> Ui.Element Msg
 viewGroupMemberDetail model readyData loaded =
     Page.MemberDetail.view model.i18n
-        (currentUserRootId readyData loaded)
+        (Submit.currentUserRootId readyData loaded)
         MemberDetailMsg
         model.memberDetailModel
 

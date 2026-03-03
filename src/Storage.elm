@@ -11,6 +11,7 @@ module Storage exposing
     , loadAllGroups
     , loadGroupEvents
     , loadGroupKey
+    , loadGroupKeyRequired
     , loadIdentity
     , loadSyncCursor
     , loadUnpushedIds
@@ -34,6 +35,7 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import Set exposing (Set)
 import Time
+import WebCrypto.Symmetric as Symmetric
 
 
 {-| Data loaded from IndexedDB during app initialization.
@@ -168,6 +170,22 @@ saveGroupKey db groupId key =
 loadGroupKey : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error (Maybe String)
 loadGroupKey db groupId =
     Idb.get db groupKeysStore (Idb.StringKey groupId) Decode.string
+
+
+{-| Load the group encryption key. Fails if the key is missing.
+-}
+loadGroupKeyRequired : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error Symmetric.Key
+loadGroupKeyRequired db groupId =
+    loadGroupKey db groupId
+        |> ConcurrentTask.andThen
+            (\maybeKeyStr ->
+                case maybeKeyStr of
+                    Just keyStr ->
+                        ConcurrentTask.succeed (Symmetric.importKey keyStr)
+
+                    Nothing ->
+                        ConcurrentTask.fail (Idb.DatabaseError ("Missing encryption key for group " ++ groupId))
+            )
 
 
 {-| Save a list of event envelopes for a group.
