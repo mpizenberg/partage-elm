@@ -25,11 +25,13 @@ type Model
     = Model
         { filters : EntryFilters
         , showFilters : Bool
+        , showDeleted : Bool
         }
 
 
 type Msg
-    = ToggleFilters
+    = ToggleShowDeleted
+    | ToggleFilters
     | TogglePerson Member.Id
     | ToggleCategory String
     | ToggleCurrency String
@@ -42,8 +44,6 @@ type Msg
 type alias Config msg =
     { onNewEntry : msg
     , onEntryClick : Entry.Id -> msg
-    , showDeleted : Bool
-    , onToggleDeleted : msg
     , toMsg : Msg -> msg
     }
 
@@ -53,12 +53,16 @@ init =
     Model
         { filters = Filter.emptyEntryFilters
         , showFilters = False
+        , showDeleted = False
         }
 
 
 update : Msg -> Model -> Model
 update msg (Model data) =
     case msg of
+        ToggleShowDeleted ->
+            Model { data | showDeleted = not data.showDeleted }
+
         ToggleFilters ->
             Model { data | showFilters = not data.showFilters }
 
@@ -115,7 +119,7 @@ view i18n config today (Model data) state =
 
         visibleEntries : List { entry : Entry.Entry, isDeleted : Bool }
         visibleEntries =
-            (if config.showDeleted then
+            (if data.showDeleted then
                 Dict.values state.entries
                     |> List.map (\es -> { entry = es.currentVersion, isDeleted = es.isDeleted })
 
@@ -129,7 +133,7 @@ view i18n config today (Model data) state =
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.entriesTabTitle i18n))
         , if deletedCount > 0 then
-            deletedToggle i18n config.showDeleted deletedCount config.onToggleDeleted
+            deletedToggle i18n data.showDeleted deletedCount (config.toMsg ToggleShowDeleted)
 
           else
             Ui.none

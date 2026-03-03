@@ -103,7 +103,6 @@ type alias Model =
     , entryDetailModel : Page.EntryDetail.Model
     , editGroupMetadataModel : Page.EditGroupMetadata.Model
     , loadedGroup : Maybe LoadedGroup
-    , showDeleted : Bool
     , showSettlementPreferences : Bool
     , entriesTabModel : Page.Group.EntriesTab.Model
     , activityTabModel : Page.Group.ActivityTab.Model
@@ -144,7 +143,6 @@ type Msg
     | SaveSettlementPreferences { memberRootId : Member.Id, preferredRecipients : List Member.Id }
     | EntryDetailMsg Page.EntryDetail.Msg
     | OnEntryActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
-    | ToggleShowDeleted
     | ToggleShowSettlementPreferences
     | EntriesTabMsg Page.Group.EntriesTab.Msg
     | ActivityTabMsg Page.Group.ActivityTab.Msg
@@ -262,7 +260,6 @@ init flags =
       , entryDetailModel = Page.EntryDetail.init
       , editGroupMetadataModel = Page.EditGroupMetadata.init GroupState.empty.groupMeta
       , loadedGroup = Nothing
-      , showDeleted = False
       , showSettlementPreferences = False
       , entriesTabModel = Page.Group.EntriesTab.init
       , activityTabModel = Page.Group.ActivityTab.init
@@ -641,9 +638,6 @@ update msg model =
 
         OnEntryActionSaved _ _ ->
             addToast Toast.Error (T.toastEntryActionError model.i18n) model
-
-        ToggleShowDeleted ->
-            ( { model | showDeleted = not model.showDeleted }, Cmd.none )
 
         ToggleShowSettlementPreferences ->
             ( { model | showSettlementPreferences = not model.showSettlementPreferences }, Cmd.none )
@@ -1690,7 +1684,6 @@ viewGroupTab model readyData langSelector groupId tab loaded =
         , onTabClick = SwitchTab
         , onNewEntry = NavigateTo (GroupRoute groupId NewEntry)
         , onEntryClick = \entryId -> NavigateTo (GroupRoute groupId (EntryDetail entryId))
-        , onToggleDeleted = ToggleShowDeleted
         , onMemberClick = \memberId -> NavigateTo (GroupRoute groupId (MemberDetail memberId))
         , onAddMember = NavigateTo (GroupRoute groupId AddVirtualMember)
         , onEditGroupMetadata = NavigateTo (GroupRoute groupId EditGroupMetadata)
@@ -1705,8 +1698,7 @@ viewGroupTab model readyData langSelector groupId tab loaded =
         , onEntriesTabMsg = EntriesTabMsg
         , onActivityTabMsg = ActivityTabMsg
         }
-        { showDeleted = model.showDeleted
-        , showSettlementPreferences = model.showSettlementPreferences
+        { showSettlementPreferences = model.showSettlementPreferences
         }
         langSelector
         loaded.groupState

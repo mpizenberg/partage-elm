@@ -26,7 +26,6 @@ type alias Context msg =
     , onTabClick : GroupTab -> msg
     , onNewEntry : msg
     , onEntryClick : Entry.Id -> msg
-    , onToggleDeleted : msg
     , onMemberClick : Member.Id -> msg
     , onAddMember : msg
     , onEditGroupMetadata : msg
@@ -54,14 +53,14 @@ type alias TabState =
 
 {-| Render the group page shell with tabs and the active tab's content.
 -}
-view : Context msg -> { showDeleted : Bool, showSettlementPreferences : Bool } -> Ui.Element msg -> GroupState -> TabState -> Ui.Element msg
-view ctx { showDeleted, showSettlementPreferences } headerExtra groupState tabState =
+view : Context msg -> { showSettlementPreferences : Bool } -> Ui.Element msg -> GroupState -> TabState -> Ui.Element msg
+view ctx { showSettlementPreferences } headerExtra groupState tabState =
     UI.Shell.groupShell
         { groupName = groupState.groupMeta.name
         , headerExtra = headerExtra
         , activeTab = tabState.activeTab
         , onTabClick = ctx.onTabClick
-        , content = tabContent ctx showDeleted showSettlementPreferences groupState tabState
+        , content = tabContent ctx showSettlementPreferences groupState tabState
         , tabLabels =
             { balance = T.tabBalance ctx.i18n
             , entries = T.tabEntries ctx.i18n
@@ -71,8 +70,8 @@ view ctx { showDeleted, showSettlementPreferences } headerExtra groupState tabSt
         }
 
 
-tabContent : Context msg -> Bool -> Bool -> GroupState -> TabState -> Ui.Element msg
-tabContent ctx showDeleted showSettlementPreferences state tabState =
+tabContent : Context msg -> Bool -> GroupState -> TabState -> Ui.Element msg
+tabContent ctx showSettlementPreferences state tabState =
     case tabState.activeTab of
         BalanceTab ->
             Page.Group.BalanceTab.view ctx.i18n
@@ -89,8 +88,6 @@ tabContent ctx showDeleted showSettlementPreferences state tabState =
             Page.Group.EntriesTab.view ctx.i18n
                 { onNewEntry = ctx.onNewEntry
                 , onEntryClick = ctx.onEntryClick
-                , showDeleted = showDeleted
-                , onToggleDeleted = ctx.onToggleDeleted
                 , toMsg = ctx.onEntriesTabMsg
                 }
                 ctx.today
