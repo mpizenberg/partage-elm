@@ -9,12 +9,11 @@ module Storage exposing
     , importGroup
     , init
     , loadAllGroups
+    , loadGroup
     , loadGroupEvents
     , loadGroupKey
     , loadGroupKeyRequired
     , loadIdentity
-    , loadSyncCursor
-    , loadUnpushedIds
     , open
     , saveEvents
     , saveGroupKey
@@ -230,6 +229,17 @@ loadUnpushedIds : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error (Set String)
 loadUnpushedIds db groupId =
     Idb.get db unpushedIdsStore (Idb.StringKey groupId) (Decode.list Decode.string)
         |> ConcurrentTask.map (Maybe.map Set.fromList >> Maybe.withDefault Set.empty)
+
+
+{-| Load all data needed for a group: events, encryption key, sync cursor, and unpushed IDs.
+-}
+loadGroup : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe String, unpushedIds : Set String }
+loadGroup db groupId =
+    ConcurrentTask.map4 (\events key cursor unpushed -> { events = events, groupKey = key, syncCursor = cursor, unpushedIds = unpushed })
+        (loadGroupEvents db groupId)
+        (loadGroupKeyRequired db groupId)
+        (loadSyncCursor db groupId)
+        (loadUnpushedIds db groupId)
 
 
 {-| Add event IDs to the unpushed set for a group (read-modify-write).

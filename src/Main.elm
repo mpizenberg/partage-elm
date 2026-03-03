@@ -1160,21 +1160,13 @@ loadGroup model groupId =
     case model.appState of
         Ready readyData ->
             let
-                task : ConcurrentTask.ConcurrentTask Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe String, unpushedIds : Set String }
-                task =
-                    ConcurrentTask.map4 (\events key cursor unpushed -> { events = events, groupKey = key, syncCursor = cursor, unpushedIds = unpushed })
-                        (Storage.loadGroupEvents readyData.db groupId)
-                        (Storage.loadGroupKeyRequired readyData.db groupId)
-                        (Storage.loadSyncCursor readyData.db groupId)
-                        (Storage.loadUnpushedIds readyData.db groupId)
-
                 ( pool, cmd ) =
                     ConcurrentTask.attempt
                         { pool = model.pool
                         , send = sendTask
                         , onComplete = OnGroupEventsLoaded groupId
                         }
-                        task
+                        (Storage.loadGroup readyData.db groupId)
             in
             ( { model | pool = pool, loadedGroup = Nothing }, cmd )
 
