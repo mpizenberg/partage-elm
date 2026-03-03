@@ -1,4 +1,4 @@
-module Page.Group exposing (Context, TabState, view)
+module Page.Group exposing (Context, Model, Msg, init, update, view)
 
 {-| Group page shell with tab routing, using real group data.
 -}
@@ -36,15 +36,11 @@ type alias Context msg =
     , entryDetailPath : Entry.Id -> String
     , groupDefaultCurrency : Currency
     , today : Date
-    , onEntriesTabMsg : Page.Group.EntriesTab.Msg -> msg
-    , onBalanceTabMsg : Page.Group.BalanceTab.Msg -> msg
-    , onActivityTabMsg : Page.Group.ActivityTab.Msg -> msg
+    , toMsg : Msg -> msg
     }
 
 
-{-| Mutable tab state grouped with the active tab.
--}
-type alias TabState =
+type alias Model =
     { activeTab : GroupTab
     , entriesTabModel : Page.Group.EntriesTab.Model
     , balanceTabModel : Page.Group.BalanceTab.Model
@@ -52,16 +48,44 @@ type alias TabState =
     }
 
 
+type Msg
+    = EntriesTabMsg Page.Group.EntriesTab.Msg
+    | BalanceTabMsg Page.Group.BalanceTab.Msg
+    | ActivityTabMsg Page.Group.ActivityTab.Msg
+
+
+init : Model
+init =
+    { activeTab = BalanceTab
+    , entriesTabModel = Page.Group.EntriesTab.init
+    , balanceTabModel = Page.Group.BalanceTab.init
+    , activityTabModel = Page.Group.ActivityTab.init
+    }
+
+
+update : Msg -> Model -> Model
+update msg model =
+    case msg of
+        EntriesTabMsg subMsg ->
+            { model | entriesTabModel = Page.Group.EntriesTab.update subMsg model.entriesTabModel }
+
+        BalanceTabMsg subMsg ->
+            { model | balanceTabModel = Page.Group.BalanceTab.update subMsg model.balanceTabModel }
+
+        ActivityTabMsg subMsg ->
+            { model | activityTabModel = Page.Group.ActivityTab.update subMsg model.activityTabModel }
+
+
 {-| Render the group page shell with tabs and the active tab's content.
 -}
-view : Context msg -> Ui.Element msg -> GroupState -> TabState -> Ui.Element msg
-view ctx headerExtra groupState tabState =
+view : Context msg -> Ui.Element msg -> GroupState -> Model -> Ui.Element msg
+view ctx headerExtra groupState model =
     UI.Shell.groupShell
         { groupName = groupState.groupMeta.name
         , headerExtra = headerExtra
-        , activeTab = tabState.activeTab
+        , activeTab = model.activeTab
         , onTabClick = ctx.onTabClick
-        , content = tabContent ctx groupState tabState
+        , content = tabContent ctx groupState model
         , tabLabels =
             { balance = T.tabBalance ctx.i18n
             , entries = T.tabEntries ctx.i18n
@@ -71,28 +95,28 @@ view ctx headerExtra groupState tabState =
         }
 
 
-tabContent : Context msg -> GroupState -> TabState -> Ui.Element msg
-tabContent ctx state tabState =
-    case tabState.activeTab of
+tabContent : Context msg -> GroupState -> Model -> Ui.Element msg
+tabContent ctx state model =
+    case model.activeTab of
         BalanceTab ->
             Page.Group.BalanceTab.view ctx.i18n
                 { onSettle = ctx.onSettleTransaction
                 , onPayMember = ctx.onPayMember
                 , onSavePreferences = ctx.onSaveSettlementPreferences
-                , toMsg = ctx.onBalanceTabMsg
+                , toMsg = ctx.toMsg << BalanceTabMsg
                 }
                 ctx.currentUserRootId
-                tabState.balanceTabModel
+                model.balanceTabModel
                 state
 
         EntriesTab ->
             Page.Group.EntriesTab.view ctx.i18n
                 { onNewEntry = ctx.onNewEntry
                 , onEntryClick = ctx.onEntryClick
-                , toMsg = ctx.onEntriesTabMsg
+                , toMsg = ctx.toMsg << EntriesTabMsg
                 }
                 ctx.today
-                tabState.entriesTabModel
+                model.entriesTabModel
                 state
 
         MembersTab ->
@@ -118,8 +142,8 @@ tabContent ctx state tabState =
                 , onEntryClick = ctx.onEntryClick
                 , entryDetailPath = ctx.entryDetailPath
                 , groupDefaultCurrency = ctx.groupDefaultCurrency
-                , toMsg = ctx.onActivityTabMsg
+                , toMsg = ctx.toMsg << ActivityTabMsg
                 , allMembers = allMembers
                 }
-                tabState.activityTabModel
+                model.activityTabModel
                 state.activities

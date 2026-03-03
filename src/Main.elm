@@ -26,9 +26,6 @@ import Page.EditGroupMetadata
 import Page.EditMemberMetadata
 import Page.EntryDetail
 import Page.Group
-import Page.Group.ActivityTab
-import Page.Group.BalanceTab
-import Page.Group.EntriesTab
 import Page.Home
 import Page.InitError
 import Page.Loading
@@ -104,9 +101,7 @@ type alias Model =
     , entryDetailModel : Page.EntryDetail.Model
     , editGroupMetadataModel : Page.EditGroupMetadata.Model
     , loadedGroup : Maybe LoadedGroup
-    , entriesTabModel : Page.Group.EntriesTab.Model
-    , balanceTabModel : Page.Group.BalanceTab.Model
-    , activityTabModel : Page.Group.ActivityTab.Model
+    , groupModel : Page.Group.Model
     , homeModel : Page.Home.Model
     , toastModel : Toast.Model
     , pendingTransfer : Maybe { toMemberId : Member.Id, amountCents : Int }
@@ -144,9 +139,7 @@ type Msg
     | SaveSettlementPreferences { memberRootId : Member.Id, preferredRecipients : List Member.Id }
     | EntryDetailMsg Page.EntryDetail.Msg
     | OnEntryActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
-    | EntriesTabMsg Page.Group.EntriesTab.Msg
-    | BalanceTabMsg Page.Group.BalanceTab.Msg
-    | ActivityTabMsg Page.Group.ActivityTab.Msg
+    | GroupMsg Page.Group.Msg
       -- Member management
     | MemberDetailMsg Page.MemberDetail.Msg
     | AddMemberMsg Page.AddMember.Msg
@@ -261,9 +254,7 @@ init flags =
       , entryDetailModel = Page.EntryDetail.init
       , editGroupMetadataModel = Page.EditGroupMetadata.init GroupState.empty.groupMeta
       , loadedGroup = Nothing
-      , entriesTabModel = Page.Group.EntriesTab.init
-      , balanceTabModel = Page.Group.BalanceTab.init
-      , activityTabModel = Page.Group.ActivityTab.init
+      , groupModel = Page.Group.init
       , homeModel = Page.Home.init
       , toastModel = Toast.init
       , pendingTransfer = Nothing
@@ -640,14 +631,8 @@ update msg model =
         OnEntryActionSaved _ _ ->
             addToast Toast.Error (T.toastEntryActionError model.i18n) model
 
-        EntriesTabMsg subMsg ->
-            ( { model | entriesTabModel = Page.Group.EntriesTab.update subMsg model.entriesTabModel }, Cmd.none )
-
-        BalanceTabMsg subMsg ->
-            ( { model | balanceTabModel = Page.Group.BalanceTab.update subMsg model.balanceTabModel }, Cmd.none )
-
-        ActivityTabMsg subMsg ->
-            ( { model | activityTabModel = Page.Group.ActivityTab.update subMsg model.activityTabModel }, Cmd.none )
+        GroupMsg subMsg ->
+            ( { model | groupModel = Page.Group.update subMsg model.groupModel }, Cmd.none )
 
         MemberDetailMsg subMsg ->
             let
@@ -1680,6 +1665,11 @@ viewReady model readyData =
 
 viewGroupTab : Model -> Storage.InitData -> Ui.Element Msg -> Group.Id -> GroupTab -> LoadedGroup -> Ui.Element Msg
 viewGroupTab model readyData langSelector groupId tab loaded =
+    let
+        groupModel : Page.Group.Model
+        groupModel =
+            model.groupModel
+    in
     Page.Group.view
         { i18n = model.i18n
         , onTabClick = SwitchTab
@@ -1695,17 +1685,11 @@ viewGroupTab model readyData langSelector groupId tab loaded =
         , entryDetailPath = \entryId -> Route.toPath (GroupRoute groupId (EntryDetail entryId))
         , groupDefaultCurrency = loaded.summary.defaultCurrency
         , today = Date.posixToDate model.currentTime
-        , onEntriesTabMsg = EntriesTabMsg
-        , onBalanceTabMsg = BalanceTabMsg
-        , onActivityTabMsg = ActivityTabMsg
+        , toMsg = GroupMsg
         }
         langSelector
         loaded.groupState
-        { activeTab = tab
-        , entriesTabModel = model.entriesTabModel
-        , balanceTabModel = model.balanceTabModel
-        , activityTabModel = model.activityTabModel
-        }
+        { groupModel | activeTab = tab }
 
 
 viewGroupNewEntry : Model -> LoadedGroup -> Ui.Element Msg
