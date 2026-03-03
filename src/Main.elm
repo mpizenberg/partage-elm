@@ -2,7 +2,7 @@ port module Main exposing (AppState, Flags, Model, Msg, main)
 
 import AppUrl
 import Browser
-import ConcurrentTask exposing (ConcurrentTask)
+import ConcurrentTask
 import Dict
 import Domain.Currency
 import Domain.Date as Date
@@ -971,66 +971,9 @@ update msg model =
                 ( Ready readyData, Just loaded ) ->
                     if loaded.summary.id == groupId then
                         let
-                            pullResult : Server.PullResult
-                            pullResult =
-                                syncResult.pullResult
-
-                            -- Deduplicate: only keep events not already in local state
-                            existingIds : Set String
-                            existingIds =
-                                List.map .id loaded.events |> Set.fromList
-
-                            newEvents : List Event.Envelope
-                            newEvents =
-                                List.filter (\e -> not (Set.member e.id existingIds)) pullResult.events
-
-                            -- Remove pushed IDs, keep any new IDs added during sync
-                            remainingUnpushedIds : Set String
-                            remainingUnpushedIds =
-                                Set.diff loaded.unpushedIds pushedIds
-
-                            updatedLoaded : LoadedGroup
-                            updatedLoaded =
-                                { loaded
-                                    | events = List.reverse newEvents ++ loaded.events
-                                    , groupState = GroupState.applyEvents newEvents loaded.groupState
-                                    , syncCursor = Just pullResult.cursor
-                                    , unpushedIds = remainingUnpushedIds
-                                }
-
-                            saveEventsTask : Maybe (ConcurrentTask Idb.Error ())
-                            saveEventsTask =
-                                if List.isEmpty newEvents then
-                                    Nothing
-
-                                else
-                                    Just <| Storage.saveEvents readyData.db groupId newEvents
-
-                            saveSyncCursorTask : Maybe (ConcurrentTask Idb.Error ())
-                            saveSyncCursorTask =
-                                if pullResult.cursor /= "" then
-                                    Just <| Storage.saveSyncCursor readyData.db groupId pullResult.cursor
-
-                                else
-                                    Nothing
-
-                            subscribeToGroupTask : Maybe (ConcurrentTask a ())
-                            subscribeToGroupTask =
-                                case ( loaded.syncCursor, model.pbClient ) of
-                                    ( Nothing, Just client ) ->
-                                        Just <| Server.subscribeToGroup client
-
-                                    _ ->
-                                        Nothing
-
-                            allTasks : List (ConcurrentTask Idb.Error ())
-                            allTasks =
-                                List.filterMap identity
-                                    [ Just <| Storage.saveUnpushedIds readyData.db groupId remainingUnpushedIds
-                                    , saveEventsTask
-                                    , saveSyncCursorTask
-                                    , subscribeToGroupTask
-                                    ]
+                            result : Submit.SyncApplyResult
+                            result =
+                                Submit.applySyncResult pushedIds syncResult loaded
 
                             ( taskPool, taskCmds ) =
                                 ConcurrentTask.attempt
@@ -1038,20 +981,20 @@ update msg model =
                                     , send = sendTask
                                     , onComplete = PostSyncTasksDone
                                     }
-                                    (ConcurrentTask.batch allTasks |> ConcurrentTask.map (\_ -> ()))
+                                    (Submit.postSyncTasks readyData.db groupId model.pbClient result)
 
                             modelAfterSync : Model
                             modelAfterSync =
                                 { model
-                                    | loadedGroup = Just updatedLoaded
+                                    | loadedGroup = Just result.updatedGroup
                                     , pool = taskPool
                                     , syncInProgress = False
                                 }
                                     |> initPagesIfNeeded model.route
                         in
                         -- If new events were added during sync, trigger follow-up
-                        if Set.isEmpty remainingUnpushedIds then
-                            ( modelAfterSync, Cmd.batch [ taskCmds ] )
+                        if Set.isEmpty result.updatedGroup.unpushedIds then
+                            ( modelAfterSync, taskCmds )
 
                         else
                             let

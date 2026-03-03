@@ -2,7 +2,9 @@ module Submit exposing
     ( Context
     , LoadedGroup
     , State
+    , SyncApplyResult
     , addMember
+    , applySyncResult
     , currentUserRootId
     , deleteEntry
     , editEntry
@@ -11,6 +13,7 @@ module Submit exposing
     , initLoadedGroup
     , newEntry
     , newGroup
+    , postSyncTasks
     , restoreEntry
     )
 
@@ -29,7 +32,9 @@ import Identity exposing (Identity)
 import IndexedDb as Idb
 import Json.Encode
 import Page.NewEntry
+import PocketBase
 import Random
+import Server
 import Set exposing (Set)
 import Storage exposing (GroupSummary)
 import Time
@@ -347,3 +352,73 @@ entryFormConfig readyData loaded currentTime =
     , today = Date.posixToDate currentTime
     , defaultCurrency = loaded.summary.defaultCurrency
     }
+
+
+{-| Result of applying a sync to a loaded group: the updated group plus any new events from the server.
+-}
+type alias SyncApplyResult =
+    { updatedGroup : LoadedGroup
+    , newEvents : List Event.Envelope
+    , isFirstSync : Bool
+    , pullCursor : String
+    }
+
+
+{-| Apply a sync result to a loaded group: deduplicate pulled events, update state, clear pushed IDs.
+-}
+applySyncResult : Set String -> Server.SyncResult -> LoadedGroup -> SyncApplyResult
+applySyncResult pushedIds syncResult loaded =
+    let
+        pullResult : Server.PullResult
+        pullResult =
+            syncResult.pullResult
+
+        existingIds : Set String
+        existingIds =
+            List.map .id loaded.events |> Set.fromList
+
+        newEvents : List Event.Envelope
+        newEvents =
+            List.filter (\e -> not (Set.member e.id existingIds)) pullResult.events
+
+        remainingUnpushedIds : Set String
+        remainingUnpushedIds =
+            Set.diff loaded.unpushedIds pushedIds
+    in
+    { updatedGroup =
+        { loaded
+            | events = List.reverse newEvents ++ loaded.events
+            , groupState = GroupState.applyEvents newEvents loaded.groupState
+            , syncCursor = Just pullResult.cursor
+            , unpushedIds = remainingUnpushedIds
+        }
+    , newEvents = newEvents
+    , isFirstSync = loaded.syncCursor == Nothing
+    , pullCursor = pullResult.cursor
+    }
+
+
+{-| Build the persistence tasks to run after a successful sync.
+-}
+postSyncTasks : Idb.Db -> Group.Id -> Maybe PocketBase.Client -> SyncApplyResult -> ConcurrentTask.ConcurrentTask Idb.Error ()
+postSyncTasks db groupId maybePbClient result =
+    List.filterMap identity
+        [ Just <| Storage.saveUnpushedIds db groupId result.updatedGroup.unpushedIds
+        , if List.isEmpty result.newEvents then
+            Nothing
+
+          else
+            Just <| Storage.saveEvents db groupId result.newEvents
+        , if result.pullCursor /= "" then
+            Just <| Storage.saveSyncCursor db groupId result.pullCursor
+
+          else
+            Nothing
+        , if result.isFirstSync then
+            Maybe.map Server.subscribeToGroup maybePbClient
+
+          else
+            Nothing
+        ]
+        |> ConcurrentTask.batch
+        |> ConcurrentTask.map (\_ -> ())
