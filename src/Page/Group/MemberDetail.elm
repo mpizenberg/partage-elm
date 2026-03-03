@@ -1,4 +1,4 @@
-module Page.MemberDetail exposing (Model, Msg, Output(..), init, update, view)
+module Page.Group.MemberDetail exposing (Model, Msg, Output(..), init, update, view)
 
 {-| Member detail view with rename, retire/unretire actions.
 -}

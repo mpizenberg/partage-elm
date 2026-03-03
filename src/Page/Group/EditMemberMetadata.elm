@@ -1,4 +1,4 @@
-module Page.EditMemberMetadata exposing (Model, Msg, Output, init, update, view)
+module Page.Group.EditMemberMetadata exposing (Model, Msg, Output, init, update, view)
 
 {-| Page for editing a member's contact info and payment methods.
 -}

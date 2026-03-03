@@ -21,15 +21,15 @@ import Json.Decode
 import Json.Encode
 import Navigation
 import Page.About
-import Page.AddMember
 import Page.EditGroupMetadata
-import Page.EditMemberMetadata
 import Page.EntryDetail
 import Page.Group
+import Page.Group.AddMember
+import Page.Group.EditMemberMetadata
+import Page.Group.MemberDetail
 import Page.Home
 import Page.InitError
 import Page.Loading
-import Page.MemberDetail
 import Page.NewEntry
 import Page.NewGroup
 import Page.NotFound
@@ -95,9 +95,6 @@ type alias Model =
     , currentTime : Time.Posix
     , newGroupModel : Page.NewGroup.Model
     , newEntryModel : Page.NewEntry.Model
-    , memberDetailModel : Page.MemberDetail.Model
-    , addMemberModel : Page.AddMember.Model
-    , editMemberMetadataModel : Page.EditMemberMetadata.Model
     , entryDetailModel : Page.EntryDetail.Model
     , editGroupMetadataModel : Page.EditGroupMetadata.Model
     , loadedGroup : Maybe LoadedGroup
@@ -140,10 +137,6 @@ type Msg
     | EntryDetailMsg Page.EntryDetail.Msg
     | OnEntryActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | GroupMsg Page.Group.Msg
-      -- Member management
-    | MemberDetailMsg Page.MemberDetail.Msg
-    | AddMemberMsg Page.AddMember.Msg
-    | EditMemberMetadataMsg Page.EditMemberMetadata.Msg
     | OnMemberActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
       -- Group metadata editing
     | EditGroupMetadataMsg Page.EditGroupMetadata.Msg
@@ -248,9 +241,6 @@ init flags =
       , currentTime = currentTime
       , newGroupModel = Page.NewGroup.init
       , newEntryModel = Page.NewEntry.init { currentUserRootId = "", activeMembersRootIds = [], today = Date.posixToDate currentTime, defaultCurrency = Domain.Currency.EUR }
-      , memberDetailModel = Page.MemberDetail.init Member.emptyChainState
-      , addMemberModel = Page.AddMember.init
-      , editMemberMetadataModel = Page.EditMemberMetadata.init "" "" Member.emptyMetadata
       , entryDetailModel = Page.EntryDetail.init
       , editGroupMetadataModel = Page.EditGroupMetadata.init GroupState.empty.groupMeta
       , loadedGroup = Nothing
@@ -632,52 +622,17 @@ update msg model =
             addToast Toast.Error (T.toastEntryActionError model.i18n) model
 
         GroupMsg subMsg ->
-            ( { model | groupModel = Page.Group.update subMsg model.groupModel }, Cmd.none )
-
-        MemberDetailMsg subMsg ->
             let
-                ( memberDetailModel, maybeOutput ) =
-                    Page.MemberDetail.update subMsg model.memberDetailModel
+                ( groupModel, maybeOutput ) =
+                    Page.Group.update subMsg model.groupModel
 
                 modelWithPage : Model
                 modelWithPage =
-                    { model | memberDetailModel = memberDetailModel }
+                    { model | groupModel = groupModel }
             in
             case ( maybeOutput, model.appState, model.loadedGroup ) of
                 ( Just output, Ready readyData, Just loaded ) ->
-                    handleMemberDetailOutput modelWithPage readyData loaded output
-
-                _ ->
-                    ( modelWithPage, Cmd.none )
-
-        AddMemberMsg subMsg ->
-            let
-                ( addMemberModel, maybeOutput ) =
-                    Page.AddMember.update subMsg model.addMemberModel
-
-                modelWithPage : Model
-                modelWithPage =
-                    { model | addMemberModel = addMemberModel }
-            in
-            case ( maybeOutput, model.appState, model.loadedGroup ) of
-                ( Just output, Ready readyData, Just loaded ) ->
-                    submitAddMember modelWithPage readyData loaded output
-
-                _ ->
-                    ( modelWithPage, Cmd.none )
-
-        EditMemberMetadataMsg subMsg ->
-            let
-                ( editModel, maybeOutput ) =
-                    Page.EditMemberMetadata.update subMsg model.editMemberMetadataModel
-
-                modelWithPage : Model
-                modelWithPage =
-                    { model | editMemberMetadataModel = editModel }
-            in
-            case ( maybeOutput, model.appState, model.loadedGroup ) of
-                ( Just output, Ready readyData, Just loaded ) ->
-                    submitMemberMetadata modelWithPage readyData loaded output
+                    handleGroupOutput modelWithPage readyData loaded output
 
                 _ ->
                     ( modelWithPage, Cmd.none )
@@ -695,7 +650,12 @@ update msg model =
                     in
                     case model.route of
                         GroupRoute gid AddVirtualMember ->
-                            ( { syncModel | addMemberModel = Page.AddMember.init }
+                            let
+                                gm : Page.Group.Model
+                                gm =
+                                    syncModel.groupModel
+                            in
+                            ( { syncModel | groupModel = { gm | addMemberModel = Page.Group.AddMember.init } }
                             , Cmd.batch [ Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute gid (Tab MembersTab))), syncCmd ]
                             )
 
@@ -1134,6 +1094,11 @@ handleRealtimeRecord loaded record model =
             ( model, Cmd.none )
 
 
+updateGroupModel : (Page.Group.Model -> Page.Group.Model) -> Model -> Model
+updateGroupModel fn model =
+    { model | groupModel = fn model.groupModel }
+
+
 {-| Add an event ID to the in-memory unpushed set of the loaded group.
 -}
 addUnpushedIdToModel : String -> Model -> Model
@@ -1248,7 +1213,7 @@ initPagesIfNeeded route model =
         ( GroupRoute _ (MemberDetail memberId), _, Just loaded ) ->
             case Dict.get memberId loaded.groupState.members of
                 Just memberState ->
-                    { model | memberDetailModel = Page.MemberDetail.init memberState }
+                    updateGroupModel (\gm -> { gm | memberDetailModel = Page.Group.MemberDetail.init memberState }) model
 
                 Nothing ->
                     model
@@ -1256,10 +1221,14 @@ initPagesIfNeeded route model =
         ( GroupRoute _ (EditMemberMetadata memberId), _, Just loaded ) ->
             case Dict.get memberId loaded.groupState.members of
                 Just memberState ->
-                    { model
-                        | editMemberMetadataModel =
-                            Page.EditMemberMetadata.init memberState.rootId memberState.name memberState.metadata
-                    }
+                    updateGroupModel
+                        (\gm ->
+                            { gm
+                                | editMemberMetadataModel =
+                                    Page.Group.EditMemberMetadata.init memberState.rootId memberState.name memberState.metadata
+                            }
+                        )
+                        model
 
                 Nothing ->
                     model
@@ -1317,7 +1286,20 @@ loadGroup model groupId =
             ( model, Cmd.none )
 
 
-handleMemberDetailOutput : Model -> Storage.InitData -> LoadedGroup -> Page.MemberDetail.Output -> ( Model, Cmd Msg )
+handleGroupOutput : Model -> Storage.InitData -> LoadedGroup -> Page.Group.Output -> ( Model, Cmd Msg )
+handleGroupOutput model readyData loaded output =
+    case output of
+        Page.Group.MemberDetailOutput detailOutput ->
+            handleMemberDetailOutput model readyData loaded detailOutput
+
+        Page.Group.AddMemberOutput addOutput ->
+            submitAddMember model readyData loaded addOutput
+
+        Page.Group.EditMemberMetadataOutput metaOutput ->
+            submitMemberMetadata model readyData loaded metaOutput
+
+
+handleMemberDetailOutput : Model -> Storage.InitData -> LoadedGroup -> Page.Group.MemberDetail.Output -> ( Model, Cmd Msg )
 handleMemberDetailOutput model readyData loaded output =
     let
         submit : Event.Payload -> ( Model, Cmd Msg )
@@ -1325,7 +1307,7 @@ handleMemberDetailOutput model readyData loaded output =
             submitEvent (OnMemberActionSaved loaded.summary.id) model readyData loaded
     in
     case output of
-        Page.MemberDetail.RenameOutput data ->
+        Page.Group.MemberDetail.RenameOutput data ->
             submit
                 (Event.MemberRenamed
                     { rootId = data.memberId
@@ -1334,13 +1316,13 @@ handleMemberDetailOutput model readyData loaded output =
                     }
                 )
 
-        Page.MemberDetail.RetireOutput memberId ->
+        Page.Group.MemberDetail.RetireOutput memberId ->
             submit (Event.MemberRetired { rootId = memberId })
 
-        Page.MemberDetail.UnretireOutput memberId ->
+        Page.Group.MemberDetail.UnretireOutput memberId ->
             submit (Event.MemberUnretired { rootId = memberId })
 
-        Page.MemberDetail.NavigateToEditMetadata ->
+        Page.Group.MemberDetail.NavigateToEditMetadata ->
             case model.route of
                 GroupRoute groupId (MemberDetail memberId) ->
                     ( model
@@ -1350,7 +1332,7 @@ handleMemberDetailOutput model readyData loaded output =
                 _ ->
                     ( model, Cmd.none )
 
-        Page.MemberDetail.NavigateBack ->
+        Page.Group.MemberDetail.NavigateBack ->
             case model.route of
                 GroupRoute groupId _ ->
                     ( model
@@ -1371,7 +1353,7 @@ submitEvent onComplete model readyData loaded payload =
             ( model, Cmd.none )
 
 
-submitAddMember : Model -> Storage.InitData -> LoadedGroup -> Page.AddMember.Output -> ( Model, Cmd Msg )
+submitAddMember : Model -> Storage.InitData -> LoadedGroup -> Page.Group.AddMember.Output -> ( Model, Cmd Msg )
 submitAddMember model readyData loaded output =
     case submitContext (OnMemberActionSaved loaded.summary.id) model readyData of
         Just ctx ->
@@ -1381,7 +1363,7 @@ submitAddMember model readyData loaded output =
             ( model, Cmd.none )
 
 
-submitMemberMetadata : Model -> Storage.InitData -> LoadedGroup -> Page.EditMemberMetadata.Output -> ( Model, Cmd Msg )
+submitMemberMetadata : Model -> Storage.InitData -> LoadedGroup -> Page.Group.EditMemberMetadata.Output -> ( Model, Cmd Msg )
 submitMemberMetadata model readyData loaded output =
     let
         ( modelAfterMeta, metaCmd ) =
@@ -1644,12 +1626,12 @@ viewReady model readyData =
         GroupRoute groupId AddVirtualMember ->
             withGroupShell groupId
                 (T.memberAddTitle i18n)
-                (always (Page.AddMember.view i18n AddMemberMsg model.addMemberModel))
+                (always (Page.Group.AddMember.view i18n (GroupMsg << Page.Group.AddMemberMsg) model.groupModel.addMemberModel))
 
         GroupRoute groupId (EditMemberMetadata _) ->
             withGroupShell groupId
                 (T.memberEditMetadataButton i18n)
-                (always (Page.EditMemberMetadata.view i18n EditMemberMetadataMsg model.editMemberMetadataModel))
+                (always (Page.Group.EditMemberMetadata.view i18n (GroupMsg << Page.Group.EditMemberMetadataMsg) model.groupModel.editMemberMetadataModel))
 
         GroupRoute groupId EditGroupMetadata ->
             withGroupShell groupId
@@ -1721,10 +1703,10 @@ viewGroupEditEntry model loaded =
 
 viewGroupMemberDetail : Model -> Storage.InitData -> LoadedGroup -> Ui.Element Msg
 viewGroupMemberDetail model readyData loaded =
-    Page.MemberDetail.view model.i18n
+    Page.Group.MemberDetail.view model.i18n
         (Submit.currentUserRootId readyData loaded)
-        MemberDetailMsg
-        model.memberDetailModel
+        (GroupMsg << Page.Group.MemberDetailMsg)
+        model.groupModel.memberDetailModel
 
 
 viewWithLoadedGroup : Model -> Group.Id -> Ui.Element Msg -> (LoadedGroup -> Ui.Element Msg) -> Ui.Element Msg

@@ -1,4 +1,4 @@
-module Page.AddMember exposing (Model, Msg, Output, init, update, view)
+module Page.Group.AddMember exposing (Model, Msg, Output, init, update, view)
 
 {-| Simple page for adding a virtual member to a group.
 -}

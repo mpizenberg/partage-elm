@@ -1,4 +1,4 @@
-module Page.Group exposing (Context, Model, Msg, init, update, view)
+module Page.Group exposing (Context, Model, Msg(..), Output(..), init, update, view)
 
 {-| Group page shell with tab routing, using real group data.
 -}
@@ -10,8 +10,11 @@ import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
 import Domain.Settlement as Settlement
 import Page.Group.ActivityTab
+import Page.Group.AddMember
 import Page.Group.BalanceTab
+import Page.Group.EditMemberMetadata
 import Page.Group.EntriesTab
+import Page.Group.MemberDetail
 import Page.Group.MembersTab
 import Route exposing (GroupTab(..))
 import Translations as T exposing (I18n)
@@ -45,6 +48,9 @@ type alias Model =
     , entriesTabModel : Page.Group.EntriesTab.Model
     , balanceTabModel : Page.Group.BalanceTab.Model
     , activityTabModel : Page.Group.ActivityTab.Model
+    , memberDetailModel : Page.Group.MemberDetail.Model
+    , addMemberModel : Page.Group.AddMember.Model
+    , editMemberMetadataModel : Page.Group.EditMemberMetadata.Model
     }
 
 
@@ -52,6 +58,9 @@ type Msg
     = EntriesTabMsg Page.Group.EntriesTab.Msg
     | BalanceTabMsg Page.Group.BalanceTab.Msg
     | ActivityTabMsg Page.Group.ActivityTab.Msg
+    | MemberDetailMsg Page.Group.MemberDetail.Msg
+    | AddMemberMsg Page.Group.AddMember.Msg
+    | EditMemberMetadataMsg Page.Group.EditMemberMetadata.Msg
 
 
 init : Model
@@ -60,20 +69,58 @@ init =
     , entriesTabModel = Page.Group.EntriesTab.init
     , balanceTabModel = Page.Group.BalanceTab.init
     , activityTabModel = Page.Group.ActivityTab.init
+    , memberDetailModel = Page.Group.MemberDetail.init Member.emptyChainState
+    , addMemberModel = Page.Group.AddMember.init
+    , editMemberMetadataModel = Page.Group.EditMemberMetadata.init "" "" Member.emptyMetadata
     }
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Maybe Output )
 update msg model =
     case msg of
         EntriesTabMsg subMsg ->
-            { model | entriesTabModel = Page.Group.EntriesTab.update subMsg model.entriesTabModel }
+            ( { model | entriesTabModel = Page.Group.EntriesTab.update subMsg model.entriesTabModel }, Nothing )
 
         BalanceTabMsg subMsg ->
-            { model | balanceTabModel = Page.Group.BalanceTab.update subMsg model.balanceTabModel }
+            ( { model | balanceTabModel = Page.Group.BalanceTab.update subMsg model.balanceTabModel }, Nothing )
 
         ActivityTabMsg subMsg ->
-            { model | activityTabModel = Page.Group.ActivityTab.update subMsg model.activityTabModel }
+            ( { model | activityTabModel = Page.Group.ActivityTab.update subMsg model.activityTabModel }, Nothing )
+
+        MemberDetailMsg subMsg ->
+            let
+                ( memberDetailModel, maybeOutput ) =
+                    Page.Group.MemberDetail.update subMsg model.memberDetailModel
+            in
+            ( { model | memberDetailModel = memberDetailModel }
+            , Maybe.map MemberDetailOutput maybeOutput
+            )
+
+        AddMemberMsg subMsg ->
+            let
+                ( addMemberModel, maybeOutput ) =
+                    Page.Group.AddMember.update subMsg model.addMemberModel
+            in
+            ( { model | addMemberModel = addMemberModel }
+            , Maybe.map AddMemberOutput maybeOutput
+            )
+
+        EditMemberMetadataMsg subMsg ->
+            let
+                ( editModel, maybeOutput ) =
+                    Page.Group.EditMemberMetadata.update subMsg model.editMemberMetadataModel
+            in
+            ( { model | editMemberMetadataModel = editModel }
+            , Maybe.map EditMemberMetadataOutput maybeOutput
+            )
+
+
+{-| Outputs produced by sub-page updates that Main needs to handle.
+-}
+type Output
+    = MemberDetailOutput Page.Group.MemberDetail.Output
+    | AddMemberOutput Page.Group.AddMember.Output
+    | EditMemberMetadataOutput Page.Group.EditMemberMetadata.Output
 
 
 {-| Render the group page shell with tabs and the active tab's content.
