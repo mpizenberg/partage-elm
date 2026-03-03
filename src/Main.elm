@@ -1522,10 +1522,6 @@ viewReady model readyData =
         withGroup : Group.Id -> (LoadedGroup -> Ui.Element Msg) -> Ui.Element Msg
         withGroup groupId viewFn =
             viewWithLoadedGroup model groupId langSelector viewFn
-
-        withGroupShell : Group.Id -> String -> (LoadedGroup -> Ui.Element Msg) -> Ui.Element Msg
-        withGroupShell groupId title contentFn =
-            withGroup groupId (\loaded -> shell title (contentFn loaded))
     in
     case model.route of
         Setup ->
@@ -1547,50 +1543,8 @@ viewReady model readyData =
             shell (T.shellNewGroup i18n)
                 (Page.NewGroup.view i18n NewGroupMsg model.newGroupModel)
 
-        GroupRoute _ (Join _) ->
-            shell (T.shellJoinGroup i18n)
-                (Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                    (Ui.text (T.joinGroupComingSoon i18n))
-                )
-
-        GroupRoute groupId (Tab tab) ->
-            withGroup groupId (viewGroupTab model readyData langSelector groupId tab)
-
-        GroupRoute groupId (EntryDetail entryId) ->
-            withGroup groupId
-                (\loaded ->
-                    case Dict.get entryId loaded.groupState.entries of
-                        Just entryState ->
-                            shell (T.entryDetailTitle i18n)
-                                (viewGroupEntryDetail model readyData loaded entryState)
-
-                        Nothing ->
-                            shell (T.shellPartage i18n) (Page.NotFound.view i18n)
-                )
-
-        GroupRoute groupId NewEntry ->
-            withGroupShell groupId (T.shellNewEntry i18n) (viewGroupNewEntry model)
-
-        GroupRoute groupId (EditEntry _) ->
-            withGroupShell groupId (T.editEntryTitle i18n) (viewGroupEditEntry model)
-
-        GroupRoute groupId (MemberDetail _) ->
-            withGroupShell groupId (T.memberDetailTitle i18n) (viewGroupMemberDetail model readyData)
-
-        GroupRoute groupId AddVirtualMember ->
-            withGroupShell groupId
-                (T.memberAddTitle i18n)
-                (always (Page.Group.AddMember.view i18n (GroupMsg << Page.Group.AddMemberMsg) model.groupModel.addMemberModel))
-
-        GroupRoute groupId (EditMemberMetadata _) ->
-            withGroupShell groupId
-                (T.memberEditMetadataButton i18n)
-                (always (Page.Group.EditMemberMetadata.view i18n (GroupMsg << Page.Group.EditMemberMetadataMsg) model.groupModel.editMemberMetadataModel))
-
-        GroupRoute groupId EditGroupMetadata ->
-            withGroupShell groupId
-                (T.groupSettingsTitle i18n)
-                (always (Page.Group.EditGroupMetadata.view i18n (GroupMsg << Page.Group.EditGroupMetadataMsg) model.groupModel.editGroupMetadataModel))
+        GroupRoute groupId groupView ->
+            withGroup groupId (viewGroupPage model readyData langSelector groupId groupView)
 
         About ->
             shell (T.shellPartage i18n) (Page.About.view i18n)
@@ -1599,13 +1553,8 @@ viewReady model readyData =
             shell (T.shellPartage i18n) (Page.NotFound.view i18n)
 
 
-viewGroupTab : Model -> Storage.InitData -> Ui.Element Msg -> Group.Id -> GroupTab -> LoadedGroup -> Ui.Element Msg
-viewGroupTab model readyData langSelector groupId tab loaded =
-    let
-        groupModel : Page.Group.Model
-        groupModel =
-            model.groupModel
-    in
+viewGroupPage : Model -> Storage.InitData -> Ui.Element Msg -> Group.Id -> Route.GroupView -> LoadedGroup -> Ui.Element Msg
+viewGroupPage model readyData langSelector groupId groupView loaded =
     Page.Group.view
         { i18n = model.i18n
         , onTabClick = SwitchTab
@@ -1624,43 +1573,9 @@ viewGroupTab model readyData langSelector groupId tab loaded =
         , toMsg = GroupMsg
         }
         langSelector
+        groupView
         loaded.groupState
-        { groupModel | activeTab = tab }
-
-
-viewGroupNewEntry : Model -> LoadedGroup -> Ui.Element Msg
-viewGroupNewEntry model loaded =
-    Page.Group.NewEntry.view model.i18n
-        (GroupState.activeMembers loaded.groupState)
-        (GroupMsg << Page.Group.NewEntryMsg)
-        model.groupModel.newEntryModel
-
-
-viewGroupEntryDetail : Model -> Storage.InitData -> LoadedGroup -> GroupState.EntryState -> Ui.Element Msg
-viewGroupEntryDetail model readyData loaded entryState =
-    Page.Group.EntryDetail.view model.i18n
-        { currentUserRootId = Submit.currentUserRootId readyData loaded
-        , resolveName = GroupState.resolveMemberName loaded.groupState
-        }
-        (GroupMsg << Page.Group.EntryDetailMsg)
-        model.groupModel.entryDetailModel
-        entryState
-
-
-viewGroupEditEntry : Model -> LoadedGroup -> Ui.Element Msg
-viewGroupEditEntry model loaded =
-    Page.Group.NewEntry.view model.i18n
-        (GroupState.activeMembers loaded.groupState)
-        (GroupMsg << Page.Group.NewEntryMsg)
-        model.groupModel.newEntryModel
-
-
-viewGroupMemberDetail : Model -> Storage.InitData -> LoadedGroup -> Ui.Element Msg
-viewGroupMemberDetail model readyData loaded =
-    Page.Group.MemberDetail.view model.i18n
-        (Submit.currentUserRootId readyData loaded)
-        (GroupMsg << Page.Group.MemberDetailMsg)
-        model.groupModel.memberDetailModel
+        model.groupModel
 
 
 viewWithLoadedGroup : Model -> Group.Id -> Ui.Element Msg -> (LoadedGroup -> Ui.Element Msg) -> Ui.Element Msg

@@ -1,8 +1,9 @@
-module Page.Group exposing (Context, Model, Msg(..), Output(..), init, update, view)
+module Page.Group exposing (Context, Model, Msg, Output(..), init, update, view)
 
 {-| Group page shell with tab routing, using real group data.
 -}
 
+import Dict
 import Domain.Currency exposing (Currency(..))
 import Domain.Date exposing (Date)
 import Domain.Entry as Entry
@@ -19,10 +20,13 @@ import Page.Group.EntryDetail
 import Page.Group.MemberDetail
 import Page.Group.MembersTab
 import Page.Group.NewEntry
-import Route exposing (GroupTab(..))
+import Page.NotFound
+import Route exposing (GroupTab(..), GroupView(..))
 import Translations as T exposing (I18n)
 import UI.Shell
+import UI.Theme
 import Ui
+import Ui.Font
 
 
 {-| Rarely changing context provided by parent callers.
@@ -183,10 +187,82 @@ type Output
     | DeleteGroupRequested
 
 
-{-| Render the group page shell with tabs and the active tab's content.
+{-| Render the group page for a given route, dispatching to the right sub-page view.
 -}
-view : Context msg -> Ui.Element msg -> GroupState -> Model -> Ui.Element msg
-view ctx headerExtra groupState model =
+view : Context msg -> Ui.Element msg -> GroupView -> GroupState -> Model -> Ui.Element msg
+view ctx headerExtra groupView groupState model =
+    case groupView of
+        Tab tab ->
+            viewTabs ctx headerExtra groupState { model | activeTab = tab }
+
+        Join _ ->
+            subPageShell headerExtra (T.shellJoinGroup ctx.i18n) <|
+                Ui.el [ Ui.Font.size UI.Theme.fontSize.sm, Ui.Font.color UI.Theme.neutral500 ]
+                    (Ui.text (T.joinGroupComingSoon ctx.i18n))
+
+        NewEntry ->
+            subPageShell headerExtra (T.shellNewEntry ctx.i18n) <|
+                Page.Group.NewEntry.view ctx.i18n
+                    (GroupState.activeMembers groupState)
+                    (ctx.toMsg << NewEntryMsg)
+                    model.newEntryModel
+
+        EditEntry _ ->
+            subPageShell headerExtra (T.editEntryTitle ctx.i18n) <|
+                Page.Group.NewEntry.view ctx.i18n
+                    (GroupState.activeMembers groupState)
+                    (ctx.toMsg << NewEntryMsg)
+                    model.newEntryModel
+
+        EntryDetail entryId ->
+            case Dict.get entryId groupState.entries of
+                Just entryState ->
+                    subPageShell headerExtra (T.entryDetailTitle ctx.i18n) <|
+                        Page.Group.EntryDetail.view ctx.i18n
+                            { currentUserRootId = ctx.currentUserRootId
+                            , resolveName = GroupState.resolveMemberName groupState
+                            }
+                            (ctx.toMsg << EntryDetailMsg)
+                            model.entryDetailModel
+                            entryState
+
+                Nothing ->
+                    subPageShell headerExtra (T.shellPartage ctx.i18n) <|
+                        Page.NotFound.view ctx.i18n
+
+        MemberDetail _ ->
+            subPageShell headerExtra (T.memberDetailTitle ctx.i18n) <|
+                Page.Group.MemberDetail.view ctx.i18n
+                    ctx.currentUserRootId
+                    (ctx.toMsg << MemberDetailMsg)
+                    model.memberDetailModel
+
+        AddVirtualMember ->
+            subPageShell headerExtra (T.memberAddTitle ctx.i18n) <|
+                Page.Group.AddMember.view ctx.i18n
+                    (ctx.toMsg << AddMemberMsg)
+                    model.addMemberModel
+
+        EditMemberMetadata _ ->
+            subPageShell headerExtra (T.memberEditMetadataButton ctx.i18n) <|
+                Page.Group.EditMemberMetadata.view ctx.i18n
+                    (ctx.toMsg << EditMemberMetadataMsg)
+                    model.editMemberMetadataModel
+
+        EditGroupMetadata ->
+            subPageShell headerExtra (T.groupSettingsTitle ctx.i18n) <|
+                Page.Group.EditGroupMetadata.view ctx.i18n
+                    (ctx.toMsg << EditGroupMetadataMsg)
+                    model.editGroupMetadataModel
+
+
+subPageShell : Ui.Element msg -> String -> Ui.Element msg -> Ui.Element msg
+subPageShell headerExtra title content =
+    UI.Shell.appShell { title = title, headerExtra = headerExtra, content = content }
+
+
+viewTabs : Context msg -> Ui.Element msg -> GroupState -> Model -> Ui.Element msg
+viewTabs ctx headerExtra groupState model =
     UI.Shell.groupShell
         { groupName = groupState.groupMeta.name
         , headerExtra = headerExtra
