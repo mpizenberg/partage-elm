@@ -1,0 +1,20 @@
+{
+  "name": "@partage/pb_server",
+  "description": "PocketBase server for Partage - Zero-knowledge encrypted data relay",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "start": "pnpm run serve",
+    "serve": "./pocketbase serve",
+    "setup": "node setup-collections.js",
+    "clear": "node clear-database.js",
+    "reset": "pnpm run clear -- --delete-collections && pnpm run setup",
+    "clean": "rm -rf pb_data/*.db"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "pocketbase": "^0.26.8"
+  }
+}

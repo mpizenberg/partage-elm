@@ -1,6 +1,7 @@
 import * as ConcurrentTask from "@andrewmacmurray/elm-concurrent-task";
 import { createTasks as createWebCryptoTasks } from "../vendor/elm-webcrypto/js/src/index.js";
 import { createTasks as createIndexedDbTasks } from "../vendor/elm-indexeddb/js/src/index.js";
+import { createTasks as createPocketBaseTasks } from "../vendor/elm-pocketbase/js/src/index.js";
 
 // Copy-to-clipboard custom element
 class CopyButton extends HTMLElement {
@@ -54,6 +55,7 @@ var app = Elm.Main.init({
     language: navigator.language || "en",
     randomSeed: Array.from(crypto.getRandomValues(new Uint32Array(4))),
     currentTime: Date.now(),
+    serverUrl: "http://127.0.0.1:8090",
   },
 });
 
@@ -62,8 +64,13 @@ initNavigation({
   onNavEvent: app.ports.onNavEvent,
 });
 
+var pbTasks = createPocketBaseTasks();
+pbTasks.setEventCallback(function (event) {
+  app.ports.onPocketbaseEvent.send(event);
+});
+
 ConcurrentTask.register({
-  tasks: { ...createWebCryptoTasks(), ...createIndexedDbTasks() },
+  tasks: { ...createWebCryptoTasks(), ...createIndexedDbTasks(), ...pbTasks },
   ports: {
     send: app.ports.sendTask,
     receive: app.ports.receiveTask,

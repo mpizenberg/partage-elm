@@ -36,8 +36,11 @@ import Page.NewEntry
 import Page.NewGroup
 import Page.NotFound
 import Page.Setup
+import PocketBase
+import PocketBase.Realtime
 import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
+import Server
 import Set exposing (Set)
 import Storage exposing (GroupSummary)
 import Submit exposing (LoadedGroup)
@@ -70,11 +73,15 @@ port receiveTask : (Json.Decode.Value -> msg) -> Sub msg
 port onClipboardCopy : (() -> msg) -> Sub msg
 
 
+port onPocketbaseEvent : (Json.Decode.Value -> msg) -> Sub msg
+
+
 type alias Flags =
     { initialUrl : String
     , language : String
     , randomSeed : List Int
     , currentTime : Int
+    , serverUrl : String
     }
 
 
@@ -103,6 +110,9 @@ type alias Model =
     , homeModel : Page.Home.Model
     , toastModel : Toast.Model
     , pendingTransfer : Maybe { toMemberId : Member.Id, amountCents : Int }
+    , serverUrl : String
+    , pbClient : Maybe PocketBase.Client
+    , syncInProgress : Bool
     }
 
 
@@ -149,12 +159,18 @@ type Msg
     | OnGroupRemoved Group.Id (ConcurrentTask.Response Idb.Error ())
     | OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)
       -- Group loading
-    | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error ( List Event.Envelope, Symmetric.Key ))
+    | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe String, unpushedIds : Set String })
       -- Import / Export
     | HomeMsg Page.Home.Msg
     | ExportGroup Group.Id
     | OnExportDataLoaded Group.Id (ConcurrentTask.Response Idb.Error ( List Event.Envelope, Maybe String ))
     | OnGroupImported Storage.GroupSummary (ConcurrentTask.Response Idb.Error ())
+      -- Server sync
+    | OnPbClientInitialized (ConcurrentTask.Response PocketBase.Error PocketBase.Client)
+    | OnServerGroupCreated Group.Id (ConcurrentTask.Response Server.Error ())
+    | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
+    | OnRealtimeSubscribed (ConcurrentTask.Response Never ())
+    | OnPocketbaseEvent Json.Decode.Value
       -- Toast notifications
     | ClipboardCopied
     | DismissToast Toast.ToastId
@@ -171,6 +187,7 @@ subscriptions model =
             }
             model.pool
         , onClipboardCopy (\() -> ClipboardCopied)
+        , onPocketbaseEvent OnPocketbaseEvent
         ]
 
 
@@ -252,6 +269,9 @@ init flags =
       , homeModel = Page.Home.init
       , toastModel = Toast.init
       , pendingTransfer = Nothing
+      , serverUrl = flags.serverUrl
+      , pbClient = Nothing
+      , syncInProgress = False
       }
     , cmd
     )
@@ -384,9 +404,17 @@ update msg model =
                             , route = guardedRoute
                         }
                         guardedRoute
+
+                ( poolAfterPb, pbCmd ) =
+                    ConcurrentTask.attempt
+                        { pool = modelWithData.pool
+                        , send = sendTask
+                        , onComplete = OnPbClientInitialized
+                        }
+                        (PocketBase.init model.serverUrl)
             in
-            ( modelWithData
-            , Cmd.batch [ guardCmd, loadCmd ]
+            ( { modelWithData | pool = poolAfterPb }
+            , Cmd.batch [ guardCmd, loadCmd, pbCmd ]
             )
 
         OnInitComplete (ConcurrentTask.Error err) ->
@@ -446,12 +474,37 @@ update msg model =
                         newRoute : Route
                         newRoute =
                             GroupRoute summary.id (Tab EntriesTab)
+
+                        -- Trigger server group creation in background
+                        ( poolAfterServer, serverCmd ) =
+                            case model.pbClient of
+                                Just client ->
+                                    ConcurrentTask.attempt
+                                        { pool = model.pool
+                                        , send = sendTask
+                                        , onComplete = OnServerGroupCreated summary.id
+                                        }
+                                        (loadGroupKeyRequired readyData.db summary.id
+                                            |> ConcurrentTask.mapError (\_ -> Server.PbError (PocketBase.ServerError "Failed to load group key in IndexedDB"))
+                                            |> ConcurrentTask.andThen
+                                                (\key ->
+                                                    Server.createGroupOnServer client
+                                                        { groupId = summary.id
+                                                        , groupKey = key
+                                                        , createdBy = getIdentity model
+                                                        }
+                                                )
+                                        )
+
+                                Nothing ->
+                                    ( model.pool, Cmd.none )
                     in
                     ( { model
                         | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
                         , loadedGroup = Nothing
+                        , pool = poolAfterServer
                       }
-                    , Navigation.pushUrl navCmd (Route.toAppUrl newRoute)
+                    , Cmd.batch [ Navigation.pushUrl navCmd (Route.toAppUrl newRoute), serverCmd ]
                     )
 
                 _ ->
@@ -463,13 +516,22 @@ update msg model =
         OnEntrySaved groupId (ConcurrentTask.Success envelope) ->
             case appendEventAndRecompute model groupId envelope of
                 Just updatedModel ->
+                    let
+                        modelWithUnpushed : Model
+                        modelWithUnpushed =
+                            addUnpushedIdToModel envelope.id updatedModel
+
+                        ( syncModel, syncCmd ) =
+                            triggerSync modelWithUnpushed groupId
+                    in
                     case model.route of
                         GroupRoute _ (Tab BalanceTab) ->
-                            addToast Toast.Success (T.toastSettlementRecorded model.i18n) updatedModel
+                            addToast Toast.Success (T.toastSettlementRecorded model.i18n) syncModel
+                                |> Tuple.mapSecond (\c -> Cmd.batch [ c, syncCmd ])
 
                         _ ->
-                            ( updatedModel
-                            , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab EntriesTab)))
+                            ( syncModel
+                            , Cmd.batch [ Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab EntriesTab))), syncCmd ]
                             )
 
                 Nothing ->
@@ -568,17 +630,25 @@ update msg model =
 
         OnEntryActionSaved groupId (ConcurrentTask.Success envelope) ->
             let
-                updatedModel : Model
-                updatedModel =
+                baseModel : Model
+                baseModel =
                     appendEventAndRecompute model groupId envelope
                         |> Maybe.withDefault model
+
+                modelWithUnpushed : Model
+                modelWithUnpushed =
+                    addUnpushedIdToModel envelope.id baseModel
+
+                ( syncModel, syncCmd ) =
+                    triggerSync modelWithUnpushed groupId
             in
             case Toast.entryActionMessage model.i18n envelope.payload of
                 Just message ->
-                    addToast Toast.Success message updatedModel
+                    addToast Toast.Success message syncModel
+                        |> Tuple.mapSecond (\c -> Cmd.batch [ c, syncCmd ])
 
                 Nothing ->
-                    ( updatedModel, Cmd.none )
+                    ( syncModel, syncCmd )
 
         OnEntryActionSaved _ _ ->
             addToast Toast.Error (T.toastEntryActionError model.i18n) model
@@ -646,20 +716,28 @@ update msg model =
         OnMemberActionSaved groupId (ConcurrentTask.Success envelope) ->
             case appendEventAndRecompute model groupId envelope of
                 Just updatedModel ->
+                    let
+                        modelWithUnpushed : Model
+                        modelWithUnpushed =
+                            addUnpushedIdToModel envelope.id updatedModel
+
+                        ( syncModel, syncCmd ) =
+                            triggerSync modelWithUnpushed groupId
+                    in
                     case model.route of
                         GroupRoute gid AddVirtualMember ->
-                            ( { updatedModel | addMemberModel = Page.AddMember.init }
-                            , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute gid (Tab MembersTab)))
+                            ( { syncModel | addMemberModel = Page.AddMember.init }
+                            , Cmd.batch [ Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute gid (Tab MembersTab))), syncCmd ]
                             )
 
                         GroupRoute gid (EditMemberMetadata memberId) ->
-                            ( updatedModel
-                            , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute gid (MemberDetail memberId)))
+                            ( syncModel
+                            , Cmd.batch [ Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute gid (MemberDetail memberId))), syncCmd ]
                             )
 
                         _ ->
-                            ( initPagesIfNeeded model.route updatedModel
-                            , Cmd.none
+                            ( initPagesIfNeeded model.route syncModel
+                            , syncCmd
                             )
 
                 Nothing ->
@@ -699,12 +777,20 @@ update msg model =
             case appendEventAndRecompute model groupId envelope of
                 Just updatedModel ->
                     let
-                        ( finalModel, syncCmd ) =
-                            syncGroupSummaryName groupId updatedModel
+                        modelWithUnpushed : Model
+                        modelWithUnpushed =
+                            addUnpushedIdToModel envelope.id updatedModel
+
+                        ( modelAfterSummary, summaryCmd ) =
+                            syncGroupSummaryName groupId modelWithUnpushed
+
+                        ( syncModel, syncCmd ) =
+                            triggerSync modelAfterSummary groupId
                     in
-                    ( finalModel
+                    ( syncModel
                     , Cmd.batch
-                        [ syncCmd
+                        [ summaryCmd
+                        , syncCmd
                         , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab MembersTab)))
                         ]
                     )
@@ -744,12 +830,22 @@ update msg model =
             ( model, Cmd.none )
 
         -- Group loading
-        OnGroupEventsLoaded groupId (ConcurrentTask.Success ( events, groupKey )) ->
-            ( applyLoadedGroup groupId events groupKey model
-                |> Maybe.map (initPagesIfNeeded model.route)
-                |> Maybe.withDefault model
-            , Cmd.none
-            )
+        OnGroupEventsLoaded groupId (ConcurrentTask.Success result) ->
+            let
+                modelAfterLoad : Model
+                modelAfterLoad =
+                    applyLoadedGroup groupId result.events result.groupKey result.syncCursor result.unpushedIds model
+                        |> Maybe.map (initPagesIfNeeded model.route)
+                        |> Maybe.withDefault model
+            in
+            -- Only sync if group has been synced before (has a cursor).
+            -- Freshly created groups sync via OnServerGroupCreated instead.
+            case result.syncCursor of
+                Just _ ->
+                    triggerSync modelAfterLoad groupId
+
+                Nothing ->
+                    ( modelAfterLoad, Cmd.none )
 
         OnGroupEventsLoaded _ _ ->
             ( model, Cmd.none )
@@ -855,6 +951,163 @@ update msg model =
         OnGroupImported _ _ ->
             addToast Toast.Error (T.toastImportError model.i18n) model
 
+        -- Server sync
+        OnPbClientInitialized (ConcurrentTask.Success client) ->
+            ( { model | pbClient = Just client }, Cmd.none )
+
+        OnPbClientInitialized (ConcurrentTask.Error err) ->
+            -- Server unavailable — continue in offline mode
+            addToast Toast.Error ("Server: " ++ Server.errorToString (Server.PbError err)) model
+
+        OnPbClientInitialized (ConcurrentTask.UnexpectedError _) ->
+            ( model, Cmd.none )
+
+        OnServerGroupCreated groupId (ConcurrentTask.Success _) ->
+            -- Server group created; now sync (push initial events + pull + subscribe)
+            triggerSync model groupId
+
+        OnServerGroupCreated _ (ConcurrentTask.Error err) ->
+            -- Server group creation failed — local group still works
+            let
+                _ =
+                    Debug.log "OnServerGroupCreated error" err
+            in
+            addToast Toast.Error ("Sync: " ++ Server.errorToString err) model
+
+        OnServerGroupCreated _ (ConcurrentTask.UnexpectedError _) ->
+            ( model, Cmd.none )
+
+        OnGroupSynced groupId pushedIds (ConcurrentTask.Success syncResult) ->
+            case ( model.appState, model.loadedGroup ) of
+                ( Ready readyData, Just loaded ) ->
+                    if loaded.summary.id == groupId then
+                        let
+                            pullResult : Server.PullResult
+                            pullResult =
+                                syncResult.pullResult
+
+                            -- Deduplicate: only keep events not already in local state
+                            existingIds : Set String
+                            existingIds =
+                                List.map .id loaded.events |> Set.fromList
+
+                            newEvents : List Event.Envelope
+                            newEvents =
+                                List.filter (\e -> not (Set.member e.id existingIds)) pullResult.events
+
+                            -- Remove pushed IDs, keep any new IDs added during sync
+                            remainingUnpushedIds : Set String
+                            remainingUnpushedIds =
+                                Set.diff loaded.unpushedIds pushedIds
+
+                            updatedLoaded : LoadedGroup
+                            updatedLoaded =
+                                { loaded
+                                    | events = List.reverse newEvents ++ loaded.events
+                                    , groupState = GroupState.applyEvents newEvents loaded.groupState
+                                    , syncCursor = Just pullResult.cursor
+                                    , unpushedIds = remainingUnpushedIds
+                                }
+
+                            -- Save new events, cursor, and updated unpushed IDs to IndexedDB
+                            persistTasks : List (ConcurrentTask.ConcurrentTask Idb.Error ())
+                            persistTasks =
+                                Storage.saveUnpushedIds readyData.db groupId remainingUnpushedIds
+                                    :: (if not (List.isEmpty newEvents) then
+                                            [ Storage.saveEvents readyData.db groupId newEvents ]
+
+                                        else
+                                            []
+                                       )
+                                    ++ (if pullResult.cursor /= "" then
+                                            [ Storage.saveSyncCursor readyData.db groupId pullResult.cursor ]
+
+                                        else
+                                            []
+                                       )
+
+                            ( pool, cmd ) =
+                                ConcurrentTask.attempt
+                                    { pool = model.pool
+                                    , send = sendTask
+                                    , onComplete = OnGroupSummarySaved
+                                    }
+                                    (ConcurrentTask.batch persistTasks
+                                        |> ConcurrentTask.map (\_ -> Idb.StringKey "")
+                                    )
+
+                            -- Subscribe to realtime on first successful sync
+                            ( poolAfterSub, subCmd ) =
+                                if loaded.syncCursor == Nothing then
+                                    case model.pbClient of
+                                        Just client ->
+                                            ConcurrentTask.attempt
+                                                { pool = pool
+                                                , send = sendTask
+                                                , onComplete = OnRealtimeSubscribed
+                                                }
+                                                (Server.subscribeToGroup client
+                                                    |> ConcurrentTask.mapError never
+                                                )
+
+                                        Nothing ->
+                                            ( pool, Cmd.none )
+
+                                else
+                                    ( pool, Cmd.none )
+
+                            modelAfterSync : Model
+                            modelAfterSync =
+                                { model
+                                    | loadedGroup = Just updatedLoaded
+                                    , pool = poolAfterSub
+                                    , syncInProgress = False
+                                }
+                                    |> initPagesIfNeeded model.route
+                        in
+                        -- If new events were added during sync, trigger follow-up
+                        if Set.isEmpty remainingUnpushedIds then
+                            ( modelAfterSync, Cmd.batch [ cmd, subCmd ] )
+
+                        else
+                            let
+                                ( followUpModel, followUpCmd ) =
+                                    triggerSync modelAfterSync groupId
+                            in
+                            ( followUpModel, Cmd.batch [ cmd, subCmd, followUpCmd ] )
+
+                    else
+                        ( { model | syncInProgress = False }, Cmd.none )
+
+                _ ->
+                    ( { model | syncInProgress = False }, Cmd.none )
+
+        OnGroupSynced _ _ (ConcurrentTask.Error err) ->
+            -- Sync failed — unpushedIds preserved, will retry on next sync
+            addToast Toast.Error ("Sync: " ++ Server.errorToString err) { model | syncInProgress = False }
+
+        OnGroupSynced _ _ (ConcurrentTask.UnexpectedError _) ->
+            ( { model | syncInProgress = False }, Cmd.none )
+
+        OnRealtimeSubscribed (ConcurrentTask.Success ()) ->
+            ( model, Cmd.none )
+
+        OnRealtimeSubscribed _ ->
+            ( model, Cmd.none )
+
+        OnPocketbaseEvent value ->
+            case model.loadedGroup of
+                Just loaded ->
+                    case Json.Decode.decodeValue PocketBase.Realtime.decodeEvent value of
+                        Ok ( _, PocketBase.Realtime.Created record ) ->
+                            handleRealtimeRecord loaded record model
+
+                        _ ->
+                            ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
         ClipboardCopied ->
             addToast Toast.Success (T.toastCopied model.i18n) model
 
@@ -879,6 +1132,121 @@ submitContext onComplete model readyData =
                 , identity = identity
                 }
             )
+
+
+{-| Get the current user's identity public key hash, or empty string.
+-}
+getIdentity : Model -> String
+getIdentity model =
+    case model.appState of
+        Ready readyData ->
+            readyData.identity
+                |> Maybe.map .publicKeyHash
+                |> Maybe.withDefault ""
+
+        _ ->
+            ""
+
+
+{-| Trigger a server sync (auth + push unpushed + pull) for the given group.
+Skips if a sync is already in progress.
+-}
+triggerSync : Model -> Group.Id -> ( Model, Cmd Msg )
+triggerSync model groupId =
+    if model.syncInProgress then
+        ( model, Cmd.none )
+
+    else
+        case ( model.pbClient, model.loadedGroup ) of
+            ( Just client, Just loaded ) ->
+                if loaded.summary.id == groupId then
+                    let
+                        ctx : Server.ServerContext
+                        ctx =
+                            { client = client, groupId = groupId, groupKey = loaded.groupKey }
+
+                        -- Snapshot the IDs being pushed (to diff later in OnGroupSynced)
+                        pushedIds : Set String
+                        pushedIds =
+                            loaded.unpushedIds
+
+                        -- Collect unpushed events from the loaded event list
+                        unpushedEvents : List Event.Envelope
+                        unpushedEvents =
+                            List.filter (\e -> Set.member e.id pushedIds) loaded.events
+                                |> List.reverse
+
+                        syncTask : ConcurrentTask.ConcurrentTask Server.Error Server.SyncResult
+                        syncTask =
+                            Server.authenticate client { groupId = groupId, groupKey = loaded.groupKey }
+                                |> ConcurrentTask.andThen
+                                    (\() ->
+                                        Server.syncGroup ctx
+                                            (getIdentity model)
+                                            { unpushedEvents = unpushedEvents
+                                            , pullCursor = loaded.syncCursor
+                                            }
+                                    )
+
+                        ( pool, cmd ) =
+                            ConcurrentTask.attempt
+                                { pool = model.pool
+                                , send = sendTask
+                                , onComplete = OnGroupSynced groupId pushedIds
+                                }
+                                syncTask
+                    in
+                    ( { model | pool = pool, syncInProgress = True }, cmd )
+
+                else
+                    ( model, Cmd.none )
+
+            _ ->
+                ( model, Cmd.none )
+
+
+{-| Handle an incoming realtime event record.
+-}
+handleRealtimeRecord : LoadedGroup -> Json.Decode.Value -> Model -> ( Model, Cmd Msg )
+handleRealtimeRecord loaded record model =
+    case Json.Decode.decodeValue serverEventFromRealtimeDecoder record of
+        Ok serverEvt ->
+            if serverEvt.groupId == loaded.summary.id then
+                case Json.Decode.decodeString Symmetric.encryptedDataDecoder serverEvt.eventData of
+                    Ok _ ->
+                        -- We need to decrypt async, but for now just trigger a pull
+                        triggerSync model loaded.summary.id
+
+                    Err _ ->
+                        ( model, Cmd.none )
+
+            else
+                ( model, Cmd.none )
+
+        Err _ ->
+            ( model, Cmd.none )
+
+
+{-| Add an event ID to the in-memory unpushed set of the loaded group.
+-}
+addUnpushedIdToModel : String -> Model -> Model
+addUnpushedIdToModel eventId model =
+    case model.loadedGroup of
+        Just loaded ->
+            { model
+                | loadedGroup =
+                    Just { loaded | unpushedIds = Set.insert eventId loaded.unpushedIds }
+            }
+
+        Nothing ->
+            model
+
+
+serverEventFromRealtimeDecoder : Json.Decode.Decoder { groupId : String, eventData : String }
+serverEventFromRealtimeDecoder =
+    Json.Decode.map2 (\gid ed -> { groupId = gid, eventData = ed })
+        (Json.Decode.field "groupId" Json.Decode.string)
+        (Json.Decode.field "eventData" Json.Decode.string)
 
 
 applySubmitResult : Model -> ( Submit.State Msg, Cmd Msg ) -> ( Model, Cmd Msg )
@@ -1042,11 +1410,13 @@ loadGroup model groupId =
     case model.appState of
         Ready readyData ->
             let
-                task : ConcurrentTask.ConcurrentTask Idb.Error ( List Event.Envelope, Symmetric.Key )
+                task : ConcurrentTask.ConcurrentTask Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe String, unpushedIds : Set String }
                 task =
-                    ConcurrentTask.map2 Tuple.pair
+                    ConcurrentTask.map4 (\events key cursor unpushed -> { events = events, groupKey = key, syncCursor = cursor, unpushedIds = unpushed })
                         (Storage.loadGroupEvents readyData.db groupId)
                         (loadGroupKeyRequired readyData.db groupId)
+                        (Storage.loadSyncCursor readyData.db groupId)
+                        (Storage.loadUnpushedIds readyData.db groupId)
 
                 ( pool, cmd ) =
                     ConcurrentTask.attempt
@@ -1251,12 +1621,12 @@ appendEventAndRecompute model groupId envelope =
         model
 
 
-applyLoadedGroup : Group.Id -> List Event.Envelope -> Symmetric.Key -> Model -> Maybe Model
-applyLoadedGroup groupId events groupKey model =
+applyLoadedGroup : Group.Id -> List Event.Envelope -> Symmetric.Key -> Maybe String -> Set String -> Model -> Maybe Model
+applyLoadedGroup groupId events groupKey syncCursor unpushedIds model =
     case model.appState of
         Ready readyData ->
             Dict.get groupId readyData.groups
-                |> Maybe.map (\summary -> Submit.initLoadedGroup events summary groupKey)
+                |> Maybe.map (\summary -> Submit.initLoadedGroup events summary groupKey syncCursor unpushedIds)
                 |> Maybe.map (\loaded -> { model | loadedGroup = Just loaded })
 
         _ ->

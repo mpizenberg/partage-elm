@@ -1,6 +1,6 @@
 # Partage — Remaining Implementation Plan
 
-Features not yet implemented, ordered local-first. Server sync, encryption, and PWA come last.
+Phases 1–5 are complete. Remaining: invitation/joining, PWA, usage stats, translations.
 
 ---
 
@@ -27,87 +27,37 @@ All filtering features have been implemented with collapsible filter bars and ch
 
 ---
 
-## Phase 3: Encryption & Security
+## Phase 3: Encryption & Security (Done)
 
-### 3.1 AES-256-GCM encrypt/decrypt
+All encryption and security features have been implemented.
 
-Implement encrypt and decrypt functions using `elm-webcrypto`. Each call takes a key + plaintext/ciphertext and returns ciphertext/plaintext. Use 12-byte random IV, prepended to ciphertext.
-
-**Files:** new `src/Crypto.elm`, `vendor/elm-webcrypto` (may need new bindings)
-
-### 3.2 Group key generation
-
-Generate an AES-256 symmetric key at group creation. Store in `groupKeys` IndexedDB store (already exists).
-
-**Files:** `src/Crypto.elm`, `src/Submit.elm` (newGroup), `src/Storage.elm`
-
-### 3.3 Encrypt events before storage
-
-All event payloads are encrypted with the group key before writing to IndexedDB and before sending to the server. Decrypt on read.
-
-**Files:** `src/Storage.elm`, `src/Crypto.elm`, `src/Main.elm`
-
-### 3.4 Password derivation from group key
-
-Derive server account password as `Base64URL(SHA-256(Base64(groupKey)))`.
-
-**Files:** `src/Crypto.elm`
+- **3.1** AES-256-GCM encrypt/decrypt: `src/Crypto.elm` wraps `vendor/elm-webcrypto` (`WebCrypto.Symmetric`) for symmetric encryption with random IV. Used for encrypting events before server push and decrypting on pull.
+- **3.2** Group key generation: AES-256 symmetric key generated at group creation (`Crypto.generateGroupKey` in `Submit.newGroup`). Stored in `groupKeys` IndexedDB store.
+- **3.3** Encrypt events for server sync: Events are encrypted with the group key before pushing to PocketBase and decrypted on pull (`Server.pushSingleEvent`, `Server.decryptServerEvent`). Local IndexedDB stores plaintext events (per-origin isolation is sufficient).
+- **3.4** Password derivation from group key: `Crypto.derivePassword` computes `Base64URL(SHA-256(Base64(groupKey)))` for server authentication.
 
 ---
 
-## Phase 4: Server Sync
+## Phase 4: Server Sync (Done)
 
-### 4.1 PocketBase HTTP client
+Full bidirectional sync with PocketBase, including offline support and realtime updates.
 
-Module for server API calls: auth (create user, login, refresh token), group CRUD, event push/pull.
-
-**Files:** new `src/Server.elm` or `src/PocketBase.elm`
-
-### 4.2 Proof-of-Work solver
-
-Solve SHA-256 PoW challenge (18 leading zero bits) in a Web Worker to avoid blocking UI. Requires a port to dispatch work and receive the solution.
-
-**Files:** new `public/pow-worker.js`, `public/index.js` (ports), `src/Main.elm`
-
-### 4.3 Server authentication flow
-
-On group creation: solve PoW, create group record, create user account, authenticate. On group load: authenticate with derived password, receive JWT.
-
-**Files:** `src/Server.elm`, `src/Main.elm`
-
-### 4.4 Event push/pull sync
-
-- Push: encrypt local events, POST to server.
-- Pull: GET events since last sync cursor, decrypt, apply.
-- Track sync cursor per group in IndexedDB.
-
-**Files:** `src/Server.elm`, `src/Storage.elm` (sync cursor), `src/Main.elm`
-
-### 4.5 Real-time subscriptions
-
-Server-sent events (SSE) connection to PocketBase `/api/realtime` for live event updates. Subscribe per-group.
-
-### 4.6 Offline queue
-
-Events created while offline are queued in a `pendingEvents` IndexedDB store. On connectivity restore, flush the queue.
-
-**Files:** `src/Storage.elm` (new store), `src/Main.elm`
+- **4.1** PocketBase HTTP client: `vendor/elm-pocketbase` provides `PocketBase.Auth`, `PocketBase.Collection`, `PocketBase.Custom`, `PocketBase.Realtime` modules. `src/Server.elm` wraps these with encryption/decryption logic.
+- **4.2** Proof-of-Work solver: `WebCrypto.ProofOfWork` solves SHA-256 PoW challenges via elm-concurrent-task (Web Worker-backed). Server fetches challenge from `/api/pow/challenge` before group creation.
+- **4.3** Server authentication flow: Group creation chains PoW → create group record → create user account → authenticate. Group load authenticates with derived password. All in `Server.elm`.
+- **4.4** Event push/pull sync: Bidirectional `Server.syncGroup` chains push (encrypt + POST) then pull (GET + decrypt). Sync cursor tracked per group in `syncCursors` IndexedDB store. Paginated pull (200/page) with `+created` sort.
+- **4.5** Real-time subscriptions: SSE via `PocketBase.Realtime.subscribe` for the `events` collection. Realtime events trigger a sync to pull and decrypt new data.
+- **4.6** Offline queue: Unpushed event IDs tracked in `unpushedIds` IndexedDB store (`Set String` per group). IDs added on local event creation, removed after successful push. `syncInProgress` flag prevents concurrent/duplicate syncs (handles realtime echo). Follow-up sync triggered if new events were added during an ongoing sync.
 
 ---
 
-## Phase 5: Import/Export Enhancements
+## Phase 5: Import/Export Enhancements (Done)
 
-### 5.1 Export with group key
-
-Currently export includes group summary + events. When encryption is added, the export should optionally include the group symmetric key so that the import side can decrypt.
-
-**Files:** `src/GroupExport.elm`
+- **5.1** Export with group key: `src/GroupExport.elm` exports group summary, events, and optional group symmetric key in `partage-group-v1` JSON format. Import validates format and rejects duplicate group IDs.
 
 ### 5.2 Import merge analysis (future)
 
 Detect relationship between local and imported data (`new`, `local_subset`, `import_subset`, `diverged`) and merge diverged groups by union of events deduplicated by event ID. Currently rejects duplicate group IDs.
-
-*Deferred until sync is implemented, since merge logic is shared.*
 
 ---
 

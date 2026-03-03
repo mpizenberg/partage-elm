@@ -1,4 +1,5 @@
 {
+  "name": "partage",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,11 +8,12 @@
     "bundle:html": "shx cp public/index.html dist/",
     "bundle:js": "esbuild public/index.js --bundle --outfile=dist/index.js --format=iife",
     "prebuild": "pnpm i18n && pnpm prepare:dist && pnpm bundle:js",
-    "build": "pnpm prebuild && elm-watch make --optimize",
+    "build": "pnpm prebuild && elm-watch make",
+    "build:optimize": "pnpm prebuild && elm-watch make --optimize",
     "watch:html": "watchexec -w public/index.html -- pnpm bundle:html",
     "watch:js": "esbuild public/index.js --bundle --outfile=dist/index.js --format=iife --watch",
     "watch:i18n": "watchexec -w translations -- pnpm i18n",
-    "dev": "pnpm prebuild && run-pty % elm-watch hot % pnpm watch:html % pnpm watch:js % pnpm watch:i18n",
+    "dev": "pnpm prebuild && run-pty % pnpm -F pb_server serve --dev % elm-watch hot % pnpm watch:html % pnpm watch:js % pnpm watch:i18n",
     "test": "elm-test",
     "format": "elm-format --yes src/ tests/ review/",
     "lint": "elm-review"
@@ -34,6 +36,11 @@
     "travelm-agency": "^3.8.0"
   },
   "dependencies": {
-    "@andrewmacmurray/elm-concurrent-task": "^2.0.0"
+    "@andrewmacmurray/elm-concurrent-task": "^2.0.0",
+    "pocketbase": "^0.26.8"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=10.0.0"
   }
 }

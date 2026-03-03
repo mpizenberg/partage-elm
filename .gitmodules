@@ -16,3 +16,6 @@
 [submodule "vendor/elm-indexeddb"]
 	path = vendor/elm-indexeddb
 	url = https://github.com/mpizenberg/elm-indexeddb
+[submodule "vendor/elm-pocketbase"]
+	path = vendor/elm-pocketbase
+	url = https://github.com/mpizenberg/elm-pocketbase

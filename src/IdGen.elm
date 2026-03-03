@@ -1,11 +1,65 @@
-module UuidGen exposing (v4, v4batch, v7, v7batch)
+module IdGen exposing (pbId, v4, v4batch, v7, v7batch)
 
-{-| UUID generation helpers wrapping elm-uuid.
+{-| ID generation helpers wrapping elm-uuid, plus PocketBase-compatible IDs.
 -}
 
 import Random
 import Time
 import UUID
+
+
+{-| Generate a PocketBase-compatible 15-character alphanumeric ID.
+-}
+pbId : Random.Seed -> ( String, Random.Seed )
+pbId seed =
+    Random.step pbIdGenerator seed
+
+
+pbIdGenerator : Random.Generator String
+pbIdGenerator =
+    Random.list 15 pbCharGenerator
+        |> Random.map String.fromList
+
+
+pbCharGenerator : Random.Generator Char
+pbCharGenerator =
+    Random.uniform 'a'
+        [ 'b'
+        , 'c'
+        , 'd'
+        , 'e'
+        , 'f'
+        , 'g'
+        , 'h'
+        , 'i'
+        , 'j'
+        , 'k'
+        , 'l'
+        , 'm'
+        , 'n'
+        , 'o'
+        , 'p'
+        , 'q'
+        , 'r'
+        , 's'
+        , 't'
+        , 'u'
+        , 'v'
+        , 'w'
+        , 'x'
+        , 'y'
+        , 'z'
+        , '0'
+        , '1'
+        , '2'
+        , '3'
+        , '4'
+        , '5'
+        , '6'
+        , '7'
+        , '8'
+        , '9'
+        ]
 
 
 {-| Generate a single v4 UUID string.

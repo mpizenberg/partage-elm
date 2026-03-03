@@ -1,6 +1,7 @@
 module Storage exposing
     ( GroupSummary
     , InitData
+    , addUnpushedIds
     , deleteGroup
     , encodeGroupSummary
     , errorToString
@@ -11,11 +12,15 @@ module Storage exposing
     , loadGroupEvents
     , loadGroupKey
     , loadIdentity
+    , loadSyncCursor
+    , loadUnpushedIds
     , open
     , saveEvents
     , saveGroupKey
     , saveGroupSummary
     , saveIdentity
+    , saveSyncCursor
+    , saveUnpushedIds
     )
 
 import ConcurrentTask exposing (ConcurrentTask)
@@ -27,6 +32,7 @@ import Identity exposing (Identity)
 import IndexedDb as Idb
 import Json.Decode as Decode
 import Json.Encode as Encode
+import Set exposing (Set)
 import Time
 
 
@@ -54,11 +60,13 @@ type alias GroupSummary =
 
 dbSchema : Idb.Schema
 dbSchema =
-    Idb.schema "partage" 1
+    Idb.schema "partage" 3
         |> Idb.withStore identityStore
         |> Idb.withStore groupsStore
         |> Idb.withStore groupKeysStore
         |> Idb.withStore eventsStore
+        |> Idb.withStore syncCursorsStore
+        |> Idb.withStore unpushedIdsStore
 
 
 identityStore : Idb.Store Idb.ExplicitKey
@@ -87,6 +95,16 @@ eventsStore =
 byGroupIdIndex : Idb.Index
 byGroupIdIndex =
     Idb.defineIndex "byGroupId" "groupId"
+
+
+syncCursorsStore : Idb.Store Idb.ExplicitKey
+syncCursorsStore =
+    Idb.defineStore "syncCursors"
+
+
+unpushedIdsStore : Idb.Store Idb.ExplicitKey
+unpushedIdsStore =
+    Idb.defineStore "unpushedIds"
 
 
 
@@ -167,7 +185,47 @@ loadGroupEvents db groupId =
         |> ConcurrentTask.map (List.map Tuple.second)
 
 
-{-| Delete a group and all its associated data (summary, key, events).
+{-| Save a sync cursor for a group.
+-}
+saveSyncCursor : Idb.Db -> Group.Id -> String -> ConcurrentTask Idb.Error ()
+saveSyncCursor db groupId cursor =
+    Idb.putAt db syncCursorsStore (Idb.StringKey groupId) (Encode.string cursor)
+
+
+{-| Load the sync cursor for a group, if it exists.
+-}
+loadSyncCursor : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error (Maybe String)
+loadSyncCursor db groupId =
+    Idb.get db syncCursorsStore (Idb.StringKey groupId) Decode.string
+
+
+{-| Save unpushed event IDs for a group.
+-}
+saveUnpushedIds : Idb.Db -> Group.Id -> Set String -> ConcurrentTask Idb.Error ()
+saveUnpushedIds db groupId ids =
+    Idb.putAt db unpushedIdsStore (Idb.StringKey groupId) (Encode.set Encode.string ids)
+
+
+{-| Load unpushed event IDs for a group.
+-}
+loadUnpushedIds : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error (Set String)
+loadUnpushedIds db groupId =
+    Idb.get db unpushedIdsStore (Idb.StringKey groupId) (Decode.list Decode.string)
+        |> ConcurrentTask.map (Maybe.map Set.fromList >> Maybe.withDefault Set.empty)
+
+
+{-| Add event IDs to the unpushed set for a group (read-modify-write).
+-}
+addUnpushedIds : Idb.Db -> Group.Id -> List String -> ConcurrentTask Idb.Error ()
+addUnpushedIds db groupId newIds =
+    loadUnpushedIds db groupId
+        |> ConcurrentTask.andThen
+            (\existing ->
+                saveUnpushedIds db groupId (List.foldl Set.insert existing newIds)
+            )
+
+
+{-| Delete a group and all its associated data (summary, key, events, sync cursor, unpushed IDs).
 -}
 deleteGroup : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error ()
 deleteGroup db groupId =
@@ -177,6 +235,12 @@ deleteGroup db groupId =
 
         -- Delete group key
         , Idb.delete db groupKeysStore (Idb.StringKey groupId)
+
+        -- Delete sync cursor
+        , Idb.delete db syncCursorsStore (Idb.StringKey groupId)
+
+        -- Delete unpushed IDs
+        , Idb.delete db unpushedIdsStore (Idb.StringKey groupId)
 
         -- Delete group events
         , Idb.getKeysByIndex db eventsStore byGroupIdIndex (Idb.only (Idb.StringKey groupId))

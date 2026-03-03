@@ -21,15 +21,16 @@ import Domain.Group as Group
 import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Form.NewGroup
+import IdGen
 import Identity exposing (Identity)
 import IndexedDb as Idb
 import Json.Encode
 import Page.NewEntry
 import Random
+import Set exposing (Set)
 import Storage exposing (GroupSummary)
 import Time
 import UUID
-import UuidGen
 import WebCrypto.Symmetric as Symmetric
 
 
@@ -63,18 +64,22 @@ type alias LoadedGroup =
     , groupState : GroupState.GroupState
     , summary : GroupSummary
     , groupKey : Symmetric.Key
+    , syncCursor : Maybe String
+    , unpushedIds : Set String
     }
 
 
 {-| Build a LoadedGroup from raw events, a summary, and the group key, applying all events to compute state.
 -}
-initLoadedGroup : List Event.Envelope -> GroupSummary -> Symmetric.Key -> LoadedGroup
-initLoadedGroup events summary key =
+initLoadedGroup : List Event.Envelope -> GroupSummary -> Symmetric.Key -> Maybe String -> Set String -> LoadedGroup
+initLoadedGroup events summary key cursor unpushed =
     -- We store the events in reverse order for efficient prepending of new events
     { events = List.reverse events
     , groupState = GroupState.applyEvents events GroupState.empty
     , summary = summary
     , groupKey = key
+    , syncCursor = cursor
+    , unpushedIds = unpushed
     }
 
 
@@ -83,7 +88,10 @@ attempt ctx envelope groupId =
     let
         task : ConcurrentTask.ConcurrentTask Idb.Error Event.Envelope
         task =
-            Storage.saveEvents ctx.db groupId [ envelope ]
+            ConcurrentTask.batch
+                [ Storage.saveEvents ctx.db groupId [ envelope ]
+                , Storage.addUnpushedIds ctx.db groupId [ envelope.id ]
+                ]
                 |> ConcurrentTask.map (\_ -> envelope)
 
         ( pool, cmd ) =
@@ -112,13 +120,13 @@ newGroup : Context msg -> (ConcurrentTask.Response Idb.Error GroupSummary -> msg
 newGroup ctx onComplete output =
     let
         ( groupId, seed1 ) =
-            UuidGen.v4 ctx.randomSeed
+            IdGen.pbId ctx.randomSeed
 
         ( virtualMemberIds, seedAfter ) =
-            UuidGen.v4batch (List.length output.virtualMembers) seed1
+            IdGen.v4batch (List.length output.virtualMembers) seed1
 
         ( eventIds, uuidStateAfter ) =
-            UuidGen.v7batch (2 + List.length output.virtualMembers) ctx.currentTime ctx.uuidState
+            IdGen.v7batch (2 + List.length output.virtualMembers) ctx.currentTime ctx.uuidState
 
         payloads : List Event.Payload
         payloads =
@@ -141,6 +149,10 @@ newGroup ctx onComplete output =
             , defaultCurrency = output.currency
             }
 
+        allEventIds : List String
+        allEventIds =
+            List.map .id allEvents
+
         task : ConcurrentTask.ConcurrentTask Idb.Error GroupSummary
         task =
             Crypto.generateGroupKey
@@ -149,6 +161,7 @@ newGroup ctx onComplete output =
                         Storage.saveGroupSummary ctx.db summary
                             |> ConcurrentTask.andThen (\_ -> Storage.saveGroupKey ctx.db groupId (Symmetric.exportKey key))
                             |> ConcurrentTask.andThen (\_ -> Storage.saveEvents ctx.db groupId allEvents)
+                            |> ConcurrentTask.andThen (\_ -> Storage.addUnpushedIds ctx.db groupId allEventIds)
                             |> ConcurrentTask.map (\_ -> summary)
                     )
 
@@ -178,10 +191,10 @@ newEntry : Context msg -> LoadedGroup -> Page.NewEntry.Output -> ( State msg, Cm
 newEntry ctx loaded output =
     let
         ( entryId, seedAfter ) =
-            UuidGen.v4 ctx.randomSeed
+            IdGen.v4 ctx.randomSeed
 
         ( eventId, uuidStateAfter ) =
-            UuidGen.v7 ctx.currentTime ctx.uuidState
+            IdGen.v7 ctx.currentTime ctx.uuidState
 
         meta : Entry.Metadata
         meta =
@@ -217,10 +230,10 @@ editEntry ctx loaded originalEntryId output =
         Just entryState ->
             let
                 ( newEntryId, seedAfter ) =
-                    UuidGen.v4 ctx.randomSeed
+                    IdGen.v4 ctx.randomSeed
 
                 ( eventId, uuidStateAfter ) =
-                    UuidGen.v7 ctx.currentTime ctx.uuidState
+                    IdGen.v7 ctx.currentTime ctx.uuidState
 
                 newKind : Entry.Kind
                 newKind =
@@ -259,7 +272,7 @@ simpleEvent : Context msg -> LoadedGroup -> Event.Payload -> ( State msg, Cmd ms
 simpleEvent ctx loaded payload =
     let
         ( eventId, uuidStateAfter ) =
-            UuidGen.v7 ctx.currentTime ctx.uuidState
+            IdGen.v7 ctx.currentTime ctx.uuidState
 
         envelope : Event.Envelope
         envelope =
@@ -289,10 +302,10 @@ addMember : Context msg -> LoadedGroup -> { name : String } -> ( State msg, Cmd 
 addMember ctx loaded output =
     let
         ( newMemberId, seedAfter ) =
-            UuidGen.v4 ctx.randomSeed
+            IdGen.v4 ctx.randomSeed
 
         ( eventId, uuidStateAfter ) =
-            UuidGen.v7 ctx.currentTime ctx.uuidState
+            IdGen.v7 ctx.currentTime ctx.uuidState
 
         payload : Event.Payload
         payload =
