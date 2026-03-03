@@ -3,7 +3,7 @@ module Page.Group exposing (Context, Model, Msg(..), Output(..), init, update, v
 {-| Group page shell with tab routing, using real group data.
 -}
 
-import Domain.Currency exposing (Currency)
+import Domain.Currency exposing (Currency(..))
 import Domain.Date exposing (Date)
 import Domain.Entry as Entry
 import Domain.GroupState as GroupState exposing (GroupState)
@@ -12,10 +12,13 @@ import Domain.Settlement as Settlement
 import Page.Group.ActivityTab
 import Page.Group.AddMember
 import Page.Group.BalanceTab
+import Page.Group.EditGroupMetadata
 import Page.Group.EditMemberMetadata
 import Page.Group.EntriesTab
+import Page.Group.EntryDetail
 import Page.Group.MemberDetail
 import Page.Group.MembersTab
+import Page.Group.NewEntry
 import Route exposing (GroupTab(..))
 import Translations as T exposing (I18n)
 import UI.Shell
@@ -44,23 +47,41 @@ type alias Context msg =
 
 
 type alias Model =
+    -- Tabs
     { activeTab : GroupTab
     , entriesTabModel : Page.Group.EntriesTab.Model
     , balanceTabModel : Page.Group.BalanceTab.Model
     , activityTabModel : Page.Group.ActivityTab.Model
+
+    -- Member pages
     , memberDetailModel : Page.Group.MemberDetail.Model
     , addMemberModel : Page.Group.AddMember.Model
     , editMemberMetadataModel : Page.Group.EditMemberMetadata.Model
+
+    -- Entry pages
+    , newEntryModel : Page.Group.NewEntry.Model
+    , entryDetailModel : Page.Group.EntryDetail.Model
+
+    -- Group pages
+    , editGroupMetadataModel : Page.Group.EditGroupMetadata.Model
     }
 
 
-type Msg
+type
+    Msg
+    -- Tabs
     = EntriesTabMsg Page.Group.EntriesTab.Msg
     | BalanceTabMsg Page.Group.BalanceTab.Msg
     | ActivityTabMsg Page.Group.ActivityTab.Msg
+      -- Member pages
     | MemberDetailMsg Page.Group.MemberDetail.Msg
     | AddMemberMsg Page.Group.AddMember.Msg
     | EditMemberMetadataMsg Page.Group.EditMemberMetadata.Msg
+      -- Entry pages
+    | NewEntryMsg Page.Group.NewEntry.Msg
+    | EntryDetailMsg Page.Group.EntryDetail.Msg
+      -- Group pages
+    | EditGroupMetadataMsg Page.Group.EditGroupMetadata.Msg
 
 
 init : Model
@@ -72,6 +93,9 @@ init =
     , memberDetailModel = Page.Group.MemberDetail.init Member.emptyChainState
     , addMemberModel = Page.Group.AddMember.init
     , editMemberMetadataModel = Page.Group.EditMemberMetadata.init "" "" Member.emptyMetadata
+    , newEntryModel = Page.Group.NewEntry.init { currentUserRootId = "", activeMembersRootIds = [], today = { year = 2000, month = 1, day = 1 }, defaultCurrency = EUR }
+    , entryDetailModel = Page.Group.EntryDetail.init
+    , editGroupMetadataModel = Page.Group.EditGroupMetadata.init GroupState.empty.groupMeta
     }
 
 
@@ -114,6 +138,38 @@ update msg model =
             , Maybe.map EditMemberMetadataOutput maybeOutput
             )
 
+        NewEntryMsg subMsg ->
+            let
+                ( newEntryModel, maybeOutput ) =
+                    Page.Group.NewEntry.update subMsg model.newEntryModel
+            in
+            ( { model | newEntryModel = newEntryModel }
+            , Maybe.map NewEntryOutput maybeOutput
+            )
+
+        EntryDetailMsg subMsg ->
+            let
+                ( entryDetailModel, maybeOutput ) =
+                    Page.Group.EntryDetail.update subMsg model.entryDetailModel
+            in
+            ( { model | entryDetailModel = entryDetailModel }
+            , Maybe.map EntryDetailOutput maybeOutput
+            )
+
+        EditGroupMetadataMsg subMsg ->
+            let
+                result : Page.Group.EditGroupMetadata.UpdateResult
+                result =
+                    Page.Group.EditGroupMetadata.update subMsg model.editGroupMetadataModel
+            in
+            ( { model | editGroupMetadataModel = result.model }
+            , if result.deleteRequested then
+                Just DeleteGroupRequested
+
+              else
+                Maybe.map EditGroupMetadataOutput result.metadataOutput
+            )
+
 
 {-| Outputs produced by sub-page updates that Main needs to handle.
 -}
@@ -121,6 +177,10 @@ type Output
     = MemberDetailOutput Page.Group.MemberDetail.Output
     | AddMemberOutput Page.Group.AddMember.Output
     | EditMemberMetadataOutput Page.Group.EditMemberMetadata.Output
+    | NewEntryOutput Page.Group.NewEntry.Output
+    | EntryDetailOutput Page.Group.EntryDetail.Output
+    | EditGroupMetadataOutput Page.Group.EditGroupMetadata.Output
+    | DeleteGroupRequested
 
 
 {-| Render the group page shell with tabs and the active tab's content.

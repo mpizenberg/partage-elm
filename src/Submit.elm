@@ -31,7 +31,7 @@ import IdGen
 import Identity exposing (Identity)
 import IndexedDb as Idb
 import Json.Encode
-import Page.NewEntry
+import Page.Group.NewEntry
 import PocketBase
 import Random
 import Server
@@ -195,7 +195,7 @@ newGroup ctx onComplete output =
 
 {-| Submit a new entry (expense or transfer) to a group.
 -}
-newEntry : Context msg -> LoadedGroup -> Page.NewEntry.Output -> ( State msg, Cmd msg )
+newEntry : Context msg -> LoadedGroup -> Page.Group.NewEntry.Output -> ( State msg, Cmd msg )
 newEntry ctx loaded output =
     let
         ( entryId, seedAfter ) =
@@ -210,7 +210,7 @@ newEntry ctx loaded output =
 
         kind : Entry.Kind
         kind =
-            Page.NewEntry.outputToKind output
+            Page.Group.NewEntry.outputToKind output
 
         entry : Entry.Entry
         entry =
@@ -229,7 +229,7 @@ newEntry ctx loaded output =
 
 {-| Submit an edit to an existing entry. Returns Nothing if the entry is not found.
 -}
-editEntry : Context msg -> LoadedGroup -> Entry.Id -> Page.NewEntry.Output -> Maybe ( State msg, Cmd msg )
+editEntry : Context msg -> LoadedGroup -> Entry.Id -> Page.Group.NewEntry.Output -> Maybe ( State msg, Cmd msg )
 editEntry ctx loaded originalEntryId output =
     case Dict.get originalEntryId loaded.groupState.entries of
         Nothing ->
@@ -245,7 +245,7 @@ editEntry ctx loaded originalEntryId output =
 
                 newKind : Entry.Kind
                 newKind =
-                    Page.NewEntry.outputToKind output
+                    Page.Group.NewEntry.outputToKind output
 
                 entry : Entry.Entry
                 entry =
@@ -345,7 +345,7 @@ currentUserRootId readyData loaded =
 
 {-| Build the configuration needed by the new-entry form from a loaded group.
 -}
-entryFormConfig : Storage.InitData -> LoadedGroup -> Time.Posix -> Page.NewEntry.Config
+entryFormConfig : Storage.InitData -> LoadedGroup -> Time.Posix -> Page.Group.NewEntry.Config
 entryFormConfig readyData loaded currentTime =
     { currentUserRootId = currentUserRootId readyData loaded
     , activeMembersRootIds = List.map .rootId (GroupState.activeMembers loaded.groupState)

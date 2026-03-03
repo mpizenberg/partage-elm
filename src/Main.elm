@@ -4,7 +4,6 @@ import AppUrl
 import Browser
 import ConcurrentTask
 import Dict
-import Domain.Currency
 import Domain.Date as Date
 import Domain.Entry as Entry
 import Domain.Event as Event
@@ -21,16 +20,16 @@ import Json.Decode
 import Json.Encode
 import Navigation
 import Page.About
-import Page.EditGroupMetadata
-import Page.EntryDetail
 import Page.Group
 import Page.Group.AddMember
+import Page.Group.EditGroupMetadata
 import Page.Group.EditMemberMetadata
+import Page.Group.EntryDetail
 import Page.Group.MemberDetail
+import Page.Group.NewEntry
 import Page.Home
 import Page.InitError
 import Page.Loading
-import Page.NewEntry
 import Page.NewGroup
 import Page.NotFound
 import Page.Setup
@@ -94,9 +93,6 @@ type alias Model =
     , randomSeed : Random.Seed
     , currentTime : Time.Posix
     , newGroupModel : Page.NewGroup.Model
-    , newEntryModel : Page.NewEntry.Model
-    , entryDetailModel : Page.EntryDetail.Model
-    , editGroupMetadataModel : Page.EditGroupMetadata.Model
     , loadedGroup : Maybe LoadedGroup
     , groupModel : Page.Group.Model
     , homeModel : Page.Home.Model
@@ -126,7 +122,7 @@ type Msg
     | OnIdentitySaved (ConcurrentTask.Response Idb.Error ())
       -- Page form messages
     | NewGroupMsg Page.NewGroup.Msg
-    | NewEntryMsg Page.NewEntry.Msg
+    | GroupMsg Page.Group.Msg
       -- Form submission responses
     | OnGroupCreated (ConcurrentTask.Response Idb.Error GroupSummary)
     | OnEntrySaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
@@ -134,12 +130,8 @@ type Msg
     | PayMember { toMemberId : Member.Id, amountCents : Int }
     | SettleTransaction Settlement.Transaction
     | SaveSettlementPreferences { memberRootId : Member.Id, preferredRecipients : List Member.Id }
-    | EntryDetailMsg Page.EntryDetail.Msg
     | OnEntryActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
-    | GroupMsg Page.Group.Msg
     | OnMemberActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
-      -- Group metadata editing
-    | EditGroupMetadataMsg Page.EditGroupMetadata.Msg
     | OnGroupMetadataActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnGroupRemoved Group.Id (ConcurrentTask.Response Idb.Error ())
     | OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)
@@ -240,9 +232,6 @@ init flags =
       , randomSeed = seedAfterV7
       , currentTime = currentTime
       , newGroupModel = Page.NewGroup.init
-      , newEntryModel = Page.NewEntry.init { currentUserRootId = "", activeMembersRootIds = [], today = Date.posixToDate currentTime, defaultCurrency = Domain.Currency.EUR }
-      , entryDetailModel = Page.EntryDetail.init
-      , editGroupMetadataModel = Page.EditGroupMetadata.init GroupState.empty.groupMeta
       , loadedGroup = Nothing
       , groupModel = Page.Group.init
       , homeModel = Page.Home.init
@@ -414,27 +403,6 @@ update msg model =
                 _ ->
                     ( modelWithForm, Cmd.none )
 
-        NewEntryMsg subMsg ->
-            let
-                ( newEntryModel, maybeOutput ) =
-                    Page.NewEntry.update subMsg model.newEntryModel
-
-                modelWithForm : Model
-                modelWithForm =
-                    { model | newEntryModel = newEntryModel }
-            in
-            case ( maybeOutput, model.appState, model.loadedGroup ) of
-                ( Just output, Ready readyData, Just loaded ) ->
-                    case model.route of
-                        GroupRoute _ (EditEntry entryId) ->
-                            submitEditEntry modelWithForm readyData loaded entryId output
-
-                        _ ->
-                            submitNewEntry modelWithForm readyData loaded output
-
-                _ ->
-                    ( modelWithForm, Cmd.none )
-
         OnGroupCreated (ConcurrentTask.Success summary) ->
             case model.appState of
                 Ready readyData ->
@@ -522,9 +490,9 @@ update msg model =
             case ( model.appState, model.loadedGroup ) of
                 ( Ready readyData, Just loaded ) ->
                     let
-                        output : Page.NewEntry.Output
+                        output : Page.Group.NewEntry.Output
                         output =
-                            Page.NewEntry.TransferOutput
+                            Page.Group.NewEntry.TransferOutput
                                 { amountCents = tx.amount
                                 , currency = loaded.summary.defaultCurrency
                                 , defaultCurrencyAmount = Nothing
@@ -550,51 +518,6 @@ update msg model =
 
                 _ ->
                     ( model, Cmd.none )
-
-        EntryDetailMsg subMsg ->
-            let
-                ( entryDetailModel, maybeOutput ) =
-                    Page.EntryDetail.update subMsg model.entryDetailModel
-
-                modelWithPage : Model
-                modelWithPage =
-                    { model | entryDetailModel = entryDetailModel }
-            in
-            case maybeOutput of
-                Just Page.EntryDetail.DeleteRequested ->
-                    case model.route of
-                        GroupRoute _ (EntryDetail entryId) ->
-                            submitEntryAction modelWithPage (\ctx loaded -> Submit.deleteEntry ctx loaded entryId)
-
-                        _ ->
-                            ( modelWithPage, Cmd.none )
-
-                Just Page.EntryDetail.RestoreRequested ->
-                    case model.route of
-                        GroupRoute _ (EntryDetail entryId) ->
-                            submitEntryAction modelWithPage (\ctx loaded -> Submit.restoreEntry ctx loaded entryId)
-
-                        _ ->
-                            ( modelWithPage, Cmd.none )
-
-                Just Page.EntryDetail.EditRequested ->
-                    case model.route of
-                        GroupRoute groupId (EntryDetail entryId) ->
-                            ( modelWithPage, Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (EditEntry entryId))) )
-
-                        _ ->
-                            ( modelWithPage, Cmd.none )
-
-                Just Page.EntryDetail.BackRequested ->
-                    case model.route of
-                        GroupRoute groupId _ ->
-                            ( modelWithPage, Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab EntriesTab))) )
-
-                        _ ->
-                            ( modelWithPage, Cmd.none )
-
-                Nothing ->
-                    ( modelWithPage, Cmd.none )
 
         OnEntryActionSaved groupId (ConcurrentTask.Success envelope) ->
             let
@@ -674,33 +597,6 @@ update msg model =
 
         OnMemberActionSaved _ _ ->
             addToast Toast.Error (T.toastMemberActionError model.i18n) model
-
-        -- Group metadata editing
-        EditGroupMetadataMsg subMsg ->
-            let
-                result : Page.EditGroupMetadata.UpdateResult
-                result =
-                    Page.EditGroupMetadata.update subMsg model.editGroupMetadataModel
-
-                modelWithPage : Model
-                modelWithPage =
-                    { model | editGroupMetadataModel = result.model }
-            in
-            if result.deleteRequested then
-                case model.route of
-                    GroupRoute groupId _ ->
-                        deleteGroup modelWithPage groupId
-
-                    _ ->
-                        ( modelWithPage, Cmd.none )
-
-            else
-                case ( result.metadataOutput, model.appState, model.loadedGroup ) of
-                    ( Just change, Ready readyData, Just loaded ) ->
-                        submitGroupMetadata modelWithPage readyData loaded change
-
-                    _ ->
-                        ( modelWithPage, Cmd.none )
 
         OnGroupMetadataActionSaved groupId (ConcurrentTask.Success envelope) ->
             case appendEventAndRecompute model groupId envelope of
@@ -1151,7 +1047,7 @@ submitNewGroup model readyData output =
             ( model, Cmd.none )
 
 
-submitNewEntry : Model -> Storage.InitData -> LoadedGroup -> Page.NewEntry.Output -> ( Model, Cmd Msg )
+submitNewEntry : Model -> Storage.InitData -> LoadedGroup -> Page.Group.NewEntry.Output -> ( Model, Cmd Msg )
 submitNewEntry model readyData loaded output =
     case submitContext (OnEntrySaved loaded.summary.id) model readyData of
         Just ctx ->
@@ -1161,7 +1057,7 @@ submitNewEntry model readyData loaded output =
             ( model, Cmd.none )
 
 
-submitEditEntry : Model -> Storage.InitData -> LoadedGroup -> Entry.Id -> Page.NewEntry.Output -> ( Model, Cmd Msg )
+submitEditEntry : Model -> Storage.InitData -> LoadedGroup -> Entry.Id -> Page.Group.NewEntry.Output -> ( Model, Cmd Msg )
 submitEditEntry model readyData loaded originalEntryId output =
     case submitContext (OnEntrySaved loaded.summary.id) model readyData of
         Just ctx ->
@@ -1178,34 +1074,34 @@ initPagesIfNeeded route model =
     case ( route, model.appState, model.loadedGroup ) of
         ( GroupRoute _ NewEntry, Ready readyData, Just loaded ) ->
             let
-                config : Page.NewEntry.Config
+                config : Page.Group.NewEntry.Config
                 config =
                     Submit.entryFormConfig readyData loaded model.currentTime
             in
             case model.pendingTransfer of
                 Just payData ->
-                    { model
-                        | newEntryModel = Page.NewEntry.initTransfer config payData
-                        , pendingTransfer = Nothing
-                    }
+                    updateGroupModel (\gm -> { gm | newEntryModel = Page.Group.NewEntry.initTransfer config payData })
+                        { model | pendingTransfer = Nothing }
 
                 Nothing ->
-                    { model
-                        | newEntryModel = Page.NewEntry.init config
-                    }
+                    updateGroupModel (\gm -> { gm | newEntryModel = Page.Group.NewEntry.init config }) model
 
         ( GroupRoute _ (EntryDetail _), _, _ ) ->
-            { model | entryDetailModel = Page.EntryDetail.init }
+            updateGroupModel (\gm -> { gm | entryDetailModel = Page.Group.EntryDetail.init }) model
 
         ( GroupRoute _ (EditEntry entryId), Ready readyData, Just loaded ) ->
             case Dict.get entryId loaded.groupState.entries of
                 Just entryState ->
-                    { model
-                        | newEntryModel =
-                            Page.NewEntry.initFromEntry
-                                (Submit.entryFormConfig readyData loaded model.currentTime)
-                                entryState.currentVersion
-                    }
+                    updateGroupModel
+                        (\gm ->
+                            { gm
+                                | newEntryModel =
+                                    Page.Group.NewEntry.initFromEntry
+                                        (Submit.entryFormConfig readyData loaded model.currentTime)
+                                        entryState.currentVersion
+                            }
+                        )
+                        model
 
                 Nothing ->
                     model
@@ -1234,7 +1130,7 @@ initPagesIfNeeded route model =
                     model
 
         ( GroupRoute _ EditGroupMetadata, _, Just loaded ) ->
-            { model | editGroupMetadataModel = Page.EditGroupMetadata.init loaded.groupState.groupMeta }
+            updateGroupModel (\gm -> { gm | editGroupMetadataModel = Page.Group.EditGroupMetadata.init loaded.groupState.groupMeta }) model
 
         _ ->
             model
@@ -1297,6 +1193,64 @@ handleGroupOutput model readyData loaded output =
 
         Page.Group.EditMemberMetadataOutput metaOutput ->
             submitMemberMetadata model readyData loaded metaOutput
+
+        Page.Group.NewEntryOutput entryOutput ->
+            case model.route of
+                GroupRoute _ (EditEntry entryId) ->
+                    submitEditEntry model readyData loaded entryId entryOutput
+
+                _ ->
+                    submitNewEntry model readyData loaded entryOutput
+
+        Page.Group.EntryDetailOutput detailOutput ->
+            handleEntryDetailOutput model detailOutput
+
+        Page.Group.EditGroupMetadataOutput change ->
+            submitGroupMetadata model readyData loaded change
+
+        Page.Group.DeleteGroupRequested ->
+            case model.route of
+                GroupRoute groupId _ ->
+                    deleteGroup model groupId
+
+                _ ->
+                    ( model, Cmd.none )
+
+
+handleEntryDetailOutput : Model -> Page.Group.EntryDetail.Output -> ( Model, Cmd Msg )
+handleEntryDetailOutput model output =
+    case output of
+        Page.Group.EntryDetail.DeleteRequested ->
+            case model.route of
+                GroupRoute _ (EntryDetail entryId) ->
+                    submitEntryAction model (\ctx ld -> Submit.deleteEntry ctx ld entryId)
+
+                _ ->
+                    ( model, Cmd.none )
+
+        Page.Group.EntryDetail.RestoreRequested ->
+            case model.route of
+                GroupRoute _ (EntryDetail entryId) ->
+                    submitEntryAction model (\ctx ld -> Submit.restoreEntry ctx ld entryId)
+
+                _ ->
+                    ( model, Cmd.none )
+
+        Page.Group.EntryDetail.EditRequested ->
+            case model.route of
+                GroupRoute groupId (EntryDetail entryId) ->
+                    ( model, Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (EditEntry entryId))) )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        Page.Group.EntryDetail.BackRequested ->
+            case model.route of
+                GroupRoute groupId _ ->
+                    ( model, Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab EntriesTab))) )
+
+                _ ->
+                    ( model, Cmd.none )
 
 
 handleMemberDetailOutput : Model -> Storage.InitData -> LoadedGroup -> Page.Group.MemberDetail.Output -> ( Model, Cmd Msg )
@@ -1636,7 +1590,7 @@ viewReady model readyData =
         GroupRoute groupId EditGroupMetadata ->
             withGroupShell groupId
                 (T.groupSettingsTitle i18n)
-                (always (Page.EditGroupMetadata.view i18n EditGroupMetadataMsg model.editGroupMetadataModel))
+                (always (Page.Group.EditGroupMetadata.view i18n (GroupMsg << Page.Group.EditGroupMetadataMsg) model.groupModel.editGroupMetadataModel))
 
         About ->
             shell (T.shellPartage i18n) (Page.About.view i18n)
@@ -1676,29 +1630,29 @@ viewGroupTab model readyData langSelector groupId tab loaded =
 
 viewGroupNewEntry : Model -> LoadedGroup -> Ui.Element Msg
 viewGroupNewEntry model loaded =
-    Page.NewEntry.view model.i18n
+    Page.Group.NewEntry.view model.i18n
         (GroupState.activeMembers loaded.groupState)
-        NewEntryMsg
-        model.newEntryModel
+        (GroupMsg << Page.Group.NewEntryMsg)
+        model.groupModel.newEntryModel
 
 
 viewGroupEntryDetail : Model -> Storage.InitData -> LoadedGroup -> GroupState.EntryState -> Ui.Element Msg
 viewGroupEntryDetail model readyData loaded entryState =
-    Page.EntryDetail.view model.i18n
+    Page.Group.EntryDetail.view model.i18n
         { currentUserRootId = Submit.currentUserRootId readyData loaded
         , resolveName = GroupState.resolveMemberName loaded.groupState
         }
-        EntryDetailMsg
-        model.entryDetailModel
+        (GroupMsg << Page.Group.EntryDetailMsg)
+        model.groupModel.entryDetailModel
         entryState
 
 
 viewGroupEditEntry : Model -> LoadedGroup -> Ui.Element Msg
 viewGroupEditEntry model loaded =
-    Page.NewEntry.view model.i18n
+    Page.Group.NewEntry.view model.i18n
         (GroupState.activeMembers loaded.groupState)
-        NewEntryMsg
-        model.newEntryModel
+        (GroupMsg << Page.Group.NewEntryMsg)
+        model.groupModel.newEntryModel
 
 
 viewGroupMemberDetail : Model -> Storage.InitData -> LoadedGroup -> Ui.Element Msg

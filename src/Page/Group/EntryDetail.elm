@@ -1,4 +1,4 @@
-module Page.EntryDetail exposing (Context, Model, Msg, Output(..), init, update, view)
+module Page.Group.EntryDetail exposing (Context, Model, Msg, Output(..), init, update, view)
 
 {-| Entry detail view showing full entry data with edit/delete/restore actions.
 Uses a two-stage confirmation pattern for destructive actions.

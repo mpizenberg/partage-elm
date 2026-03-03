@@ -1,4 +1,4 @@
-module Page.EditGroupMetadata exposing (Model, Msg, Output, UpdateResult, init, update, view)
+module Page.Group.EditGroupMetadata exposing (Model, Msg, Output, UpdateResult, init, update, view)
 
 import Domain.Event as Event
 import Domain.GroupState as GroupState
