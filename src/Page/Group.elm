@@ -32,12 +32,12 @@ type alias Context msg =
     , onSettleTransaction : Settlement.Transaction -> msg
     , onPayMember : { toMemberId : Member.Id, amountCents : Int } -> msg
     , onSaveSettlementPreferences : { memberRootId : Member.Id, preferredRecipients : List Member.Id } -> msg
-    , onToggleSettlementPreferences : msg
     , currentUserRootId : Member.Id
     , entryDetailPath : Entry.Id -> String
     , groupDefaultCurrency : Currency
     , today : Date
     , onEntriesTabMsg : Page.Group.EntriesTab.Msg -> msg
+    , onBalanceTabMsg : Page.Group.BalanceTab.Msg -> msg
     , onActivityTabMsg : Page.Group.ActivityTab.Msg -> msg
     }
 
@@ -47,20 +47,21 @@ type alias Context msg =
 type alias TabState =
     { activeTab : GroupTab
     , entriesTabModel : Page.Group.EntriesTab.Model
+    , balanceTabModel : Page.Group.BalanceTab.Model
     , activityTabModel : Page.Group.ActivityTab.Model
     }
 
 
 {-| Render the group page shell with tabs and the active tab's content.
 -}
-view : Context msg -> { showSettlementPreferences : Bool } -> Ui.Element msg -> GroupState -> TabState -> Ui.Element msg
-view ctx { showSettlementPreferences } headerExtra groupState tabState =
+view : Context msg -> Ui.Element msg -> GroupState -> TabState -> Ui.Element msg
+view ctx headerExtra groupState tabState =
     UI.Shell.groupShell
         { groupName = groupState.groupMeta.name
         , headerExtra = headerExtra
         , activeTab = tabState.activeTab
         , onTabClick = ctx.onTabClick
-        , content = tabContent ctx showSettlementPreferences groupState tabState
+        , content = tabContent ctx groupState tabState
         , tabLabels =
             { balance = T.tabBalance ctx.i18n
             , entries = T.tabEntries ctx.i18n
@@ -70,18 +71,18 @@ view ctx { showSettlementPreferences } headerExtra groupState tabState =
         }
 
 
-tabContent : Context msg -> Bool -> GroupState -> TabState -> Ui.Element msg
-tabContent ctx showSettlementPreferences state tabState =
+tabContent : Context msg -> GroupState -> TabState -> Ui.Element msg
+tabContent ctx state tabState =
     case tabState.activeTab of
         BalanceTab ->
             Page.Group.BalanceTab.view ctx.i18n
                 { onSettle = ctx.onSettleTransaction
                 , onPayMember = ctx.onPayMember
                 , onSavePreferences = ctx.onSaveSettlementPreferences
-                , showPreferences = showSettlementPreferences
-                , onTogglePreferences = ctx.onToggleSettlementPreferences
+                , toMsg = ctx.onBalanceTabMsg
                 }
                 ctx.currentUserRootId
+                tabState.balanceTabModel
                 state
 
         EntriesTab ->

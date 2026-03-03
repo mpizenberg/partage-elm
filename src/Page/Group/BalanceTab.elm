@@ -1,4 +1,4 @@
-module Page.Group.BalanceTab exposing (Config, view)
+module Page.Group.BalanceTab exposing (Config, Model, Msg, init, update, view)
 
 {-| Balance tab showing per-member balances and settlement plan.
 -}
@@ -16,21 +16,42 @@ import Ui.Events
 import Ui.Font
 
 
+type Model
+    = Model
+        { showPreferences : Bool
+        }
+
+
+type Msg
+    = ToggleShowPreferences
+
+
+init : Model
+init =
+    Model { showPreferences = False }
+
+
+update : Msg -> Model -> Model
+update msg (Model data) =
+    case msg of
+        ToggleShowPreferences ->
+            Model { data | showPreferences = not data.showPreferences }
+
+
 {-| Configuration for callbacks used by the balance tab.
 -}
 type alias Config msg =
     { onSettle : Settlement.Transaction -> msg
     , onPayMember : { toMemberId : Member.Id, amountCents : Int } -> msg
     , onSavePreferences : { memberRootId : Member.Id, preferredRecipients : List Member.Id } -> msg
-    , showPreferences : Bool
-    , onTogglePreferences : msg
+    , toMsg : Msg -> msg
     }
 
 
 {-| Render the balance tab with per-member balances and a settlement plan.
 -}
-view : I18n -> Config msg -> Member.Id -> GroupState -> Ui.Element msg
-view i18n config currentUserRootId state =
+view : I18n -> Config msg -> Member.Id -> Model -> GroupState -> Ui.Element msg
+view i18n config currentUserRootId (Model data) state =
     if Dict.isEmpty state.entries then
         Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
             [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.balanceTabTitle i18n))
@@ -42,7 +63,7 @@ view i18n config currentUserRootId state =
         Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
             [ balancesSection i18n config.onPayMember currentUserRootId state
             , settlementSection i18n config.onSettle currentUserRootId state
-            , preferencesSection i18n config currentUserRootId state
+            , preferencesSection i18n config data.showPreferences currentUserRootId state
             ]
 
 
@@ -129,12 +150,12 @@ settlementSection i18n onSettle currentUserRootId state =
         ]
 
 
-preferencesSection : I18n -> Config msg -> Member.Id -> GroupState -> Ui.Element msg
-preferencesSection i18n config currentUserRootId state =
+preferencesSection : I18n -> Config msg -> Bool -> Member.Id -> GroupState -> Ui.Element msg
+preferencesSection i18n config showPreferences currentUserRootId state =
     let
         toggleLabel : String
         toggleLabel =
-            if config.showPreferences then
+            if showPreferences then
                 T.settlementPreferencesHide i18n
 
             else
@@ -145,10 +166,10 @@ preferencesSection i18n config currentUserRootId state =
             [ Ui.Font.size Theme.fontSize.sm
             , Ui.Font.color Theme.primary
             , Ui.pointer
-            , Ui.Events.onClick config.onTogglePreferences
+            , Ui.Events.onClick (config.toMsg ToggleShowPreferences)
             ]
             (Ui.text toggleLabel)
-            :: (if config.showPreferences then
+            :: (if showPreferences then
                     [ preferencesContent i18n currentUserRootId config.onSavePreferences state ]
 
                 else
