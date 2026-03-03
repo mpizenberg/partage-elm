@@ -5,12 +5,8 @@ import Browser
 import ConcurrentTask
 import Dict
 import Domain.Date as Date
-import Domain.Entry as Entry
 import Domain.Event as Event
 import Domain.Group as Group
-import Domain.GroupState as GroupState
-import Domain.Member as Member
-import Domain.Settlement as Settlement
 import Form.NewGroup
 import GroupExport
 import Html exposing (Html)
@@ -21,11 +17,6 @@ import Json.Encode
 import Navigation
 import Page.About
 import Page.Group
-import Page.Group.AddMember
-import Page.Group.EditMemberMetadata
-import Page.Group.EntryDetail
-import Page.Group.MemberDetail
-import Page.Group.NewEntry
 import Page.Home
 import Page.InitError
 import Page.Loading
@@ -33,25 +24,21 @@ import Page.NewGroup
 import Page.NotFound
 import Page.Setup
 import PocketBase
-import PocketBase.Realtime
 import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import Server
-import Set exposing (Set)
+import Set
 import Storage exposing (GroupSummary)
-import Submit exposing (LoadedGroup)
+import Submit
 import Time
 import Translations as T exposing (I18n, Language(..))
 import UI.Components
 import UI.Shell
-import UI.Theme as Theme
 import UI.Toast as Toast
 import UUID
 import Ui
-import Ui.Font
 import Url
 import WebCrypto
-import WebCrypto.Symmetric as Symmetric
 
 
 port navCmd : Navigation.CommandPort msg
@@ -92,13 +79,11 @@ type alias Model =
     , randomSeed : Random.Seed
     , currentTime : Time.Posix
     , newGroupModel : Page.NewGroup.Model
-    , loadedGroup : Maybe LoadedGroup
     , groupModel : Page.Group.Model
     , homeModel : Page.Home.Model
     , toastModel : Toast.Model
     , serverUrl : String
     , pbClient : Maybe PocketBase.Client
-    , syncInProgress : Bool
     }
 
 
@@ -111,7 +96,6 @@ type AppState
 type Msg
     = OnNavEvent Navigation.Event
     | NavigateTo Route
-    | SwitchTab GroupTab
     | SwitchLanguage Language
     | GenerateIdentity
     | OnTaskProgress ( ConcurrentTask.Pool Msg, Cmd Msg )
@@ -123,18 +107,6 @@ type Msg
     | GroupMsg Page.Group.Msg
       -- Form submission responses
     | OnGroupCreated (ConcurrentTask.Response Idb.Error GroupSummary)
-    | OnEntrySaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
-      -- Entry actions
-    | PayMember { toMemberId : Member.Id, amountCents : Int }
-    | SettleTransaction Settlement.Transaction
-    | SaveSettlementPreferences { memberRootId : Member.Id, preferredRecipients : List Member.Id }
-    | OnEntryActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
-    | OnMemberActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
-    | OnGroupMetadataActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
-    | OnGroupRemoved Group.Id (ConcurrentTask.Response Idb.Error ())
-    | OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)
-      -- Group loading
-    | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe String, unpushedIds : Set String })
       -- Import / Export
     | HomeMsg Page.Home.Msg
     | ExportGroup Group.Id
@@ -143,9 +115,6 @@ type Msg
       -- Server sync
     | OnPbClientInitialized (ConcurrentTask.Response PocketBase.Error PocketBase.Client)
     | OnServerGroupCreated Group.Id (ConcurrentTask.Response Server.Error ())
-    | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
-    | PostSyncTasksDone (ConcurrentTask.Response Idb.Error ())
-    | OnPocketbaseEvent Json.Decode.Value
       -- Toast notifications
     | ClipboardCopied
     | DismissToast Toast.ToastId
@@ -161,8 +130,15 @@ subscriptions model =
             , onProgress = OnTaskProgress
             }
             model.pool
+        , ConcurrentTask.onProgress
+            { send = sendTask
+            , receive = receiveTask
+            , onProgress = Page.Group.OnTaskProgress
+            }
+            model.groupModel.pool
+            |> Sub.map GroupMsg
         , onClipboardCopy (\() -> ClipboardCopied)
-        , onPocketbaseEvent OnPocketbaseEvent
+        , onPocketbaseEvent (Page.Group.OnPocketbaseEvent >> GroupMsg)
         ]
 
 
@@ -205,12 +181,23 @@ init flags =
                 (Random.initialSeed (List.sum flags.randomSeed))
                 flags.randomSeed
 
+        -- Split seeds: Main keeps uuidState + mainSeed, Page.Group gets groupUuidState + groupSeedAfterV7
         ( uuidState, seedAfterV7 ) =
             Random.step UUID.initialV7State initialSeed
+
+        ( groupSeed, mainSeed ) =
+            Random.step Random.independentSeed seedAfterV7
+
+        ( groupUuidState, groupSeedAfterV7 ) =
+            Random.step UUID.initialV7State groupSeed
 
         currentTime : Time.Posix
         currentTime =
             Time.millisToPosix flags.currentTime
+
+        groupPool : ConcurrentTask.Pool Page.Group.Msg
+        groupPool =
+            ConcurrentTask.pool |> ConcurrentTask.withPoolId 1
 
         ( pool, cmd ) =
             ConcurrentTask.attempt
@@ -227,16 +214,19 @@ init flags =
       , language = language
       , pool = pool
       , uuidState = uuidState
-      , randomSeed = seedAfterV7
+      , randomSeed = mainSeed
       , currentTime = currentTime
       , newGroupModel = Page.NewGroup.init
-      , loadedGroup = Nothing
-      , groupModel = Page.Group.init
+      , groupModel =
+            Page.Group.init
+                { pool = groupPool
+                , randomSeed = groupSeedAfterV7
+                , uuidState = groupUuidState
+                }
       , homeModel = Page.Home.init
       , toastModel = Toast.init
       , serverUrl = flags.serverUrl
       , pbClient = Nothing
-      , syncInProgress = False
       }
     , cmd
     )
@@ -246,6 +236,78 @@ addToast : Toast.ToastLevel -> String -> Model -> ( Model, Cmd Msg )
 addToast level message model =
     Toast.push DismissToast level message model.toastModel
         |> Tuple.mapFirst (\toast -> { model | toastModel = toast })
+
+
+{-| Build a Page.Group.UpdateConfig from current model state.
+Returns Nothing if app is not Ready or identity is not set.
+-}
+buildGroupConfig : Model -> Maybe Page.Group.UpdateConfig
+buildGroupConfig model =
+    case model.appState of
+        Ready readyData ->
+            readyData.identity
+                |> Maybe.map
+                    (\identity ->
+                        { sendTask = sendTask
+                        , db = readyData.db
+                        , identity = identity
+                        , pbClient = model.pbClient
+                        , currentTime = model.currentTime
+                        , route = model.route
+                        , i18n = model.i18n
+                        , groups = readyData.groups
+                        }
+                    )
+
+        _ ->
+            Nothing
+
+
+{-| Process outputs from Page.Group.update by folding over the output list.
+-}
+processGroupOutputs : Model -> Cmd Page.Group.Msg -> List Page.Group.Output -> ( Model, Cmd Msg )
+processGroupOutputs model groupCmd outputs =
+    let
+        ( finalModel, extraCmds ) =
+            List.foldl
+                (\output ( m, cmds ) ->
+                    case output of
+                        Page.Group.NavigateTo route ->
+                            ( m, Navigation.pushUrl navCmd (Route.toAppUrl route) :: cmds )
+
+                        Page.Group.ShowToast level message ->
+                            let
+                                ( modelWithToast, toastCmd ) =
+                                    addToast level message m
+                            in
+                            ( modelWithToast, toastCmd :: cmds )
+
+                        Page.Group.UpdateGroupSummary summary ->
+                            case m.appState of
+                                Ready readyData ->
+                                    ( { m | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups } }
+                                    , cmds
+                                    )
+
+                                _ ->
+                                    ( m, cmds )
+
+                        Page.Group.RemoveGroup groupId ->
+                            case m.appState of
+                                Ready readyData ->
+                                    ( { m | appState = Ready { readyData | groups = Dict.remove groupId readyData.groups } }
+                                    , cmds
+                                    )
+
+                                _ ->
+                                    ( m, cmds )
+                )
+                ( model, [] )
+                outputs
+    in
+    ( finalModel
+    , Cmd.batch (Cmd.map GroupMsg groupCmd :: extraCmds)
+    )
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -265,30 +327,30 @@ update msg model =
                         _ ->
                             applyRouteGuard Nothing route
 
-                ( modelAfterGuard, loadCmd ) =
-                    ensureGroupLoaded { model | route = guardedRoute } guardedRoute
+                modelWithRoute : Model
+                modelWithRoute =
+                    { model | route = guardedRoute }
             in
-            ( initPagesIfNeeded guardedRoute modelAfterGuard
-            , Cmd.batch [ guardCmd, loadCmd ]
-            )
+            case guardedRoute of
+                GroupRoute groupId groupView ->
+                    case buildGroupConfig modelWithRoute of
+                        Just config ->
+                            let
+                                ( groupModel, groupNavCmd ) =
+                                    Page.Group.handleNavigation config groupId groupView modelWithRoute.groupModel
+                            in
+                            ( { modelWithRoute | groupModel = groupModel }
+                            , Cmd.batch [ guardCmd, Cmd.map GroupMsg groupNavCmd ]
+                            )
+
+                        Nothing ->
+                            ( modelWithRoute, guardCmd )
+
+                _ ->
+                    ( modelWithRoute, guardCmd )
 
         NavigateTo route ->
             ( model, Navigation.pushUrl navCmd (Route.toAppUrl route) )
-
-        SwitchTab tab ->
-            case model.route of
-                GroupRoute groupId _ ->
-                    let
-                        newRoute : Route
-                        newRoute =
-                            GroupRoute groupId (Tab tab)
-                    in
-                    ( { model | route = newRoute }
-                    , Navigation.pushUrl navCmd (Route.toAppUrl newRoute)
-                    )
-
-                _ ->
-                    ( model, Cmd.none )
 
         SwitchLanguage lang ->
             ( { model | language = lang, i18n = T.init lang }
@@ -334,6 +396,7 @@ update msg model =
                         , generatingIdentity = False
                         , route = guardedRoute
                         , pool = pool
+                        , groupModel = Page.Group.setIdentityHash identity.publicKeyHash model.groupModel
                       }
                     , Cmd.batch [ navCmd_, taskCmd ]
                     )
@@ -349,24 +412,50 @@ update msg model =
                 ( guardedRoute, guardCmd ) =
                     applyRouteGuard readyData.identity model.route
 
-                ( modelWithData, loadCmd ) =
-                    ensureGroupLoaded
-                        { model
-                            | appState = Ready readyData
-                            , route = guardedRoute
-                        }
-                        guardedRoute
+                modelWithData : Model
+                modelWithData =
+                    { model
+                        | appState = Ready readyData
+                        , route = guardedRoute
+                        , groupModel =
+                            case readyData.identity of
+                                Just identity ->
+                                    Page.Group.setIdentityHash identity.publicKeyHash model.groupModel
+
+                                Nothing ->
+                                    model.groupModel
+                    }
+
+                -- Handle group navigation if the initial route is a group route
+                ( modelAfterNav, navCmd_ ) =
+                    case guardedRoute of
+                        GroupRoute groupId groupView ->
+                            case buildGroupConfig modelWithData of
+                                Just config ->
+                                    let
+                                        ( groupModel, groupNavCmd ) =
+                                            Page.Group.handleNavigation config groupId groupView modelWithData.groupModel
+                                    in
+                                    ( { modelWithData | groupModel = groupModel }
+                                    , Cmd.map GroupMsg groupNavCmd
+                                    )
+
+                                Nothing ->
+                                    ( modelWithData, Cmd.none )
+
+                        _ ->
+                            ( modelWithData, Cmd.none )
 
                 ( poolAfterPb, pbCmd ) =
                     ConcurrentTask.attempt
-                        { pool = modelWithData.pool
+                        { pool = modelAfterNav.pool
                         , send = sendTask
                         , onComplete = OnPbClientInitialized
                         }
                         (PocketBase.init model.serverUrl)
             in
-            ( { modelWithData | pool = poolAfterPb }
-            , Cmd.batch [ guardCmd, loadCmd, pbCmd ]
+            ( { modelAfterNav | pool = poolAfterPb }
+            , Cmd.batch [ guardCmd, navCmd_, pbCmd ]
             )
 
         OnInitComplete (ConcurrentTask.Error err) ->
@@ -410,6 +499,13 @@ update msg model =
                         ( poolAfterServer, serverCmd ) =
                             case model.pbClient of
                                 Just client ->
+                                    let
+                                        identityHash : String
+                                        identityHash =
+                                            readyData.identity
+                                                |> Maybe.map .publicKeyHash
+                                                |> Maybe.withDefault ""
+                                    in
                                     ConcurrentTask.attempt
                                         { pool = model.pool
                                         , send = sendTask
@@ -422,7 +518,7 @@ update msg model =
                                                     Server.createGroupOnServer client
                                                         { groupId = summary.id
                                                         , groupKey = key
-                                                        , createdBy = getIdentity model
+                                                        , createdBy = identityHash
                                                         }
                                                 )
                                         )
@@ -432,7 +528,7 @@ update msg model =
                     in
                     ( { model
                         | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
-                        , loadedGroup = Nothing
+                        , groupModel = Page.Group.resetLoadedGroup model.groupModel
                         , pool = poolAfterServer
                       }
                     , Cmd.batch [ Navigation.pushUrl navCmd (Route.toAppUrl newRoute), serverCmd ]
@@ -444,231 +540,29 @@ update msg model =
         OnGroupCreated _ ->
             addToast Toast.Error (T.toastGroupCreateError model.i18n) model
 
-        OnEntrySaved groupId (ConcurrentTask.Success envelope) ->
-            case appendEventAndRecompute model groupId envelope of
-                Just updatedModel ->
-                    let
-                        modelWithUnpushed : Model
-                        modelWithUnpushed =
-                            addUnpushedIdToModel envelope.id updatedModel
-
-                        ( syncModel, syncCmd ) =
-                            triggerSync modelWithUnpushed groupId
-                    in
-                    case model.route of
-                        GroupRoute _ (Tab BalanceTab) ->
-                            addToast Toast.Success (T.toastSettlementRecorded model.i18n) syncModel
-                                |> Tuple.mapSecond (\c -> Cmd.batch [ c, syncCmd ])
-
-                        _ ->
-                            ( syncModel
-                            , Cmd.batch [ Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab EntriesTab))), syncCmd ]
-                            )
-
-                Nothing ->
-                    ( model, Cmd.none )
-
-        OnEntrySaved _ _ ->
-            addToast Toast.Error (T.toastEntrySaveError model.i18n) model
-
-        PayMember payData ->
-            case model.route of
-                GroupRoute groupId _ ->
-                    ( updateGroupModel (\gm -> { gm | pendingTransfer = Just payData }) model
-                    , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId NewEntry))
-                    )
-
-                _ ->
-                    ( model, Cmd.none )
-
-        SettleTransaction tx ->
-            case ( model.appState, model.loadedGroup ) of
-                ( Ready readyData, Just loaded ) ->
-                    let
-                        output : Page.Group.NewEntry.Output
-                        output =
-                            Page.Group.NewEntry.TransferOutput
-                                { amountCents = tx.amount
-                                , currency = loaded.summary.defaultCurrency
-                                , defaultCurrencyAmount = Nothing
-                                , fromMemberId = tx.from
-                                , toMemberId = tx.to
-                                , notes = Nothing
-                                , date = Date.posixToDate model.currentTime
-                                }
-                    in
-                    submitNewEntry model readyData loaded output
-
-                _ ->
-                    ( model, Cmd.none )
-
-        SaveSettlementPreferences prefData ->
-            case ( model.appState, model.loadedGroup ) of
-                ( Ready readyData, Just loaded ) ->
-                    submitEvent (OnEntryActionSaved loaded.summary.id)
-                        model
-                        readyData
-                        loaded
-                        (Event.SettlementPreferencesUpdated prefData)
-
-                _ ->
-                    ( model, Cmd.none )
-
-        OnEntryActionSaved groupId (ConcurrentTask.Success envelope) ->
-            let
-                baseModel : Model
-                baseModel =
-                    appendEventAndRecompute model groupId envelope
-                        |> Maybe.withDefault model
-
-                modelWithUnpushed : Model
-                modelWithUnpushed =
-                    addUnpushedIdToModel envelope.id baseModel
-
-                ( syncModel, syncCmd ) =
-                    triggerSync modelWithUnpushed groupId
-            in
-            case Toast.entryActionMessage model.i18n envelope.payload of
-                Just message ->
-                    addToast Toast.Success message syncModel
-                        |> Tuple.mapSecond (\c -> Cmd.batch [ c, syncCmd ])
-
-                Nothing ->
-                    ( syncModel, syncCmd )
-
-        OnEntryActionSaved _ _ ->
-            addToast Toast.Error (T.toastEntryActionError model.i18n) model
-
         GroupMsg subMsg ->
-            let
-                ( groupModel, maybeOutput ) =
-                    Page.Group.update subMsg model.groupModel
-
-                modelWithPage : Model
-                modelWithPage =
-                    { model | groupModel = groupModel }
-            in
-            case ( maybeOutput, model.appState, model.loadedGroup ) of
-                ( Just output, Ready readyData, Just loaded ) ->
-                    handleGroupOutput modelWithPage readyData loaded output
+            case subMsg of
+                Page.Group.OnTaskProgress ( pool, cmd ) ->
+                    let
+                        gm : Page.Group.Model
+                        gm =
+                            model.groupModel
+                    in
+                    ( { model | groupModel = { gm | pool = pool } }
+                    , Cmd.map GroupMsg cmd
+                    )
 
                 _ ->
-                    ( modelWithPage, Cmd.none )
-
-        OnMemberActionSaved groupId (ConcurrentTask.Success envelope) ->
-            case appendEventAndRecompute model groupId envelope of
-                Just updatedModel ->
-                    let
-                        modelWithUnpushed : Model
-                        modelWithUnpushed =
-                            addUnpushedIdToModel envelope.id updatedModel
-
-                        ( syncModel, syncCmd ) =
-                            triggerSync modelWithUnpushed groupId
-                    in
-                    case model.route of
-                        GroupRoute gid AddVirtualMember ->
+                    case buildGroupConfig model of
+                        Just config ->
                             let
-                                gm : Page.Group.Model
-                                gm =
-                                    syncModel.groupModel
+                                ( groupModel, groupCmd, outputs ) =
+                                    Page.Group.update config subMsg model.groupModel
                             in
-                            ( { syncModel | groupModel = { gm | addMemberModel = Page.Group.AddMember.init } }
-                            , Cmd.batch [ Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute gid (Tab MembersTab))), syncCmd ]
-                            )
+                            processGroupOutputs { model | groupModel = groupModel } groupCmd outputs
 
-                        GroupRoute gid (EditMemberMetadata memberId) ->
-                            ( syncModel
-                            , Cmd.batch [ Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute gid (MemberDetail memberId))), syncCmd ]
-                            )
-
-                        _ ->
-                            ( initPagesIfNeeded model.route syncModel
-                            , syncCmd
-                            )
-
-                Nothing ->
-                    ( model, Cmd.none )
-
-        OnMemberActionSaved _ _ ->
-            addToast Toast.Error (T.toastMemberActionError model.i18n) model
-
-        OnGroupMetadataActionSaved groupId (ConcurrentTask.Success envelope) ->
-            case appendEventAndRecompute model groupId envelope of
-                Just updatedModel ->
-                    let
-                        modelWithUnpushed : Model
-                        modelWithUnpushed =
-                            addUnpushedIdToModel envelope.id updatedModel
-
-                        ( modelAfterSummary, summaryCmd ) =
-                            syncGroupSummaryName groupId modelWithUnpushed
-
-                        ( syncModel, syncCmd ) =
-                            triggerSync modelAfterSummary groupId
-                    in
-                    ( syncModel
-                    , Cmd.batch
-                        [ summaryCmd
-                        , syncCmd
-                        , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab MembersTab)))
-                        ]
-                    )
-
-                Nothing ->
-                    ( model, Cmd.none )
-
-        OnGroupMetadataActionSaved _ _ ->
-            addToast Toast.Error (T.toastGroupSettingsError model.i18n) model
-
-        OnGroupRemoved groupId (ConcurrentTask.Success _) ->
-            case model.appState of
-                Ready readyData ->
-                    let
-                        ( modelWithToast, toastCmd ) =
-                            addToast Toast.Success
-                                (T.toastGroupRemoved model.i18n)
-                                { model
-                                    | appState = Ready { readyData | groups = Dict.remove groupId readyData.groups }
-                                    , loadedGroup = Nothing
-                                }
-                    in
-                    ( modelWithToast
-                    , Cmd.batch [ Navigation.pushUrl navCmd (Route.toAppUrl Home), toastCmd ]
-                    )
-
-                _ ->
-                    ( model, Cmd.none )
-
-        OnGroupRemoved _ _ ->
-            addToast Toast.Error (T.toastGroupRemoveError model.i18n) model
-
-        OnGroupSummarySaved (ConcurrentTask.Success _) ->
-            ( model, Cmd.none )
-
-        OnGroupSummarySaved _ ->
-            ( model, Cmd.none )
-
-        -- Group loading
-        OnGroupEventsLoaded groupId (ConcurrentTask.Success result) ->
-            let
-                modelAfterLoad : Model
-                modelAfterLoad =
-                    applyLoadedGroup groupId result.events result.groupKey result.syncCursor result.unpushedIds model
-                        |> Maybe.map (initPagesIfNeeded model.route)
-                        |> Maybe.withDefault model
-            in
-            -- Only sync if group has been synced before (has a cursor).
-            -- Freshly created groups sync via OnServerGroupCreated instead.
-            case result.syncCursor of
-                Just _ ->
-                    triggerSync modelAfterLoad groupId
-
-                Nothing ->
-                    ( modelAfterLoad, Cmd.none )
-
-        OnGroupEventsLoaded _ _ ->
-            ( model, Cmd.none )
+                        Nothing ->
+                            ( model, Cmd.none )
 
         -- Import / Export
         ExportGroup groupId ->
@@ -714,7 +608,7 @@ update msg model =
             case model.appState of
                 Ready readyData ->
                     let
-                        existingIds : Set Group.Id
+                        existingIds : Set.Set Group.Id
                         existingIds =
                             Dict.keys readyData.groups |> Set.fromList
 
@@ -757,7 +651,7 @@ update msg model =
                                 (T.toastImportSuccess model.i18n)
                                 { model
                                     | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
-                                    , loadedGroup = Nothing
+                                    , groupModel = Page.Group.resetLoadedGroup model.groupModel
                                     , homeModel = Page.Home.init
                                 }
                     in
@@ -784,7 +678,18 @@ update msg model =
 
         OnServerGroupCreated groupId (ConcurrentTask.Success _) ->
             -- Server group created; now sync (push initial events + pull + subscribe)
-            triggerSync model groupId
+            case buildGroupConfig model of
+                Just config ->
+                    let
+                        ( groupModel, syncCmd ) =
+                            Page.Group.triggerSync config groupId model.groupModel
+                    in
+                    ( { model | groupModel = groupModel }
+                    , Cmd.map GroupMsg syncCmd
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         OnServerGroupCreated _ (ConcurrentTask.Error err) ->
             -- Server group creation failed — local group still works
@@ -797,75 +702,6 @@ update msg model =
         OnServerGroupCreated _ (ConcurrentTask.UnexpectedError _) ->
             ( model, Cmd.none )
 
-        OnGroupSynced groupId pushedIds (ConcurrentTask.Success syncResult) ->
-            case ( model.appState, model.loadedGroup ) of
-                ( Ready readyData, Just loaded ) ->
-                    if loaded.summary.id == groupId then
-                        let
-                            result : Submit.SyncApplyResult
-                            result =
-                                Submit.applySyncResult pushedIds syncResult loaded
-
-                            ( taskPool, taskCmds ) =
-                                ConcurrentTask.attempt
-                                    { pool = model.pool
-                                    , send = sendTask
-                                    , onComplete = PostSyncTasksDone
-                                    }
-                                    (Submit.postSyncTasks readyData.db groupId model.pbClient result)
-
-                            modelAfterSync : Model
-                            modelAfterSync =
-                                { model
-                                    | loadedGroup = Just result.updatedGroup
-                                    , pool = taskPool
-                                    , syncInProgress = False
-                                }
-                                    |> initPagesIfNeeded model.route
-                        in
-                        -- If new events were added during sync, trigger follow-up
-                        if Set.isEmpty result.updatedGroup.unpushedIds then
-                            ( modelAfterSync, taskCmds )
-
-                        else
-                            let
-                                ( followUpModel, followUpCmd ) =
-                                    triggerSync modelAfterSync groupId
-                            in
-                            ( followUpModel, Cmd.batch [ taskCmds, followUpCmd ] )
-
-                    else
-                        ( { model | syncInProgress = False }, Cmd.none )
-
-                _ ->
-                    ( { model | syncInProgress = False }, Cmd.none )
-
-        OnGroupSynced _ _ (ConcurrentTask.Error err) ->
-            -- Sync failed — unpushedIds preserved, will retry on next sync
-            addToast Toast.Error ("Sync: " ++ Server.errorToString err) { model | syncInProgress = False }
-
-        OnGroupSynced _ _ (ConcurrentTask.UnexpectedError _) ->
-            ( { model | syncInProgress = False }, Cmd.none )
-
-        PostSyncTasksDone (ConcurrentTask.Success ()) ->
-            ( model, Cmd.none )
-
-        PostSyncTasksDone _ ->
-            ( model, Cmd.none )
-
-        OnPocketbaseEvent value ->
-            case model.loadedGroup of
-                Just loaded ->
-                    case Json.Decode.decodeValue PocketBase.Realtime.decodeEvent value of
-                        Ok ( _, PocketBase.Realtime.Created record ) ->
-                            handleRealtimeRecord loaded record model
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
-
         ClipboardCopied ->
             addToast Toast.Success (T.toastCopied model.i18n) model
 
@@ -875,518 +711,38 @@ update msg model =
             )
 
 
-submitContext : (ConcurrentTask.Response Idb.Error Event.Envelope -> Msg) -> Model -> Storage.InitData -> Maybe (Submit.Context Msg)
-submitContext onComplete model readyData =
-    readyData.identity
-        |> Maybe.map
-            (\identity ->
-                { pool = model.pool
-                , sendTask = sendTask
-                , onComplete = onComplete
-                , randomSeed = model.randomSeed
-                , uuidState = model.uuidState
-                , currentTime = model.currentTime
-                , db = readyData.db
-                , identity = identity
-                }
-            )
-
-
-{-| Get the current user's identity public key hash, or empty string.
+{-| Submit a new group using Main's own pool/seed/uuid.
 -}
-getIdentity : Model -> String
-getIdentity model =
-    case model.appState of
-        Ready readyData ->
-            readyData.identity
-                |> Maybe.map .publicKeyHash
-                |> Maybe.withDefault ""
-
-        _ ->
-            ""
-
-
-{-| Trigger a server sync (auth + push unpushed + pull) for the given group.
-Skips if a sync is already in progress.
--}
-triggerSync : Model -> Group.Id -> ( Model, Cmd Msg )
-triggerSync model groupId =
-    if model.syncInProgress then
-        ( model, Cmd.none )
-
-    else
-        case ( model.pbClient, model.loadedGroup ) of
-            ( Just client, Just loaded ) ->
-                if loaded.summary.id == groupId then
-                    let
-                        ctx : Server.ServerContext
-                        ctx =
-                            { client = client, groupId = groupId, groupKey = loaded.groupKey }
-
-                        -- Snapshot the IDs being pushed (to diff later in OnGroupSynced)
-                        pushedIds : Set String
-                        pushedIds =
-                            loaded.unpushedIds
-
-                        -- Collect unpushed events from the loaded event list
-                        unpushedEvents : List Event.Envelope
-                        unpushedEvents =
-                            List.filter (\e -> Set.member e.id pushedIds) loaded.events
-                                |> List.reverse
-
-                        syncTask : ConcurrentTask.ConcurrentTask Server.Error Server.SyncResult
-                        syncTask =
-                            Server.authenticate client { groupId = groupId, groupKey = loaded.groupKey }
-                                |> ConcurrentTask.andThen
-                                    (\() ->
-                                        Server.syncGroup ctx
-                                            (getIdentity model)
-                                            { unpushedEvents = unpushedEvents
-                                            , pullCursor = loaded.syncCursor
-                                            }
-                                    )
-
-                        ( pool, cmd ) =
-                            ConcurrentTask.attempt
-                                { pool = model.pool
-                                , send = sendTask
-                                , onComplete = OnGroupSynced groupId pushedIds
-                                }
-                                syncTask
-                    in
-                    ( { model | pool = pool, syncInProgress = True }, cmd )
-
-                else
-                    ( model, Cmd.none )
-
-            _ ->
-                ( model, Cmd.none )
-
-
-{-| Handle an incoming realtime event record.
--}
-handleRealtimeRecord : LoadedGroup -> Json.Decode.Value -> Model -> ( Model, Cmd Msg )
-handleRealtimeRecord loaded record model =
-    case Json.Decode.decodeValue Server.realtimeEventDecoder record of
-        Ok serverEvt ->
-            if serverEvt.groupId == loaded.summary.id then
-                case Json.Decode.decodeString Symmetric.encryptedDataDecoder serverEvt.eventData of
-                    Ok _ ->
-                        -- We need to decrypt async, but for now just trigger a pull
-                        triggerSync model loaded.summary.id
-
-                    Err _ ->
-                        ( model, Cmd.none )
-
-            else
-                ( model, Cmd.none )
-
-        Err _ ->
-            ( model, Cmd.none )
-
-
-updateGroupModel : (Page.Group.Model -> Page.Group.Model) -> Model -> Model
-updateGroupModel fn model =
-    { model | groupModel = fn model.groupModel }
-
-
-{-| Add an event ID to the in-memory unpushed set of the loaded group.
--}
-addUnpushedIdToModel : String -> Model -> Model
-addUnpushedIdToModel eventId model =
-    case model.loadedGroup of
-        Just loaded ->
-            { model
-                | loadedGroup =
-                    Just { loaded | unpushedIds = Set.insert eventId loaded.unpushedIds }
-            }
-
-        Nothing ->
-            model
-
-
-applySubmitResult : Model -> ( Submit.State Msg, Cmd Msg ) -> ( Model, Cmd Msg )
-applySubmitResult model ( state, cmd ) =
-    ( { model
-        | pool = state.pool
-        , randomSeed = state.randomSeed
-        , uuidState = state.uuidState
-      }
-    , cmd
-    )
-
-
-submitEntryAction : Model -> (Submit.Context Msg -> LoadedGroup -> ( Submit.State Msg, Cmd Msg )) -> ( Model, Cmd Msg )
-submitEntryAction model action =
-    case ( model.appState, model.loadedGroup ) of
-        ( Ready readyData, Just loaded ) ->
-            case submitContext (OnEntryActionSaved loaded.summary.id) model readyData of
-                Just ctx ->
-                    applySubmitResult model (action ctx loaded)
-
-                Nothing ->
-                    ( model, Cmd.none )
-
-        _ ->
-            ( model, Cmd.none )
-
-
 submitNewGroup : Model -> Storage.InitData -> Form.NewGroup.Output -> ( Model, Cmd Msg )
 submitNewGroup model readyData output =
-    case submitContext (OnEntrySaved "") model readyData of
-        Just ctx ->
-            -- newGroup takes its own onComplete (different response type)
-            applySubmitResult model (Submit.newGroup ctx OnGroupCreated output)
-
-        Nothing ->
-            ( model, Cmd.none )
-
-
-submitNewEntry : Model -> Storage.InitData -> LoadedGroup -> Page.Group.NewEntry.Output -> ( Model, Cmd Msg )
-submitNewEntry model readyData loaded output =
-    case submitContext (OnEntrySaved loaded.summary.id) model readyData of
-        Just ctx ->
-            applySubmitResult model (Submit.newEntry ctx loaded output)
-
-        Nothing ->
-            ( model, Cmd.none )
-
-
-submitEditEntry : Model -> Storage.InitData -> LoadedGroup -> Entry.Id -> Page.Group.NewEntry.Output -> ( Model, Cmd Msg )
-submitEditEntry model readyData loaded originalEntryId output =
-    case submitContext (OnEntrySaved loaded.summary.id) model readyData of
-        Just ctx ->
-            Submit.editEntry ctx loaded originalEntryId output
-                |> Maybe.map (applySubmitResult model)
-                |> Maybe.withDefault ( model, Cmd.none )
-
-        Nothing ->
-            ( model, Cmd.none )
-
-
-initPagesIfNeeded : Route -> Model -> Model
-initPagesIfNeeded route model =
-    case ( route, model.appState, model.loadedGroup ) of
-        ( GroupRoute _ groupView, Ready readyData, Just loaded ) ->
+    case readyData.identity of
+        Just identity ->
             let
-                context : Page.Group.InitPageContext
-                context =
-                    { entryFormConfig = Submit.entryFormConfig readyData loaded model.currentTime
-                    , groupState = loaded.groupState
-                    }
-            in
-            { model | groupModel = Page.Group.initPageIfNeeded context groupView model.groupModel }
-
-        _ ->
-            model
-
-
-ensureGroupLoaded : Model -> Route -> ( Model, Cmd Msg )
-ensureGroupLoaded model route =
-    case route of
-        GroupRoute groupId _ ->
-            case model.loadedGroup of
-                Just loaded ->
-                    if loaded.summary.id == groupId then
-                        ( model, Cmd.none )
-
-                    else
-                        loadGroup model groupId
-
-                Nothing ->
-                    loadGroup model groupId
-
-        _ ->
-            ( model, Cmd.none )
-
-
-loadGroup : Model -> Group.Id -> ( Model, Cmd Msg )
-loadGroup model groupId =
-    case model.appState of
-        Ready readyData ->
-            let
-                ( pool, cmd ) =
-                    ConcurrentTask.attempt
-                        { pool = model.pool
-                        , send = sendTask
-                        , onComplete = OnGroupEventsLoaded groupId
-                        }
-                        (Storage.loadGroup readyData.db groupId)
-            in
-            ( { model | pool = pool, loadedGroup = Nothing }, cmd )
-
-        _ ->
-            ( model, Cmd.none )
-
-
-handleGroupOutput : Model -> Storage.InitData -> LoadedGroup -> Page.Group.Output -> ( Model, Cmd Msg )
-handleGroupOutput model readyData loaded output =
-    case output of
-        Page.Group.MemberDetailOutput detailOutput ->
-            handleMemberDetailOutput model readyData loaded detailOutput
-
-        Page.Group.AddMemberOutput addOutput ->
-            submitAddMember model readyData loaded addOutput
-
-        Page.Group.EditMemberMetadataOutput metaOutput ->
-            submitMemberMetadata model readyData loaded metaOutput
-
-        Page.Group.NewEntryOutput entryOutput ->
-            case model.route of
-                GroupRoute _ (EditEntry entryId) ->
-                    submitEditEntry model readyData loaded entryId entryOutput
-
-                _ ->
-                    submitNewEntry model readyData loaded entryOutput
-
-        Page.Group.EntryDetailOutput detailOutput ->
-            handleEntryDetailOutput model detailOutput
-
-        Page.Group.EditGroupMetadataOutput change ->
-            submitGroupMetadata model readyData loaded change
-
-        Page.Group.DeleteGroupRequested ->
-            case model.route of
-                GroupRoute groupId _ ->
-                    deleteGroup model groupId
-
-                _ ->
-                    ( model, Cmd.none )
-
-
-handleEntryDetailOutput : Model -> Page.Group.EntryDetail.Output -> ( Model, Cmd Msg )
-handleEntryDetailOutput model output =
-    case output of
-        Page.Group.EntryDetail.DeleteRequested ->
-            case model.route of
-                GroupRoute _ (EntryDetail entryId) ->
-                    submitEntryAction model (\ctx ld -> Submit.deleteEntry ctx ld entryId)
-
-                _ ->
-                    ( model, Cmd.none )
-
-        Page.Group.EntryDetail.RestoreRequested ->
-            case model.route of
-                GroupRoute _ (EntryDetail entryId) ->
-                    submitEntryAction model (\ctx ld -> Submit.restoreEntry ctx ld entryId)
-
-                _ ->
-                    ( model, Cmd.none )
-
-        Page.Group.EntryDetail.EditRequested ->
-            case model.route of
-                GroupRoute groupId (EntryDetail entryId) ->
-                    ( model, Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (EditEntry entryId))) )
-
-                _ ->
-                    ( model, Cmd.none )
-
-        Page.Group.EntryDetail.BackRequested ->
-            case model.route of
-                GroupRoute groupId _ ->
-                    ( model, Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab EntriesTab))) )
-
-                _ ->
-                    ( model, Cmd.none )
-
-
-handleMemberDetailOutput : Model -> Storage.InitData -> LoadedGroup -> Page.Group.MemberDetail.Output -> ( Model, Cmd Msg )
-handleMemberDetailOutput model readyData loaded output =
-    let
-        submit : Event.Payload -> ( Model, Cmd Msg )
-        submit =
-            submitEvent (OnMemberActionSaved loaded.summary.id) model readyData loaded
-    in
-    case output of
-        Page.Group.MemberDetail.RenameOutput data ->
-            submit
-                (Event.MemberRenamed
-                    { rootId = data.memberId
-                    , oldName = data.oldName
-                    , newName = data.newName
-                    }
-                )
-
-        Page.Group.MemberDetail.RetireOutput memberId ->
-            submit (Event.MemberRetired { rootId = memberId })
-
-        Page.Group.MemberDetail.UnretireOutput memberId ->
-            submit (Event.MemberUnretired { rootId = memberId })
-
-        Page.Group.MemberDetail.NavigateToEditMetadata ->
-            case model.route of
-                GroupRoute groupId (MemberDetail memberId) ->
-                    ( model
-                    , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (EditMemberMetadata memberId)))
-                    )
-
-                _ ->
-                    ( model, Cmd.none )
-
-        Page.Group.MemberDetail.NavigateBack ->
-            case model.route of
-                GroupRoute groupId _ ->
-                    ( model
-                    , Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab MembersTab)))
-                    )
-
-                _ ->
-                    ( model, Cmd.none )
-
-
-submitEvent : (ConcurrentTask.Response Idb.Error Event.Envelope -> Msg) -> Model -> Storage.InitData -> LoadedGroup -> Event.Payload -> ( Model, Cmd Msg )
-submitEvent onComplete model readyData loaded payload =
-    case submitContext onComplete model readyData of
-        Just ctx ->
-            applySubmitResult model (Submit.event ctx loaded payload)
-
-        Nothing ->
-            ( model, Cmd.none )
-
-
-submitAddMember : Model -> Storage.InitData -> LoadedGroup -> Page.Group.AddMember.Output -> ( Model, Cmd Msg )
-submitAddMember model readyData loaded output =
-    case submitContext (OnMemberActionSaved loaded.summary.id) model readyData of
-        Just ctx ->
-            applySubmitResult model (Submit.addMember ctx loaded output)
-
-        Nothing ->
-            ( model, Cmd.none )
-
-
-submitMemberMetadata : Model -> Storage.InitData -> LoadedGroup -> Page.Group.EditMemberMetadata.Output -> ( Model, Cmd Msg )
-submitMemberMetadata model readyData loaded output =
-    let
-        ( modelAfterMeta, metaCmd ) =
-            submitEvent (OnMemberActionSaved loaded.summary.id)
-                model
-                readyData
-                loaded
-                (Event.MemberMetadataUpdated
-                    { rootId = output.memberId
-                    , metadata = output.metadata
-                    }
-                )
-    in
-    if output.newName /= output.oldName then
-        let
-            ( modelAfterRename, renameCmd ) =
-                submitEvent (OnMemberActionSaved loaded.summary.id)
-                    modelAfterMeta
-                    readyData
-                    loaded
-                    (Event.MemberRenamed
-                        { rootId = output.memberId
-                        , oldName = output.oldName
-                        , newName = output.newName
-                        }
-                    )
-        in
-        ( modelAfterRename, Cmd.batch [ metaCmd, renameCmd ] )
-
-    else
-        ( modelAfterMeta, metaCmd )
-
-
-submitGroupMetadata : Model -> Storage.InitData -> LoadedGroup -> Event.GroupMetadataChange -> ( Model, Cmd Msg )
-submitGroupMetadata model readyData loaded change =
-    submitEvent (OnGroupMetadataActionSaved loaded.summary.id)
-        model
-        readyData
-        loaded
-        (Event.GroupMetadataUpdated change)
-
-
-{-| After a group metadata event is applied, sync the group name in the summary list and IndexedDB.
--}
-syncGroupSummaryName : Group.Id -> Model -> ( Model, Cmd Msg )
-syncGroupSummaryName groupId model =
-    case ( model.loadedGroup, model.appState ) of
-        ( Just loaded, Ready readyData ) ->
-            let
-                updatedSummary : GroupSummary
-                updatedSummary =
-                    { id = groupId
-                    , name = loaded.groupState.groupMeta.name
-                    , defaultCurrency = loaded.summary.defaultCurrency
+                ctx : Submit.Context Msg
+                ctx =
+                    { pool = model.pool
+                    , sendTask = sendTask
+                    , onComplete = \_ -> OnGroupCreated (ConcurrentTask.UnexpectedError (ConcurrentTask.InternalError "unused"))
+                    , randomSeed = model.randomSeed
+                    , uuidState = model.uuidState
+                    , currentTime = model.currentTime
+                    , db = readyData.db
+                    , identity = identity
                     }
 
-                ( pool, cmd ) =
-                    ConcurrentTask.attempt
-                        { pool = model.pool
-                        , send = sendTask
-                        , onComplete = OnGroupSummarySaved
-                        }
-                        (Storage.saveGroupSummary readyData.db updatedSummary)
+                ( state, cmd ) =
+                    Submit.newGroup ctx OnGroupCreated output
             in
             ( { model
-                | appState = Ready { readyData | groups = Dict.insert groupId updatedSummary readyData.groups }
-                , loadedGroup = Just { loaded | summary = updatedSummary }
-                , pool = pool
+                | pool = state.pool
+                , randomSeed = state.randomSeed
+                , uuidState = state.uuidState
               }
             , cmd
             )
 
-        _ ->
-            ( model, Cmd.none )
-
-
-deleteGroup : Model -> Group.Id -> ( Model, Cmd Msg )
-deleteGroup model groupId =
-    case model.appState of
-        Ready readyData ->
-            let
-                ( pool, cmd ) =
-                    ConcurrentTask.attempt
-                        { pool = model.pool
-                        , send = sendTask
-                        , onComplete = OnGroupRemoved groupId
-                        }
-                        (Storage.deleteGroup readyData.db groupId)
-            in
-            ( { model | pool = pool }, cmd )
-
-        _ ->
-            ( model, Cmd.none )
-
-
-appendEventAndRecompute : Model -> Group.Id -> Event.Envelope -> Maybe Model
-appendEventAndRecompute model groupId envelope =
-    mapLoadedGroup
-        (\loaded ->
-            { loaded
-                | events = envelope :: loaded.events
-                , groupState = GroupState.applyEvents [ envelope ] loaded.groupState
-            }
-        )
-        groupId
-        model
-
-
-applyLoadedGroup : Group.Id -> List Event.Envelope -> Symmetric.Key -> Maybe String -> Set String -> Model -> Maybe Model
-applyLoadedGroup groupId events groupKey syncCursor unpushedIds model =
-    case model.appState of
-        Ready readyData ->
-            Dict.get groupId readyData.groups
-                |> Maybe.map (\summary -> Submit.initLoadedGroup events summary groupKey syncCursor unpushedIds)
-                |> Maybe.map (\loaded -> { model | loadedGroup = Just loaded })
-
-        _ ->
-            Nothing
-
-
-mapLoadedGroup : (LoadedGroup -> LoadedGroup) -> Group.Id -> Model -> Maybe Model
-mapLoadedGroup f groupId model =
-    case model.loadedGroup of
-        Just loaded ->
-            if loaded.summary.id == groupId then
-                Just { model | loadedGroup = Just (f loaded) }
-
-            else
-                Nothing
-
         Nothing ->
-            Nothing
+            ( model, Cmd.none )
 
 
 applyRouteGuard : Maybe Identity -> Route -> ( Route, Cmd Msg )
@@ -1455,10 +811,6 @@ viewReady model readyData =
         shell : String -> Ui.Element Msg -> Ui.Element Msg
         shell title content =
             UI.Shell.appShell { title = title, headerExtra = langSelector, content = content }
-
-        withGroup : Group.Id -> (LoadedGroup -> Ui.Element Msg) -> Ui.Element Msg
-        withGroup groupId viewFn =
-            viewWithLoadedGroup model groupId langSelector viewFn
     in
     case model.route of
         Setup ->
@@ -1481,60 +833,18 @@ viewReady model readyData =
                 (Page.NewGroup.view i18n NewGroupMsg model.newGroupModel)
 
         GroupRoute groupId groupView ->
-            withGroup groupId (viewGroupPage model readyData langSelector groupId groupView)
+            Page.Group.view
+                { i18n = i18n
+                , toMsg = GroupMsg
+                , today = Date.posixToDate model.currentTime
+                , groupId = groupId
+                }
+                langSelector
+                groupView
+                model.groupModel
 
         About ->
             shell (T.shellPartage i18n) (Page.About.view i18n)
 
         NotFound ->
             shell (T.shellPartage i18n) (Page.NotFound.view i18n)
-
-
-viewGroupPage : Model -> Storage.InitData -> Ui.Element Msg -> Group.Id -> Route.GroupView -> LoadedGroup -> Ui.Element Msg
-viewGroupPage model readyData langSelector groupId groupView loaded =
-    Page.Group.view
-        { i18n = model.i18n
-        , onTabClick = SwitchTab
-        , onNewEntry = NavigateTo (GroupRoute groupId NewEntry)
-        , onEntryClick = \entryId -> NavigateTo (GroupRoute groupId (EntryDetail entryId))
-        , onMemberClick = \memberId -> NavigateTo (GroupRoute groupId (MemberDetail memberId))
-        , onAddMember = NavigateTo (GroupRoute groupId AddVirtualMember)
-        , onEditGroupMetadata = NavigateTo (GroupRoute groupId EditGroupMetadata)
-        , onSettleTransaction = SettleTransaction
-        , onPayMember = PayMember
-        , onSaveSettlementPreferences = SaveSettlementPreferences
-        , currentUserRootId = Submit.currentUserRootId readyData loaded
-        , entryDetailPath = \entryId -> Route.toPath (GroupRoute groupId (EntryDetail entryId))
-        , groupDefaultCurrency = loaded.summary.defaultCurrency
-        , today = Date.posixToDate model.currentTime
-        , toMsg = GroupMsg
-        }
-        langSelector
-        groupView
-        loaded.groupState
-        model.groupModel
-
-
-viewWithLoadedGroup : Model -> Group.Id -> Ui.Element Msg -> (LoadedGroup -> Ui.Element Msg) -> Ui.Element Msg
-viewWithLoadedGroup model groupId langSelector viewFn =
-    let
-        loadingShell : Ui.Element Msg
-        loadingShell =
-            UI.Shell.appShell
-                { title = T.shellPartage model.i18n
-                , headerExtra = langSelector
-                , content =
-                    Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                        (Ui.text (T.loadingGroup model.i18n))
-                }
-    in
-    case model.loadedGroup of
-        Just loaded ->
-            if loaded.summary.id == groupId then
-                viewFn loaded
-
-            else
-                loadingShell
-
-        Nothing ->
-            loadingShell
