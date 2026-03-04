@@ -27,7 +27,6 @@ import ConcurrentTask
 import Dict exposing (Dict)
 import Domain.Currency exposing (Currency(..))
 import Domain.Date as Date exposing (Date)
-import Domain.Entry as Entry
 import Domain.Event as Event
 import Domain.Group as Group
 import Domain.GroupState as GroupState exposing (GroupState)
@@ -251,6 +250,34 @@ handleNavigation config groupId groupView model =
     ( modelAfterInit, loadCmd )
 
 
+ensureGroupLoaded : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
+ensureGroupLoaded config groupId model =
+    case model.loadedGroup of
+        Just loaded ->
+            if loaded.summary.id == groupId then
+                ( model, Cmd.none )
+
+            else
+                loadGroup config groupId model
+
+        Nothing ->
+            loadGroup config groupId model
+
+
+loadGroup : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
+loadGroup config groupId model =
+    let
+        ( pool, cmd ) =
+            ConcurrentTask.attempt
+                { pool = model.pool
+                , send = config.sendTask
+                , onComplete = OnGroupEventsLoaded groupId
+                }
+                (Storage.loadGroup config.db groupId)
+    in
+    ( { model | pool = pool, loadedGroup = Nothing }, cmd )
+
+
 {-| Trigger a server sync for the given group. Called by Main on OnServerGroupCreated.
 -}
 triggerSync : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
@@ -329,7 +356,7 @@ update config msg model =
             in
             case ( maybeOutput, model.loadedGroup ) of
                 ( Just addOutput, Just loaded ) ->
-                    submitAddMember config modelWithPage loaded addOutput
+                    runSubmit (OnMemberActionSaved loaded.summary.id) config modelWithPage (\ctx -> Submit.addMember ctx loaded addOutput)
 
                 _ ->
                     ( modelWithPage, Cmd.none, [] )
@@ -365,10 +392,15 @@ update config msg model =
                 ( Just entryOutput, Just loaded ) ->
                     case config.route of
                         GroupRoute _ (EditEntry entryId) ->
-                            submitEditEntry config modelWithPage loaded entryId entryOutput
+                            case Submit.editEntry (submitContext (OnEntrySaved loaded.summary.id) config modelWithPage) loaded entryId entryOutput of
+                                Just ( state, cmd ) ->
+                                    ( { modelWithPage | pool = state.pool, randomSeed = state.randomSeed, uuidState = state.uuidState }, cmd, [] )
+
+                                Nothing ->
+                                    ( modelWithPage, Cmd.none, [] )
 
                         _ ->
-                            submitNewEntry config modelWithPage loaded entryOutput
+                            runSubmit (OnEntrySaved loaded.summary.id) config modelWithPage (\ctx -> Submit.newEntry ctx loaded entryOutput)
 
                 _ ->
                     ( modelWithPage, Cmd.none, [] )
@@ -412,7 +444,10 @@ update config msg model =
             else
                 case ( result.metadataOutput, model.loadedGroup ) of
                     ( Just change, Just loaded ) ->
-                        submitGroupMetadata config modelWithPage loaded change
+                        runSubmit (OnGroupMetadataActionSaved loaded.summary.id)
+                            config
+                            modelWithPage
+                            (\ctx -> Submit.event ctx loaded (Event.GroupMetadataUpdated change))
 
                     _ ->
                         ( modelWithPage, Cmd.none, [] )
@@ -445,7 +480,7 @@ update config msg model =
                                 , date = Date.posixToDate config.currentTime
                                 }
                     in
-                    submitNewEntry config model loaded output
+                    runSubmit (OnEntrySaved loaded.summary.id) config model (\ctx -> Submit.newEntry ctx loaded output)
 
                 Nothing ->
                     ( model, Cmd.none, [] )
@@ -464,28 +499,14 @@ update config msg model =
 
         -- Async response handlers
         OnEntrySaved groupId (ConcurrentTask.Success envelope) ->
-            case appendEventAndRecompute model groupId envelope of
-                Just updatedModel ->
-                    let
-                        modelWithUnpushed : Model
-                        modelWithUnpushed =
-                            addUnpushedIdToModel envelope.id updatedModel
-
-                        ( syncModel, syncCmd ) =
-                            triggerSyncInternal config groupId modelWithUnpushed
-                    in
+            case applyAndSync config groupId envelope model of
+                Just ( syncModel, syncCmd ) ->
                     case config.route of
                         GroupRoute _ (Tab BalanceTab) ->
-                            ( syncModel
-                            , syncCmd
-                            , [ ShowToast Toast.Success (T.toastSettlementRecorded config.i18n) ]
-                            )
+                            ( syncModel, syncCmd, [ ShowToast Toast.Success (T.toastSettlementRecorded config.i18n) ] )
 
                         _ ->
-                            ( syncModel
-                            , syncCmd
-                            , [ NavigateTo (GroupRoute groupId (Tab EntriesTab)) ]
-                            )
+                            ( syncModel, syncCmd, [ NavigateTo (GroupRoute groupId (Tab EntriesTab)) ] )
 
                 Nothing ->
                     ( model, Cmd.none, [] )
@@ -495,17 +516,9 @@ update config msg model =
 
         OnEntryActionSaved groupId (ConcurrentTask.Success envelope) ->
             let
-                baseModel : Model
-                baseModel =
-                    appendEventAndRecompute model groupId envelope
-                        |> Maybe.withDefault model
-
-                modelWithUnpushed : Model
-                modelWithUnpushed =
-                    addUnpushedIdToModel envelope.id baseModel
-
                 ( syncModel, syncCmd ) =
-                    triggerSyncInternal config groupId modelWithUnpushed
+                    applyAndSync config groupId envelope model
+                        |> Maybe.withDefault ( model, Cmd.none )
             in
             case Toast.entryActionMessage config.i18n envelope.payload of
                 Just message ->
@@ -518,16 +531,8 @@ update config msg model =
             ( model, Cmd.none, [ ShowToast Toast.Error (T.toastEntryActionError config.i18n) ] )
 
         OnMemberActionSaved groupId (ConcurrentTask.Success envelope) ->
-            case appendEventAndRecompute model groupId envelope of
-                Just updatedModel ->
-                    let
-                        modelWithUnpushed : Model
-                        modelWithUnpushed =
-                            addUnpushedIdToModel envelope.id updatedModel
-
-                        ( syncModel, syncCmd ) =
-                            triggerSyncInternal config groupId modelWithUnpushed
-                    in
+            case applyAndSync config groupId envelope model of
+                Just ( syncModel, syncCmd ) ->
                     case config.route of
                         GroupRoute gid AddVirtualMember ->
                             ( { syncModel | addMemberModel = Page.Group.AddMember.init }
@@ -536,16 +541,10 @@ update config msg model =
                             )
 
                         GroupRoute gid (EditMemberMetadata memberId) ->
-                            ( syncModel
-                            , syncCmd
-                            , [ NavigateTo (GroupRoute gid (MemberDetail memberId)) ]
-                            )
+                            ( syncModel, syncCmd, [ NavigateTo (GroupRoute gid (MemberDetail memberId)) ] )
 
                         _ ->
-                            ( initPagesIfNeeded config (routeToGroupView config.route) syncModel
-                            , syncCmd
-                            , []
-                            )
+                            ( initPagesIfNeeded config (routeToGroupView config.route) syncModel, syncCmd, [] )
 
                 Nothing ->
                     ( model, Cmd.none, [] )
@@ -713,7 +712,7 @@ routeToGroupView route =
             Tab BalanceTab
 
 
-{-| Build a Submit.Context from our config and model. No Maybe — UpdateConfig guarantees identity.
+{-| Build a Submit.Context from our config and model.
 -}
 submitContext : (ConcurrentTask.Response Idb.Error Event.Envelope -> Msg) -> UpdateConfig -> Model -> Submit.Context Msg
 submitContext onComplete config model =
@@ -728,136 +727,71 @@ submitContext onComplete config model =
     }
 
 
-{-| Apply the pool/seed/uuid state returned from a Submit operation.
+{-| Build context, run a submit function, apply the returned state to model.
 -}
-applySubmitResult : Model -> ( Submit.State Msg, Cmd Msg ) -> ( Model, Cmd Msg )
-applySubmitResult model ( state, cmd ) =
-    ( { model
-        | pool = state.pool
-        , randomSeed = state.randomSeed
-        , uuidState = state.uuidState
-      }
+runSubmit : (ConcurrentTask.Response Idb.Error Event.Envelope -> Msg) -> UpdateConfig -> Model -> (Submit.Context Msg -> ( Submit.State Msg, Cmd Msg )) -> ( Model, Cmd Msg, List Output )
+runSubmit onComplete config model submitFn =
+    let
+        ( state, cmd ) =
+            submitFn (submitContext onComplete config model)
+    in
+    ( { model | pool = state.pool, randomSeed = state.randomSeed, uuidState = state.uuidState }
     , cmd
+    , []
     )
 
 
-submitNewEntry : UpdateConfig -> Model -> LoadedGroup -> Page.Group.NewEntry.Output -> ( Model, Cmd Msg, List Output )
-submitNewEntry config model loaded output =
-    let
-        ctx : Submit.Context Msg
-        ctx =
-            submitContext (OnEntrySaved loaded.summary.id) config model
-
-        ( updatedModel, cmd ) =
-            applySubmitResult model (Submit.newEntry ctx loaded output)
-    in
-    ( updatedModel, cmd, [] )
-
-
-submitEditEntry : UpdateConfig -> Model -> LoadedGroup -> Entry.Id -> Page.Group.NewEntry.Output -> ( Model, Cmd Msg, List Output )
-submitEditEntry config model loaded originalEntryId output =
-    let
-        ctx : Submit.Context Msg
-        ctx =
-            submitContext (OnEntrySaved loaded.summary.id) config model
-    in
-    case Submit.editEntry ctx loaded originalEntryId output of
-        Just result ->
-            let
-                ( updatedModel, cmd ) =
-                    applySubmitResult model result
-            in
-            ( updatedModel, cmd, [] )
-
-        Nothing ->
-            ( model, Cmd.none, [] )
-
-
+{-| Submit an entry action (delete/restore), checking loadedGroup.
+-}
 submitEntryAction : UpdateConfig -> Model -> (Submit.Context Msg -> LoadedGroup -> ( Submit.State Msg, Cmd Msg )) -> ( Model, Cmd Msg, List Output )
 submitEntryAction config model action =
     case model.loadedGroup of
         Just loaded ->
-            let
-                ctx : Submit.Context Msg
-                ctx =
-                    submitContext (OnEntryActionSaved loaded.summary.id) config model
-
-                ( updatedModel, cmd ) =
-                    applySubmitResult model (action ctx loaded)
-            in
-            ( updatedModel, cmd, [] )
+            runSubmit (OnEntryActionSaved loaded.summary.id) config model (\ctx -> action ctx loaded)
 
         Nothing ->
             ( model, Cmd.none, [] )
 
 
+{-| Submit a generic event payload to a loaded group.
+-}
 submitEvent : (ConcurrentTask.Response Idb.Error Event.Envelope -> Msg) -> UpdateConfig -> Model -> LoadedGroup -> Event.Payload -> ( Model, Cmd Msg, List Output )
 submitEvent onComplete config model loaded payload =
-    let
-        ctx : Submit.Context Msg
-        ctx =
-            submitContext onComplete config model
-
-        ( updatedModel, cmd ) =
-            applySubmitResult model (Submit.event ctx loaded payload)
-    in
-    ( updatedModel, cmd, [] )
+    runSubmit onComplete config model (\ctx -> Submit.event ctx loaded payload)
 
 
-submitAddMember : UpdateConfig -> Model -> LoadedGroup -> Page.Group.AddMember.Output -> ( Model, Cmd Msg, List Output )
-submitAddMember config model loaded output =
-    let
-        ctx : Submit.Context Msg
-        ctx =
-            submitContext (OnMemberActionSaved loaded.summary.id) config model
-
-        ( updatedModel, cmd ) =
-            applySubmitResult model (Submit.addMember ctx loaded output)
-    in
-    ( updatedModel, cmd, [] )
-
-
+{-| Submit member metadata update, with optional rename if name changed.
+-}
 submitMemberMetadata : UpdateConfig -> Model -> LoadedGroup -> Page.Group.EditMemberMetadata.Output -> ( Model, Cmd Msg, List Output )
 submitMemberMetadata config model loaded output =
     let
-        ctx1 : Submit.Context Msg
-        ctx1 =
-            submitContext (OnMemberActionSaved loaded.summary.id) config model
-
-        ( modelAfterMeta, metaCmd ) =
-            applySubmitResult model (Submit.event ctx1 loaded (Event.MemberMetadataUpdated { rootId = output.memberId, metadata = output.metadata }))
+        ( modelAfterMeta, metaCmd, _ ) =
+            runSubmit (OnMemberActionSaved loaded.summary.id)
+                config
+                model
+                (\ctx -> Submit.event ctx loaded (Event.MemberMetadataUpdated { rootId = output.memberId, metadata = output.metadata }))
     in
     if output.newName /= output.oldName then
         let
-            ctx2 : Submit.Context Msg
-            ctx2 =
-                submitContext (OnMemberActionSaved loaded.summary.id) config modelAfterMeta
-
-            ( modelAfterRename, renameCmd ) =
-                applySubmitResult modelAfterMeta
-                    (Submit.event ctx2
-                        loaded
-                        (Event.MemberRenamed
-                            { rootId = output.memberId
-                            , oldName = output.oldName
-                            , newName = output.newName
-                            }
-                        )
+            ( modelAfterRename, renameCmd, _ ) =
+                runSubmit (OnMemberActionSaved loaded.summary.id)
+                    config
+                    modelAfterMeta
+                    (\ctx ->
+                        Submit.event ctx
+                            loaded
+                            (Event.MemberRenamed
+                                { rootId = output.memberId
+                                , oldName = output.oldName
+                                , newName = output.newName
+                                }
+                            )
                     )
         in
         ( modelAfterRename, Cmd.batch [ metaCmd, renameCmd ], [] )
 
     else
         ( modelAfterMeta, metaCmd, [] )
-
-
-submitGroupMetadata : UpdateConfig -> Model -> LoadedGroup -> Event.GroupMetadataChange -> ( Model, Cmd Msg, List Output )
-submitGroupMetadata config model loaded change =
-    submitEvent (OnGroupMetadataActionSaved loaded.summary.id)
-        config
-        model
-        loaded
-        (Event.GroupMetadataUpdated change)
 
 
 handleEntryDetailOutput : UpdateConfig -> Model -> Page.Group.EntryDetail.Output -> ( Model, Cmd Msg, List Output )
@@ -939,6 +873,49 @@ handleMemberDetailOutput config model output =
 
         Nothing ->
             ( model, Cmd.none, [] )
+
+
+{-| Append event to loaded group, mark as unpushed, and trigger sync.
+Returns Nothing if the loaded group doesn't match the groupId.
+-}
+applyAndSync : UpdateConfig -> Group.Id -> Event.Envelope -> Model -> Maybe ( Model, Cmd Msg )
+applyAndSync config groupId envelope model =
+    appendEventAndRecompute model groupId envelope
+        |> Maybe.map (addUnpushedIdToModel envelope.id)
+        |> Maybe.map (triggerSyncInternal config groupId)
+
+
+{-| Append an event to the loaded group and recompute state.
+-}
+appendEventAndRecompute : Model -> Group.Id -> Event.Envelope -> Maybe Model
+appendEventAndRecompute model groupId envelope =
+    mapLoadedGroup (Submit.appendEvent envelope) groupId model
+
+
+mapLoadedGroup : (LoadedGroup -> LoadedGroup) -> Group.Id -> Model -> Maybe Model
+mapLoadedGroup f groupId model =
+    case model.loadedGroup of
+        Just loaded ->
+            if loaded.summary.id == groupId then
+                Just { model | loadedGroup = Just (f loaded) }
+
+            else
+                Nothing
+
+        Nothing ->
+            Nothing
+
+
+{-| Add an event ID to the in-memory unpushed set of the loaded group.
+-}
+addUnpushedIdToModel : String -> Model -> Model
+addUnpushedIdToModel eventId model =
+    case model.loadedGroup of
+        Just loaded ->
+            { model | loadedGroup = Just (Submit.addUnpushedId eventId loaded) }
+
+        Nothing ->
+            model
 
 
 {-| Internal sync trigger. Skips if sync is already in progress.
@@ -1045,21 +1022,6 @@ deleteGroup config model groupId =
     ( { model | pool = pool }, cmd, [] )
 
 
-{-| Append an event to the loaded group and recompute state.
--}
-appendEventAndRecompute : Model -> Group.Id -> Event.Envelope -> Maybe Model
-appendEventAndRecompute model groupId envelope =
-    mapLoadedGroup
-        (\loaded ->
-            { loaded
-                | events = envelope :: loaded.events
-                , groupState = GroupState.applyEvents [ envelope ] loaded.groupState
-            }
-        )
-        groupId
-        model
-
-
 {-| Apply loaded group data from IndexedDB, constructing a LoadedGroup.
 -}
 applyLoadedGroup : UpdateConfig -> Group.Id -> List Event.Envelope -> Symmetric.Key -> Maybe String -> Set String -> Model -> Maybe Model
@@ -1067,63 +1029,6 @@ applyLoadedGroup config groupId events groupKey syncCursor unpushedIds model =
     Dict.get groupId config.groups
         |> Maybe.map (\summary -> Submit.initLoadedGroup events summary groupKey syncCursor unpushedIds)
         |> Maybe.map (\loaded -> { model | loadedGroup = Just loaded })
-
-
-mapLoadedGroup : (LoadedGroup -> LoadedGroup) -> Group.Id -> Model -> Maybe Model
-mapLoadedGroup f groupId model =
-    case model.loadedGroup of
-        Just loaded ->
-            if loaded.summary.id == groupId then
-                Just { model | loadedGroup = Just (f loaded) }
-
-            else
-                Nothing
-
-        Nothing ->
-            Nothing
-
-
-{-| Add an event ID to the in-memory unpushed set of the loaded group.
--}
-addUnpushedIdToModel : String -> Model -> Model
-addUnpushedIdToModel eventId model =
-    case model.loadedGroup of
-        Just loaded ->
-            { model
-                | loadedGroup =
-                    Just { loaded | unpushedIds = Set.insert eventId loaded.unpushedIds }
-            }
-
-        Nothing ->
-            model
-
-
-ensureGroupLoaded : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
-ensureGroupLoaded config groupId model =
-    case model.loadedGroup of
-        Just loaded ->
-            if loaded.summary.id == groupId then
-                ( model, Cmd.none )
-
-            else
-                loadGroup config groupId model
-
-        Nothing ->
-            loadGroup config groupId model
-
-
-loadGroup : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
-loadGroup config groupId model =
-    let
-        ( pool, cmd ) =
-            ConcurrentTask.attempt
-                { pool = model.pool
-                , send = config.sendTask
-                , onComplete = OnGroupEventsLoaded groupId
-                }
-                (Storage.loadGroup config.db groupId)
-    in
-    ( { model | pool = pool, loadedGroup = Nothing }, cmd )
 
 
 {-| Initialize the sub-page model for a given group view, if the needed data is available.
@@ -1135,8 +1040,7 @@ initPagesIfNeeded config groupView model =
             let
                 entryFormConfig : Page.Group.NewEntry.Config
                 entryFormConfig =
-                    { currentUserRootId =
-                        GroupState.resolveMemberRootId loaded.groupState config.identity.publicKeyHash
+                    { currentUserRootId = currentUserRootId model loaded
                     , activeMembersRootIds = List.map .rootId (GroupState.activeMembers loaded.groupState)
                     , today = Date.posixToDate config.currentTime
                     , defaultCurrency = loaded.summary.defaultCurrency
@@ -1188,6 +1092,13 @@ initPagesIfNeeded config groupView model =
             model
 
 
+{-| Resolve the current user's member root ID within a loaded group.
+-}
+currentUserRootId : Model -> LoadedGroup -> Member.Id
+currentUserRootId model loaded =
+    GroupState.resolveMemberRootId loaded.groupState model.identityHash
+
+
 {-| Handle an incoming realtime event record.
 -}
 handleRealtimeRecord : UpdateConfig -> LoadedGroup -> Json.Decode.Value -> Model -> ( Model, Cmd Msg )
@@ -1208,13 +1119,6 @@ handleRealtimeRecord config loaded record model =
 
         Err _ ->
             ( model, Cmd.none )
-
-
-{-| Resolve the current user's member root ID within a loaded group.
--}
-currentUserRootId : Model -> LoadedGroup -> Member.Id
-currentUserRootId model loaded =
-    GroupState.resolveMemberRootId loaded.groupState model.identityHash
 
 
 

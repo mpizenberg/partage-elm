@@ -4,6 +4,8 @@ module Submit exposing
     , State
     , SyncApplyResult
     , addMember
+    , addUnpushedId
+    , appendEvent
     , applySyncResult
     , deleteEntry
     , editEntry
@@ -72,6 +74,23 @@ type alias LoadedGroup =
     , syncCursor : Maybe String
     , unpushedIds : Set String
     }
+
+
+{-| Append an event to a loaded group and recompute state.
+-}
+appendEvent : Event.Envelope -> LoadedGroup -> LoadedGroup
+appendEvent envelope loaded =
+    { loaded
+        | events = envelope :: loaded.events
+        , groupState = GroupState.applyEvents [ envelope ] loaded.groupState
+    }
+
+
+{-| Add an event ID to the unpushed set of a loaded group.
+-}
+addUnpushedId : String -> LoadedGroup -> LoadedGroup
+addUnpushedId eventId loaded =
+    { loaded | unpushedIds = Set.insert eventId loaded.unpushedIds }
 
 
 {-| Build a LoadedGroup from raw events, a summary, and the group key, applying all events to compute state.
@@ -330,7 +349,6 @@ addMember ctx loaded output =
 
 
 -- Helpers
-
 
 
 {-| Result of applying a sync to a loaded group: the updated group plus any new events from the server.
