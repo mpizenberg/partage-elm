@@ -605,8 +605,8 @@ update msg model =
             in
             case maybeOutput of
                 Just (Page.JoinGroup.JoinConfirmed joinData) ->
-                    case ( model.appState, model.route, model.joinGroupModel ) of
-                        ( Ready readyData, GroupRoute groupId (Join key), Page.JoinGroup.ShowingPreview preview ) ->
+                    case ( model.appState, model.route, Page.JoinGroup.getPreview joinModel ) of
+                        ( Ready readyData, GroupRoute groupId (Join key), Just preview ) ->
                             let
                                 groupKey : Symmetric.Key
                                 groupKey =
@@ -658,7 +658,7 @@ update msg model =
             in
             ( { model
                 | joinGroupModel =
-                    Page.JoinGroup.ShowingPreview
+                    Page.JoinGroup.showPreview
                         { groupName = groupName
                         , groupState = groupState
                         , events = syncResult.pullResult.events
@@ -671,42 +671,37 @@ update msg model =
             )
 
         OnJoinGroupFetched (ConcurrentTask.Error err) ->
-            ( { model | joinGroupModel = Page.JoinGroup.Error (Server.errorToString err) }
+            ( { model | joinGroupModel = Page.JoinGroup.error (Server.errorToString err) }
             , Cmd.none
             )
 
         OnJoinGroupFetched (ConcurrentTask.UnexpectedError _) ->
-            ( { model | joinGroupModel = Page.JoinGroup.Error "Unexpected error" }
+            ( { model | joinGroupModel = Page.JoinGroup.error "Unexpected error" }
             , Cmd.none
             )
 
         OnJoinGroupSaved groupId (ConcurrentTask.Success _) ->
-            case model.appState of
-                Ready readyData ->
-                    case model.joinGroupModel of
-                        Page.JoinGroup.ShowingPreview preview ->
-                            let
-                                summary : GroupSummary
-                                summary =
-                                    { id = groupId
-                                    , name = preview.groupName
-                                    , defaultCurrency = EUR
-                                    }
+            case ( model.appState, Page.JoinGroup.getPreview model.joinGroupModel ) of
+                ( Ready readyData, Just preview ) ->
+                    let
+                        summary : GroupSummary
+                        summary =
+                            { id = groupId
+                            , name = preview.groupName
+                            , defaultCurrency = EUR
+                            }
 
-                                newRoute : Route
-                                newRoute =
-                                    GroupRoute groupId (Tab BalanceTab)
-                            in
-                            addToast Toast.Success
-                                (T.toastJoinedGroup model.i18n)
-                                { model
-                                    | appState = Ready { readyData | groups = Dict.insert groupId summary readyData.groups }
-                                    , groupModel = Page.Group.resetLoadedGroup model.groupModel
-                                }
-                                |> Update.addCmd (Navigation.pushUrl navCmd (Route.toAppUrl newRoute))
-
-                        _ ->
-                            ( model, Cmd.none )
+                        newRoute : Route
+                        newRoute =
+                            GroupRoute groupId (Tab BalanceTab)
+                    in
+                    addToast Toast.Success
+                        (T.toastJoinedGroup model.i18n)
+                        { model
+                            | appState = Ready { readyData | groups = Dict.insert groupId summary readyData.groups }
+                            , groupModel = Page.Group.resetLoadedGroup model.groupModel
+                        }
+                        |> Update.addCmd (Navigation.pushUrl navCmd (Route.toAppUrl newRoute))
 
                 _ ->
                     ( model, Cmd.none )
@@ -976,7 +971,7 @@ handleJoinRoute model route groupId key maybeIdentity =
                                 ( { model
                                     | route = route
                                     , pool = pool
-                                    , joinGroupModel = Page.JoinGroup.FetchingGroup
+                                    , joinGroupModel = Page.JoinGroup.init
                                   }
                                 , cmd
                                 )
@@ -985,7 +980,7 @@ handleJoinRoute model route groupId key maybeIdentity =
                                 -- Server not ready yet
                                 ( { model
                                     | route = route
-                                    , joinGroupModel = Page.JoinGroup.Error "Server not available"
+                                    , joinGroupModel = Page.JoinGroup.error "Server not available"
                                   }
                                 , Cmd.none
                                 )
@@ -1001,7 +996,7 @@ handleJoinRoute model route groupId key maybeIdentity =
                                     }
                                     Identity.generate
                         in
-                        ( { model | route = route, joinGroupModel = Page.JoinGroup.FetchingGroup, pool = pool, generatingIdentity = True }
+                        ( { model | route = route, joinGroupModel = Page.JoinGroup.init, pool = pool, generatingIdentity = True }
                         , cmd
                         )
 

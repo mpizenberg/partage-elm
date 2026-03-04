@@ -383,17 +383,21 @@ applySyncResult pushedIds syncResult loaded =
         remainingUnpushedIds =
             Set.diff loaded.unpushedIds pushedIds
 
-        -- Merge events maintaining sorted order (newest-first).
-        -- loaded.events is newest-first; newEvents come from server in chronological order.
-        allSortedOldestFirst : List Event.Envelope
-        allSortedOldestFirst =
-            Event.sortEvents (List.reverse loaded.events ++ newEvents)
+        -- Sort only new events, then merge with existing (already sorted) events.
+        -- loaded.events is newest-first; new events need sorting before merge.
+        sortedNewEvents : List Event.Envelope
+        sortedNewEvents =
+            Event.sortEvents newEvents
+
+        mergedEventsNewestFirst : List Event.Envelope
+        mergedEventsNewestFirst =
+            mergeEventsNewestFirst (List.reverse sortedNewEvents) loaded.events
 
         -- Check for conflicts: find the overlap window (existing events concurrent with new events)
         oldestNewTimestamp : Maybe Int
         oldestNewTimestamp =
-            List.map (.clientTimestamp >> Time.posixToMillis) newEvents
-                |> List.minimum
+            List.head sortedNewEvents
+                |> Maybe.map (.clientTimestamp >> Time.posixToMillis)
 
         overlapEvents : List Event.Envelope
         overlapEvents =
@@ -406,24 +410,24 @@ applySyncResult pushedIds syncResult loaded =
 
         needsRebuild : Bool
         needsRebuild =
-            hasConflicts newEvents overlapEvents
+            hasConflicts sortedNewEvents overlapEvents
 
         updatedGroupState : GroupState.GroupState
         updatedGroupState =
             if needsRebuild then
-                GroupState.applyEvents allSortedOldestFirst GroupState.empty
+                GroupState.applyEvents (List.reverse mergedEventsNewestFirst) GroupState.empty
 
             else
-                GroupState.applyEvents newEvents loaded.groupState
+                GroupState.applyEvents sortedNewEvents loaded.groupState
     in
     { updatedGroup =
         { loaded
-            | events = List.reverse allSortedOldestFirst
+            | events = mergedEventsNewestFirst
             , groupState = updatedGroupState
             , syncCursor = Just pullResult.cursor
             , unpushedIds = remainingUnpushedIds
         }
-    , newEvents = newEvents
+    , newEvents = sortedNewEvents
     , pullCursor = pullResult.cursor
     }
 
@@ -461,6 +465,32 @@ areConflicting a b =
 
         _ ->
             False
+
+
+{-| Merge two lists of events, both sorted newest-first. Tail-recursive.
+-}
+mergeEventsNewestFirst : List Event.Envelope -> List Event.Envelope -> List Event.Envelope
+mergeEventsNewestFirst xs ys =
+    mergeEventsHelp xs ys []
+
+
+mergeEventsHelp : List Event.Envelope -> List Event.Envelope -> List Event.Envelope -> List Event.Envelope
+mergeEventsHelp xs ys acc =
+    case ( xs, ys ) of
+        ( [], _ ) ->
+            List.reverse acc ++ ys
+
+        ( _, [] ) ->
+            List.reverse acc ++ xs
+
+        ( x :: xr, y :: yr ) ->
+            case Event.compareEnvelopes x y of
+                LT ->
+                    -- x is older, so y comes first (newest-first)
+                    mergeEventsHelp xs yr (y :: acc)
+
+                _ ->
+                    mergeEventsHelp xr ys (x :: acc)
 
 
 {-| Build the persistence tasks to run after a successful sync.

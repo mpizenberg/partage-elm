@@ -1,4 +1,4 @@
-module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), createGroup, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents, wrap)
+module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), compareEnvelopes, createGroup, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents, wrap)
 
 {-| Event types and ordering for the event-sourced state machine.
 -}
@@ -55,6 +55,13 @@ type alias GroupMetadataChange =
     }
 
 
+{-| Sort events in deterministic chronological order.
+-}
+sortEvents : List Envelope -> List Envelope
+sortEvents =
+    List.sortWith compareEnvelopes
+
+
 {-| Compare two envelopes by clientTimestamp, using event id as tiebreaker.
 -}
 compareEnvelopes : Envelope -> Envelope -> Order
@@ -74,13 +81,6 @@ compareEnvelopes a b =
 
         order ->
             order
-
-
-{-| Sort events in deterministic chronological order.
--}
-sortEvents : List Envelope -> List Envelope
-sortEvents =
-    List.sortWith compareEnvelopes
 
 
 {-| Wrap a payload into an envelope.

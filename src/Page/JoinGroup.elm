@@ -1,4 +1,4 @@
-module Page.JoinGroup exposing (JoinAction(..), Model(..), Msg, Output(..), PreviewData, init, update, view)
+module Page.JoinGroup exposing (JoinAction(..), Model, Msg, Output(..), PreviewData, error, getPreview, init, showPreview, update, view)
 
 {-| Join group page shown when opening an invite link.
 Displays a group preview with options to claim a virtual member or join as new.
@@ -32,14 +32,12 @@ type alias PreviewData =
 
 
 type JoinAction
-    = ClaimVirtualMember Member.Id
-    | RecoverRealMember Member.Id
+    = ClaimMember Member.Id
     | JoinAsNewMember
 
 
 type Msg
-    = SelectClaimMember Member.Id
-    | SelectRecoverMember Member.Id
+    = SelectMember Member.Id
     | SelectJoinAsNew
     | InputNewMemberName String
     | ConfirmJoin
@@ -54,16 +52,31 @@ init =
     FetchingGroup
 
 
+showPreview : PreviewData -> Model
+showPreview =
+    ShowingPreview
+
+
+error : String -> Model
+error =
+    Error
+
+
+getPreview : Model -> Maybe PreviewData
+getPreview model =
+    case model of
+        ShowingPreview preview ->
+            Just preview
+
+        _ ->
+            Nothing
+
+
 update : Msg -> Model -> ( Model, Maybe Output )
 update msg model =
     case ( msg, model ) of
-        ( SelectClaimMember memberId, ShowingPreview preview ) ->
-            ( ShowingPreview { preview | selectedAction = ClaimVirtualMember memberId }
-            , Nothing
-            )
-
-        ( SelectRecoverMember memberId, ShowingPreview preview ) ->
-            ( ShowingPreview { preview | selectedAction = RecoverRealMember memberId }
+        ( SelectMember memberId, ShowingPreview preview ) ->
+            ( ShowingPreview { preview | selectedAction = ClaimMember memberId }
             , Nothing
             )
 
@@ -93,17 +106,7 @@ update msg model =
                             )
                         )
 
-                ClaimVirtualMember _ ->
-                    ( model
-                    , Just
-                        (JoinConfirmed
-                            { selectedAction = preview.selectedAction
-                            , newMemberName = preview.newMemberName
-                            }
-                        )
-                    )
-
-                RecoverRealMember _ ->
+                ClaimMember _ ->
                     ( model
                     , Just
                         (JoinConfirmed
@@ -165,10 +168,7 @@ viewPreview i18n preview =
         canConfirm : Bool
         canConfirm =
             case preview.selectedAction of
-                ClaimVirtualMember _ ->
-                    True
-
-                RecoverRealMember _ ->
+                ClaimMember _ ->
                     True
 
                 JoinAsNewMember ->
@@ -183,7 +183,7 @@ viewPreview i18n preview =
             [ Ui.el [ Ui.Font.size Theme.fontSize.md, Ui.Font.bold ]
                 (Ui.text (T.joinGroupClaimMember i18n))
             , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-                (List.map (viewClaimOption preview.selectedAction) virtualMembers)
+                (List.map (viewMemberOption preview.selectedAction) virtualMembers)
             ]
 
       else
@@ -193,7 +193,7 @@ viewPreview i18n preview =
             [ Ui.el [ Ui.Font.size Theme.fontSize.md, Ui.Font.bold ]
                 (Ui.text (T.joinGroupRecoverMember i18n))
             , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-                (List.map (viewRecoverOption preview.selectedAction) realMembers)
+                (List.map (viewMemberOption preview.selectedAction) realMembers)
             ]
 
       else
@@ -229,34 +229,19 @@ viewPreview i18n preview =
     ]
 
 
-viewClaimOption : JoinAction -> Member.ChainState -> Ui.Element Msg
-viewClaimOption selectedAction member =
+viewMemberOption : JoinAction -> Member.ChainState -> Ui.Element Msg
+viewMemberOption selectedAction member =
     let
         isSelected : Bool
         isSelected =
             case selectedAction of
-                ClaimVirtualMember id ->
+                ClaimMember id ->
                     id == member.rootId
 
                 _ ->
                     False
     in
-    radioOption isSelected member.name (SelectClaimMember member.rootId)
-
-
-viewRecoverOption : JoinAction -> Member.ChainState -> Ui.Element Msg
-viewRecoverOption selectedAction member =
-    let
-        isSelected : Bool
-        isSelected =
-            case selectedAction of
-                RecoverRealMember id ->
-                    id == member.rootId
-
-                _ ->
-                    False
-    in
-    radioOption isSelected member.name (SelectRecoverMember member.rootId)
+    radioOption isSelected member.name (SelectMember member.rootId)
 
 
 radioOption : Bool -> String -> msg -> Ui.Element msg

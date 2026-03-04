@@ -632,23 +632,28 @@ resolveMemberName state memberId =
 
 
 {-| Merge new activities into existing ones, maintaining newest-first order.
-Both lists must already be sorted newest-first.
+Both lists must already be sorted newest-first. Tail-recursive.
 -}
 mergeActivities : List Activity -> List Activity -> List Activity
 mergeActivities new existing =
+    mergeActivitiesHelp new existing []
+
+
+mergeActivitiesHelp : List Activity -> List Activity -> List Activity -> List Activity
+mergeActivitiesHelp new existing acc =
     case ( new, existing ) of
         ( [], _ ) ->
-            existing
+            List.reverse acc ++ existing
 
         ( _, [] ) ->
-            new
+            List.reverse acc ++ new
 
         ( n :: ns, e :: es ) ->
             if Time.posixToMillis n.timestamp >= Time.posixToMillis e.timestamp then
-                n :: mergeActivities ns existing
+                mergeActivitiesHelp ns existing (n :: acc)
 
             else
-                e :: mergeActivities new es
+                mergeActivitiesHelp new es (e :: acc)
 
 
 {-| Get all active (non-retired) members.
