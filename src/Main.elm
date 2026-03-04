@@ -315,6 +315,9 @@ processGroupOutputs model groupCmd outputs =
 
                                 _ ->
                                     ( m, cmds )
+
+                        Page.Group.UpdateCurrentTime time ->
+                            ( { m | currentTime = time }, cmds )
                 )
                 ( model, [] )
                 outputs

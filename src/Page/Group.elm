@@ -207,6 +207,7 @@ type Output
     | ShowToast Toast.ToastLevel String
     | UpdateGroupSummary GroupSummary
     | RemoveGroup Group.Id
+    | UpdateCurrentTime Time.Posix
 
 
 
@@ -528,13 +529,13 @@ update config msg model =
         -- Async response handlers
         OnEntrySaved groupId (ConcurrentTask.Success envelope) ->
             case applyAndSync config groupId envelope model of
-                Just ( syncModel, syncCmd ) ->
+                Just ( syncModel, syncCmd, timeOutputs ) ->
                     case config.route of
                         GroupRoute _ (Tab BalanceTab) ->
-                            ( syncModel, syncCmd, [ ShowToast Toast.Success (T.toastSettlementRecorded config.i18n) ] )
+                            ( syncModel, syncCmd, ShowToast Toast.Success (T.toastSettlementRecorded config.i18n) :: timeOutputs )
 
                         _ ->
-                            ( syncModel, syncCmd, [ NavigateTo (GroupRoute groupId (Tab EntriesTab)) ] )
+                            ( syncModel, syncCmd, NavigateTo (GroupRoute groupId (Tab EntriesTab)) :: timeOutputs )
 
                 Nothing ->
                     ( model, Cmd.none, [] )
@@ -544,35 +545,35 @@ update config msg model =
 
         OnEntryActionSaved groupId (ConcurrentTask.Success envelope) ->
             let
-                ( syncModel, syncCmd ) =
+                ( syncModel, syncCmd, timeOutputs ) =
                     applyAndSync config groupId envelope model
-                        |> Maybe.withDefault ( model, Cmd.none )
+                        |> Maybe.withDefault ( model, Cmd.none, [] )
             in
             case Toast.entryActionMessage config.i18n envelope.payload of
                 Just message ->
-                    ( syncModel, syncCmd, [ ShowToast Toast.Success message ] )
+                    ( syncModel, syncCmd, ShowToast Toast.Success message :: timeOutputs )
 
                 Nothing ->
-                    ( syncModel, syncCmd, [] )
+                    ( syncModel, syncCmd, timeOutputs )
 
         OnEntryActionSaved _ _ ->
             ( model, Cmd.none, [ ShowToast Toast.Error (T.toastEntryActionError config.i18n) ] )
 
         OnMemberActionSaved groupId (ConcurrentTask.Success envelope) ->
             case applyAndSync config groupId envelope model of
-                Just ( syncModel, syncCmd ) ->
+                Just ( syncModel, syncCmd, timeOutputs ) ->
                     case config.route of
                         GroupRoute gid AddVirtualMember ->
                             ( { syncModel | addMemberModel = Page.Group.AddMember.init }
                             , syncCmd
-                            , [ NavigateTo (GroupRoute gid (Tab MembersTab)) ]
+                            , NavigateTo (GroupRoute gid (Tab MembersTab)) :: timeOutputs
                             )
 
                         GroupRoute gid (EditMemberMetadata memberId) ->
-                            ( syncModel, syncCmd, [ NavigateTo (GroupRoute gid (MemberDetail memberId)) ] )
+                            ( syncModel, syncCmd, NavigateTo (GroupRoute gid (MemberDetail memberId)) :: timeOutputs )
 
                         _ ->
-                            ( initPagesIfNeeded config (routeToGroupView config.route) syncModel, syncCmd, [] )
+                            ( initPagesIfNeeded config (routeToGroupView config.route) syncModel, syncCmd, timeOutputs )
 
                 Nothing ->
                     ( model, Cmd.none, [] )
@@ -596,7 +597,7 @@ update config msg model =
                     in
                     ( syncModel
                     , Cmd.batch [ summaryCmd, syncCmd ]
-                    , NavigateTo (GroupRoute groupId (Tab MembersTab)) :: summaryOutputs
+                    , NavigateTo (GroupRoute groupId (Tab MembersTab)) :: UpdateCurrentTime envelope.clientTimestamp :: summaryOutputs
                     )
 
                 Nothing ->
@@ -896,14 +897,15 @@ handleMemberDetailOutput config model output =
             ( model, Cmd.none, [] )
 
 
-{-| Append event to loaded group, mark as unpushed, and trigger sync.
+{-| Append event to loaded group, mark as unpushed, trigger sync, and emit time update.
 Returns Nothing if the loaded group doesn't match the groupId.
 -}
-applyAndSync : UpdateConfig -> Group.Id -> Event.Envelope -> Model -> Maybe ( Model, Cmd Msg )
+applyAndSync : UpdateConfig -> Group.Id -> Event.Envelope -> Model -> Maybe ( Model, Cmd Msg, List Output )
 applyAndSync config groupId envelope model =
     appendEventAndRecompute model groupId envelope
         |> Maybe.map (addUnpushedIdToModel envelope.id)
         |> Maybe.map (triggerSyncInternal config groupId)
+        |> Maybe.map (\( m, cmd ) -> ( m, cmd, [ UpdateCurrentTime envelope.clientTimestamp ] ))
 
 
 {-| Append an event to the loaded group and recompute state.

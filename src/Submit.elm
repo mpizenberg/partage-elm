@@ -17,7 +17,8 @@ module Submit exposing
     , restoreEntry
     )
 
-import ConcurrentTask
+import ConcurrentTask exposing (ConcurrentTask)
+import ConcurrentTask.Time
 import Crypto
 import Dict
 import Domain.Entry as Entry
@@ -107,16 +108,20 @@ initLoadedGroup events summary key cursor unpushed =
     }
 
 
-attempt : Context msg -> Event.Envelope -> Group.Id -> ( State msg, Cmd msg )
-attempt ctx envelope groupId =
+attempt : Context msg -> (Time.Posix -> Event.Envelope) -> Group.Id -> ( State msg, Cmd msg )
+attempt ctx makeEnvelope groupId =
     let
-        task : ConcurrentTask.ConcurrentTask Idb.Error Event.Envelope
+        task : ConcurrentTask Idb.Error Event.Envelope
         task =
-            ConcurrentTask.batch
-                [ Storage.saveEvents ctx.db groupId [ envelope ]
-                , Storage.addUnpushedIds ctx.db groupId [ envelope.id ]
-                ]
-                |> ConcurrentTask.map (\_ -> envelope)
+            ConcurrentTask.map makeEnvelope ConcurrentTask.Time.now
+                |> ConcurrentTask.andThen
+                    (\envelope ->
+                        ConcurrentTask.batch
+                            [ Storage.saveEvents ctx.db groupId [ envelope ]
+                            , Storage.addUnpushedIds ctx.db groupId [ envelope.id ]
+                            ]
+                            |> ConcurrentTask.map (\_ -> envelope)
+                    )
 
         ( pool, cmd ) =
             ConcurrentTask.attempt
@@ -161,12 +166,6 @@ newGroup ctx onComplete output =
                 , virtualMembers = List.map2 Tuple.pair virtualMemberIds output.virtualMembers
                 }
 
-        allEvents : List Event.Envelope
-        allEvents =
-            List.map2 (\eventId -> Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash)
-                eventIds
-                payloads
-
         summary : GroupSummary
         summary =
             { id = groupId
@@ -174,12 +173,23 @@ newGroup ctx onComplete output =
             , defaultCurrency = output.currency
             }
 
-        allEventIds : List String
-        allEventIds =
-            List.map .id allEvents
+        generateEnvelopes : ConcurrentTask x (List Event.Envelope)
+        generateEnvelopes =
+            ConcurrentTask.Time.now
+                |> ConcurrentTask.map
+                    (\now ->
+                        List.map2 (\eventId -> Event.wrap eventId now ctx.identity.publicKeyHash)
+                            eventIds
+                            payloads
+                    )
 
-        task : ConcurrentTask.ConcurrentTask Idb.Error GroupSummary
-        task =
+        allTasks : List Event.Envelope -> ConcurrentTask Idb.Error GroupSummary
+        allTasks allEvents =
+            let
+                allEventIds : List String
+                allEventIds =
+                    List.map .id allEvents
+            in
             Crypto.generateGroupKey
                 |> ConcurrentTask.andThen
                     (\key ->
@@ -196,7 +206,7 @@ newGroup ctx onComplete output =
                 , send = ctx.sendTask
                 , onComplete = onComplete
                 }
-                task
+                (generateEnvelopes |> ConcurrentTask.andThen allTasks)
     in
     ( { pool = pool
       , randomSeed = seedAfter
@@ -221,23 +231,16 @@ newEntry ctx loaded output =
         ( eventId, uuidStateAfter ) =
             IdGen.v7 ctx.currentTime ctx.uuidState
 
-        meta : Entry.Metadata
-        meta =
-            Entry.newMetadata entryId ctx.identity.publicKeyHash ctx.currentTime
-
-        kind : Entry.Kind
-        kind =
-            Page.Group.NewEntry.outputToKind output
-
-        entry : Entry.Entry
-        entry =
-            { meta = meta, kind = kind }
-
-        envelope : Event.Envelope
-        envelope =
-            Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash (Event.EntryAdded entry)
+        payload : Time.Posix -> Event.Payload
+        payload now =
+            Event.EntryAdded
+                { meta = Entry.newMetadata entryId ctx.identity.publicKeyHash now
+                , kind = Page.Group.NewEntry.outputToKind output
+                }
     in
-    attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter } envelope loaded.summary.id
+    attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter }
+        (\now -> Event.wrap eventId now ctx.identity.publicKeyHash (payload now))
+        loaded.summary.id
 
 
 
@@ -260,19 +263,16 @@ editEntry ctx loaded originalEntryId output =
                 ( eventId, uuidStateAfter ) =
                     IdGen.v7 ctx.currentTime ctx.uuidState
 
-                newKind : Entry.Kind
-                newKind =
-                    Page.Group.NewEntry.outputToKind output
-
                 entry : Entry.Entry
                 entry =
-                    Entry.replace entryState.currentVersion.meta newEntryId newKind
-
-                envelope : Event.Envelope
-                envelope =
-                    Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash (Event.EntryModified entry)
+                    Page.Group.NewEntry.outputToKind output
+                        |> Entry.replace entryState.currentVersion.meta newEntryId
             in
-            Just (attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter } envelope loaded.summary.id)
+            Just
+                (attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter }
+                    (\now -> Event.wrap eventId now ctx.identity.publicKeyHash (Event.EntryModified entry))
+                    loaded.summary.id
+                )
 
 
 
@@ -298,12 +298,10 @@ simpleEvent ctx loaded payload =
     let
         ( eventId, uuidStateAfter ) =
             IdGen.v7 ctx.currentTime ctx.uuidState
-
-        envelope : Event.Envelope
-        envelope =
-            Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash payload
     in
-    attempt { ctx | uuidState = uuidStateAfter } envelope loaded.summary.id
+    attempt { ctx | uuidState = uuidStateAfter }
+        (\now -> Event.wrap eventId now ctx.identity.publicKeyHash payload)
+        loaded.summary.id
 
 
 
@@ -340,12 +338,10 @@ addMember ctx loaded output =
                 , memberType = Member.Virtual
                 , addedBy = ctx.identity.publicKeyHash
                 }
-
-        envelope : Event.Envelope
-        envelope =
-            Event.wrap eventId ctx.currentTime ctx.identity.publicKeyHash payload
     in
-    attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter } envelope loaded.summary.id
+    attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter }
+        (\now -> Event.wrap eventId now ctx.identity.publicKeyHash payload)
+        loaded.summary.id
 
 
 
@@ -496,7 +492,7 @@ mergeEventsHelp xs ys acc =
 
 {-| Build the persistence tasks to run after a successful sync.
 -}
-postSyncTasks : Idb.Db -> Group.Id -> Maybe PocketBase.Client -> SyncApplyResult -> ConcurrentTask.ConcurrentTask Idb.Error ()
+postSyncTasks : Idb.Db -> Group.Id -> Maybe PocketBase.Client -> SyncApplyResult -> ConcurrentTask Idb.Error ()
 postSyncTasks db groupId maybePbClient result =
     List.filterMap identity
         [ Just <| Storage.saveUnpushedIds db groupId result.updatedGroup.unpushedIds
