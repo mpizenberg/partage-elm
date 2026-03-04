@@ -1,4 +1,4 @@
-module Submit exposing
+module GroupOps exposing
     ( Context
     , LoadedGroup
     , State

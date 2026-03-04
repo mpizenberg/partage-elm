@@ -10,6 +10,7 @@ import Domain.Group as Group
 import Domain.GroupState as GroupState
 import Form.NewGroup
 import GroupExport
+import GroupOps
 import Html exposing (Html)
 import Identity exposing (Identity)
 import IndexedDb as Idb
@@ -31,7 +32,6 @@ import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import Server
 import Set
 import Storage exposing (GroupSummary)
-import Submit
 import Time
 import Translations as T exposing (I18n, Language(..))
 import UI.Components
@@ -872,7 +872,7 @@ submitNewGroup model readyData output =
     case readyData.identity of
         Just identity ->
             let
-                ctx : Submit.Context Msg
+                ctx : GroupOps.Context Msg
                 ctx =
                     { pool = model.pool
                     , sendTask = sendTask
@@ -885,7 +885,7 @@ submitNewGroup model readyData output =
                     }
 
                 ( state, cmd ) =
-                    Submit.newGroup ctx OnGroupCreated output
+                    GroupOps.newGroup ctx OnGroupCreated output
             in
             ( { model
                 | pool = state.pool

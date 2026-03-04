@@ -33,6 +33,7 @@ import Domain.Group as Group
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
 import Domain.Settlement as Settlement
+import GroupOps exposing (LoadedGroup)
 import Identity exposing (Identity)
 import IndexedDb as Idb
 import Json.Decode
@@ -56,7 +57,6 @@ import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import Server
 import Set exposing (Set)
 import Storage exposing (GroupSummary)
-import Submit exposing (LoadedGroup)
 import Time
 import Translations as T exposing (I18n)
 import UI.Shell
@@ -308,7 +308,7 @@ submitJoinEvent config joinData model =
                 Just payload ->
                     let
                         ( newModel, cmd, _ ) =
-                            runSubmit (OnMemberActionSaved loaded.summary.id) config model (\ctx -> Submit.event ctx loaded payload)
+                            runSubmit (OnMemberActionSaved loaded.summary.id) config model (\ctx -> GroupOps.event ctx loaded payload)
                     in
                     ( newModel, cmd )
 
@@ -395,7 +395,7 @@ update config msg model =
             in
             case ( maybeOutput, model.loadedGroup ) of
                 ( Just addOutput, Just loaded ) ->
-                    runSubmit (OnMemberActionSaved loaded.summary.id) config modelWithPage (\ctx -> Submit.addMember ctx loaded addOutput)
+                    runSubmit (OnMemberActionSaved loaded.summary.id) config modelWithPage (\ctx -> GroupOps.addMember ctx loaded addOutput)
 
                 _ ->
                     ( modelWithPage, Cmd.none, [] )
@@ -425,7 +425,7 @@ update config msg model =
                 ( Just entryOutput, Just loaded ) ->
                     case config.route of
                         GroupRoute _ (EditEntry entryId) ->
-                            case Submit.editEntry (submitContext (OnEntrySaved loaded.summary.id) config modelWithPage) loaded entryId entryOutput of
+                            case GroupOps.editEntry (submitContext (OnEntrySaved loaded.summary.id) config modelWithPage) loaded entryId entryOutput of
                                 Just ( state, cmd ) ->
                                     ( { modelWithPage | pool = state.pool, randomSeed = state.randomSeed, uuidState = state.uuidState }, cmd, [] )
 
@@ -433,7 +433,7 @@ update config msg model =
                                     ( modelWithPage, Cmd.none, [] )
 
                         _ ->
-                            runSubmit (OnEntrySaved loaded.summary.id) config modelWithPage (\ctx -> Submit.newEntry ctx loaded entryOutput)
+                            runSubmit (OnEntrySaved loaded.summary.id) config modelWithPage (\ctx -> GroupOps.newEntry ctx loaded entryOutput)
 
                 _ ->
                     ( modelWithPage, Cmd.none, [] )
@@ -477,7 +477,7 @@ update config msg model =
                         runSubmit (OnGroupMetadataActionSaved loaded.summary.id)
                             config
                             modelWithPage
-                            (\ctx -> Submit.event ctx loaded (Event.GroupMetadataUpdated change))
+                            (\ctx -> GroupOps.event ctx loaded (Event.GroupMetadataUpdated change))
 
                     _ ->
                         ( modelWithPage, Cmd.none, [] )
@@ -510,7 +510,7 @@ update config msg model =
                                 , date = Date.posixToDate config.currentTime
                                 }
                     in
-                    runSubmit (OnEntrySaved loaded.summary.id) config model (\ctx -> Submit.newEntry ctx loaded output)
+                    runSubmit (OnEntrySaved loaded.summary.id) config model (\ctx -> GroupOps.newEntry ctx loaded output)
 
                 Nothing ->
                     ( model, Cmd.none, [] )
@@ -521,7 +521,7 @@ update config msg model =
                     runSubmit (OnEntryActionSaved loaded.summary.id)
                         config
                         model
-                        (\ctx -> Submit.event ctx loaded (Event.SettlementPreferencesUpdated prefData))
+                        (\ctx -> GroupOps.event ctx loaded (Event.SettlementPreferencesUpdated prefData))
 
                 Nothing ->
                     ( model, Cmd.none, [] )
@@ -653,9 +653,9 @@ update config msg model =
                 Just loaded ->
                     if loaded.summary.id == groupId then
                         let
-                            result : Submit.SyncApplyResult
+                            result : GroupOps.SyncApplyResult
                             result =
-                                Submit.applySyncResult pushedIds syncResult loaded
+                                GroupOps.applySyncResult pushedIds syncResult loaded
 
                             ( taskPool, taskCmds ) =
                                 ConcurrentTask.attempt
@@ -663,7 +663,7 @@ update config msg model =
                                     , send = config.sendTask
                                     , onComplete = PostSyncTasksDone
                                     }
-                                    (Submit.postSyncTasks config.db groupId config.pbClient result)
+                                    (GroupOps.postSyncTasks config.db groupId config.pbClient result)
 
                             modelAfterSync : Model
                             modelAfterSync =
@@ -741,9 +741,9 @@ routeToGroupView route =
             Tab BalanceTab
 
 
-{-| Build a Submit.Context from our config and model.
+{-| Build a GroupOps.Context from our config and model.
 -}
-submitContext : (ConcurrentTask.Response Idb.Error Event.Envelope -> Msg) -> UpdateConfig -> Model -> Submit.Context Msg
+submitContext : (ConcurrentTask.Response Idb.Error Event.Envelope -> Msg) -> UpdateConfig -> Model -> GroupOps.Context Msg
 submitContext onComplete config model =
     { pool = model.pool
     , sendTask = config.sendTask
@@ -758,7 +758,7 @@ submitContext onComplete config model =
 
 {-| Build context, run a submit function, apply the returned state to model.
 -}
-runSubmit : (ConcurrentTask.Response Idb.Error Event.Envelope -> Msg) -> UpdateConfig -> Model -> (Submit.Context Msg -> ( Submit.State Msg, Cmd Msg )) -> ( Model, Cmd Msg, List Output )
+runSubmit : (ConcurrentTask.Response Idb.Error Event.Envelope -> Msg) -> UpdateConfig -> Model -> (GroupOps.Context Msg -> ( GroupOps.State Msg, Cmd Msg )) -> ( Model, Cmd Msg, List Output )
 runSubmit onComplete config model submitFn =
     let
         ( state, cmd ) =
@@ -772,7 +772,7 @@ runSubmit onComplete config model submitFn =
 
 {-| Submit an entry action (delete/restore), checking loadedGroup.
 -}
-submitEntryAction : UpdateConfig -> Model -> (Submit.Context Msg -> LoadedGroup -> ( Submit.State Msg, Cmd Msg )) -> ( Model, Cmd Msg, List Output )
+submitEntryAction : UpdateConfig -> Model -> (GroupOps.Context Msg -> LoadedGroup -> ( GroupOps.State Msg, Cmd Msg )) -> ( Model, Cmd Msg, List Output )
 submitEntryAction config model action =
     case model.loadedGroup of
         Just loaded ->
@@ -791,7 +791,7 @@ submitMemberMetadata config model loaded output =
             runSubmit (OnMemberActionSaved loaded.summary.id)
                 config
                 model
-                (\ctx -> Submit.event ctx loaded (Event.MemberMetadataUpdated { rootId = output.memberId, metadata = output.metadata }))
+                (\ctx -> GroupOps.event ctx loaded (Event.MemberMetadataUpdated { rootId = output.memberId, metadata = output.metadata }))
     in
     if output.newName /= output.oldName then
         let
@@ -800,7 +800,7 @@ submitMemberMetadata config model loaded output =
                     config
                     modelAfterMeta
                     (\ctx ->
-                        Submit.event ctx
+                        GroupOps.event ctx
                             loaded
                             (Event.MemberRenamed
                                 { rootId = output.memberId
@@ -822,7 +822,7 @@ handleEntryDetailOutput config model output =
         Page.Group.EntryDetail.DeleteRequested ->
             case config.route of
                 GroupRoute _ (EntryDetail entryId) ->
-                    submitEntryAction config model (\ctx ld -> Submit.deleteEntry ctx ld entryId)
+                    submitEntryAction config model (\ctx ld -> GroupOps.deleteEntry ctx ld entryId)
 
                 _ ->
                     ( model, Cmd.none, [] )
@@ -830,7 +830,7 @@ handleEntryDetailOutput config model output =
         Page.Group.EntryDetail.RestoreRequested ->
             case config.route of
                 GroupRoute _ (EntryDetail entryId) ->
-                    submitEntryAction config model (\ctx ld -> Submit.restoreEntry ctx ld entryId)
+                    submitEntryAction config model (\ctx ld -> GroupOps.restoreEntry ctx ld entryId)
 
                 _ ->
                     ( model, Cmd.none, [] )
@@ -859,7 +859,7 @@ handleMemberDetailOutput config model output =
             let
                 submit : Event.Payload -> ( Model, Cmd Msg, List Output )
                 submit payload =
-                    runSubmit (OnMemberActionSaved loaded.summary.id) config model (\ctx -> Submit.event ctx loaded payload)
+                    runSubmit (OnMemberActionSaved loaded.summary.id) config model (\ctx -> GroupOps.event ctx loaded payload)
             in
             case output of
                 Page.Group.MemberDetail.RenameOutput data ->
@@ -912,7 +912,7 @@ applyAndSync config groupId envelope model =
 -}
 appendEventAndRecompute : Model -> Group.Id -> Event.Envelope -> Maybe Model
 appendEventAndRecompute model groupId envelope =
-    mapLoadedGroup (Submit.appendEvent envelope) groupId model
+    mapLoadedGroup (GroupOps.appendEvent envelope) groupId model
 
 
 mapLoadedGroup : (LoadedGroup -> LoadedGroup) -> Group.Id -> Model -> Maybe Model
@@ -935,7 +935,7 @@ addUnpushedIdToModel : String -> Model -> Model
 addUnpushedIdToModel eventId model =
     case model.loadedGroup of
         Just loaded ->
-            { model | loadedGroup = Just (Submit.addUnpushedId eventId loaded) }
+            { model | loadedGroup = Just (GroupOps.addUnpushedId eventId loaded) }
 
         Nothing ->
             model
@@ -1031,7 +1031,7 @@ deleteGroup config model groupId =
 applyLoadedGroup : UpdateConfig -> Group.Id -> List Event.Envelope -> Symmetric.Key -> Maybe String -> Set String -> Model -> Maybe Model
 applyLoadedGroup config groupId events groupKey syncCursor unpushedIds model =
     Dict.get groupId config.groups
-        |> Maybe.map (\summary -> Submit.initLoadedGroup events summary groupKey syncCursor unpushedIds)
+        |> Maybe.map (\summary -> GroupOps.initLoadedGroup events summary groupKey syncCursor unpushedIds)
         |> Maybe.map (\loaded -> { model | loadedGroup = Just loaded })
 
 
