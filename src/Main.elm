@@ -37,6 +37,7 @@ import UI.Shell
 import UI.Toast as Toast
 import UUID
 import Ui
+import Update
 import Url
 import WebCrypto
 
@@ -314,39 +315,33 @@ update msg model =
     case msg of
         OnNavEvent event ->
             let
-                route : Route
-                route =
-                    Route.fromAppUrl event.appUrl
-
-                ( guardedRoute, guardCmd ) =
+                maybeIdentity : Maybe Identity
+                maybeIdentity =
                     case model.appState of
                         Ready data ->
-                            applyRouteGuard data.identity route
+                            data.identity
 
                         _ ->
-                            applyRouteGuard Nothing route
-
-                modelWithRoute : Model
-                modelWithRoute =
-                    { model | route = guardedRoute }
+                            Nothing
             in
-            case guardedRoute of
-                GroupRoute groupId groupView ->
-                    case buildGroupConfig modelWithRoute of
+            case applyRouteGuard maybeIdentity (Route.fromAppUrl event.appUrl) of
+                ( (GroupRoute groupId groupView) as route, guardCmd ) ->
+                    let
+                        routedModel : Model
+                        routedModel =
+                            { model | route = route }
+                    in
+                    case buildGroupConfig routedModel of
                         Just config ->
-                            let
-                                ( groupModel, groupNavCmd ) =
-                                    Page.Group.handleNavigation config groupId groupView modelWithRoute.groupModel
-                            in
-                            ( { modelWithRoute | groupModel = groupModel }
-                            , Cmd.batch [ guardCmd, Cmd.map GroupMsg groupNavCmd ]
-                            )
+                            Page.Group.handleNavigation config groupId groupView model.groupModel
+                                |> Update.wrap GroupMsg (\gm -> { routedModel | groupModel = gm })
+                                |> Update.addCmd guardCmd
 
                         Nothing ->
-                            ( modelWithRoute, guardCmd )
+                            ( routedModel, guardCmd )
 
-                _ ->
-                    ( modelWithRoute, guardCmd )
+                ( route, guardCmd ) ->
+                    ( { model | route = route }, guardCmd )
 
         NavigateTo route ->
             ( model, Navigation.pushUrl navCmd (Route.toAppUrl route) )
@@ -431,13 +426,8 @@ update msg model =
                         GroupRoute groupId groupView ->
                             case buildGroupConfig modelWithData of
                                 Just config ->
-                                    let
-                                        ( groupModel, groupNavCmd ) =
-                                            Page.Group.handleNavigation config groupId groupView modelWithData.groupModel
-                                    in
-                                    ( { modelWithData | groupModel = groupModel }
-                                    , Cmd.map GroupMsg groupNavCmd
-                                    )
+                                    Page.Group.handleNavigation config groupId groupView modelWithData.groupModel
+                                        |> Update.wrap GroupMsg (\gm -> { modelWithData | groupModel = gm })
 
                                 Nothing ->
                                     ( modelWithData, Cmd.none )
@@ -628,23 +618,14 @@ update msg model =
         OnGroupImported summary (ConcurrentTask.Success _) ->
             case model.appState of
                 Ready readyData ->
-                    let
-                        newRoute : Route
-                        newRoute =
-                            GroupRoute summary.id (Tab BalanceTab)
-
-                        ( modelWithToast, toastCmd ) =
-                            addToast Toast.Success
-                                (T.toastImportSuccess model.i18n)
-                                { model
-                                    | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
-                                    , groupModel = Page.Group.resetLoadedGroup model.groupModel
-                                    , homeModel = Page.Home.init
-                                }
-                    in
-                    ( modelWithToast
-                    , Cmd.batch [ Navigation.pushUrl navCmd (Route.toAppUrl newRoute), toastCmd ]
-                    )
+                    addToast Toast.Success
+                        (T.toastImportSuccess model.i18n)
+                        { model
+                            | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
+                            , groupModel = Page.Group.resetLoadedGroup model.groupModel
+                            , homeModel = Page.Home.init
+                        }
+                        |> Update.addCmd (Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute summary.id (Tab BalanceTab))))
 
                 _ ->
                     ( model, Cmd.none )
@@ -667,13 +648,8 @@ update msg model =
             -- Server group created; now sync (push initial events + pull + subscribe)
             case buildGroupConfig model of
                 Just config ->
-                    let
-                        ( groupModel, syncCmd ) =
-                            Page.Group.triggerSync config groupId model.groupModel
-                    in
-                    ( { model | groupModel = groupModel }
-                    , Cmd.map GroupMsg syncCmd
-                    )
+                    Page.Group.triggerSync config groupId model.groupModel
+                        |> Update.wrap GroupMsg (\gm -> { model | groupModel = gm })
 
                 Nothing ->
                     ( model, Cmd.none )

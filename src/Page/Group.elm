@@ -63,6 +63,7 @@ import UI.Toast as Toast
 import UUID
 import Ui
 import Ui.Font
+import Update
 import WebCrypto.Symmetric as Symmetric
 
 
@@ -239,15 +240,8 @@ init config =
 -}
 handleNavigation : UpdateConfig -> Group.Id -> GroupView -> Model -> ( Model, Cmd Msg )
 handleNavigation config groupId groupView model =
-    let
-        ( modelAfterLoad, loadCmd ) =
-            ensureGroupLoaded config groupId model
-
-        modelAfterInit : Model
-        modelAfterInit =
-            initPagesIfNeeded config groupView modelAfterLoad
-    in
-    ( modelAfterInit, loadCmd )
+    ensureGroupLoaded config groupId model
+        |> Update.mapModel (initPagesIfNeeded config groupView)
 
 
 ensureGroupLoaded : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
@@ -330,12 +324,9 @@ update config msg model =
         -- Member detail
         MemberDetailMsg subMsg ->
             let
-                ( memberDetailModel, maybeOutput ) =
+                ( modelWithPage, maybeOutput ) =
                     Page.Group.MemberDetail.update subMsg model.memberDetailModel
-
-                modelWithPage : Model
-                modelWithPage =
-                    { model | memberDetailModel = memberDetailModel }
+                        |> Tuple.mapFirst (\subModel -> { model | memberDetailModel = subModel })
             in
             case maybeOutput of
                 Just detailOutput ->
@@ -347,12 +338,9 @@ update config msg model =
         -- Add member
         AddMemberMsg subMsg ->
             let
-                ( addMemberModel, maybeOutput ) =
+                ( modelWithPage, maybeOutput ) =
                     Page.Group.AddMember.update subMsg model.addMemberModel
-
-                modelWithPage : Model
-                modelWithPage =
-                    { model | addMemberModel = addMemberModel }
+                        |> Tuple.mapFirst (\subModel -> { model | addMemberModel = subModel })
             in
             case ( maybeOutput, model.loadedGroup ) of
                 ( Just addOutput, Just loaded ) ->
@@ -364,12 +352,9 @@ update config msg model =
         -- Edit member metadata
         EditMemberMetadataMsg subMsg ->
             let
-                ( editModel, maybeOutput ) =
+                ( modelWithPage, maybeOutput ) =
                     Page.Group.EditMemberMetadata.update subMsg model.editMemberMetadataModel
-
-                modelWithPage : Model
-                modelWithPage =
-                    { model | editMemberMetadataModel = editModel }
+                        |> Tuple.mapFirst (\subModel -> { model | editMemberMetadataModel = subModel })
             in
             case ( maybeOutput, model.loadedGroup ) of
                 ( Just metaOutput, Just loaded ) ->
@@ -381,12 +366,9 @@ update config msg model =
         -- New entry / edit entry
         NewEntryMsg subMsg ->
             let
-                ( newEntryModel, maybeOutput ) =
+                ( modelWithPage, maybeOutput ) =
                     Page.Group.NewEntry.update subMsg model.newEntryModel
-
-                modelWithPage : Model
-                modelWithPage =
-                    { model | newEntryModel = newEntryModel }
+                        |> Tuple.mapFirst (\subModel -> { model | newEntryModel = subModel })
             in
             case ( maybeOutput, model.loadedGroup ) of
                 ( Just entryOutput, Just loaded ) ->
@@ -408,12 +390,9 @@ update config msg model =
         -- Entry detail
         EntryDetailMsg subMsg ->
             let
-                ( entryDetailModel, maybeOutput ) =
+                ( modelWithPage, maybeOutput ) =
                     Page.Group.EntryDetail.update subMsg model.entryDetailModel
-
-                modelWithPage : Model
-                modelWithPage =
-                    { model | entryDetailModel = entryDetailModel }
+                        |> Tuple.mapFirst (\subModel -> { model | entryDetailModel = subModel })
             in
             case maybeOutput of
                 Just detailOutput ->
