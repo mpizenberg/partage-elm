@@ -7,10 +7,10 @@ module Page.Group exposing
     , ViewConfig
     , handleNavigation
     , init
+    , onTaskProgress
     , pocketbaseEventMsg
     , resetLoadedGroup
     , setIdentityHash
-    , taskSubscription
     , triggerSync
     , update
     , view
@@ -23,7 +23,7 @@ Owns its own ConcurrentTask.Pool and handles all group business logic
 
 -}
 
-import ConcurrentTask
+import ConcurrentTask exposing (ConcurrentTask)
 import Dict exposing (Dict)
 import Domain.Currency exposing (Currency(..))
 import Domain.Date as Date exposing (Date)
@@ -141,8 +141,8 @@ type alias Model =
 -- MSG
 
 
-taskSubscription : { send : Json.Encode.Value -> Cmd Msg, receive : (Json.Decode.Value -> Msg) -> Sub Msg } -> Model -> Sub Msg
-taskSubscription ports model =
+onTaskProgress : { send : Json.Encode.Value -> Cmd Msg, receive : (Json.Decode.Value -> Msg) -> Sub Msg } -> Model -> Sub Msg
+onTaskProgress ports model =
     ConcurrentTask.onProgress
         { send = ports.send
         , receive = ports.receive
@@ -945,7 +945,7 @@ triggerSyncInternal config groupId model =
                             List.filter (\e -> Set.member e.id pushedIds) loaded.events
                                 |> List.reverse
 
-                        syncTask : ConcurrentTask.ConcurrentTask Server.Error Server.SyncResult
+                        syncTask : ConcurrentTask Server.Error Server.SyncResult
                         syncTask =
                             Server.authenticate client { groupId = groupId, groupKey = loaded.groupKey }
                                 |> ConcurrentTask.andThenDo

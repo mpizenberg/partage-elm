@@ -130,7 +130,7 @@ subscriptions model =
             , onProgress = OnTaskProgress
             }
             model.pool
-        , Page.Group.taskSubscription
+        , Page.Group.onTaskProgress
             { send = sendTask
             , receive = receiveTask
             }
