@@ -488,11 +488,10 @@ update config msg model =
         SaveSettlementPreferences prefData ->
             case model.loadedGroup of
                 Just loaded ->
-                    submitEvent (OnEntryActionSaved loaded.summary.id)
+                    runSubmit (OnEntryActionSaved loaded.summary.id)
                         config
                         model
-                        loaded
-                        (Event.SettlementPreferencesUpdated prefData)
+                        (\ctx -> Submit.event ctx loaded (Event.SettlementPreferencesUpdated prefData))
 
                 Nothing ->
                     ( model, Cmd.none, [] )
@@ -753,13 +752,6 @@ submitEntryAction config model action =
             ( model, Cmd.none, [] )
 
 
-{-| Submit a generic event payload to a loaded group.
--}
-submitEvent : (ConcurrentTask.Response Idb.Error Event.Envelope -> Msg) -> UpdateConfig -> Model -> LoadedGroup -> Event.Payload -> ( Model, Cmd Msg, List Output )
-submitEvent onComplete config model loaded payload =
-    runSubmit onComplete config model (\ctx -> Submit.event ctx loaded payload)
-
-
 {-| Submit member metadata update, with optional rename if name changed.
 -}
 submitMemberMetadata : UpdateConfig -> Model -> LoadedGroup -> Page.Group.EditMemberMetadata.Output -> ( Model, Cmd Msg, List Output )
@@ -836,8 +828,8 @@ handleMemberDetailOutput config model output =
         Just loaded ->
             let
                 submit : Event.Payload -> ( Model, Cmd Msg, List Output )
-                submit =
-                    submitEvent (OnMemberActionSaved loaded.summary.id) config model loaded
+                submit payload =
+                    runSubmit (OnMemberActionSaved loaded.summary.id) config model (\ctx -> Submit.event ctx loaded payload)
             in
             case output of
                 Page.Group.MemberDetail.RenameOutput data ->
