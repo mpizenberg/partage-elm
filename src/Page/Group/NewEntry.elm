@@ -74,6 +74,7 @@ type Model
 type alias ModelData =
     { form : NewEntry.Form
     , submitted : Bool
+    , isEditing : Bool
     , kind : EntryKind
     , kindLocked : Bool
     , payerMode : PayerMode
@@ -149,6 +150,7 @@ init config =
     Model
         { form = NewEntry.form |> NewEntry.initDate config.today
         , submitted = False
+        , isEditing = False
         , kind = ExpenseKind
         , kindLocked = False
         , payerMode = SinglePayer
@@ -267,6 +269,7 @@ initFromEntry config entry =
                         |> NewEntry.initAmount data.amount
                         |> NewEntry.initDate data.date
                 , submitted = False
+                , isEditing = True
                 , kind = ExpenseKind
                 , kindLocked = True
                 , payerMode =
@@ -307,6 +310,7 @@ initFromEntry config entry =
                         |> NewEntry.initAmount data.amount
                         |> NewEntry.initDate data.date
                 , submitted = False
+                , isEditing = True
                 , kind = TransferKind
                 , kindLocked = True
                 , payerMode = SinglePayer
@@ -641,7 +645,7 @@ view i18n activeMembers toMsg (Model data) =
                     kindToggle i18n data
               ]
             , content
-            , [ submitButton i18n ]
+            , [ submitButton i18n data.isEditing ]
             ]
         )
         |> Ui.map toMsg
@@ -1055,8 +1059,8 @@ memberDropdown label onChange activeMembers selectedId =
         ]
 
 
-submitButton : I18n -> Ui.Element Msg
-submitButton i18n =
+submitButton : I18n -> Bool -> Ui.Element Msg
+submitButton i18n isEditing =
     Ui.el
         [ Ui.Input.button Submit
         , Ui.width Ui.fill
@@ -1068,7 +1072,14 @@ submitButton i18n =
         , Ui.Font.bold
         , Ui.pointer
         ]
-        (Ui.text (T.newEntrySubmit i18n))
+        (Ui.text
+            (if isEditing then
+                T.editEntrySubmit i18n
+
+             else
+                T.newEntrySubmit i18n
+            )
+        )
 
 
 fieldError : I18n -> Bool -> Field.Field a -> Ui.Element msg
