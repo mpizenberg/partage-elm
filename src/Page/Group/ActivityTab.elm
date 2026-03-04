@@ -1057,7 +1057,7 @@ linksToString links =
 
 detailRow : String -> String -> Ui.Element msg
 detailRow label value =
-    Ui.column [ Ui.spacing 2, Ui.width Ui.fill ]
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ] (Ui.text label)
         , Ui.el [ Ui.Font.size Theme.fontSize.sm ] (Ui.text value)
         ]
@@ -1065,7 +1065,7 @@ detailRow label value =
 
 diffRow : String -> String -> String -> Ui.Element msg
 diffRow label oldValue newValue =
-    Ui.column [ Ui.spacing 2, Ui.width Ui.fill ]
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ] (Ui.text label)
         , Ui.row [ Ui.spacing Theme.spacing.sm ]
             [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.danger, Ui.Font.strike ]

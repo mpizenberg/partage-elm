@@ -208,7 +208,7 @@ viewPreview i18n preview =
                     [ Ui.width Ui.fill
                     , Ui.padding Theme.spacing.sm
                     , Ui.rounded Theme.rounding.sm
-                    , Ui.border 1
+                    , Ui.border Theme.borderWidth.sm
                     , Ui.borderColor Theme.neutral300
                     ]
                     { onChange = InputNewMemberName
@@ -258,10 +258,10 @@ radioOption isSelected label onClick =
           else
             Ui.background Theme.neutral200
         , if isSelected then
-            Ui.border 2
+            Ui.border Theme.borderWidth.md
 
           else
-            Ui.border 1
+            Ui.border Theme.borderWidth.sm
         , if isSelected then
             Ui.borderColor Theme.primary
 
@@ -272,8 +272,8 @@ radioOption isSelected label onClick =
             [ Ui.el
                 [ Ui.width (Ui.px 18)
                 , Ui.height (Ui.px 18)
-                , Ui.rounded 9
-                , Ui.border 2
+                , Ui.rounded Theme.rounding.md
+                , Ui.border Theme.borderWidth.md
                 , Ui.borderColor
                     (if isSelected then
                         Theme.primary
