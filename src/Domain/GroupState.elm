@@ -22,6 +22,7 @@ import Domain.Event as Event exposing (Envelope, Payload(..))
 import Domain.Group as Group
 import Domain.Member as Member
 import Domain.Settlement as Settlement
+import Time
 
 
 {-| The full state of a group, computed by replaying events.
@@ -32,6 +33,7 @@ type alias GroupState =
     , balances : Dict Member.Id MemberBalance
     , groupMeta : GroupMetadata
     , activities : List Activity
+    , pendingActivities : List Activity
     , rejectedEntries : List ( Entry.Entry, RejectionReason )
     , settlementPreferences : List Settlement.Preference
     }
@@ -87,6 +89,7 @@ empty =
         , links = []
         }
     , activities = []
+    , pendingActivities = []
     , rejectedEntries = []
     , settlementPreferences = []
     }
@@ -95,10 +98,19 @@ empty =
 {-| Apply a list of events to a GroupState.
 Events are sorted before application. Balances are recomputed after all events.
 Can be used from scratch with `empty` or incrementally on an existing state.
+New activities are accumulated in a buffer then merged in sorted order.
 -}
 applyEvents : List Envelope -> GroupState -> GroupState
 applyEvents events state =
-    List.foldl applyEvent state (Event.sortEvents events)
+    let
+        stateAfterFold : GroupState
+        stateAfterFold =
+            List.foldl applyEvent state (Event.sortEvents events)
+    in
+    { stateAfterFold
+        | activities = mergeActivities stateAfterFold.pendingActivities stateAfterFold.activities
+        , pendingActivities = []
+    }
         |> recomputeBalances
 
 
@@ -111,9 +123,8 @@ recomputeBalances state =
 
 {-| Apply a single event to the group state, without recomputing balances.
 Builds an activity item from the state before the event is applied, then
-mutates the state. Activities are stored newest-first (prepended).
-Invalid or duplicate events are silently ignored.
-Not exposed — use `applyEvents` which recomputes balances after all events.
+mutates the state. New activities accumulate in pendingActivities (newest-first).
+Not exposed — use `applyEvents` which merges pending into activities after all events.
 -}
 applyEvent : Envelope -> GroupState -> GroupState
 applyEvent envelope state =
@@ -126,7 +137,7 @@ applyEvent envelope state =
         newState =
             applyPayload envelope.payload state
     in
-    { newState | activities = activity :: newState.activities }
+    { newState | pendingActivities = activity :: newState.pendingActivities }
 
 
 applyPayload : Payload -> GroupState -> GroupState
@@ -603,16 +614,41 @@ resolveMemberRootId state deviceId =
             |> Maybe.withDefault deviceId
 
 
-{-| Resolve a member root ID to a display name. Falls back to the raw ID if not found.
+{-| Resolve a member ID (root or device) to a display name. Falls back to the raw ID if not found.
 -}
 resolveMemberName : GroupState -> Member.Id -> String
 resolveMemberName state memberId =
-    case Dict.get memberId state.members of
+    let
+        rootId : Member.Id
+        rootId =
+            resolveMemberRootId state memberId
+    in
+    case Dict.get rootId state.members of
         Just chain ->
             chain.name
 
         Nothing ->
             memberId
+
+
+{-| Merge new activities into existing ones, maintaining newest-first order.
+Both lists must already be sorted newest-first.
+-}
+mergeActivities : List Activity -> List Activity -> List Activity
+mergeActivities new existing =
+    case ( new, existing ) of
+        ( [], _ ) ->
+            existing
+
+        ( _, [] ) ->
+            new
+
+        ( n :: ns, e :: es ) ->
+            if Time.posixToMillis n.timestamp >= Time.posixToMillis e.timestamp then
+                n :: mergeActivities ns existing
+
+            else
+                e :: mergeActivities new es
 
 
 {-| Get all active (non-retired) members.

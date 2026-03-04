@@ -356,12 +356,13 @@ addMember ctx loaded output =
 type alias SyncApplyResult =
     { updatedGroup : LoadedGroup
     , newEvents : List Event.Envelope
-    , isFirstSync : Bool
     , pullCursor : String
     }
 
 
 {-| Apply a sync result to a loaded group: deduplicate pulled events, update state, clear pushed IDs.
+Events are merged in sorted order. If any new events conflict with existing events in the overlap
+window (same entity, order-dependent resolution), the group state is rebuilt from scratch.
 -}
 applySyncResult : Set String -> Server.SyncResult -> LoadedGroup -> SyncApplyResult
 applySyncResult pushedIds syncResult loaded =
@@ -381,18 +382,85 @@ applySyncResult pushedIds syncResult loaded =
         remainingUnpushedIds : Set String
         remainingUnpushedIds =
             Set.diff loaded.unpushedIds pushedIds
+
+        -- Merge events maintaining sorted order (newest-first).
+        -- loaded.events is newest-first; newEvents come from server in chronological order.
+        allSortedOldestFirst : List Event.Envelope
+        allSortedOldestFirst =
+            Event.sortEvents (List.reverse loaded.events ++ newEvents)
+
+        -- Check for conflicts: find the overlap window (existing events concurrent with new events)
+        oldestNewTimestamp : Maybe Int
+        oldestNewTimestamp =
+            List.map (.clientTimestamp >> Time.posixToMillis) newEvents
+                |> List.minimum
+
+        overlapEvents : List Event.Envelope
+        overlapEvents =
+            case oldestNewTimestamp of
+                Just ts ->
+                    List.filter (\e -> Time.posixToMillis e.clientTimestamp >= ts) loaded.events
+
+                Nothing ->
+                    []
+
+        needsRebuild : Bool
+        needsRebuild =
+            hasConflicts newEvents overlapEvents
+
+        updatedGroupState : GroupState.GroupState
+        updatedGroupState =
+            if needsRebuild then
+                GroupState.applyEvents allSortedOldestFirst GroupState.empty
+
+            else
+                GroupState.applyEvents newEvents loaded.groupState
     in
     { updatedGroup =
         { loaded
-            | events = List.reverse newEvents ++ loaded.events
-            , groupState = GroupState.applyEvents newEvents loaded.groupState
+            | events = List.reverse allSortedOldestFirst
+            , groupState = updatedGroupState
             , syncCursor = Just pullResult.cursor
             , unpushedIds = remainingUnpushedIds
         }
     , newEvents = newEvents
-    , isFirstSync = loaded.syncCursor == Nothing
     , pullCursor = pullResult.cursor
     }
+
+
+{-| Check if any new events conflict with existing events in the overlap window.
+Conflictual pairs modify the same entity with order-dependent resolution.
+-}
+hasConflicts : List Event.Envelope -> List Event.Envelope -> Bool
+hasConflicts newEvents overlapEvents =
+    List.any (\new -> List.any (areConflicting new) overlapEvents) newEvents
+
+
+{-| Two events conflict if they modify the same entity in an order-dependent way.
+-}
+areConflicting : Event.Envelope -> Event.Envelope -> Bool
+areConflicting a b =
+    case ( a.payload, b.payload ) of
+        ( Event.MemberRenamed r1, Event.MemberRenamed r2 ) ->
+            r1.rootId == r2.rootId
+
+        ( Event.MemberRetired r1, Event.MemberUnretired r2 ) ->
+            r1.rootId == r2.rootId
+
+        ( Event.MemberUnretired r1, Event.MemberRetired r2 ) ->
+            r1.rootId == r2.rootId
+
+        ( Event.MemberMetadataUpdated r1, Event.MemberMetadataUpdated r2 ) ->
+            r1.rootId == r2.rootId
+
+        ( Event.GroupMetadataUpdated _, Event.GroupMetadataUpdated _ ) ->
+            True
+
+        ( Event.SettlementPreferencesUpdated r1, Event.SettlementPreferencesUpdated r2 ) ->
+            r1.memberRootId == r2.memberRootId
+
+        _ ->
+            False
 
 
 {-| Build the persistence tasks to run after a successful sync.
@@ -411,11 +479,7 @@ postSyncTasks db groupId maybePbClient result =
 
           else
             Nothing
-        , if result.isFirstSync then
-            Maybe.map Server.subscribeToGroup maybePbClient
-
-          else
-            Nothing
+        , Maybe.map Server.subscribeToGroup maybePbClient
         ]
         |> ConcurrentTask.batch
         |> ConcurrentTask.map (\_ -> ())

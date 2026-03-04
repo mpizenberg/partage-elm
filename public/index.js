@@ -56,6 +56,7 @@ var app = Elm.Main.init({
     randomSeed: Array.from(crypto.getRandomValues(new Uint32Array(4))),
     currentTime: Date.now(),
     serverUrl: "http://127.0.0.1:8090",
+    origin: location.origin,
   },
 });
 

@@ -6,6 +6,8 @@ module Page.Group.MembersTab exposing (Msg, view)
 import Dict
 import Domain.GroupState exposing (GroupMetadata, GroupState)
 import Domain.Member as Member
+import Html
+import Html.Attributes
 import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
@@ -20,6 +22,7 @@ type alias Msg msg =
     { onMemberClick : Member.Id -> msg
     , onAddMember : msg
     , onEditGroupMetadata : msg
+    , inviteLink : String
     }
 
 
@@ -55,6 +58,7 @@ view i18n msg currentUserRootId state =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         [ groupInfoSection i18n state
         , editGroupButton i18n msg.onEditGroupMetadata
+        , inviteLinkSection i18n msg.inviteLink
         , Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.membersTabTitle i18n))
         , Ui.column [ Ui.width Ui.fill ]
             (List.map viewMember active)
@@ -69,6 +73,30 @@ view i18n msg currentUserRootId state =
           else
             Ui.none
         , addMemberButton i18n msg.onAddMember
+        ]
+
+
+inviteLinkSection : I18n -> String -> Ui.Element msg
+inviteLinkSection i18n link =
+    Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+        [ Ui.el [ Ui.Font.size Theme.fontSize.md, Ui.Font.bold ]
+            (Ui.text (T.inviteLinkTitle i18n))
+        , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
+            (Ui.text (T.inviteLinkHint i18n))
+        , Ui.html
+            (Html.node "copy-button"
+                [ Html.Attributes.attribute "data-copy" link
+                , Html.Attributes.style "cursor" "pointer"
+                , Html.Attributes.style "display" "flex"
+                , Html.Attributes.style "align-items" "center"
+                , Html.Attributes.style "gap" "8px"
+                , Html.Attributes.style "padding" "8px 12px"
+                , Html.Attributes.style "border-radius" "6px"
+                , Html.Attributes.style "background" "#f3f4f6"
+                , Html.Attributes.style "font-size" (String.fromInt Theme.fontSize.sm ++ "px")
+                ]
+                [ Html.text (T.inviteLinkCopy i18n ++ " 📋") ]
+            )
         ]
 
 

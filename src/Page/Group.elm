@@ -11,6 +11,7 @@ module Page.Group exposing
     , pocketbaseEventMsg
     , resetLoadedGroup
     , setIdentityHash
+    , submitJoinEvent
     , triggerSync
     , update
     , view
@@ -46,6 +47,7 @@ import Page.Group.EntryDetail
 import Page.Group.MemberDetail
 import Page.Group.MembersTab
 import Page.Group.NewEntry
+import Page.JoinGroup
 import Page.NotFound
 import PocketBase
 import PocketBase.Realtime
@@ -101,6 +103,7 @@ type alias ViewConfig msg =
     , toMsg : Msg -> msg
     , today : Date
     , groupId : Group.Id
+    , origin : String
     }
 
 
@@ -291,6 +294,80 @@ resetLoadedGroup model =
 setIdentityHash : String -> Model -> Model
 setIdentityHash hash model =
     { model | identityHash = hash }
+
+
+{-| Submit a member event for joining a group (claim member or join as new).
+Called by Main after the group has been loaded following a join.
+-}
+submitJoinEvent : UpdateConfig -> { action : Page.JoinGroup.JoinAction, newMemberName : String } -> Model -> ( Model, Cmd Msg )
+submitJoinEvent config joinData model =
+    case model.loadedGroup of
+        Just loaded ->
+            case joinData.action of
+                Page.JoinGroup.ClaimVirtualMember rootId ->
+                    case Dict.get rootId loaded.groupState.members of
+                        Just chain ->
+                            let
+                                payload : Event.Payload
+                                payload =
+                                    Event.MemberReplaced
+                                        { rootId = rootId
+                                        , previousId = chain.currentMember.id
+                                        , newId = config.identity.publicKeyHash
+                                        }
+
+                                ( state, cmd ) =
+                                    Submit.event (submitContext (OnMemberActionSaved loaded.summary.id) config model) loaded payload
+                            in
+                            ( { model | pool = state.pool, randomSeed = state.randomSeed, uuidState = state.uuidState }
+                            , cmd
+                            )
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                Page.JoinGroup.RecoverRealMember rootId ->
+                    case Dict.get rootId loaded.groupState.members of
+                        Just chain ->
+                            let
+                                payload : Event.Payload
+                                payload =
+                                    Event.MemberReplaced
+                                        { rootId = rootId
+                                        , previousId = chain.currentMember.id
+                                        , newId = config.identity.publicKeyHash
+                                        }
+
+                                ( state, cmd ) =
+                                    Submit.event (submitContext (OnMemberActionSaved loaded.summary.id) config model) loaded payload
+                            in
+                            ( { model | pool = state.pool, randomSeed = state.randomSeed, uuidState = state.uuidState }
+                            , cmd
+                            )
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                Page.JoinGroup.JoinAsNewMember ->
+                    let
+                        payload : Event.Payload
+                        payload =
+                            Event.MemberCreated
+                                { memberId = config.identity.publicKeyHash
+                                , name = joinData.newMemberName
+                                , memberType = Member.Real
+                                , addedBy = config.identity.publicKeyHash
+                                }
+
+                        ( state, cmd ) =
+                            Submit.event (submitContext (OnMemberActionSaved loaded.summary.id) config model) loaded payload
+                    in
+                    ( { model | pool = state.pool, randomSeed = state.randomSeed, uuidState = state.uuidState }
+                    , cmd
+                    )
+
+        Nothing ->
+            ( model, Cmd.none )
 
 
 
@@ -1121,9 +1198,8 @@ viewGroupPage config headerExtra groupView loaded model =
             viewTabs config headerExtra groupState userRootId loaded { model | activeTab = tab }
 
         Join _ ->
-            subPageShell headerExtra (T.shellJoinGroup config.i18n) <|
-                Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                    (Ui.text (T.joinGroupComingSoon config.i18n))
+            -- Handled by Main.elm, should not reach here
+            Ui.none
 
         NewEntry ->
             subPageShell headerExtra (T.shellNewEntry config.i18n) <|
@@ -1232,6 +1308,7 @@ tabContent config state userRootId loaded model =
                 { onMemberClick = \memberId -> config.toMsg (RequestNavigation (MemberDetail memberId))
                 , onAddMember = config.toMsg (RequestNavigation AddVirtualMember)
                 , onEditGroupMetadata = config.toMsg (RequestNavigation EditGroupMetadata)
+                , inviteLink = config.origin ++ Route.toPath (GroupRoute config.groupId (Join (Symmetric.exportKey loaded.groupKey)))
                 }
                 userRootId
                 state

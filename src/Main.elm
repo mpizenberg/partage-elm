@@ -4,9 +4,11 @@ import AppUrl
 import Browser
 import ConcurrentTask
 import Dict
+import Domain.Currency exposing (Currency(..))
 import Domain.Date as Date
 import Domain.Event as Event
 import Domain.Group as Group
+import Domain.GroupState as GroupState
 import Form.NewGroup
 import GroupExport
 import Html exposing (Html)
@@ -19,6 +21,7 @@ import Page.About
 import Page.Group
 import Page.Home
 import Page.InitError
+import Page.JoinGroup
 import Page.Loading
 import Page.NewGroup
 import Page.NotFound
@@ -40,6 +43,7 @@ import Ui
 import Update
 import Url
 import WebCrypto
+import WebCrypto.Symmetric as Symmetric
 
 
 port navCmd : Navigation.CommandPort msg
@@ -66,6 +70,7 @@ type alias Flags =
     , randomSeed : List Int
     , currentTime : Int
     , serverUrl : String
+    , origin : String
     }
 
 
@@ -83,7 +88,10 @@ type alias Model =
     , groupModel : Page.Group.Model
     , homeModel : Page.Home.Model
     , toastModel : Toast.Model
+    , joinGroupModel : Page.JoinGroup.Model
+    , pendingJoinAction : Maybe { groupId : Group.Id, action : Page.JoinGroup.JoinAction, newMemberName : String }
     , serverUrl : String
+    , origin : String
     , pbClient : Maybe PocketBase.Client
     }
 
@@ -106,6 +114,10 @@ type Msg
       -- Page form messages
     | NewGroupMsg Page.NewGroup.Msg
     | GroupMsg Page.Group.Msg
+    | JoinGroupMsg Page.JoinGroup.Msg
+      -- Join flow
+    | OnJoinGroupFetched (ConcurrentTask.Response Server.Error Server.SyncResult)
+    | OnJoinGroupSaved Group.Id (ConcurrentTask.Response Idb.Error ())
       -- Form submission responses
     | OnGroupCreated (ConcurrentTask.Response Idb.Error GroupSummary)
       -- Import / Export
@@ -224,8 +236,11 @@ init flags =
                 , uuidState = groupUuidState
                 }
       , homeModel = Page.Home.init
+      , joinGroupModel = Page.JoinGroup.init
+      , pendingJoinAction = Nothing
       , toastModel = Toast.init
       , serverUrl = flags.serverUrl
+      , origin = flags.origin
       , pbClient = Nothing
       }
     , cmd
@@ -325,6 +340,10 @@ update msg model =
                             Nothing
             in
             case applyRouteGuard maybeIdentity (Route.fromAppUrl event.appUrl) of
+                ( (GroupRoute groupId (Join key)) as route, guardCmd ) ->
+                    handleJoinRoute model route groupId key maybeIdentity
+                        |> Update.addCmd guardCmd
+
                 ( (GroupRoute groupId groupView) as route, guardCmd ) ->
                     let
                         routedModel : Model
@@ -384,16 +403,25 @@ update msg model =
                                 , onComplete = OnIdentitySaved
                                 }
                                 (Storage.saveIdentity readyData.db identity)
+
+                        modelWithIdentity : Model
+                        modelWithIdentity =
+                            { model
+                                | appState = Ready updatedReadyData
+                                , generatingIdentity = False
+                                , route = guardedRoute
+                                , pool = pool
+                                , groupModel = Page.Group.setIdentityHash identity.publicKeyHash model.groupModel
+                            }
                     in
-                    ( { model
-                        | appState = Ready updatedReadyData
-                        , generatingIdentity = False
-                        , route = guardedRoute
-                        , pool = pool
-                        , groupModel = Page.Group.setIdentityHash identity.publicKeyHash model.groupModel
-                      }
-                    , Cmd.batch [ navCmd_, taskCmd ]
-                    )
+                    -- If on a Join route, re-trigger the join fetch now that we have identity
+                    case model.route of
+                        GroupRoute groupId (Join key) ->
+                            handleJoinRoute modelWithIdentity model.route groupId key (Just identity)
+                                |> Update.addCmd (Cmd.batch [ navCmd_, taskCmd ])
+
+                        _ ->
+                            ( modelWithIdentity, Cmd.batch [ navCmd_, taskCmd ] )
 
                 _ ->
                     ( { model | generatingIdentity = False }, Cmd.none )
@@ -421,8 +449,14 @@ update msg model =
                     }
 
                 -- Handle group navigation if the initial route is a group route
+                -- (Join routes are deferred until PB client is ready)
                 ( modelAfterNav, navCmd_ ) =
                     case guardedRoute of
+                        GroupRoute _ (Join _) ->
+                            -- Join needs PB client, which isn't ready yet.
+                            -- Will be handled in OnPbClientInitialized.
+                            ( modelWithData, Cmd.none )
+
                         GroupRoute groupId groupView ->
                             case buildGroupConfig modelWithData of
                                 Just config ->
@@ -535,11 +569,150 @@ update msg model =
                     let
                         ( groupModel, groupCmd, outputs ) =
                             Page.Group.update config subMsg model.groupModel
+
+                        ( modelAfterOutputs, outputCmd ) =
+                            processGroupOutputs { model | groupModel = groupModel } groupCmd outputs
                     in
-                    processGroupOutputs { model | groupModel = groupModel } groupCmd outputs
+                    -- Check for pending join action after group loads
+                    case ( modelAfterOutputs.pendingJoinAction, modelAfterOutputs.groupModel.loadedGroup ) of
+                        ( Just joinAction, Just _ ) ->
+                            case buildGroupConfig modelAfterOutputs of
+                                Just configAfter ->
+                                    let
+                                        ( joinGroupModel, joinCmd ) =
+                                            Page.Group.submitJoinEvent configAfter
+                                                { action = joinAction.action, newMemberName = joinAction.newMemberName }
+                                                modelAfterOutputs.groupModel
+                                    in
+                                    ( { modelAfterOutputs | groupModel = joinGroupModel, pendingJoinAction = Nothing }
+                                    , Cmd.batch [ outputCmd, Cmd.map GroupMsg joinCmd ]
+                                    )
+
+                                Nothing ->
+                                    ( modelAfterOutputs, outputCmd )
+
+                        _ ->
+                            ( modelAfterOutputs, outputCmd )
 
                 Nothing ->
                     ( model, Cmd.none )
+
+        -- Join flow
+        JoinGroupMsg subMsg ->
+            let
+                ( joinModel, maybeOutput ) =
+                    Page.JoinGroup.update subMsg model.joinGroupModel
+            in
+            case maybeOutput of
+                Just (Page.JoinGroup.JoinConfirmed joinData) ->
+                    case ( model.appState, model.route, model.joinGroupModel ) of
+                        ( Ready readyData, GroupRoute groupId (Join key), Page.JoinGroup.ShowingPreview preview ) ->
+                            let
+                                groupKey : Symmetric.Key
+                                groupKey =
+                                    Symmetric.importKey key
+
+                                summary : GroupSummary
+                                summary =
+                                    { id = groupId
+                                    , name = preview.groupName
+                                    , defaultCurrency = EUR
+                                    }
+
+                                ( pool, cmd ) =
+                                    ConcurrentTask.attempt
+                                        { pool = model.pool
+                                        , send = sendTask
+                                        , onComplete = OnJoinGroupSaved groupId
+                                        }
+                                        (Storage.importGroup readyData.db summary (Just (Symmetric.exportKey groupKey)) preview.events (Just preview.syncCursor))
+                            in
+                            ( { model
+                                | joinGroupModel = joinModel
+                                , pool = pool
+                                , pendingJoinAction =
+                                    Just
+                                        { groupId = groupId
+                                        , action = joinData.selectedAction
+                                        , newMemberName = joinData.newMemberName
+                                        }
+                              }
+                            , cmd
+                            )
+
+                        _ ->
+                            ( { model | joinGroupModel = joinModel }, Cmd.none )
+
+                Nothing ->
+                    ( { model | joinGroupModel = joinModel }, Cmd.none )
+
+        OnJoinGroupFetched (ConcurrentTask.Success syncResult) ->
+            let
+                groupState : GroupState.GroupState
+                groupState =
+                    GroupState.applyEvents syncResult.pullResult.events GroupState.empty
+
+                groupName : String
+                groupName =
+                    groupState.groupMeta.name
+            in
+            ( { model
+                | joinGroupModel =
+                    Page.JoinGroup.ShowingPreview
+                        { groupName = groupName
+                        , groupState = groupState
+                        , events = syncResult.pullResult.events
+                        , syncCursor = syncResult.pullResult.cursor
+                        , selectedAction = Page.JoinGroup.JoinAsNewMember
+                        , newMemberName = ""
+                        }
+              }
+            , Cmd.none
+            )
+
+        OnJoinGroupFetched (ConcurrentTask.Error err) ->
+            ( { model | joinGroupModel = Page.JoinGroup.Error (Server.errorToString err) }
+            , Cmd.none
+            )
+
+        OnJoinGroupFetched (ConcurrentTask.UnexpectedError _) ->
+            ( { model | joinGroupModel = Page.JoinGroup.Error "Unexpected error" }
+            , Cmd.none
+            )
+
+        OnJoinGroupSaved groupId (ConcurrentTask.Success _) ->
+            case model.appState of
+                Ready readyData ->
+                    case model.joinGroupModel of
+                        Page.JoinGroup.ShowingPreview preview ->
+                            let
+                                summary : GroupSummary
+                                summary =
+                                    { id = groupId
+                                    , name = preview.groupName
+                                    , defaultCurrency = EUR
+                                    }
+
+                                newRoute : Route
+                                newRoute =
+                                    GroupRoute groupId (Tab BalanceTab)
+                            in
+                            addToast Toast.Success
+                                (T.toastJoinedGroup model.i18n)
+                                { model
+                                    | appState = Ready { readyData | groups = Dict.insert groupId summary readyData.groups }
+                                    , groupModel = Page.Group.resetLoadedGroup model.groupModel
+                                }
+                                |> Update.addCmd (Navigation.pushUrl navCmd (Route.toAppUrl newRoute))
+
+                        _ ->
+                            ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        OnJoinGroupSaved _ _ ->
+            addToast Toast.Error (T.toastJoinError model.i18n) model
 
         -- Import / Export
         ExportGroup groupId ->
@@ -601,7 +774,7 @@ update msg model =
                                         , send = sendTask
                                         , onComplete = OnGroupImported exportData.group
                                         }
-                                        (Storage.importGroup readyData.db exportData.group exportData.groupKey exportData.events)
+                                        (Storage.importGroup readyData.db exportData.group exportData.groupKey exportData.events Nothing)
                             in
                             ( { model | homeModel = homeModel, pool = pool }
                             , Cmd.batch [ Cmd.map HomeMsg homeCmd, cmd ]
@@ -635,7 +808,28 @@ update msg model =
 
         -- Server sync
         OnPbClientInitialized (ConcurrentTask.Success client) ->
-            ( { model | pbClient = Just client }, Cmd.none )
+            let
+                modelWithClient : Model
+                modelWithClient =
+                    { model | pbClient = Just client }
+            in
+            -- If the initial route is a Join route, now that PB client is ready, trigger the join flow
+            case model.route of
+                GroupRoute groupId (Join key) ->
+                    let
+                        maybeIdentity : Maybe Identity
+                        maybeIdentity =
+                            case modelWithClient.appState of
+                                Ready data ->
+                                    data.identity
+
+                                _ ->
+                                    Nothing
+                    in
+                    handleJoinRoute modelWithClient model.route groupId key maybeIdentity
+
+                _ ->
+                    ( modelWithClient, Cmd.none )
 
         OnPbClientInitialized (ConcurrentTask.Error err) ->
             -- Server unavailable — continue in offline mode
@@ -734,6 +928,87 @@ applyRouteGuard identity route =
                     ( route, Cmd.none )
 
 
+{-| Handle navigation to a Join route.
+-}
+handleJoinRoute : Model -> Route -> Group.Id -> String -> Maybe Identity -> ( Model, Cmd Msg )
+handleJoinRoute model route groupId key maybeIdentity =
+    case model.appState of
+        Ready readyData ->
+            if Dict.member groupId readyData.groups then
+                -- Group already exists locally: navigate to it and trigger sync
+                let
+                    balanceRoute : Route
+                    balanceRoute =
+                        GroupRoute groupId (Tab BalanceTab)
+                in
+                addToast Toast.Success (T.toastAlreadyInGroup model.i18n) { model | route = balanceRoute }
+                    |> Update.addCmd (Navigation.replaceUrl navCmd (Route.toAppUrl balanceRoute))
+
+            else
+                case maybeIdentity of
+                    Just _ ->
+                        case model.pbClient of
+                            Just client ->
+                                -- Has identity + server: fetch group data
+                                let
+                                    groupKey : Symmetric.Key
+                                    groupKey =
+                                        Symmetric.importKey key
+
+                                    serverCtx : Server.ServerContext
+                                    serverCtx =
+                                        { client = client
+                                        , groupId = groupId
+                                        , groupKey = groupKey
+                                        }
+
+                                    ( pool, cmd ) =
+                                        ConcurrentTask.attempt
+                                            { pool = model.pool
+                                            , send = sendTask
+                                            , onComplete = OnJoinGroupFetched
+                                            }
+                                            (Server.authenticateAndSync serverCtx
+                                                ""
+                                                { unpushedEvents = [], pullCursor = Nothing }
+                                            )
+                                in
+                                ( { model
+                                    | route = route
+                                    , pool = pool
+                                    , joinGroupModel = Page.JoinGroup.FetchingGroup
+                                  }
+                                , cmd
+                                )
+
+                            Nothing ->
+                                -- Server not ready yet
+                                ( { model
+                                    | route = route
+                                    , joinGroupModel = Page.JoinGroup.Error "Server not available"
+                                  }
+                                , Cmd.none
+                                )
+
+                    Nothing ->
+                        -- No identity: auto-generate one, then re-trigger join
+                        let
+                            ( pool, cmd ) =
+                                ConcurrentTask.attempt
+                                    { pool = model.pool
+                                    , send = sendTask
+                                    , onComplete = OnIdentityGenerated
+                                    }
+                                    Identity.generate
+                        in
+                        ( { model | route = route, joinGroupModel = Page.JoinGroup.FetchingGroup, pool = pool, generatingIdentity = True }
+                        , cmd
+                        )
+
+        _ ->
+            ( { model | route = route }, Cmd.none )
+
+
 view : Model -> Html Msg
 view model =
     Ui.layout Ui.default
@@ -795,12 +1070,17 @@ viewReady model readyData =
             shell (T.shellNewGroup i18n)
                 (Page.NewGroup.view i18n NewGroupMsg model.newGroupModel)
 
+        GroupRoute _ (Join _) ->
+            shell (T.shellJoinGroup i18n)
+                (Ui.map JoinGroupMsg (Page.JoinGroup.view i18n model.joinGroupModel))
+
         GroupRoute groupId groupView ->
             Page.Group.view
                 { i18n = i18n
                 , toMsg = GroupMsg
                 , today = Date.posixToDate model.currentTime
                 , groupId = groupId
+                , origin = model.origin
                 }
                 langSelector
                 groupView

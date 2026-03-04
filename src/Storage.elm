@@ -277,10 +277,10 @@ deleteGroup db groupId =
         |> ConcurrentTask.map (\_ -> ())
 
 
-{-| Import a group by saving its summary, events, and optional encryption key.
+{-| Import a group by saving its summary, events, optional encryption key, and optional sync cursor.
 -}
-importGroup : Idb.Db -> GroupSummary -> Maybe String -> List Event.Envelope -> ConcurrentTask Idb.Error ()
-importGroup db summary maybeKey events =
+importGroup : Idb.Db -> GroupSummary -> Maybe String -> List Event.Envelope -> Maybe String -> ConcurrentTask Idb.Error ()
+importGroup db summary maybeKey events maybeCursor =
     let
         saveKeyTask : ConcurrentTask Idb.Error ()
         saveKeyTask =
@@ -290,11 +290,21 @@ importGroup db summary maybeKey events =
 
                 Nothing ->
                     ConcurrentTask.succeed ()
+
+        saveCursorTask : ConcurrentTask Idb.Error ()
+        saveCursorTask =
+            case maybeCursor of
+                Just cursor ->
+                    saveSyncCursor db summary.id cursor
+
+                Nothing ->
+                    ConcurrentTask.succeed ()
     in
     ConcurrentTask.batch
         [ saveGroupSummary db summary |> ConcurrentTask.map (\_ -> ())
         , saveEvents db summary.id events
         , saveKeyTask
+        , saveCursorTask
         ]
         |> ConcurrentTask.map (\_ -> ())
 
