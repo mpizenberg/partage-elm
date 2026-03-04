@@ -2,13 +2,13 @@ module Server exposing
     ( Error(..)
     , PullResult
     , ServerContext
+    , SyncData
     , SyncResult
-    , authenticate
+    , authenticateAndSync
     , createGroupOnServer
     , errorToString
     , realtimeEventDecoder
     , subscribeToGroup
-    , syncGroup
     )
 
 {-| PocketBase server sync module.
@@ -241,6 +241,12 @@ pushSingleEvent ctx actorId envelope =
 -- Bidirectional sync
 
 
+type alias SyncData =
+    { unpushedEvents : List Event.Envelope
+    , pullCursor : Maybe String
+    }
+
+
 {-| Result of a sync operation with push count and pull result.
 -}
 type alias SyncResult =
@@ -249,13 +255,15 @@ type alias SyncResult =
     }
 
 
-{-| Sync a group: push unpushed events, then pull new events from the server.
+{-| Authenticate then sync a group: push unpushed events, then pull new events from the server.
 -}
-syncGroup :
-    ServerContext
-    -> String
-    -> { unpushedEvents : List Event.Envelope, pullCursor : Maybe String }
-    -> ConcurrentTask Error SyncResult
+authenticateAndSync : ServerContext -> String -> SyncData -> ConcurrentTask Error SyncResult
+authenticateAndSync ctx actorId syncData =
+    authenticate ctx.client { groupId = ctx.groupId, groupKey = ctx.groupKey }
+        |> ConcurrentTask.andThenDo (syncGroup ctx actorId syncData)
+
+
+syncGroup : ServerContext -> String -> SyncData -> ConcurrentTask Error SyncResult
 syncGroup ctx actorId { unpushedEvents, pullCursor } =
     let
         pushedCount : Int

@@ -23,7 +23,7 @@ Owns its own ConcurrentTask.Pool and handles all group business logic
 
 -}
 
-import ConcurrentTask exposing (ConcurrentTask)
+import ConcurrentTask
 import Dict exposing (Dict)
 import Domain.Currency exposing (Currency(..))
 import Domain.Date as Date exposing (Date)
@@ -901,35 +901,21 @@ triggerSyncInternal config groupId model =
             ( Just client, Just loaded ) ->
                 if loaded.summary.id == groupId then
                     let
-                        ctx : Server.ServerContext
-                        ctx =
-                            { client = client, groupId = groupId, groupKey = loaded.groupKey }
-
-                        -- Snapshot the IDs being pushed (to diff later in OnGroupSynced)
-                        -- Collect unpushed events from the loaded event list
-                        unpushedEvents : List Event.Envelope
-                        unpushedEvents =
-                            List.filter (\e -> Set.member e.id loaded.unpushedIds) loaded.events
-                                |> List.reverse
-
-                        syncTask : ConcurrentTask Server.Error Server.SyncResult
-                        syncTask =
-                            Server.authenticate client { groupId = groupId, groupKey = loaded.groupKey }
-                                |> ConcurrentTask.andThenDo
-                                    (Server.syncGroup ctx
-                                        config.identity.publicKeyHash
-                                        { unpushedEvents = unpushedEvents
-                                        , pullCursor = loaded.syncCursor
-                                        }
-                                    )
-
                         ( pool, cmd ) =
                             ConcurrentTask.attempt
                                 { pool = model.pool
                                 , send = config.sendTask
                                 , onComplete = OnGroupSynced groupId loaded.unpushedIds
                                 }
-                                syncTask
+                                (Server.authenticateAndSync
+                                    { client = client, groupId = groupId, groupKey = loaded.groupKey }
+                                    config.identity.publicKeyHash
+                                    { unpushedEvents =
+                                        List.filter (\e -> Set.member e.id loaded.unpushedIds) loaded.events
+                                            |> List.reverse
+                                    , pullCursor = loaded.syncCursor
+                                    }
+                                )
                     in
                     ( { model | pool = pool, syncInProgress = True }, cmd )
 
