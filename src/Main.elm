@@ -4,7 +4,6 @@ import AppUrl
 import Browser
 import ConcurrentTask
 import Dict
-import Domain.Currency exposing (Currency(..))
 import Domain.Date as Date
 import Domain.Event as Event
 import Domain.Group as Group
@@ -616,7 +615,7 @@ update msg model =
                                 summary =
                                     { id = groupId
                                     , name = preview.groupName
-                                    , defaultCurrency = EUR
+                                    , defaultCurrency = preview.groupState.groupMeta.defaultCurrency
                                     }
 
                                 ( pool, cmd ) =
@@ -688,7 +687,7 @@ update msg model =
                         summary =
                             { id = groupId
                             , name = preview.groupName
-                            , defaultCurrency = EUR
+                            , defaultCurrency = preview.groupState.groupMeta.defaultCurrency
                             }
 
                         newRoute : Route

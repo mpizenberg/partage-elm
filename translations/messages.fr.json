@@ -42,6 +42,7 @@
   "activityMemberRetired": "a retiré {name}",
   "activityMemberUnretired": "a réactivé {name}",
   "activityMemberMetadataUpdated": "a mis à jour les coordonnées de {name}",
+  "activityGroupCreated": "a créé le groupe",
   "activityGroupMetadataUpdated": "a mis à jour les paramètres du groupe",
   "activitySettlementPreferencesUpdated": "a mis à jour les préférences de remboursement pour {name}",
   "changeFieldDescription": "description",

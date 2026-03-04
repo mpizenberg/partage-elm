@@ -148,7 +148,7 @@ form =
 
 {-| Initialize the form fields from existing group metadata.
 -}
-initFromMetadata : { name : String, subtitle : Maybe String, description : Maybe String, links : List Group.Link } -> Form -> Form
+initFromMetadata : { a | name : String, subtitle : Maybe String, description : Maybe String, links : List Group.Link } -> Form -> Form
 initFromMetadata meta =
     Form.modify .name (Field.setFromString meta.name)
         >> (case meta.subtitle of

@@ -156,6 +156,7 @@ newGroup ctx onComplete output =
         payloads =
             Event.createGroup
                 { name = output.name
+                , defaultCurrency = output.currency
                 , creator = ( ctx.identity.publicKeyHash, output.creatorName )
                 , virtualMembers = List.map2 Tuple.pair virtualMemberIds output.virtualMembers
                 }

@@ -303,49 +303,44 @@ submitJoinEvent : UpdateConfig -> { action : Page.JoinGroup.JoinAction, newMembe
 submitJoinEvent config joinData model =
     case model.loadedGroup of
         Just loaded ->
-            case joinData.action of
-                Page.JoinGroup.ClaimMember rootId ->
-                    case Dict.get rootId loaded.groupState.members of
-                        Just chain ->
-                            let
-                                payload : Event.Payload
-                                payload =
-                                    Event.MemberReplaced
-                                        { rootId = rootId
-                                        , previousId = chain.currentMember.id
-                                        , newId = config.identity.publicKeyHash
-                                        }
-
-                                ( state, cmd ) =
-                                    Submit.event (submitContext (OnMemberActionSaved loaded.summary.id) config model) loaded payload
-                            in
-                            ( { model | pool = state.pool, randomSeed = state.randomSeed, uuidState = state.uuidState }
-                            , cmd
-                            )
-
-                        Nothing ->
-                            ( model, Cmd.none )
-
-                Page.JoinGroup.JoinAsNewMember ->
+            case joinPayload config.identity.publicKeyHash joinData loaded of
+                Just payload ->
                     let
-                        payload : Event.Payload
-                        payload =
-                            Event.MemberCreated
-                                { memberId = config.identity.publicKeyHash
-                                , name = joinData.newMemberName
-                                , memberType = Member.Real
-                                , addedBy = config.identity.publicKeyHash
-                                }
-
-                        ( state, cmd ) =
-                            Submit.event (submitContext (OnMemberActionSaved loaded.summary.id) config model) loaded payload
+                        ( newModel, cmd, _ ) =
+                            runSubmit (OnMemberActionSaved loaded.summary.id) config model (\ctx -> Submit.event ctx loaded payload)
                     in
-                    ( { model | pool = state.pool, randomSeed = state.randomSeed, uuidState = state.uuidState }
-                    , cmd
-                    )
+                    ( newModel, cmd )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         Nothing ->
             ( model, Cmd.none )
+
+
+joinPayload : Member.Id -> { action : Page.JoinGroup.JoinAction, newMemberName : String } -> LoadedGroup -> Maybe Event.Payload
+joinPayload selfId joinData loaded =
+    case joinData.action of
+        Page.JoinGroup.ClaimMember rootId ->
+            Dict.get rootId loaded.groupState.members
+                |> Maybe.map
+                    (\chain ->
+                        Event.MemberReplaced
+                            { rootId = rootId
+                            , previousId = chain.currentMember.id
+                            , newId = selfId
+                            }
+                    )
+
+        Page.JoinGroup.JoinAsNewMember ->
+            Just
+                (Event.MemberCreated
+                    { memberId = selfId
+                    , name = joinData.newMemberName
+                    , memberType = Member.Real
+                    , addedBy = selfId
+                    }
+                )
 
 
 

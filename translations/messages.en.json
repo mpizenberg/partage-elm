@@ -42,6 +42,7 @@
   "activityMemberRetired": "retired {name}",
   "activityMemberUnretired": "reactivated {name}",
   "activityMemberMetadataUpdated": "updated contact info for {name}",
+  "activityGroupCreated": "created the group",
   "activityGroupMetadataUpdated": "updated group settings",
   "activitySettlementPreferencesUpdated": "updated settlement preferences for {name}",
   "changeFieldDescription": "description",

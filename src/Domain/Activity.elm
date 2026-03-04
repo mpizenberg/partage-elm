@@ -3,6 +3,7 @@ module Domain.Activity exposing (Activity, Detail(..), GroupMetadataSnapshot, St
 {-| Activity feed types and logic. Built incrementally by GroupState.applyEvents.
 -}
 
+import Domain.Currency exposing (Currency)
 import Domain.Entry as Entry exposing (Kind(..))
 import Domain.Event as Event exposing (Payload(..))
 import Domain.Group as Group
@@ -46,6 +47,7 @@ type Detail
     | MemberRetiredDetail { name : String, rootId : Member.Id }
     | MemberUnretiredDetail { name : String, rootId : Member.Id }
     | MemberMetadataUpdatedDetail { name : String, rootId : Member.Id, oldMetadata : Member.Metadata, newMetadata : Member.Metadata, updatedFields : List String }
+    | GroupCreatedDetail { name : String, defaultCurrency : Currency }
     | GroupMetadataUpdatedDetail { oldMeta : GroupMetadataSnapshot, newMeta : GroupMetadataSnapshot, changedFields : List String }
     | SettlementPreferencesUpdatedDetail { name : String, memberRootId : Member.Id, oldRecipients : List String, newRecipients : List String }
 
@@ -128,6 +130,9 @@ involvedMembers ctx payload =
         MemberMetadataUpdated data ->
             [ data.rootId ]
 
+        GroupCreated _ ->
+            []
+
         GroupMetadataUpdated _ ->
             []
 
@@ -205,6 +210,9 @@ payloadToDetail ctx payload =
                 , newMetadata = data.metadata
                 , updatedFields = memberMetadataChanges oldMeta data.metadata
                 }
+
+        GroupCreated data ->
+            GroupCreatedDetail { name = data.name, defaultCurrency = data.defaultCurrency }
 
         GroupMetadataUpdated change ->
             let

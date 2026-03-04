@@ -406,6 +406,9 @@ detailSummaryText i18n detail =
             T.activityMemberMetadataUpdated data.name i18n
                 ++ changesText i18n data.updatedFields
 
+        GroupCreatedDetail _ ->
+            T.activityGroupCreated i18n
+
         GroupMetadataUpdatedDetail data ->
             T.activityGroupMetadataUpdated i18n
                 ++ changesText i18n data.changedFields
@@ -564,6 +567,11 @@ detailContent i18n config detail =
 
         MemberMetadataUpdatedDetail data ->
             memberMetadataDiffRows i18n data.oldMetadata data.newMetadata
+
+        GroupCreatedDetail data ->
+            [ detailRow (T.changeFieldName i18n) data.name
+            , detailRow (T.newEntryCurrencyLabel i18n) (Currency.currencyCode data.defaultCurrency)
+            ]
 
         GroupMetadataUpdatedDetail data ->
             groupMetadataDiffRows i18n data.oldMeta data.newMeta

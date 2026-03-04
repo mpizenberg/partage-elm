@@ -17,6 +17,7 @@ module Domain.GroupState exposing
 import Dict exposing (Dict)
 import Domain.Activity as Activity exposing (Activity)
 import Domain.Balance as Balance exposing (MemberBalance)
+import Domain.Currency exposing (Currency(..))
 import Domain.Entry as Entry exposing (Entry, Kind(..))
 import Domain.Event as Event exposing (Envelope, Payload(..))
 import Domain.Group as Group
@@ -72,6 +73,7 @@ type alias GroupMetadata =
     , subtitle : Maybe String
     , description : Maybe String
     , links : List Group.Link
+    , defaultCurrency : Currency
     }
 
 
@@ -87,6 +89,7 @@ empty =
         , subtitle = Nothing
         , description = Nothing
         , links = []
+        , defaultCurrency = EUR
         }
     , activities = []
     , pendingActivities = []
@@ -172,6 +175,9 @@ applyPayload payload state =
 
         EntryUndeleted data ->
             applyEntryUndeleted data state
+
+        GroupCreated data ->
+            applyGroupCreated data state
 
         GroupMetadataUpdated change ->
             applyGroupMetadataUpdated change state
@@ -478,6 +484,19 @@ applyEntryUndeleted data state =
 -- GROUP METADATA
 
 
+applyGroupCreated : { name : String, defaultCurrency : Currency } -> GroupState -> GroupState
+applyGroupCreated data state =
+    { state
+        | groupMeta =
+            { name = data.name
+            , subtitle = Nothing
+            , description = Nothing
+            , links = []
+            , defaultCurrency = data.defaultCurrency
+            }
+    }
+
+
 applyGroupMetadataUpdated : Event.GroupMetadataChange -> GroupState -> GroupState
 applyGroupMetadataUpdated change state =
     let
@@ -537,7 +556,12 @@ activityContext state =
     , entryDescription = lookupEntryDescription state
     , entryCurrentVersion = lookupEntryCurrentVersion state
     , previousVersion = lookupPreviousVersion state
-    , groupMeta = state.groupMeta
+    , groupMeta =
+        { name = state.groupMeta.name
+        , subtitle = state.groupMeta.subtitle
+        , description = state.groupMeta.description
+        , links = state.groupMeta.links
+        }
     , settlementPreference = lookupSettlementPreference state
     }
 

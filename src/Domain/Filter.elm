@@ -345,6 +345,9 @@ classifyActivity activity =
         MemberMetadataUpdatedDetail _ ->
             MemberActivity
 
+        GroupCreatedDetail _ ->
+            GroupActivity
+
         GroupMetadataUpdatedDetail _ ->
             GroupActivity
 

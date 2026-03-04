@@ -3,6 +3,7 @@ module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), co
 {-| Event types and ordering for the event-sourced state machine.
 -}
 
+import Domain.Currency as Currency exposing (Currency)
 import Domain.Entry as Entry exposing (Entry)
 import Domain.Group as Group
 import Domain.Member as Member
@@ -40,6 +41,7 @@ type Payload
     | EntryModified Entry
     | EntryDeleted { rootId : Entry.Id }
     | EntryUndeleted { rootId : Entry.Id }
+    | GroupCreated { name : String, defaultCurrency : Currency }
     | GroupMetadataUpdated GroupMetadataChange
     | SettlementPreferencesUpdated { memberRootId : Member.Id, preferredRecipients : List Member.Id }
 
@@ -95,16 +97,11 @@ wrap eventId clientTimestamp triggeredBy payload =
 
 
 {-| Build the list of payloads for creating a new group:
-GroupMetadataUpdated + MemberCreated for the creator + MemberCreated for each virtual member.
+GroupCreated + MemberCreated for the creator + MemberCreated for each virtual member.
 -}
-createGroup : { name : String, creator : ( Member.Id, String ), virtualMembers : List ( Member.Id, String ) } -> List Payload
-createGroup { name, creator, virtualMembers } =
+createGroup : { name : String, defaultCurrency : Currency, creator : ( Member.Id, String ), virtualMembers : List ( Member.Id, String ) } -> List Payload
+createGroup { name, defaultCurrency, creator, virtualMembers } =
     let
-        groupMetadata : Payload
-        groupMetadata =
-            GroupMetadataUpdated
-                { name = Just name, subtitle = Nothing, description = Nothing, links = Nothing }
-
         memberPayload : Member.Type -> ( Member.Id, String ) -> Payload
         memberPayload memberType ( memberId, memberName ) =
             MemberCreated
@@ -114,7 +111,7 @@ createGroup { name, creator, virtualMembers } =
                 , addedBy = Tuple.first creator
                 }
     in
-    groupMetadata
+    GroupCreated { name = name, defaultCurrency = defaultCurrency }
         :: memberPayload Member.Real creator
         :: List.map (memberPayload Member.Virtual) virtualMembers
 
@@ -215,6 +212,13 @@ encodePayload payload =
                 , ( "rootId", Encode.string data.rootId )
                 ]
 
+        GroupCreated data ->
+            Encode.object
+                [ ( "type", Encode.string "GroupCreated" )
+                , ( "name", Encode.string data.name )
+                , ( "defaultCurrency", Currency.encodeCurrency data.defaultCurrency )
+                ]
+
         GroupMetadataUpdated change ->
             Encode.object
                 [ ( "type", Encode.string "GroupMetadataUpdated" )
@@ -312,6 +316,12 @@ payloadDecoder =
                     "EntryUndeleted" ->
                         Decode.map (\rid -> EntryUndeleted { rootId = rid })
                             (Decode.field "rootId" Decode.string)
+
+                    "GroupCreated" ->
+                        Decode.map2
+                            (\n c -> GroupCreated { name = n, defaultCurrency = c })
+                            (Decode.field "name" Decode.string)
+                            (Decode.field "defaultCurrency" Currency.currencyDecoder)
 
                     "GroupMetadataUpdated" ->
                         Decode.map GroupMetadataUpdated
