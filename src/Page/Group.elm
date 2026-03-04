@@ -906,14 +906,10 @@ triggerSyncInternal config groupId model =
                             { client = client, groupId = groupId, groupKey = loaded.groupKey }
 
                         -- Snapshot the IDs being pushed (to diff later in OnGroupSynced)
-                        pushedIds : Set String
-                        pushedIds =
-                            loaded.unpushedIds
-
                         -- Collect unpushed events from the loaded event list
                         unpushedEvents : List Event.Envelope
                         unpushedEvents =
-                            List.filter (\e -> Set.member e.id pushedIds) loaded.events
+                            List.filter (\e -> Set.member e.id loaded.unpushedIds) loaded.events
                                 |> List.reverse
 
                         syncTask : ConcurrentTask Server.Error Server.SyncResult
@@ -931,7 +927,7 @@ triggerSyncInternal config groupId model =
                             ConcurrentTask.attempt
                                 { pool = model.pool
                                 , send = config.sendTask
-                                , onComplete = OnGroupSynced groupId pushedIds
+                                , onComplete = OnGroupSynced groupId loaded.unpushedIds
                                 }
                                 syncTask
                     in
