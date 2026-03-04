@@ -948,13 +948,12 @@ triggerSyncInternal config groupId model =
                         syncTask : ConcurrentTask.ConcurrentTask Server.Error Server.SyncResult
                         syncTask =
                             Server.authenticate client { groupId = groupId, groupKey = loaded.groupKey }
-                                |> ConcurrentTask.andThen
-                                    (\() ->
-                                        Server.syncGroup ctx
-                                            config.identity.publicKeyHash
-                                            { unpushedEvents = unpushedEvents
-                                            , pullCursor = loaded.syncCursor
-                                            }
+                                |> ConcurrentTask.andThenDo
+                                    (Server.syncGroup ctx
+                                        config.identity.publicKeyHash
+                                        { unpushedEvents = unpushedEvents
+                                        , pullCursor = loaded.syncCursor
+                                        }
                                     )
 
                         ( pool, cmd ) =

@@ -63,9 +63,6 @@ Detect relationship between local and imported data (`new`, `local_subset`, `imp
 
 ## Phase 6: Invitation & Group Joining
 
-Same page for invite link and joining.
-Display either depending if you are a member of the group already.
-
 ### 6.1 Invite link generation
 
 Build URL: `https://<domain>/join/<groupId>#<base64url-group-key>`. Display in a modal with copy button.
