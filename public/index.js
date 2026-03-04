@@ -2,6 +2,7 @@ import * as ConcurrentTask from "@andrewmacmurray/elm-concurrent-task";
 import { createTasks as createWebCryptoTasks } from "../vendor/elm-webcrypto/js/src/index.js";
 import { createTasks as createIndexedDbTasks } from "../vendor/elm-indexeddb/js/src/index.js";
 import { createTasks as createPocketBaseTasks } from "../vendor/elm-pocketbase/js/src/index.js";
+import { init as initPwa } from "../vendor/elm-pwa/js/src/index.js";
 
 // Copy-to-clipboard custom element
 class CopyButton extends HTMLElement {
@@ -57,6 +58,7 @@ var app = Elm.Main.init({
     currentTime: Date.now(),
     serverUrl: "http://127.0.0.1:8090",
     origin: location.origin,
+    isOnline: navigator.onLine,
   },
 });
 
@@ -75,5 +77,12 @@ ConcurrentTask.register({
   ports: {
     send: app.ports.sendTask,
     receive: app.ports.receiveTask,
+  },
+});
+
+initPwa({
+  ports: {
+    pwaIn: app.ports.pwaIn,
+    pwaOut: app.ports.pwaOut,
   },
 });

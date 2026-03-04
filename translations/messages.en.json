@@ -274,6 +274,11 @@
   "filterActivityMember": "Member events",
   "filterActivityGroup": "Group events",
   "filterActorLabel": "Actor",
-  "filterInvolvedLabel": "Involved"
+  "filterInvolvedLabel": "Involved",
+  "pwaUpdateAvailable": "A new version is available",
+  "pwaUpdateButton": "Update",
+  "pwaInstallPrompt": "Install Partage for a better experience",
+  "pwaInstallButton": "Install",
+  "pwaOffline": "You are offline"
 }
 

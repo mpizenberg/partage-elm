@@ -274,5 +274,10 @@
   "filterActivityMember": "Événements de membres",
   "filterActivityGroup": "Événements de groupe",
   "filterActorLabel": "Acteur",
-  "filterInvolvedLabel": "Impliqué"
+  "filterInvolvedLabel": "Impliqué",
+  "pwaUpdateAvailable": "Une nouvelle version est disponible",
+  "pwaUpdateButton": "Mettre à jour",
+  "pwaInstallPrompt": "Installez Partage pour une meilleure expérience",
+  "pwaInstallButton": "Installer",
+  "pwaOffline": "Vous êtes hors-ligne"
 }

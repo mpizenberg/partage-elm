@@ -27,6 +27,7 @@ import Page.NewGroup
 import Page.NotFound
 import Page.Setup
 import PocketBase
+import Pwa
 import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import Server
@@ -63,6 +64,12 @@ port onClipboardCopy : (() -> msg) -> Sub msg
 port onPocketbaseEvent : (Json.Decode.Value -> msg) -> Sub msg
 
 
+port pwaIn : (Json.Decode.Value -> msg) -> Sub msg
+
+
+port pwaOut : Json.Encode.Value -> Cmd msg
+
+
 type alias Flags =
     { initialUrl : String
     , language : String
@@ -70,6 +77,7 @@ type alias Flags =
     , currentTime : Int
     , serverUrl : String
     , origin : String
+    , isOnline : Bool
     }
 
 
@@ -92,6 +100,9 @@ type alias Model =
     , serverUrl : String
     , origin : String
     , pbClient : Maybe PocketBase.Client
+    , isOnline : Bool
+    , updateAvailable : Bool
+    , installAvailable : Bool
     }
 
 
@@ -130,6 +141,15 @@ type Msg
       -- Toast notifications
     | ClipboardCopied
     | DismissToast Toast.ToastId
+      -- PWA
+    | PwaMsg PwaMsg
+
+
+type PwaMsg
+    = GotPwaEvent (Result Json.Decode.Error Pwa.Event)
+    | AcceptUpdate
+    | RequestInstall
+    | DismissInstallBanner
 
 
 subscriptions : Model -> Sub Msg
@@ -150,6 +170,7 @@ subscriptions model =
             |> Sub.map GroupMsg
         , onClipboardCopy (\() -> ClipboardCopied)
         , onPocketbaseEvent (GroupMsg << Page.Group.pocketbaseEventMsg)
+        , pwaIn (PwaMsg << GotPwaEvent << Pwa.decodeEvent)
         ]
 
 
@@ -241,6 +262,9 @@ init flags =
       , serverUrl = flags.serverUrl
       , origin = flags.origin
       , pbClient = Nothing
+      , isOnline = flags.isOnline
+      , updateAvailable = False
+      , installAvailable = False
       }
     , cmd
     )
@@ -864,6 +888,9 @@ update msg model =
             , Cmd.none
             )
 
+        PwaMsg pwaMsg ->
+            updatePwa pwaMsg model
+
 
 {-| Submit a new group using Main's own pool/seed/uuid.
 -}
@@ -1006,13 +1033,68 @@ handleJoinRoute model route groupId key maybeIdentity =
             ( { model | route = route }, Cmd.none )
 
 
+
+-- PWA
+
+
+updatePwa : PwaMsg -> Model -> ( Model, Cmd Msg )
+updatePwa pwaMsg model =
+    case pwaMsg of
+        GotPwaEvent (Ok event) ->
+            case event of
+                Pwa.ConnectionChanged online ->
+                    ( { model | isOnline = online }, Cmd.none )
+
+                Pwa.UpdateAvailable ->
+                    ( { model | updateAvailable = True }, Cmd.none )
+
+                Pwa.InstallAvailable ->
+                    ( { model | installAvailable = True }, Cmd.none )
+
+                Pwa.Installed ->
+                    ( { model | installAvailable = False }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        GotPwaEvent (Err _) ->
+            ( model, Cmd.none )
+
+        AcceptUpdate ->
+            ( model, Pwa.acceptUpdate pwaOut )
+
+        RequestInstall ->
+            ( { model | installAvailable = False }, Pwa.requestInstall pwaOut )
+
+        DismissInstallBanner ->
+            ( { model | installAvailable = False }, Cmd.none )
+
+
+viewPwaBanners : Model -> List (Ui.Element Msg)
+viewPwaBanners model =
+    UI.Components.pwaBanners model.i18n
+        { isOnline = model.isOnline
+        , updateAvailable = model.updateAvailable
+        , installAvailable = model.installAvailable
+        , onUpdate = PwaMsg AcceptUpdate
+        , onInstall = PwaMsg RequestInstall
+        , onDismissInstall = PwaMsg DismissInstallBanner
+        }
+
+
+
+-- VIEW
+
+
 view : Model -> Html Msg
 view model =
     Ui.layout Ui.default
         [ Ui.height Ui.fill
         , Ui.inFront (Toast.view model.toastModel)
         ]
-        (viewPage model)
+        (Ui.column [ Ui.width Ui.fill, Ui.height Ui.fill ]
+            (viewPwaBanners model ++ [ viewPage model ])
+        )
 
 
 viewPage : Model -> Ui.Element Msg

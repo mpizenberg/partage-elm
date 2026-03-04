@@ -1,4 +1,4 @@
-module UI.Components exposing (balanceCard, entryCard, languageSelector, memberRow, settlementRow)
+module UI.Components exposing (balanceCard, entryCard, languageSelector, memberRow, pwaBanners, settlementRow)
 
 {-| Reusable view components for group data display.
 -}
@@ -13,6 +13,7 @@ import UI.Theme as Theme
 import Ui
 import Ui.Events
 import Ui.Font
+import Ui.Input
 
 
 {-| A card showing a member's balance with color coding.
@@ -268,3 +269,88 @@ languageFlag lang =
 
         Fr ->
             "🇫🇷"
+
+
+{-| PWA banners: offline indicator, update prompt, and install prompt.
+-}
+pwaBanners : I18n -> { isOnline : Bool, updateAvailable : Bool, installAvailable : Bool, onUpdate : msg, onInstall : msg, onDismissInstall : msg } -> List (Ui.Element msg)
+pwaBanners i18n config =
+    List.filterMap identity
+        [ if not config.isOnline then
+            Just (pwaBanner Theme.warningLight Theme.warning (T.pwaOffline i18n) Nothing)
+
+          else
+            Nothing
+        , if config.updateAvailable then
+            Just (pwaBanner Theme.primaryLight Theme.primary (T.pwaUpdateAvailable i18n) (Just ( T.pwaUpdateButton i18n, config.onUpdate )))
+
+          else
+            Nothing
+        , if config.installAvailable then
+            Just (pwaInstallBanner i18n config.onInstall config.onDismissInstall)
+
+          else
+            Nothing
+        ]
+
+
+{-| A colored banner with a message and an optional action button.
+-}
+pwaBanner : Ui.Color -> Ui.Color -> String -> Maybe ( String, msg ) -> Ui.Element msg
+pwaBanner bgColor textColor message action =
+    Ui.row
+        [ Ui.width Ui.fill
+        , Ui.paddingXY Theme.spacing.md Theme.spacing.sm
+        , Ui.background bgColor
+        , Ui.spacing Theme.spacing.md
+        ]
+        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color textColor, Ui.width Ui.fill ] (Ui.text message)
+        , case action of
+            Just ( label, msg ) ->
+                Ui.el
+                    [ Ui.Input.button msg
+                    , Ui.paddingXY Theme.spacing.md Theme.spacing.xs
+                    , Ui.rounded Theme.rounding.sm
+                    , Ui.background textColor
+                    , Ui.Font.color Theme.white
+                    , Ui.Font.size Theme.fontSize.sm
+                    , Ui.Font.bold
+                    , Ui.pointer
+                    ]
+                    (Ui.text label)
+
+            Nothing ->
+                Ui.none
+        ]
+
+
+{-| Install prompt banner with install and dismiss buttons.
+-}
+pwaInstallBanner : I18n -> msg -> msg -> Ui.Element msg
+pwaInstallBanner i18n onInstall onDismiss =
+    Ui.row
+        [ Ui.width Ui.fill
+        , Ui.paddingXY Theme.spacing.md Theme.spacing.sm
+        , Ui.background Theme.primaryLight
+        , Ui.spacing Theme.spacing.md
+        ]
+        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.primary, Ui.width Ui.fill ] (Ui.text (T.pwaInstallPrompt i18n))
+        , Ui.el
+            [ Ui.Input.button onInstall
+            , Ui.paddingXY Theme.spacing.md Theme.spacing.xs
+            , Ui.rounded Theme.rounding.sm
+            , Ui.background Theme.primary
+            , Ui.Font.color Theme.white
+            , Ui.Font.size Theme.fontSize.sm
+            , Ui.Font.bold
+            , Ui.pointer
+            ]
+            (Ui.text (T.pwaInstallButton i18n))
+        , Ui.el
+            [ Ui.Input.button onDismiss
+            , Ui.Font.size Theme.fontSize.md
+            , Ui.Font.color Theme.neutral500
+            , Ui.pointer
+            ]
+            (Ui.text "✕")
+        ]

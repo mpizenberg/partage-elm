@@ -19,3 +19,6 @@
 [submodule "vendor/elm-pocketbase"]
 	path = vendor/elm-pocketbase
 	url = https://github.com/mpizenberg/elm-pocketbase
+[submodule "vendor/elm-pwa"]
+	path = vendor/elm-pwa
+	url = https://github.com/mpizenberg/elm-pwa.git

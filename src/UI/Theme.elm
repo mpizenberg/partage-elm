@@ -15,6 +15,8 @@ module UI.Theme exposing
     , spacing
     , success
     , successLight
+    , warning
+    , warningLight
     , white
     )
 
@@ -114,6 +116,20 @@ danger =
 dangerLight : Ui.Color
 dangerLight =
     Ui.rgb 254 226 226
+
+
+{-| Warning color (amber).
+-}
+warning : Ui.Color
+warning =
+    Ui.rgb 217 119 6
+
+
+{-| Light variant of the warning color.
+-}
+warningLight : Ui.Color
+warningLight =
+    Ui.rgb 254 243 199
 
 
 {-| White color.
