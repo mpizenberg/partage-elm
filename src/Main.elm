@@ -1186,11 +1186,16 @@ updatePwa pwaMsg model =
                     case Dict.get groupId readyData.groups of
                         Just summary ->
                             let
-                                updatedGroups : Dict.Dict Group.Id GroupSummary
-                                updatedGroups =
-                                    Dict.insert groupId { summary | isSubscribed = isSubscribed } readyData.groups
+                                updatedSummary : GroupSummary
+                                updatedSummary =
+                                    { summary | isSubscribed = isSubscribed }
                             in
-                            ( { model | appState = Ready { readyData | groups = updatedGroups } }, Cmd.none )
+                            ( { model
+                                | appState = Ready { readyData | groups = Dict.insert groupId updatedSummary readyData.groups }
+                                , groupModel = Page.Group.updateLoadedSummary updatedSummary model.groupModel
+                              }
+                            , Cmd.none
+                            )
 
                         Nothing ->
                             ( model, Cmd.none )

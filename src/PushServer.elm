@@ -55,7 +55,7 @@ toggleGroupNotification { db, summary, subscription, memberRootId } =
     let
         topic : String
         topic =
-            summary.id ++ "/" ++ memberRootId
+            summary.id ++ "-" ++ memberRootId
     in
     if summary.isSubscribed then
         let
@@ -110,7 +110,7 @@ notifyAffectedMembers { groupId, groupName, actorRootId, entries, url } events =
         |> List.map
             (\memberId ->
                 notifyTopic
-                    { topic = groupId ++ "/" ++ memberId
+                    { topic = groupId ++ "-" ++ memberId
                     , title = groupName
                     , body = "New activity"
                     , url = url

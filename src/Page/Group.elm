@@ -14,6 +14,7 @@ module Page.Group exposing
     , submitJoinEvent
     , triggerSync
     , update
+    , updateLoadedSummary
     , view
     )
 
@@ -30,7 +31,7 @@ import Domain.Currency exposing (Currency(..))
 import Domain.Date as Date exposing (Date)
 import Domain.Event as Event
 import Domain.Group as Group
-import Domain.GroupState as GroupState exposing (GroupState)
+import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Domain.Settlement as Settlement
 import GroupOps exposing (LoadedGroup)
@@ -293,6 +294,22 @@ triggerSync config groupId model =
 resetLoadedGroup : Model -> Model
 resetLoadedGroup model =
     { model | loadedGroup = Nothing }
+
+
+{-| Update the loaded group's summary if it matches the given group ID.
+-}
+updateLoadedSummary : GroupSummary -> Model -> Model
+updateLoadedSummary summary model =
+    case model.loadedGroup of
+        Just loaded ->
+            if loaded.summary.id == summary.id then
+                { model | loadedGroup = Just { loaded | summary = summary } }
+
+            else
+                model
+
+        Nothing ->
+            model
 
 
 {-| Set the identity hash. Called by Main on OnInitComplete / OnIdentityGenerated.
@@ -1194,17 +1211,13 @@ viewLoadingShell config headerExtra =
 viewGroupPage : ViewConfig msg -> Ui.Element msg -> GroupView -> LoadedGroup -> Model -> Ui.Element msg
 viewGroupPage config headerExtra groupView loaded model =
     let
-        groupState : GroupState
-        groupState =
-            loaded.groupState
-
         userRootId : Member.Id
         userRootId =
             currentUserRootId model loaded
     in
     case groupView of
         Tab tab ->
-            viewTabs config headerExtra groupState userRootId loaded { model | activeTab = tab }
+            viewTabs config headerExtra userRootId loaded { model | activeTab = tab }
 
         Join _ ->
             -- Handled by Main.elm, should not reach here
@@ -1213,24 +1226,24 @@ viewGroupPage config headerExtra groupView loaded model =
         NewEntry ->
             subPageShell config.onNavigateHome headerExtra (T.shellNewEntry config.i18n) <|
                 Page.Group.NewEntry.view config.i18n
-                    (GroupState.activeMembers groupState)
+                    (GroupState.activeMembers loaded.groupState)
                     (config.toMsg << NewEntryMsg)
                     model.newEntryModel
 
         EditEntry _ ->
             subPageShell config.onNavigateHome headerExtra (T.editEntryTitle config.i18n) <|
                 Page.Group.NewEntry.view config.i18n
-                    (GroupState.activeMembers groupState)
+                    (GroupState.activeMembers loaded.groupState)
                     (config.toMsg << NewEntryMsg)
                     model.newEntryModel
 
         EntryDetail entryId ->
-            case Dict.get entryId groupState.entries of
+            case Dict.get entryId loaded.groupState.entries of
                 Just entryState ->
                     subPageShell config.onNavigateHome headerExtra (T.entryDetailTitle config.i18n) <|
                         Page.Group.EntryDetail.view config.i18n
                             { currentUserRootId = userRootId
-                            , resolveName = GroupState.resolveMemberName groupState
+                            , resolveName = GroupState.resolveMemberName loaded.groupState
                             }
                             (config.toMsg << EntryDetailMsg)
                             model.entryDetailModel
@@ -1271,15 +1284,15 @@ subPageShell onTitleClick headerExtra title content =
     UI.Shell.appShell { title = title, onTitleClick = onTitleClick, headerExtra = headerExtra, content = content }
 
 
-viewTabs : ViewConfig msg -> Ui.Element msg -> GroupState -> Member.Id -> LoadedGroup -> Model -> Ui.Element msg
-viewTabs config headerExtra groupState userRootId loaded model =
+viewTabs : ViewConfig msg -> Ui.Element msg -> Member.Id -> LoadedGroup -> Model -> Ui.Element msg
+viewTabs config headerExtra userRootId loaded model =
     UI.Shell.groupShell
-        { groupName = groupState.groupMeta.name
+        { groupName = loaded.groupState.groupMeta.name
         , onTitleClick = config.onNavigateHome
         , headerExtra = headerExtra
         , activeTab = model.activeTab
         , onTabClick = \tab -> config.toMsg (RequestNavigation (Tab tab))
-        , content = tabContent config groupState userRootId loaded model
+        , content = tabContent config userRootId loaded model
         , tabLabels =
             { balance = T.tabBalance config.i18n
             , entries = T.tabEntries config.i18n
@@ -1289,8 +1302,8 @@ viewTabs config headerExtra groupState userRootId loaded model =
         }
 
 
-tabContent : ViewConfig msg -> GroupState -> Member.Id -> LoadedGroup -> Model -> Ui.Element msg
-tabContent config state userRootId loaded model =
+tabContent : ViewConfig msg -> Member.Id -> LoadedGroup -> Model -> Ui.Element msg
+tabContent config userRootId loaded model =
     case model.activeTab of
         BalanceTab ->
             Page.Group.BalanceTab.view config.i18n
@@ -1301,7 +1314,7 @@ tabContent config state userRootId loaded model =
                 }
                 userRootId
                 model.balanceTabModel
-                state
+                loaded.groupState
 
         EntriesTab ->
             Page.Group.EntriesTab.view config.i18n
@@ -1311,7 +1324,7 @@ tabContent config state userRootId loaded model =
                 }
                 config.today
                 model.entriesTabModel
-                state
+                loaded.groupState
 
         MembersTab ->
             Page.Group.MembersTab.view config.i18n
@@ -1324,18 +1337,18 @@ tabContent config state userRootId loaded model =
                 , pushActive = config.pushActive
                 }
                 userRootId
-                state
+                loaded.groupState
 
         ActivityTab ->
             let
                 allMembers : List ( Member.Id, String )
                 allMembers =
-                    GroupState.activeMembers state
+                    GroupState.activeMembers loaded.groupState
                         |> List.map (\m -> ( m.rootId, m.name ))
                         |> List.sortBy Tuple.second
             in
             Page.Group.ActivityTab.view config.i18n
-                { resolveName = GroupState.resolveMemberName state
+                { resolveName = GroupState.resolveMemberName loaded.groupState
                 , currentUserRootId = userRootId
                 , onEntryClick = \entryId -> config.toMsg (RequestNavigation (EntryDetail entryId))
                 , entryDetailPath = \entryId -> Route.toPath (GroupRoute config.groupId (EntryDetail entryId))
@@ -1344,4 +1357,4 @@ tabContent config state userRootId loaded model =
                 , allMembers = allMembers
                 }
                 model.activityTabModel
-                state.activities
+                loaded.groupState.activities
