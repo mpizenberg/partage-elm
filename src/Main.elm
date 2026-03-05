@@ -16,6 +16,7 @@ import Identity exposing (Identity)
 import IndexedDb as Idb
 import Json.Decode
 import Json.Encode
+import Maybe.Extra
 import Navigation
 import Page.About
 import Page.Group
@@ -836,11 +837,14 @@ update msg model =
 
                         ( homeModel, homeCmd, maybeOutput ) =
                             Page.Home.update model.i18n existingIds homeMsg model.homeModel
+
+                        ( updatedModel, cmd ) =
+                            ( { model | homeModel = homeModel }, Cmd.map HomeMsg homeCmd )
                     in
                     case maybeOutput of
                         Just (Page.Home.ImportReady exportData) ->
                             let
-                                ( pool, cmd ) =
+                                ( pool, taskCmd ) =
                                     ConcurrentTask.attempt
                                         { pool = model.pool
                                         , send = sendTask
@@ -848,14 +852,26 @@ update msg model =
                                         }
                                         (Storage.importGroup readyData.db exportData.group exportData.groupKey exportData.events Nothing)
                             in
-                            ( { model | homeModel = homeModel, pool = pool }
-                            , Cmd.batch [ Cmd.map HomeMsg homeCmd, cmd ]
+                            ( { updatedModel | pool = pool }
+                            , Cmd.batch [ cmd, taskCmd ]
                             )
 
+                        Just (Page.Home.JoinLink url) ->
+                            let
+                                parsedUrl : Maybe Url.Url
+                                parsedUrl =
+                                    Url.fromString url
+                                        |> Maybe.Extra.orElse (Url.fromString <| model.origin ++ url)
+                            in
+                            case Maybe.map (AppUrl.fromUrl >> Route.fromAppUrl) parsedUrl of
+                                Just ((GroupRoute _ (Join _)) as route) ->
+                                    ( updatedModel, Cmd.batch [ cmd, Navigation.pushUrl navCmd (Route.toAppUrl route) ] )
+
+                                _ ->
+                                    ( updatedModel, cmd )
+
                         Nothing ->
-                            ( { model | homeModel = homeModel }
-                            , Cmd.map HomeMsg homeCmd
-                            )
+                            ( updatedModel, cmd )
 
                 _ ->
                     ( model, Cmd.none )
