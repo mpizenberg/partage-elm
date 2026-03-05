@@ -151,12 +151,13 @@ Detect online/offline status. Show an accessible offline banner (`role="alert"`,
 
 ## Phase 7.8: Localized Push Notifications (Done)
 
-Push notifications are localized on the receiving device using a service worker transform hook.
+Push notifications are localized on the receiving device using a service worker transform hook, with a readable English fallback for browsers that bypass the service worker (e.g., Safari 18.4+ Declarative Web Push).
 
-- **Notification body as JSON template**: The acting client sends a JSON-encoded body with a template key and parameters (e.g., `{"key":"expense_added","name":"Alice"}`). Template key is chosen based on event type: `expense_added`, `transfer_added`, `member_joined`, or generic `new_activity`.
+- **English fallback body + structured template data**: The acting client sends a readable English body (e.g., "Alice added an expense") and carries the template key and parameters in the `data` field (e.g., `data.key = "expense_added"`, `data.name = "Alice"`) alongside `data.url`. Template key is chosen based on event type: `expense_added`, `transfer_added`, `member_joined`, or generic `new_activity`.
+- **Legacy mode**: Notifications are sent with `legacy: true` to prevent the push server from using Declarative Web Push, ensuring the service worker always processes them for i18n. If the SW is bypassed for any reason, the English fallback body is displayed.
 - **Translation persistence**: The Elm app saves a small notification translation map to IndexedDB (in the `identity` store, key `"notificationTranslations"`) on init and whenever the user switches language. Each language provides translations for the 4 template keys with `{name}` placeholders.
-- **Service worker transform**: The SW push handler uses a `transformNotification` hook (injected via `generateSW` in elm-pwa). The app-specific transform (`public/sw-transform-notification.js`) reads translations from IndexedDB, resolves the template key, and substitutes `{param}` placeholders using `String.replaceAll`. Falls back to the raw key if translations are unavailable.
-- **No server changes**: The push server payload format is unchanged. All localization happens client-side between the Elm app (which writes translations) and the service worker (which reads them).
+- **Service worker transform**: The SW push handler uses a `transformNotification` hook (injected via `generateSW` in elm-pwa). The app-specific transform (`public/sw-transform-notification.js`) reads `data.key` and other params, looks up translations from IndexedDB, and substitutes `{param}` placeholders using `String.replaceAll`. On failure, the English fallback body is preserved.
+- **NotificationClicked data payload**: Notification click events now carry the full `data` object (as `Decode.Value`) rather than just a URL string, matching the updated elm-pwa API.
 
 **Files:** `src/PushServer.elm`, `src/Storage.elm`, `src/Main.elm`, `src/Page/Group.elm`, `public/sw-transform-notification.js`, `build-sw.mjs`, `vendor/elm-pwa/js/src/build.js`
 
