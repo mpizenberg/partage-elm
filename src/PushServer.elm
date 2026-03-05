@@ -108,9 +108,8 @@ notifyAffectedMembers { groupId, groupName, actorRootId, actorName, entries, url
                 |> Set.remove actorRootId
                 |> Set.toList
 
-        body : String
-        body =
-            notificationBody actorName (List.map .payload events)
+        { body, templateData } =
+            notificationBodyAndData actorName (List.map .payload events)
     in
     affectedIds
         |> List.map
@@ -121,6 +120,7 @@ notifyAffectedMembers { groupId, groupName, actorRootId, actorName, entries, url
                     , tag = groupId
                     , icon = "/icon-192.png"
                     , url = url
+                    , templateData = templateData
                     }
             )
         |> ConcurrentTask.batch
@@ -139,13 +139,18 @@ type alias NotificationPayload =
 
     -- url useful to redirect to the correct page on opening
     , url : String
+
+    -- template key and params for SW-based i18n (carried in data alongside url)
+    , templateData : List ( String, Encode.Value )
     }
 
 
 {-| Send a push notification to all subscribers of a topic.
+Uses legacy mode to ensure the service worker handles the notification
+(required for SW-based i18n transform).
 -}
 notifyTopic : String -> NotificationPayload -> ConcurrentTask Error ()
-notifyTopic topic { title, body, url, tag, icon } =
+notifyTopic topic { title, body, url, tag, icon, templateData } =
     Http.post
         { url = pushServerUrl ++ "/topics/" ++ topic ++ "/notify"
         , headers = []
@@ -156,7 +161,11 @@ notifyTopic topic { title, body, url, tag, icon } =
                     , ( "body", Encode.string body )
                     , ( "tag", Encode.string tag )
                     , ( "icon", Encode.string icon )
-                    , ( "data", Encode.object [ ( "url", Encode.string url ) ] )
+                    , ( "legacy", Encode.bool True )
+                    , ( "data"
+                      , Encode.object
+                            (( "url", Encode.string url ) :: templateData)
+                      )
                     ]
                 )
         , expect = Http.expectWhatever
@@ -191,42 +200,43 @@ notificationTranslations lang =
 -- Internal
 
 
-{-| Build the JSON-encoded notification body from event payloads.
-Single events get a specific template key; multiple events fall back to generic.
+{-| Build an English fallback body and structured template data from event payloads.
+The body is a readable English string (shown if the SW transform doesn't run).
+The templateData carries the template key and params in the data field for the SW.
 -}
-notificationBody : String -> List Event.Payload -> String
-notificationBody actorName payloads =
+notificationBodyAndData : String -> List Event.Payload -> { body : String, templateData : List ( String, Encode.Value ) }
+notificationBodyAndData actorName payloads =
     let
-        encode : String -> String
-        encode key =
-            Encode.encode 0
-                (Encode.object
-                    [ ( "key", Encode.string key )
-                    , ( "name", Encode.string actorName )
-                    ]
-                )
+        result : String -> String -> { body : String, templateData : List ( String, Encode.Value ) }
+        result key englishBody =
+            { body = englishBody
+            , templateData =
+                [ ( "key", Encode.string key )
+                , ( "name", Encode.string actorName )
+                ]
+            }
     in
     case payloads of
         [ EntryAdded entry ] ->
             case entry.kind of
                 Expense _ ->
-                    encode "expense_added"
+                    result "expense_added" (actorName ++ " added an expense")
 
                 Transfer _ ->
-                    encode "transfer_added"
+                    result "transfer_added" (actorName ++ " added a transfer")
 
         [ MemberCreated data ] ->
             if data.memberType == Member.Real then
-                encode "member_joined"
+                result "member_joined" (actorName ++ " joined the group")
 
             else
-                encode "new_activity"
+                result "new_activity" "New activity"
 
         [ MemberReplaced _ ] ->
-            encode "member_joined"
+            result "member_joined" (actorName ++ " joined the group")
 
         _ ->
-            encode "new_activity"
+            result "new_activity" "New activity"
 
 
 {-| Extract involved member IDs from an event payload.

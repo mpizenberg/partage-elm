@@ -1167,17 +1167,22 @@ updatePwa pwaMsg model =
                 Pwa.PushUnsubscribed ->
                     ( { model | pushSubscription = Nothing }, Cmd.none )
 
-                Pwa.NotificationClicked url ->
-                    case Url.fromString (model.origin ++ url) of
-                        Just parsedUrl ->
-                            let
-                                route : Route
-                                route =
-                                    Route.fromAppUrl (AppUrl.fromUrl parsedUrl)
-                            in
-                            ( model, Navigation.pushUrl navCmd (Route.toAppUrl route) )
+                Pwa.NotificationClicked data ->
+                    case Json.Decode.decodeValue (Json.Decode.field "url" Json.Decode.string) data of
+                        Ok url ->
+                            case Url.fromString (model.origin ++ url) of
+                                Just parsedUrl ->
+                                    let
+                                        route : Route
+                                        route =
+                                            Route.fromAppUrl (AppUrl.fromUrl parsedUrl)
+                                    in
+                                    ( model, Navigation.pushUrl navCmd (Route.toAppUrl route) )
 
-                        Nothing ->
+                                Nothing ->
+                                    ( model, Cmd.none )
+
+                        Err _ ->
                             ( model, Cmd.none )
 
                 _ ->

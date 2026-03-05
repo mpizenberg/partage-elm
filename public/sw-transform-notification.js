@@ -1,20 +1,12 @@
 // Transform push notification body using translations stored in IndexedDB.
 // The Elm app saves a { key: translatedTemplate, ... } map to the "identity"
 // store under the "notificationTranslations" key each time the language changes.
-// The notification body is expected to be a JSON string like:
-//   {"key":"expense_added","name":"Alice"}
-// This function looks up the template for "key", substitutes {param} placeholders
-// with the remaining fields, and returns the modified notification object.
+// Template data (key, name, etc.) is carried in n.data alongside the url field.
+// The body already contains a readable English fallback, which is replaced
+// with the localized version if translations are available.
 // eslint-disable-next-line no-unused-vars
 var SW_TRANSFORM_NOTIFICATION = async function (n) {
-  if (!n.body) return n;
-  var msg;
-  try {
-    msg = JSON.parse(n.body);
-  } catch (e) {
-    return n; // Not JSON, use body as-is
-  }
-  if (!msg.key) return n;
+  if (!n.data || !n.data.key) return n;
   try {
     var db = await new Promise(function (resolve, reject) {
       var req = indexedDB.open("partage");
@@ -37,17 +29,16 @@ var SW_TRANSFORM_NOTIFICATION = async function (n) {
       };
     });
     db.close();
-    if (translations && translations[msg.key]) {
-      var body = translations[msg.key];
-      Object.keys(msg).forEach(function (k) {
-        if (k !== "key") body = body.replaceAll("{" + k + "}", msg[k]);
+    if (translations && translations[n.data.key]) {
+      var body = translations[n.data.key];
+      Object.keys(n.data).forEach(function (k) {
+        if (k !== "key" && k !== "url")
+          body = body.replaceAll("{" + k + "}", n.data[k]);
       });
       n.body = body;
-    } else {
-      n.body = msg.key;
     }
   } catch (e) {
-    n.body = msg.key;
+    // Transform failed, keep the English fallback body
   }
   return n;
 };
