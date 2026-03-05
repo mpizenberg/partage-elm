@@ -109,10 +109,11 @@ notifyAffectedMembers { groupId, groupName, actorRootId, entries, url } events =
     affectedIds
         |> List.map
             (\memberId ->
-                notifyTopic
-                    { topic = groupId ++ "-" ++ memberId
-                    , title = groupName
+                notifyTopic (groupId ++ "-" ++ memberId)
+                    { title = groupName
                     , body = "New activity"
+                    , tag = groupId
+                    , icon = "/icon-192.png"
                     , url = url
                     }
             )
@@ -120,10 +121,25 @@ notifyAffectedMembers { groupId, groupName, actorRootId, entries, url } events =
         |> ConcurrentTask.map (\_ -> ())
 
 
+type alias NotificationPayload =
+    { title : String
+    , body : String
+
+    -- same "tag" would replace notification instead of stacking multiple
+    , tag : String
+
+    -- use same origin path to the 192p icon
+    , icon : String
+
+    -- url useful to redirect to the correct page on opening
+    , url : String
+    }
+
+
 {-| Send a push notification to all subscribers of a topic.
 -}
-notifyTopic : { topic : String, title : String, body : String, url : String } -> ConcurrentTask Error ()
-notifyTopic { topic, title, body, url } =
+notifyTopic : String -> NotificationPayload -> ConcurrentTask Error ()
+notifyTopic topic { title, body, url, tag, icon } =
     Http.post
         { url = pushServerUrl ++ "/topics/" ++ topic ++ "/notify"
         , headers = []
@@ -132,6 +148,8 @@ notifyTopic { topic, title, body, url } =
                 (Encode.object
                     [ ( "title", Encode.string title )
                     , ( "body", Encode.string body )
+                    , ( "tag", Encode.string tag )
+                    , ( "icon", Encode.string icon )
                     , ( "data", Encode.object [ ( "url", Encode.string url ) ] )
                     ]
                 )
