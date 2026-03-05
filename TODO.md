@@ -1,6 +1,6 @@
 # Partage — Remaining Implementation Plan
 
-Phases 1–5 are complete. Remaining: invitation/joining, PWA, usage stats, translations.
+Phases 1–5, 7 are complete. Phase 6 is partially done (QR code and Web Share remain). Remaining: usage stats, translations.
 
 ---
 
@@ -63,103 +63,37 @@ Detect relationship between local and imported data (`new`, `local_subset`, `imp
 
 ## Phase 6: Invitation & Group Joining
 
-### 6.1 Invite link generation
+Invite link generation and the join flow are complete. QR code and Web Share remain.
 
-Build URL: `https://<domain>/join/<groupId>#<base64url-group-key>`. Display in a modal with copy button.
+- **6.1** Invite link generation (Done): URL format `https://<domain>/join/<groupId>#<base64url-group-key>` with copy button in `Page.Group.MembersTab`. Group key passed as fragment (never sent to server).
+- **6.2** Join flow UI (Done): `Page.JoinGroup` extracts group ID and key from URL, authenticates, fetches and decrypts events, shows group name and members, offers claim virtual member / re-join / join as new member options, records member event and syncs.
 
-**Files:** `src/Page/Group/MembersTab.elm` (invite button), new modal component, translations
-
-### 6.2 QR code generation
+### 6.3 QR code generation
 
 Generate QR code from invite link. Likely requires a JS library (e.g., `qrcode`) via ports or an Elm QR library.
 
 **Files:** `public/index.js` (QR port or inline lib), invite modal
 
-### 6.3 Web Share API
+### 6.4 Web Share API
 
 On supported devices, offer native share via `navigator.share()` through a port.
 
 **Files:** `public/index.js` (share port), invite modal
 
-### 6.4 Join flow UI
-
-Implement `JoinGroupScreen` (currently shows "coming soon"):
-1. Extract group ID and key from URL.
-2. Authenticate to server, fetch and decrypt all events.
-3. Show group name and member list.
-4. Offer: claim virtual member (primary), re-join as existing real member (collapsed), or join as new member.
-5. Record member event and sync.
-
-**Files:** new `src/Page/JoinGroup.elm`, `src/Main.elm` (route handler), `src/Server.elm`, translations
-
 ---
 
-## Phase 7: Progressive Web App
+## Phase 7: Progressive Web App (Done)
 
-Vendor elm-pwa: https://github.com/mpizenberg/elm-pwa
+All PWA features implemented using vendor elm-pwa (https://github.com/mpizenberg/elm-pwa).
 
-### 7.1 Web app manifest
-
-Create `manifest.json` with app name ("Partage - Bill Splitting"), icons, theme color (`#2563eb`), `display: standalone`, categories (finance, utilities).
-
-**Files:** new `public/manifest.json`, `public/index.html` (link tag)
-
-### 7.2 App icons
-
-SVG icon with maskable variants for adaptive displays. Generate PNG fallbacks at standard sizes (192x192, 512x512).
-
-**Files:** new `public/icons/`
-
-### 7.3 Service worker
-
-Workbox or hand-rolled:
-- Cache-first for static assets (JS, CSS, HTML, SVG, WASM, JSON, fonts).
-- Network-first for API calls.
-- Navigation fallback to `index.html`.
-- Max 5 MB per precached resource.
-
-**Files:** new `public/sw.js`, `public/index.js` (registration)
-
-### 7.4 Install prompt
-
-- Intercept `beforeinstallprompt` on Android/Desktop Chrome, show custom install UI.
-- Show manual iOS instructions after 30-second delay.
-- Dismissible, re-appears after 7 days (tracked in localStorage).
-- Not shown in standalone mode.
-
-**Files:** `public/index.js` (event interception), new install prompt component, translations
-
-### 7.5 Auto-update
-
-Service worker update detection. Handle `SKIP_WAITING` for seamless transitions. Optionally notify user of available update.
-
-**Files:** `public/sw.js`, `public/index.js`
-
-### 7.6 Apple-specific meta tags
-
-Add `apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style`, and apple touch icon to `index.html`.
-
-**Files:** `public/index.html`
-
-### 7.7 Connectivity detection & banner
-
-Detect online/offline status. Show an accessible offline banner (`role="alert"`, `aria-live="polite"`). Auto-resync on reconnect.
-
-**Files:** `public/index.js` (online/offline event ports), `src/Main.elm`, translations
-
----
-
-## Phase 7.8: Localized Push Notifications (Done)
-
-Push notifications are localized on the receiving device using a service worker transform hook, with a readable English fallback for browsers that bypass the service worker (e.g., Safari 18.4+ Declarative Web Push).
-
-- **English fallback body + structured template data**: The acting client sends a readable English body (e.g., "Alice added an expense") and carries the template key and parameters in the `data` field (e.g., `data.key = "expense_added"`, `data.name = "Alice"`) alongside `data.url`. Template key is chosen based on event type: `expense_added`, `transfer_added`, `member_joined`, or generic `new_activity`.
-- **Legacy mode**: Notifications are sent with `legacy: true` to prevent the push server from using Declarative Web Push, ensuring the service worker always processes them for i18n. If the SW is bypassed for any reason, the English fallback body is displayed.
-- **Translation persistence**: The Elm app saves a small notification translation map to IndexedDB (in the `identity` store, key `"notificationTranslations"`) on init and whenever the user switches language. Each language provides translations for the 4 template keys with `{name}` placeholders.
-- **Service worker transform**: The SW push handler uses a `transformNotification` hook (injected via `generateSW` in elm-pwa). The app-specific transform (`public/sw-transform-notification.js`) reads `data.key` and other params, looks up translations from IndexedDB, and substitutes `{param}` placeholders using `String.replaceAll`. On failure, the English fallback body is preserved.
-- **NotificationClicked data payload**: Notification click events now carry the full `data` object (as `Decode.Value`) rather than just a URL string, matching the updated elm-pwa API.
-
-**Files:** `src/PushServer.elm`, `src/Storage.elm`, `src/Main.elm`, `src/Page/Group.elm`, `public/sw-transform-notification.js`, `build-sw.mjs`, `vendor/elm-pwa/js/src/build.js`
+- **7.1** Web app manifest: `public/manifest.json` with app name, icons, theme color (`#2563eb`), `display: standalone`.
+- **7.2** App icons: SVG (`public/icon.svg`) with maskable variant, PNG fallbacks at 192x192 and 512x512.
+- **7.3** Service worker: generated via `build-sw.mjs` using elm-pwa's `generateSW`. Cache-first for static assets, network-first for API, navigation fallback to `index.html`.
+- **7.4** Install prompt: `beforeinstallprompt` interception on Android/Desktop Chrome, iOS manual instructions after delay, dismissible with 7-day re-prompt, hidden in standalone mode.
+- **7.5** Auto-update: SW update detection with `SKIP_WAITING` support and user notification.
+- **7.6** Apple-specific meta tags: apple touch icon and `apple-mobile-web-app-capable` in `index.html`.
+- **7.7** Connectivity detection & banner: online/offline via ports, accessible offline banner (`role="alert"`, `aria-live="polite"`), auto-resync on reconnect.
+- **7.8** Localized push notifications: readable English fallback body with template data (`data.key`, `data.name`) in `data` field. Sent with `legacy: true` to force SW processing. Elm app persists translation map to IndexedDB on init and language switch. SW transform hook (`public/sw-transform-notification.js`) resolves localized body via IndexedDB lookup and `{param}` substitution. Falls back to English if transform fails or SW is bypassed (e.g., Safari Declarative Web Push).
 
 ---
 
