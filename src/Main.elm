@@ -1104,8 +1104,18 @@ updatePwa pwaMsg model =
                 Pwa.PushUnsubscribed ->
                     ( { model | pushSubscription = Nothing }, Cmd.none )
 
-                Pwa.NotificationClicked _ ->
-                    ( model, Cmd.none )
+                Pwa.NotificationClicked url ->
+                    case Url.fromString (model.origin ++ url) of
+                        Just parsedUrl ->
+                            let
+                                route : Route
+                                route =
+                                    Route.fromAppUrl (AppUrl.fromUrl parsedUrl)
+                            in
+                            ( model, Navigation.pushUrl navCmd (Route.toAppUrl route) )
+
+                        Nothing ->
+                            ( model, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
