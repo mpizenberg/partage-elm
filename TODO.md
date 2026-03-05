@@ -149,6 +149,19 @@ Detect online/offline status. Show an accessible offline banner (`role="alert"`,
 
 ---
 
+## Phase 7.8: Localized Push Notifications (Done)
+
+Push notifications are localized on the receiving device using a service worker transform hook.
+
+- **Notification body as JSON template**: The acting client sends a JSON-encoded body with a template key and parameters (e.g., `{"key":"expense_added","name":"Alice"}`). Template key is chosen based on event type: `expense_added`, `transfer_added`, `member_joined`, or generic `new_activity`.
+- **Translation persistence**: The Elm app saves a small notification translation map to IndexedDB (in the `identity` store, key `"notificationTranslations"`) on init and whenever the user switches language. Each language provides translations for the 4 template keys with `{name}` placeholders.
+- **Service worker transform**: The SW push handler uses a `transformNotification` hook (injected via `generateSW` in elm-pwa). The app-specific transform (`public/sw-transform-notification.js`) reads translations from IndexedDB, resolves the template key, and substitutes `{param}` placeholders using `String.replaceAll`. Falls back to the raw key if translations are unavailable.
+- **No server changes**: The push server payload format is unchanged. All localization happens client-side between the Elm app (which writes translations) and the service worker (which reads them).
+
+**Files:** `src/PushServer.elm`, `src/Storage.elm`, `src/Main.elm`, `src/Page/Group.elm`, `public/sw-transform-notification.js`, `build-sw.mjs`, `vendor/elm-pwa/js/src/build.js`
+
+---
+
 ## Phase 8: Usage Statistics
 
 ### 8.1 Local usage tracking

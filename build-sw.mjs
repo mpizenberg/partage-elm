@@ -1,10 +1,10 @@
 import { generateSW } from "./vendor/elm-pwa/js/src/build.js";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 writeFileSync(
   "dist/sw.js",
   generateSW({
-    cacheName: "partage-v4",
+    cacheName: "partage-v5",
     precacheUrls: [
       "/",
       // Elm and JS compilation targets
@@ -23,5 +23,9 @@ writeFileSync(
     navigationFallback: "/",
     networkFirstPrefixes: [],
     networkOnlyPrefixes: ["/api/"],
+    transformNotification: readFileSync(
+      "public/sw-transform-notification.js",
+      "utf-8",
+    ),
   }),
 );

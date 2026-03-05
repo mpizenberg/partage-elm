@@ -19,6 +19,7 @@ module Storage exposing
     , saveGroupKey
     , saveGroupSummary
     , saveIdentity
+    , saveNotificationTranslations
     , saveSyncCursor
     , saveUnpushedIds
     )
@@ -141,6 +142,14 @@ saveIdentity db identity =
 loadIdentity : Idb.Db -> ConcurrentTask Idb.Error (Maybe Identity)
 loadIdentity db =
     Idb.get db identityStore (Idb.StringKey "default") Identity.decoder
+
+
+{-| Save notification translations for the service worker to use.
+Stored in the identity store under the "notificationTranslations" key.
+-}
+saveNotificationTranslations : Idb.Db -> Encode.Value -> ConcurrentTask Idb.Error ()
+saveNotificationTranslations db translations =
+    Idb.putAt db identityStore (Idb.StringKey "notificationTranslations") translations
 
 
 {-| Save a group summary to the database.

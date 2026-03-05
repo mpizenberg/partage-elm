@@ -1,4 +1,4 @@
-module PushServer exposing (Error, NotifyContext, fetchVapidKey, notifyAffectedMembers, toggleGroupNotification, unsubscribeFromGroup)
+module PushServer exposing (Error, NotifyContext, fetchVapidKey, notificationTranslations, notifyAffectedMembers, toggleGroupNotification, unsubscribeFromGroup)
 
 {-| HTTP wrappers for push notification server communication.
 
@@ -18,6 +18,7 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import Set
 import Storage exposing (GroupSummary)
+import Translations exposing (Language(..))
 
 
 type alias Error =
@@ -82,6 +83,7 @@ type alias NotifyContext =
     { groupId : String
     , groupName : String
     , actorRootId : Member.Id
+    , actorName : String
     , entries : Dict Entry.Id EntryState
     , url : String
     }
@@ -92,7 +94,7 @@ Extracts involved member rootIds from each event, deduplicates, removes the acto
 and notifies each topic.
 -}
 notifyAffectedMembers : NotifyContext -> List Event.Envelope -> ConcurrentTask Error ()
-notifyAffectedMembers { groupId, groupName, actorRootId, entries, url } events =
+notifyAffectedMembers { groupId, groupName, actorRootId, actorName, entries, url } events =
     let
         entryCurrentVersion : Entry.Id -> Maybe Entry.Entry
         entryCurrentVersion rootId =
@@ -105,13 +107,17 @@ notifyAffectedMembers { groupId, groupName, actorRootId, entries, url } events =
                 |> Set.fromList
                 |> Set.remove actorRootId
                 |> Set.toList
+
+        body : String
+        body =
+            notificationBody actorName (List.map .payload events)
     in
     affectedIds
         |> List.map
             (\memberId ->
                 notifyTopic (groupId ++ "-" ++ memberId)
                     { title = groupName
-                    , body = "New activity"
+                    , body = body
                     , tag = groupId
                     , icon = "/icon-192.png"
                     , url = url
@@ -158,8 +164,69 @@ notifyTopic topic { title, body, url, tag, icon } =
         }
 
 
+{-| Notification translations for the service worker to resolve template keys.
+Stored in IndexedDB so the SW can display localized push notifications.
+-}
+notificationTranslations : Language -> Encode.Value
+notificationTranslations lang =
+    case lang of
+        En ->
+            Encode.object
+                [ ( "new_activity", Encode.string "New activity" )
+                , ( "expense_added", Encode.string "{name} added an expense" )
+                , ( "transfer_added", Encode.string "{name} added a transfer" )
+                , ( "member_joined", Encode.string "{name} joined the group" )
+                ]
+
+        Fr ->
+            Encode.object
+                [ ( "new_activity", Encode.string "Nouvelle activité" )
+                , ( "expense_added", Encode.string "{name} a ajouté une dépense" )
+                , ( "transfer_added", Encode.string "{name} a ajouté un transfert" )
+                , ( "member_joined", Encode.string "{name} a rejoint le groupe" )
+                ]
+
+
 
 -- Internal
+
+
+{-| Build the JSON-encoded notification body from event payloads.
+Single events get a specific template key; multiple events fall back to generic.
+-}
+notificationBody : String -> List Event.Payload -> String
+notificationBody actorName payloads =
+    let
+        encode : String -> String
+        encode key =
+            Encode.encode 0
+                (Encode.object
+                    [ ( "key", Encode.string key )
+                    , ( "name", Encode.string actorName )
+                    ]
+                )
+    in
+    case payloads of
+        [ EntryAdded entry ] ->
+            case entry.kind of
+                Expense _ ->
+                    encode "expense_added"
+
+                Transfer _ ->
+                    encode "transfer_added"
+
+        [ MemberCreated data ] ->
+            if data.memberType == Member.Real then
+                encode "member_joined"
+
+            else
+                encode "new_activity"
+
+        [ MemberReplaced _ ] ->
+            encode "member_joined"
+
+        _ ->
+            encode "new_activity"
 
 
 {-| Extract involved member IDs from an event payload.

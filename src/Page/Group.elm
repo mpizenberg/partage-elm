@@ -1008,10 +1008,16 @@ triggerSyncInternal config groupId model =
                                             Nothing
 
                                         else
+                                            let
+                                                actorId : Member.Id
+                                                actorId =
+                                                    currentUserRootId model loaded
+                                            in
                                             Just
                                                 { groupId = groupId
                                                 , groupName = loaded.groupState.groupMeta.name
-                                                , actorRootId = currentUserRootId model loaded
+                                                , actorRootId = actorId
+                                                , actorName = GroupState.resolveMemberName loaded.groupState actorId
                                                 , entries = loaded.groupState.entries
                                                 , url = Route.toPath (GroupRoute groupId (Tab ActivityTab))
                                                 }

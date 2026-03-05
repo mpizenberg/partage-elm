@@ -2,7 +2,7 @@ port module Main exposing (AppState, Flags, Model, Msg, main)
 
 import AppUrl
 import Browser
-import ConcurrentTask
+import ConcurrentTask exposing (ConcurrentTask)
 import Dict
 import Domain.Date as Date
 import Domain.Event as Event
@@ -241,13 +241,23 @@ init flags =
         groupPool =
             ConcurrentTask.pool |> ConcurrentTask.withPoolId 1
 
+        initStorage : ConcurrentTask Idb.Error Storage.InitData
+        initStorage =
+            Storage.open |> ConcurrentTask.andThen Storage.init
+
+        storeNotificationTranslations : Storage.InitData -> ConcurrentTask Idb.Error Storage.InitData
+        storeNotificationTranslations initData =
+            Storage.saveNotificationTranslations initData.db
+                (PushServer.notificationTranslations language)
+                |> ConcurrentTask.map (\_ -> initData)
+
         ( pool0, initCmd ) =
             ConcurrentTask.attempt
                 { pool = ConcurrentTask.pool
                 , send = sendTask
                 , onComplete = OnInitComplete
                 }
-                (Storage.open |> ConcurrentTask.andThen Storage.init)
+                (initStorage |> ConcurrentTask.andThen storeNotificationTranslations)
 
         ( pool, vapidCmd ) =
             ConcurrentTask.attempt
@@ -442,9 +452,23 @@ update msg model =
             ( model, Navigation.pushUrl navCmd (Route.toAppUrl route) )
 
         SwitchLanguage lang ->
-            ( { model | language = lang, i18n = T.init lang }
-            , Cmd.none
-            )
+            case model.appState of
+                Ready readyData ->
+                    let
+                        ( pool, cmd ) =
+                            ConcurrentTask.attempt
+                                { pool = model.pool
+                                , send = sendTask
+                                , onComplete = \_ -> NoOp
+                                }
+                                (Storage.saveNotificationTranslations readyData.db
+                                    (PushServer.notificationTranslations lang)
+                                )
+                    in
+                    ( { model | language = lang, i18n = T.init lang, pool = pool }, cmd )
+
+                _ ->
+                    ( { model | language = lang, i18n = T.init lang }, Cmd.none )
 
         GenerateIdentity ->
             let
