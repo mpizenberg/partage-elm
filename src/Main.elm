@@ -117,7 +117,8 @@ type AppState
 
 
 type Msg
-    = OnNavEvent Navigation.Event
+    = NoOp
+    | OnNavEvent Navigation.Event
     | NavigateTo Route
     | SwitchLanguage Language
     | GenerateIdentity
@@ -157,7 +158,7 @@ type PwaMsg
     | EnableNotifications
     | OnVapidKeyFetched (ConcurrentTask.Response PushServer.Error String)
     | ToggleGroupNotification Group.Id String
-    | OnToggleResult Group.Id (ConcurrentTask.Response PushServer.Error Bool)
+    | OnToggleNotifResult Group.Id (ConcurrentTask.Response PushServer.Error Bool)
 
 
 subscriptions : Model -> Sub Msg
@@ -349,9 +350,28 @@ processGroupOutputs model groupCmd outputs =
                                 _ ->
                                     ( m, cmds )
 
-                        Page.Group.RemoveGroup groupId ->
-                            case m.appState of
-                                Ready readyData ->
+                        Page.Group.RemoveGroup groupId memberRootId ->
+                            case ( m.appState, m.pushSubscription ) of
+                                ( Ready readyData, Just subscription ) ->
+                                    let
+                                        ( pool, unsubCmd ) =
+                                            ConcurrentTask.attempt
+                                                { pool = m.pool
+                                                , send = sendTask
+                                                , onComplete = always NoOp
+                                                }
+                                                (PushServer.unsubscribeFromGroup
+                                                    { subscription = subscription
+                                                    , groupId = groupId
+                                                    , memberRootId = memberRootId
+                                                    }
+                                                )
+                                    in
+                                    ( { m | pool = pool, appState = Ready { readyData | groups = Dict.remove groupId readyData.groups } }
+                                    , unsubCmd :: cmds
+                                    )
+
+                                ( Ready readyData, Nothing ) ->
                                     ( { m | appState = Ready { readyData | groups = Dict.remove groupId readyData.groups } }
                                     , cmds
                                     )
@@ -380,6 +400,9 @@ processGroupOutputs model groupCmd outputs =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        NoOp ->
+            ( model, Cmd.none )
+
         OnNavEvent event ->
             let
                 maybeIdentity : Maybe Identity
@@ -1172,7 +1195,7 @@ updatePwa pwaMsg model =
                                     ConcurrentTask.attempt
                                         { pool = model.pool
                                         , send = sendTask
-                                        , onComplete = PwaMsg << OnToggleResult groupId
+                                        , onComplete = PwaMsg << OnToggleNotifResult groupId
                                         }
                                         (PushServer.toggleGroupNotification
                                             { db = readyData.db
@@ -1190,7 +1213,7 @@ updatePwa pwaMsg model =
                 _ ->
                     ( model, Cmd.none )
 
-        OnToggleResult groupId (ConcurrentTask.Success isSubscribed) ->
+        OnToggleNotifResult groupId (ConcurrentTask.Success isSubscribed) ->
             case model.appState of
                 Ready readyData ->
                     case Dict.get groupId readyData.groups of
@@ -1213,7 +1236,7 @@ updatePwa pwaMsg model =
                 _ ->
                     ( model, Cmd.none )
 
-        OnToggleResult _ _ ->
+        OnToggleNotifResult _ _ ->
             addToast Toast.Error (T.toastPushError model.i18n) model
 
 

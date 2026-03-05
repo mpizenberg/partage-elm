@@ -211,7 +211,7 @@ type Output
     = NavigateTo Route
     | ShowToast Toast.ToastLevel String
     | UpdateGroupSummary GroupSummary
-    | RemoveGroup Group.Id
+    | RemoveGroup Group.Id Member.Id
     | UpdateCurrentTime Time.Posix
     | ToggleGroupNotification Group.Id Member.Id
 
@@ -637,9 +637,16 @@ update config msg model =
             ( model, Cmd.none, [ ShowToast Toast.Error (T.toastGroupSettingsError config.i18n) ] )
 
         OnGroupRemoved groupId (ConcurrentTask.Success _) ->
+            let
+                memberRootId : Member.Id
+                memberRootId =
+                    model.loadedGroup
+                        |> Maybe.map (currentUserRootId model)
+                        |> Maybe.withDefault ""
+            in
             ( { model | loadedGroup = Nothing }
             , Cmd.none
-            , [ RemoveGroup groupId
+            , [ RemoveGroup groupId memberRootId
               , ShowToast Toast.Success (T.toastGroupRemoved config.i18n)
               , NavigateTo Home
               ]

@@ -4,7 +4,7 @@ import { writeFileSync } from "node:fs";
 writeFileSync(
   "dist/sw.js",
   generateSW({
-    cacheName: "partage-v3",
+    cacheName: "partage-v4",
     precacheUrls: [
       "/",
       // Elm and JS compilation targets
@@ -21,7 +21,7 @@ writeFileSync(
       "/icon-maskable-512.png",
     ],
     navigationFallback: "/",
-    networkFirstPrefixes: ["/api/"],
-    networkOnlyPrefixes: [],
+    networkFirstPrefixes: [],
+    networkOnlyPrefixes: ["/api/"],
   }),
 );

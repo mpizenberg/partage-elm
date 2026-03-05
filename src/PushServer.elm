@@ -1,4 +1,4 @@
-module PushServer exposing (Error, NotifyContext, fetchVapidKey, notifyAffectedMembers, toggleGroupNotification)
+module PushServer exposing (Error, NotifyContext, fetchVapidKey, notifyAffectedMembers, toggleGroupNotification, unsubscribeFromGroup)
 
 {-| HTTP wrappers for push notification server communication.
 
@@ -58,14 +58,7 @@ toggleGroupNotification { db, summary, subscription, memberRootId } =
             summary.id ++ "-" ++ memberRootId
     in
     if summary.isSubscribed then
-        let
-            endpoint : String
-            endpoint =
-                subscription
-                    |> Decode.decodeValue (Decode.field "endpoint" Decode.string)
-                    |> Result.withDefault ""
-        in
-        unregister { endpoint = endpoint, topic = topic }
+        unregister { topic = topic, subscription = subscription }
             |> ConcurrentTask.andThenDo (saveSummary db { summary | isSubscribed = False })
             |> ConcurrentTask.map (\_ -> False)
 
@@ -73,6 +66,13 @@ toggleGroupNotification { db, summary, subscription, memberRootId } =
         register { topic = topic, subscription = subscription }
             |> ConcurrentTask.andThenDo (saveSummary db { summary | isSubscribed = True })
             |> ConcurrentTask.map (\_ -> True)
+
+
+{-| Unsubscribe from a group's push notification topic.
+-}
+unsubscribeFromGroup : { subscription : Encode.Value, groupId : String, memberRootId : Member.Id } -> ConcurrentTask Error ()
+unsubscribeFromGroup { subscription, groupId, memberRootId } =
+    unregister { topic = groupId ++ "-" ++ memberRootId, subscription = subscription }
 
 
 {-| Context for sending push notifications after sync.
@@ -256,8 +256,8 @@ register { topic, subscription } =
         }
 
 
-unregister : { endpoint : String, topic : String } -> ConcurrentTask Error ()
-unregister { endpoint, topic } =
+unregister : { topic : String, subscription : Encode.Value } -> ConcurrentTask Error ()
+unregister { topic, subscription } =
     Http.request
         { url = pushServerUrl ++ "/subscriptions"
         , method = "DELETE"
@@ -265,13 +265,20 @@ unregister { endpoint, topic } =
         , body =
             Http.jsonBody
                 (Encode.object
-                    [ ( "endpoint", Encode.string endpoint )
+                    [ ( "endpoint", Encode.string (unregisterEndpoint subscription) )
                     , ( "topic", Encode.string topic )
                     ]
                 )
         , expect = Http.expectWhatever
         , timeout = Nothing
         }
+
+
+unregisterEndpoint : Encode.Value -> String
+unregisterEndpoint subscription =
+    subscription
+        |> Decode.decodeValue (Decode.field "endpoint" Decode.string)
+        |> Result.withDefault ""
 
 
 saveSummary : Idb.Db -> GroupSummary -> ConcurrentTask Error ()
