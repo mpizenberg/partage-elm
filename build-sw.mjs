@@ -4,7 +4,7 @@ import { writeFileSync } from "node:fs";
 writeFileSync(
   "dist/sw.js",
   generateSW({
-    cacheName: "partage-v1",
+    cacheName: "partage-v2",
     precacheUrls: [
       "/",
       // Elm and JS compilation targets

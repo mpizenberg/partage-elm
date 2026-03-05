@@ -171,6 +171,7 @@ newGroup ctx onComplete output =
             { id = groupId
             , name = output.name
             , defaultCurrency = output.currency
+            , isSubscribed = False
             }
 
         generateEnvelopes : ConcurrentTask x (List Event.Envelope)

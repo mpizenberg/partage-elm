@@ -52,6 +52,7 @@ type alias GroupSummary =
     { id : Group.Id
     , name : String
     , defaultCurrency : Currency
+    , isSubscribed : Bool
     }
 
 
@@ -319,15 +320,17 @@ encodeGroupSummary summary =
         [ ( "id", Encode.string summary.id )
         , ( "name", Encode.string summary.name )
         , ( "defaultCurrency", Currency.encodeCurrency summary.defaultCurrency )
+        , ( "isSubscribed", Encode.bool summary.isSubscribed )
         ]
 
 
 groupSummaryDecoder : Decode.Decoder GroupSummary
 groupSummaryDecoder =
-    Decode.map3 GroupSummary
+    Decode.map4 GroupSummary
         (Decode.field "id" Decode.string)
         (Decode.field "name" Decode.string)
         (Decode.field "defaultCurrency" Currency.currencyDecoder)
+        (Decode.field "isSubscribed" Decode.bool)
 
 
 encodeEventForStorage : Group.Id -> Event.Envelope -> Encode.Value

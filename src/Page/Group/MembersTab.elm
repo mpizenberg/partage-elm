@@ -12,6 +12,7 @@ import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
 import Ui
+import Ui.Events
 import Ui.Font
 import Ui.Input
 
@@ -23,6 +24,9 @@ type alias Msg msg =
     , onAddMember : msg
     , onEditGroupMetadata : msg
     , inviteLink : String
+    , onToggleNotification : msg
+    , isSubscribed : Bool
+    , pushActive : Bool
     }
 
 
@@ -59,6 +63,7 @@ view i18n msg currentUserRootId state =
         [ groupInfoSection i18n state
         , editGroupButton i18n msg.onEditGroupMetadata
         , inviteLinkSection i18n msg.inviteLink
+        , notificationToggle msg
         , Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.membersTabTitle i18n))
         , Ui.column [ Ui.width Ui.fill ]
             (List.map viewMember active)
@@ -74,6 +79,65 @@ view i18n msg currentUserRootId state =
             Ui.none
         , addMemberButton i18n msg.onAddMember
         ]
+
+
+notificationToggle : Msg msg -> Ui.Element msg
+notificationToggle msg =
+    if not msg.pushActive then
+        Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+            [ Ui.el [ Ui.Font.size Theme.fontSize.md, Ui.Font.color Theme.neutral300 ]
+                (Ui.text bellOutline)
+            , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral300 ]
+                (Ui.text "Notifications")
+            ]
+
+    else
+        Ui.row
+            [ Ui.spacing Theme.spacing.sm
+            , Ui.width Ui.fill
+            , Ui.pointer
+            , Ui.Events.onClick msg.onToggleNotification
+            ]
+            [ Ui.el
+                [ Ui.Font.size Theme.fontSize.md
+                , Ui.Font.color
+                    (if msg.isSubscribed then
+                        Theme.primary
+
+                     else
+                        Theme.neutral500
+                    )
+                ]
+                (Ui.text
+                    (if msg.isSubscribed then
+                        bellFilled
+
+                     else
+                        bellOutline
+                    )
+                )
+            , Ui.el
+                [ Ui.Font.size Theme.fontSize.sm
+                , Ui.Font.color
+                    (if msg.isSubscribed then
+                        Theme.primary
+
+                     else
+                        Theme.neutral500
+                    )
+                ]
+                (Ui.text "Notifications")
+            ]
+
+
+bellFilled : String
+bellFilled =
+    "🔔"
+
+
+bellOutline : String
+bellOutline =
+    "🔕"
 
 
 inviteLinkSection : I18n -> String -> Ui.Element msg

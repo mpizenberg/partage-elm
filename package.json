@@ -16,8 +16,8 @@
     "watch:html": "watchexec -w public/index.html -- pnpm bundle:html",
     "watch:js": "esbuild public/index.js --bundle --outfile=dist/index.js --format=iife --watch",
     "watch:i18n": "watchexec -w translations -- pnpm i18n",
-    "watch:pwa": "watchexec -w public/*.webmanifest build-sw.mjs -- pnpm pwa",
-    "dev": "pnpm prebuild && run-pty % pnpm -F pb_server serve --dev % elm-watch hot % pnpm watch:html % pnpm watch:js % pnpm watch:i18n % pnpm watch:pwa",
+    "watch:pwa": "watchexec -w public/*.webmanifest -w build-sw.mjs -- pnpm pwa",
+    "dev": "pnpm prebuild && pnpm pwa && run-pty % pnpm -F pb_server serve --dev % elm-watch hot % pnpm watch:html % pnpm watch:js % pnpm watch:i18n % pnpm watch:pwa",
     "test": "elm-test",
     "format": "elm-format --yes src/ tests/ review/",
     "lint": "elm-review"

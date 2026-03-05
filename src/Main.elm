@@ -27,6 +27,7 @@ import Page.NewGroup
 import Page.NotFound
 import Page.Setup
 import PocketBase
+import PushServer
 import Pwa
 import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
@@ -103,6 +104,9 @@ type alias Model =
     , isOnline : Bool
     , updateAvailable : Bool
     , installAvailable : Bool
+    , notificationPermission : Maybe Pwa.NotificationPermission
+    , pushSubscription : Maybe Json.Encode.Value
+    , vapidKey : Maybe String
     }
 
 
@@ -150,6 +154,10 @@ type PwaMsg
     | AcceptUpdate
     | RequestInstall
     | DismissInstallBanner
+    | EnableNotifications
+    | OnVapidKeyFetched (ConcurrentTask.Response PushServer.Error String)
+    | ToggleGroupNotification Group.Id String
+    | OnToggleResult Group.Id (ConcurrentTask.Response PushServer.Error Bool)
 
 
 subscriptions : Model -> Sub Msg
@@ -231,13 +239,21 @@ init flags =
         groupPool =
             ConcurrentTask.pool |> ConcurrentTask.withPoolId 1
 
-        ( pool, cmd ) =
+        ( pool0, initCmd ) =
             ConcurrentTask.attempt
                 { pool = ConcurrentTask.pool
                 , send = sendTask
                 , onComplete = OnInitComplete
                 }
                 (Storage.open |> ConcurrentTask.andThen Storage.init)
+
+        ( pool, vapidCmd ) =
+            ConcurrentTask.attempt
+                { pool = pool0
+                , send = sendTask
+                , onComplete = PwaMsg << OnVapidKeyFetched
+                }
+                PushServer.fetchVapidKey
     in
     ( { route = route
       , appState = Loading
@@ -265,8 +281,11 @@ init flags =
       , isOnline = flags.isOnline
       , updateAvailable = False
       , installAvailable = False
+      , notificationPermission = Nothing
+      , pushSubscription = Nothing
+      , vapidKey = Nothing
       }
-    , cmd
+    , Cmd.batch [ initCmd, vapidCmd ]
     )
 
 
@@ -342,6 +361,13 @@ processGroupOutputs model groupCmd outputs =
 
                         Page.Group.UpdateCurrentTime time ->
                             ( { m | currentTime = time }, cmds )
+
+                        Page.Group.ToggleGroupNotification groupId memberRootId ->
+                            let
+                                ( toggledModel, toggleCmd ) =
+                                    updatePwa (ToggleGroupNotification groupId memberRootId) m
+                            in
+                            ( toggledModel, toggleCmd :: cmds )
                 )
                 ( model, [] )
                 outputs
@@ -643,6 +669,7 @@ update msg model =
                                     { id = groupId
                                     , name = preview.groupName
                                     , defaultCurrency = preview.groupState.groupMeta.defaultCurrency
+                                    , isSubscribed = False
                                     }
 
                                 ( pool, cmd ) =
@@ -715,6 +742,7 @@ update msg model =
                             { id = groupId
                             , name = preview.groupName
                             , defaultCurrency = preview.groupState.groupMeta.defaultCurrency
+                            , isSubscribed = False
                             }
 
                         newRoute : Route
@@ -994,7 +1022,7 @@ handleJoinRoute model route groupId key maybeIdentity =
                                             }
                                             (Server.authenticateAndSync serverCtx
                                                 ""
-                                                { unpushedEvents = [], pullCursor = Nothing }
+                                                { unpushedEvents = [], pullCursor = Nothing, notifyContext = Nothing }
                                             )
                                 in
                                 ( { model
@@ -1054,6 +1082,31 @@ updatePwa pwaMsg model =
                 Pwa.Installed ->
                     ( { model | installAvailable = False }, Cmd.none )
 
+                Pwa.NotificationPermissionChanged permission ->
+                    let
+                        newModel : Model
+                        newModel =
+                            { model | notificationPermission = Just permission }
+                    in
+                    case ( permission, model.vapidKey ) of
+                        ( Pwa.Granted, Just key ) ->
+                            ( newModel, Pwa.subscribePush pwaOut key )
+
+                        _ ->
+                            ( newModel, Cmd.none )
+
+                Pwa.PushSubscription subscription ->
+                    ( { model | pushSubscription = Just subscription }, Cmd.none )
+
+                Pwa.PushSubscriptionError _ ->
+                    addToast Toast.Error (T.toastPushError model.i18n) model
+
+                Pwa.PushUnsubscribed ->
+                    ( { model | pushSubscription = Nothing }, Cmd.none )
+
+                Pwa.NotificationClicked _ ->
+                    ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
 
@@ -1068,6 +1121,85 @@ updatePwa pwaMsg model =
 
         DismissInstallBanner ->
             ( { model | installAvailable = False }, Cmd.none )
+
+        EnableNotifications ->
+            case model.notificationPermission of
+                Just Pwa.Granted ->
+                    -- Already granted, subscribe to push
+                    case model.vapidKey of
+                        Just key ->
+                            ( model, Pwa.subscribePush pwaOut key )
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                _ ->
+                    ( model, Pwa.requestNotificationPermission pwaOut )
+
+        OnVapidKeyFetched (ConcurrentTask.Success key) ->
+            let
+                newModel : Model
+                newModel =
+                    { model | vapidKey = Just key }
+            in
+            case model.notificationPermission of
+                Just Pwa.Granted ->
+                    ( newModel, Pwa.subscribePush pwaOut key )
+
+                _ ->
+                    ( newModel, Cmd.none )
+
+        OnVapidKeyFetched _ ->
+            ( model, Cmd.none )
+
+        ToggleGroupNotification groupId memberRootId ->
+            case model.appState of
+                Ready readyData ->
+                    case ( Dict.get groupId readyData.groups, model.pushSubscription ) of
+                        ( Just summary, Just subscription ) ->
+                            let
+                                ( pool, cmd ) =
+                                    ConcurrentTask.attempt
+                                        { pool = model.pool
+                                        , send = sendTask
+                                        , onComplete = PwaMsg << OnToggleResult groupId
+                                        }
+                                        (PushServer.toggleGroupNotification
+                                            { db = readyData.db
+                                            , summary = summary
+                                            , subscription = subscription
+                                            , memberRootId = memberRootId
+                                            }
+                                        )
+                            in
+                            ( { model | pool = pool }, cmd )
+
+                        _ ->
+                            ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        OnToggleResult groupId (ConcurrentTask.Success isSubscribed) ->
+            case model.appState of
+                Ready readyData ->
+                    case Dict.get groupId readyData.groups of
+                        Just summary ->
+                            let
+                                updatedGroups : Dict.Dict Group.Id GroupSummary
+                                updatedGroups =
+                                    Dict.insert groupId { summary | isSubscribed = isSubscribed } readyData.groups
+                            in
+                            ( { model | appState = Ready { readyData | groups = updatedGroups } }, Cmd.none )
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        OnToggleResult _ _ ->
+            addToast Toast.Error (T.toastPushError model.i18n) model
 
 
 viewPwaBanners : Model -> List (Ui.Element Msg)
@@ -1106,6 +1238,7 @@ viewPage model =
         InitError errorMsg ->
             UI.Shell.appShell
                 { title = T.shellPartage model.i18n
+                , onTitleClick = NavigateTo Home
                 , headerExtra = Ui.none
                 , content = Page.InitError.view errorMsg
                 }
@@ -1127,7 +1260,7 @@ viewReady model readyData =
 
         shell : String -> Ui.Element Msg -> Ui.Element Msg
         shell title content =
-            UI.Shell.appShell { title = title, headerExtra = langSelector, content = content }
+            UI.Shell.appShell { title = title, onTitleClick = NavigateTo Home, headerExtra = langSelector, content = content }
     in
     case model.route of
         Setup ->
@@ -1139,6 +1272,9 @@ viewReady model readyData =
                 (Page.Home.view i18n
                     { onNavigate = NavigateTo
                     , onExport = ExportGroup
+                    , notificationPermission = model.notificationPermission
+                    , pushActive = pushIsActive model
+                    , onEnableNotifications = PwaMsg EnableNotifications
                     }
                     HomeMsg
                     model.homeModel
@@ -1157,9 +1293,11 @@ viewReady model readyData =
             Page.Group.view
                 { i18n = i18n
                 , toMsg = GroupMsg
+                , onNavigateHome = NavigateTo Home
                 , today = Date.posixToDate model.currentTime
                 , groupId = groupId
                 , origin = model.origin
+                , pushActive = pushIsActive model
                 }
                 langSelector
                 groupView
@@ -1170,3 +1308,8 @@ viewReady model readyData =
 
         NotFound ->
             shell (T.shellPartage i18n) (Page.NotFound.view i18n)
+
+
+pushIsActive : Model -> Bool
+pushIsActive model =
+    model.notificationPermission == Just Pwa.Granted && model.pushSubscription /= Nothing

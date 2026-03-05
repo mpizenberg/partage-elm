@@ -29,6 +29,7 @@ import PocketBase.Auth
 import PocketBase.Collection
 import PocketBase.Custom
 import PocketBase.Realtime
+import PushServer
 import WebCrypto
 import WebCrypto.ProofOfWork as PoW
 import WebCrypto.Symmetric as Symmetric
@@ -244,6 +245,7 @@ pushSingleEvent ctx actorId envelope =
 type alias SyncData =
     { unpushedEvents : List Event.Envelope
     , pullCursor : Maybe String
+    , notifyContext : Maybe PushServer.NotifyContext
     }
 
 
@@ -264,17 +266,32 @@ authenticateAndSync ctx actorId syncData =
 
 
 syncGroup : ServerContext -> String -> SyncData -> ConcurrentTask Error SyncResult
-syncGroup ctx actorId { unpushedEvents, pullCursor } =
+syncGroup ctx actorId { unpushedEvents, pullCursor, notifyContext } =
     let
         pushedCount : Int
         pushedCount =
             List.length unpushedEvents
+
+        notifyTask : ConcurrentTask PushServer.Error ()
+        notifyTask =
+            case notifyContext of
+                Just nc ->
+                    if List.isEmpty unpushedEvents then
+                        ConcurrentTask.succeed ()
+
+                    else
+                        PushServer.notifyAffectedMembers nc unpushedEvents
+
+                Nothing ->
+                    ConcurrentTask.succeed ()
     in
     pushEvents ctx actorId unpushedEvents
-        |> ConcurrentTask.andThen
-            (\() ->
-                pullEvents ctx pullCursor
-                    |> ConcurrentTask.map (\pull -> { pullResult = pull, pushedCount = pushedCount })
+        |> ConcurrentTask.andThenDo
+            (ConcurrentTask.map2 (\_ pull -> { pullResult = pull, pushedCount = pushedCount })
+                -- Discard errors on the notify task
+                (ConcurrentTask.onError (\_ -> ConcurrentTask.succeed ()) notifyTask)
+                -- Pull events
+                (pullEvents ctx pullCursor)
             )
 
 

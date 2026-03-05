@@ -279,5 +279,9 @@
   "pwaUpdateButton": "Mettre à jour",
   "pwaInstallPrompt": "Installez Partage pour une meilleure expérience",
   "pwaInstallButton": "Installer",
-  "pwaOffline": "Vous êtes hors-ligne"
+  "pwaOffline": "Vous êtes hors-ligne",
+  "notificationsEnable": "Activer les notifications",
+  "notificationsEnabled": "Notifications activées",
+  "notificationsDenied": "Notifications bloquées dans les paramètres du navigateur",
+  "toastPushError": "Échec de la mise à jour des notifications"
 }

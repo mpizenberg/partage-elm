@@ -3,6 +3,7 @@ module UI.Shell exposing (TabLabels, appShell, groupShell)
 {-| Application shell layouts.
 -}
 
+import Json.Decode
 import Route exposing (GroupTab(..))
 import UI.Theme as Theme
 import Ui
@@ -22,13 +23,13 @@ type alias TabLabels =
 
 {-| Top-level app shell with a header and max-width content area.
 -}
-appShell : { title : String, headerExtra : Ui.Element msg, content : Ui.Element msg } -> Ui.Element msg
+appShell : { title : String, onTitleClick : msg, headerExtra : Ui.Element msg, content : Ui.Element msg } -> Ui.Element msg
 appShell config =
     Ui.column
         [ Ui.width Ui.fill
         , Ui.height Ui.fill
         ]
-        [ header config.title config.headerExtra
+        [ header config.title config.onTitleClick config.headerExtra
         , Ui.el
             [ Ui.width Ui.fill
             , Ui.widthMax Theme.contentMaxWidth
@@ -39,8 +40,8 @@ appShell config =
         ]
 
 
-header : String -> Ui.Element msg -> Ui.Element msg
-header title extra =
+header : String -> msg -> Ui.Element msg -> Ui.Element msg
+header title onTitleClick extra =
     Ui.el
         [ Ui.width Ui.fill
         , Ui.background Theme.primary
@@ -51,7 +52,16 @@ header title extra =
             , Ui.widthMax Theme.contentMaxWidth
             , Ui.centerX
             ]
-            [ Ui.el [ Ui.Font.color Theme.white, Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text title)
+            [ Ui.el
+                [ Ui.Font.color Theme.white
+                , Ui.Font.size Theme.fontSize.xl
+                , Ui.Font.bold
+                , Ui.pointer
+                , Ui.link "/"
+                , Ui.Events.preventDefaultOn "click"
+                    (Json.Decode.succeed ( onTitleClick, True ))
+                ]
+                (Ui.text title)
             , Ui.el [ Ui.alignRight ] extra
             ]
         )
@@ -61,6 +71,7 @@ header title extra =
 -}
 groupShell :
     { groupName : String
+    , onTitleClick : msg
     , headerExtra : Ui.Element msg
     , activeTab : GroupTab
     , content : Ui.Element msg
@@ -73,7 +84,7 @@ groupShell config =
         [ Ui.width Ui.fill
         , Ui.height Ui.fill
         ]
-        [ header config.groupName config.headerExtra
+        [ header config.groupName config.onTitleClick config.headerExtra
         , Ui.el
             [ Ui.width Ui.fill
             , Ui.widthMax Theme.contentMaxWidth

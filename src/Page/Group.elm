@@ -52,6 +52,7 @@ import Page.JoinGroup
 import Page.NotFound
 import PocketBase
 import PocketBase.Realtime
+import PushServer
 import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import Server
@@ -101,9 +102,11 @@ type alias UpdateConfig =
 type alias ViewConfig msg =
     { i18n : I18n
     , toMsg : Msg -> msg
+    , onNavigateHome : msg
     , today : Date
     , groupId : Group.Id
     , origin : String
+    , pushActive : Bool
     }
 
 
@@ -183,6 +186,7 @@ type
     | PayMember { toMemberId : Member.Id, amountCents : Int }
     | SettleTransaction Settlement.Transaction
     | SaveSettlementPreferences { memberRootId : Member.Id, preferredRecipients : List Member.Id }
+    | ToggleNotification
       -- Async response handlers
     | OnEntrySaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnEntryActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
@@ -208,6 +212,7 @@ type Output
     | UpdateGroupSummary GroupSummary
     | RemoveGroup Group.Id
     | UpdateCurrentTime Time.Posix
+    | ToggleGroupNotification Group.Id Member.Id
 
 
 
@@ -522,6 +527,14 @@ update config msg model =
                         config
                         model
                         (\ctx -> GroupOps.event ctx loaded (Event.SettlementPreferencesUpdated prefData))
+
+                Nothing ->
+                    ( model, Cmd.none, [] )
+
+        ToggleNotification ->
+            case model.loadedGroup of
+                Just loaded ->
+                    ( model, Cmd.none, [ ToggleGroupNotification loaded.summary.id (currentUserRootId model loaded) ] )
 
                 Nothing ->
                     ( model, Cmd.none, [] )
@@ -959,13 +972,32 @@ triggerSyncInternal config groupId model =
                                 , send = config.sendTask
                                 , onComplete = OnGroupSynced groupId loaded.unpushedIds
                                 }
-                                (Server.authenticateAndSync
-                                    { client = client, groupId = groupId, groupKey = loaded.groupKey }
-                                    config.identity.publicKeyHash
-                                    { unpushedEvents =
+                                (let
+                                    unpushedEvents : List Event.Envelope
+                                    unpushedEvents =
                                         List.filter (\e -> Set.member e.id loaded.unpushedIds) loaded.events
                                             |> List.reverse
+
+                                    notifyContext : Maybe PushServer.NotifyContext
+                                    notifyContext =
+                                        if List.isEmpty unpushedEvents then
+                                            Nothing
+
+                                        else
+                                            Just
+                                                { groupId = groupId
+                                                , groupName = loaded.groupState.groupMeta.name
+                                                , actorRootId = currentUserRootId model loaded
+                                                , entries = loaded.groupState.entries
+                                                , url = Route.toPath (GroupRoute groupId (Tab ActivityTab))
+                                                }
+                                 in
+                                 Server.authenticateAndSync
+                                    { client = client, groupId = groupId, groupKey = loaded.groupKey }
+                                    config.identity.publicKeyHash
+                                    { unpushedEvents = unpushedEvents
                                     , pullCursor = loaded.syncCursor
+                                    , notifyContext = notifyContext
                                     }
                                 )
                     in
@@ -990,6 +1022,7 @@ syncGroupSummaryName config groupId model =
                     { id = groupId
                     , name = loaded.groupState.groupMeta.name
                     , defaultCurrency = loaded.summary.defaultCurrency
+                    , isSubscribed = loaded.summary.isSubscribed
                     }
 
                 ( pool, cmd ) =
@@ -1150,6 +1183,7 @@ viewLoadingShell : ViewConfig msg -> Ui.Element msg -> Ui.Element msg
 viewLoadingShell config headerExtra =
     UI.Shell.appShell
         { title = T.shellPartage config.i18n
+        , onTitleClick = config.onNavigateHome
         , headerExtra = headerExtra
         , content =
             Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
@@ -1177,14 +1211,14 @@ viewGroupPage config headerExtra groupView loaded model =
             Ui.none
 
         NewEntry ->
-            subPageShell headerExtra (T.shellNewEntry config.i18n) <|
+            subPageShell config.onNavigateHome headerExtra (T.shellNewEntry config.i18n) <|
                 Page.Group.NewEntry.view config.i18n
                     (GroupState.activeMembers groupState)
                     (config.toMsg << NewEntryMsg)
                     model.newEntryModel
 
         EditEntry _ ->
-            subPageShell headerExtra (T.editEntryTitle config.i18n) <|
+            subPageShell config.onNavigateHome headerExtra (T.editEntryTitle config.i18n) <|
                 Page.Group.NewEntry.view config.i18n
                     (GroupState.activeMembers groupState)
                     (config.toMsg << NewEntryMsg)
@@ -1193,7 +1227,7 @@ viewGroupPage config headerExtra groupView loaded model =
         EntryDetail entryId ->
             case Dict.get entryId groupState.entries of
                 Just entryState ->
-                    subPageShell headerExtra (T.entryDetailTitle config.i18n) <|
+                    subPageShell config.onNavigateHome headerExtra (T.entryDetailTitle config.i18n) <|
                         Page.Group.EntryDetail.view config.i18n
                             { currentUserRootId = userRootId
                             , resolveName = GroupState.resolveMemberName groupState
@@ -1203,44 +1237,45 @@ viewGroupPage config headerExtra groupView loaded model =
                             entryState
 
                 Nothing ->
-                    subPageShell headerExtra (T.shellPartage config.i18n) <|
+                    subPageShell config.onNavigateHome headerExtra (T.shellPartage config.i18n) <|
                         Page.NotFound.view config.i18n
 
         MemberDetail _ ->
-            subPageShell headerExtra (T.memberDetailTitle config.i18n) <|
+            subPageShell config.onNavigateHome headerExtra (T.memberDetailTitle config.i18n) <|
                 Page.Group.MemberDetail.view config.i18n
                     userRootId
                     (config.toMsg << MemberDetailMsg)
                     model.memberDetailModel
 
         AddVirtualMember ->
-            subPageShell headerExtra (T.memberAddTitle config.i18n) <|
+            subPageShell config.onNavigateHome headerExtra (T.memberAddTitle config.i18n) <|
                 Page.Group.AddMember.view config.i18n
                     (config.toMsg << AddMemberMsg)
                     model.addMemberModel
 
         EditMemberMetadata _ ->
-            subPageShell headerExtra (T.memberEditMetadataButton config.i18n) <|
+            subPageShell config.onNavigateHome headerExtra (T.memberEditMetadataButton config.i18n) <|
                 Page.Group.EditMemberMetadata.view config.i18n
                     (config.toMsg << EditMemberMetadataMsg)
                     model.editMemberMetadataModel
 
         EditGroupMetadata ->
-            subPageShell headerExtra (T.groupSettingsTitle config.i18n) <|
+            subPageShell config.onNavigateHome headerExtra (T.groupSettingsTitle config.i18n) <|
                 Page.Group.EditGroupMetadata.view config.i18n
                     (config.toMsg << EditGroupMetadataMsg)
                     model.editGroupMetadataModel
 
 
-subPageShell : Ui.Element msg -> String -> Ui.Element msg -> Ui.Element msg
-subPageShell headerExtra title content =
-    UI.Shell.appShell { title = title, headerExtra = headerExtra, content = content }
+subPageShell : msg -> Ui.Element msg -> String -> Ui.Element msg -> Ui.Element msg
+subPageShell onTitleClick headerExtra title content =
+    UI.Shell.appShell { title = title, onTitleClick = onTitleClick, headerExtra = headerExtra, content = content }
 
 
 viewTabs : ViewConfig msg -> Ui.Element msg -> GroupState -> Member.Id -> LoadedGroup -> Model -> Ui.Element msg
 viewTabs config headerExtra groupState userRootId loaded model =
     UI.Shell.groupShell
         { groupName = groupState.groupMeta.name
+        , onTitleClick = config.onNavigateHome
         , headerExtra = headerExtra
         , activeTab = model.activeTab
         , onTabClick = \tab -> config.toMsg (RequestNavigation (Tab tab))
@@ -1284,6 +1319,9 @@ tabContent config state userRootId loaded model =
                 , onAddMember = config.toMsg (RequestNavigation AddVirtualMember)
                 , onEditGroupMetadata = config.toMsg (RequestNavigation EditGroupMetadata)
                 , inviteLink = config.origin ++ Route.toPath (GroupRoute config.groupId (Join (Symmetric.exportKey loaded.groupKey)))
+                , onToggleNotification = config.toMsg ToggleNotification
+                , isSubscribed = loaded.summary.isSubscribed
+                , pushActive = config.pushActive
                 }
                 userRootId
                 state

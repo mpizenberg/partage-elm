@@ -5,6 +5,7 @@ import File
 import File.Select
 import GroupExport
 import Json.Decode
+import Pwa
 import Route exposing (Route)
 import Set exposing (Set)
 import Storage exposing (GroupSummary)
@@ -19,6 +20,9 @@ import Ui.Font
 type alias Context msg =
     { onNavigate : Route -> msg
     , onExport : Group.Id -> msg
+    , notificationPermission : Maybe Pwa.NotificationPermission
+    , pushActive : Bool
+    , onEnableNotifications : msg
     }
 
 
@@ -81,7 +85,8 @@ view : I18n -> Context msg -> (Msg -> msg) -> Model -> List GroupSummary -> Ui.E
 view i18n ctx toMsg (Model data) groups =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         (Ui.el [ Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text (T.homeYourGroups i18n))
-            :: (case data.importError of
+            :: notificationBanner i18n ctx
+            ++ (case data.importError of
                     Just error ->
                         [ Ui.el
                             [ Ui.Font.size Theme.fontSize.sm
@@ -108,6 +113,49 @@ view i18n ctx toMsg (Model data) groups =
                     ]
                ]
         )
+
+
+notificationBanner : I18n -> Context msg -> List (Ui.Element msg)
+notificationBanner i18n ctx =
+    case ctx.notificationPermission of
+        Just Pwa.Unsupported ->
+            []
+
+        Just Pwa.Denied ->
+            [ Ui.el
+                [ Ui.Font.size Theme.fontSize.sm
+                , Ui.Font.color Theme.neutral500
+                , Ui.padding Theme.spacing.sm
+                ]
+                (Ui.text (T.notificationsDenied i18n))
+            ]
+
+        Just Pwa.Granted ->
+            if ctx.pushActive then
+                [ Ui.el
+                    [ Ui.Font.size Theme.fontSize.sm
+                    , Ui.Font.color Theme.success
+                    , Ui.padding Theme.spacing.sm
+                    ]
+                    (Ui.text (T.notificationsEnabled i18n))
+                ]
+
+            else
+                []
+
+        _ ->
+            [ Ui.el
+                [ Ui.paddingXY Theme.spacing.md Theme.spacing.sm
+                , Ui.rounded Theme.rounding.sm
+                , Ui.background Theme.primaryLight
+                , Ui.Font.color Theme.primary
+                , Ui.Font.size Theme.fontSize.sm
+                , Ui.Font.bold
+                , Ui.pointer
+                , Ui.Events.onClick ctx.onEnableNotifications
+                ]
+                (Ui.text (T.notificationsEnable i18n))
+            ]
 
 
 groupCard : I18n -> Context msg -> GroupSummary -> Ui.Element msg

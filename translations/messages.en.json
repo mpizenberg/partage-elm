@@ -279,6 +279,10 @@
   "pwaUpdateButton": "Update",
   "pwaInstallPrompt": "Install Partage for a better experience",
   "pwaInstallButton": "Install",
-  "pwaOffline": "You are offline"
+  "pwaOffline": "You are offline",
+  "notificationsEnable": "Enable Notifications",
+  "notificationsEnabled": "Notifications enabled",
+  "notificationsDenied": "Notifications blocked in browser settings",
+  "toastPushError": "Failed to update notification settings"
 }
 
