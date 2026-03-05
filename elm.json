@@ -34,11 +34,16 @@
             "elmcraft/core-extra": "2.2.0",
             "lydell/elm-app-url": "1.0.4",
             "mdgriffith/elm-bezier": "1.0.0",
-            "mpizenberg/elm-url-navigation-port": "1.1.0"
+            "mpizenberg/elm-url-navigation-port": "1.1.0",
+            "pablohirafuji/elm-qrcode": "4.0.2"
         },
         "indirect": {
             "danfishgold/base64-bytes": "1.1.0",
             "elm/regex": "1.0.0",
+            "elm/svg": "1.0.1",
+            "elm-community/list-extra": "8.7.0",
+            "folkertdev/elm-flate": "2.0.5",
+            "justgook/elm-image": "5.0.0",
             "rtfeldman/elm-hex": "1.0.0"
         }
     },

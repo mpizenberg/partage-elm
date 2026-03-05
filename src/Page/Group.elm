@@ -129,6 +129,7 @@ type alias Model =
     , entriesTabModel : Page.Group.EntriesTab.Model
     , balanceTabModel : Page.Group.BalanceTab.Model
     , activityTabModel : Page.Group.ActivityTab.Model
+    , membersTabModel : Page.Group.MembersTab.Model
 
     -- Member pages
     , memberDetailModel : Page.Group.MemberDetail.Model
@@ -174,6 +175,7 @@ type
     | EntriesTabMsg Page.Group.EntriesTab.Msg
     | BalanceTabMsg Page.Group.BalanceTab.Msg
     | ActivityTabMsg Page.Group.ActivityTab.Msg
+    | MembersTabMsg Page.Group.MembersTab.Msg
       -- Member pages
     | MemberDetailMsg Page.Group.MemberDetail.Msg
     | AddMemberMsg Page.Group.AddMember.Msg
@@ -232,6 +234,7 @@ init config =
     , entriesTabModel = Page.Group.EntriesTab.init
     , balanceTabModel = Page.Group.BalanceTab.init
     , activityTabModel = Page.Group.ActivityTab.init
+    , membersTabModel = Page.Group.MembersTab.init
     , memberDetailModel = Page.Group.MemberDetail.init Member.emptyChainState
     , addMemberModel = Page.Group.AddMember.init
     , editMemberMetadataModel = Page.Group.EditMemberMetadata.init "" "" Member.emptyMetadata
@@ -393,6 +396,9 @@ update config msg model =
 
         ActivityTabMsg subMsg ->
             ( { model | activityTabModel = Page.Group.ActivityTab.update subMsg model.activityTabModel }, Cmd.none, [] )
+
+        MembersTabMsg subMsg ->
+            ( { model | membersTabModel = Page.Group.MembersTab.update subMsg model.membersTabModel }, Cmd.none, [] )
 
         -- Member detail
         MemberDetailMsg subMsg ->
@@ -1349,6 +1355,8 @@ tabContent config userRootId loaded model =
                 , isSubscribed = loaded.summary.isSubscribed
                 , pushActive = config.pushActive
                 }
+                (config.toMsg << MembersTabMsg)
+                model.membersTabModel
                 userRootId
                 loaded.groupState
 

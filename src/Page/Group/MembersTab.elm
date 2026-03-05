@@ -1,4 +1,4 @@
-module Page.Group.MembersTab exposing (Msg, view)
+module Page.Group.MembersTab exposing (Config, Model, Msg, init, update, view)
 
 {-| Members tab showing active and retired members.
 -}
@@ -8,6 +8,7 @@ import Domain.GroupState exposing (GroupMetadata, GroupState)
 import Domain.Member as Member
 import Html
 import Html.Attributes
+import QRCode
 import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
@@ -17,9 +18,31 @@ import Ui.Font
 import Ui.Input
 
 
+type alias Model =
+    { showQrCode : Bool
+    }
+
+
+init : Model
+init =
+    { showQrCode = False
+    }
+
+
+type Msg
+    = ToggleQrCode
+
+
+update : Msg -> Model -> Model
+update msg model =
+    case msg of
+        ToggleQrCode ->
+            { model | showQrCode = not model.showQrCode }
+
+
 {-| Callback messages for member interactions on this tab.
 -}
-type alias Msg msg =
+type alias Config msg =
     { onMemberClick : Member.Id -> msg
     , onAddMember : msg
     , onEditGroupMetadata : msg
@@ -32,8 +55,8 @@ type alias Msg msg =
 
 {-| Render the members tab with active and retired member lists.
 -}
-view : I18n -> Msg msg -> Member.Id -> GroupState -> Ui.Element msg
-view i18n msg currentUserRootId state =
+view : I18n -> Config msg -> (Msg -> msg) -> Model -> Member.Id -> GroupState -> Ui.Element msg
+view i18n config toMsg model currentUserRootId state =
     let
         allMembers : List Member.ChainState
         allMembers =
@@ -54,16 +77,16 @@ view i18n msg currentUserRootId state =
         viewMember : Member.ChainState -> Ui.Element msg
         viewMember member =
             UI.Components.memberRow i18n
-                (msg.onMemberClick member.rootId)
+                (config.onMemberClick member.rootId)
                 { member = member
                 , isCurrentUser = member.rootId == currentUserRootId
                 }
     in
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         [ groupInfoSection i18n state
-        , editGroupButton i18n msg.onEditGroupMetadata
-        , inviteLinkSection i18n msg.inviteLink
-        , notificationToggle msg
+        , editGroupButton i18n config.onEditGroupMetadata
+        , inviteLinkSection i18n toMsg model config.inviteLink
+        , notificationToggle config
         , Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.membersTabTitle i18n))
         , Ui.column [ Ui.width Ui.fill ]
             (List.map viewMember active)
@@ -77,13 +100,13 @@ view i18n msg currentUserRootId state =
 
           else
             Ui.none
-        , addMemberButton i18n msg.onAddMember
+        , addMemberButton i18n config.onAddMember
         ]
 
 
-notificationToggle : Msg msg -> Ui.Element msg
-notificationToggle msg =
-    if not msg.pushActive then
+notificationToggle : Config msg -> Ui.Element msg
+notificationToggle config =
+    if not config.pushActive then
         Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
             [ Ui.el [ Ui.Font.size Theme.fontSize.md, Ui.Font.color Theme.neutral300 ]
                 (Ui.text bellOutline)
@@ -96,12 +119,12 @@ notificationToggle msg =
             [ Ui.spacing Theme.spacing.sm
             , Ui.width Ui.fill
             , Ui.pointer
-            , Ui.Events.onClick msg.onToggleNotification
+            , Ui.Events.onClick config.onToggleNotification
             ]
             [ Ui.el
                 [ Ui.Font.size Theme.fontSize.md
                 , Ui.Font.color
-                    (if msg.isSubscribed then
+                    (if config.isSubscribed then
                         Theme.primary
 
                      else
@@ -109,7 +132,7 @@ notificationToggle msg =
                     )
                 ]
                 (Ui.text
-                    (if msg.isSubscribed then
+                    (if config.isSubscribed then
                         bellFilled
 
                      else
@@ -119,7 +142,7 @@ notificationToggle msg =
             , Ui.el
                 [ Ui.Font.size Theme.fontSize.sm
                 , Ui.Font.color
-                    (if msg.isSubscribed then
+                    (if config.isSubscribed then
                         Theme.primary
 
                      else
@@ -140,8 +163,8 @@ bellOutline =
     "🔕"
 
 
-inviteLinkSection : I18n -> String -> Ui.Element msg
-inviteLinkSection i18n link =
+inviteLinkSection : I18n -> (Msg -> msg) -> Model -> String -> Ui.Element msg
+inviteLinkSection i18n toMsg model link =
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.md, Ui.Font.bold ]
             (Ui.text (T.inviteLinkTitle i18n))
@@ -161,7 +184,46 @@ inviteLinkSection i18n link =
                 ]
                 [ Html.text (T.inviteLinkCopy i18n ++ " 📋") ]
             )
+        , Ui.el
+            [ Ui.Events.onClick (toMsg ToggleQrCode)
+            , Ui.Font.color Theme.primary
+            , Ui.Font.size Theme.fontSize.sm
+            , Ui.pointer
+            ]
+            (Ui.text
+                (if model.showQrCode then
+                    T.inviteLinkHideQR i18n
+
+                 else
+                    T.inviteLinkShowQR i18n
+                )
+            )
+        , if model.showQrCode then
+            qrCodeView link
+
+          else
+            Ui.none
         ]
+
+
+qrCodeView : String -> Ui.Element msg
+qrCodeView link =
+    case QRCode.fromString link of
+        Ok qrCode ->
+            Ui.el [ Ui.width Ui.fill, Ui.padding Theme.spacing.md ]
+                (Ui.html
+                    (QRCode.toSvg
+                        [ Html.Attributes.attribute "width" "100%"
+                        , Html.Attributes.style "max-width" "280px"
+                        , Html.Attributes.style "margin" "0 auto"
+                        , Html.Attributes.style "display" "block"
+                        ]
+                        qrCode
+                    )
+                )
+
+        Err _ ->
+            Ui.none
 
 
 groupInfoSection : I18n -> GroupState -> Ui.Element msg

@@ -76,6 +76,8 @@
   "inviteLinkTitle": "Lien d'invitation",
   "inviteLinkCopy": "Copier le lien d'invitation",
   "inviteLinkHint": "Partagez ce lien pour inviter quelqu'un dans le groupe",
+  "inviteLinkShowQR": "Afficher le QR code",
+  "inviteLinkHideQR": "Masquer le QR code",
   "joinGroupFetching": "Chargement du groupe...",
   "joinGroupError": "Échec du chargement du groupe",
   "joinGroupTitle": "Rejoindre le groupe",
