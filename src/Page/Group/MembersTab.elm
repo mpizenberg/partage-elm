@@ -85,7 +85,7 @@ view i18n config toMsg model currentUserRootId state =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         [ groupInfoSection i18n state
         , editGroupButton i18n config.onEditGroupMetadata
-        , inviteLinkSection i18n toMsg model config.inviteLink
+        , inviteLinkSection i18n toMsg model config state.groupMeta.name
         , notificationToggle config
         , Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.membersTabTitle i18n))
         , Ui.column [ Ui.width Ui.fill ]
@@ -163,8 +163,25 @@ bellOutline =
     "🔕"
 
 
-inviteLinkSection : I18n -> (Msg -> msg) -> Model -> String -> Ui.Element msg
-inviteLinkSection i18n toMsg model link =
+inviteLinkSection : I18n -> (Msg -> msg) -> Model -> Config msg -> String -> Ui.Element msg
+inviteLinkSection i18n toMsg model config groupName =
+    let
+        link : String
+        link =
+            config.inviteLink
+
+        buttonStyles : List (Html.Attribute msg)
+        buttonStyles =
+            [ Html.Attributes.style "cursor" "pointer"
+            , Html.Attributes.style "display" "flex"
+            , Html.Attributes.style "align-items" "center"
+            , Html.Attributes.style "gap" "8px"
+            , Html.Attributes.style "padding" "8px 12px"
+            , Html.Attributes.style "border-radius" "6px"
+            , Html.Attributes.style "background" "#f3f4f6"
+            , Html.Attributes.style "font-size" (String.fromInt Theme.fontSize.sm ++ "px")
+            ]
+    in
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
         [ Ui.el [ Ui.Font.size Theme.fontSize.md, Ui.Font.bold ]
             (Ui.text (T.inviteLinkTitle i18n))
@@ -172,17 +189,16 @@ inviteLinkSection i18n toMsg model link =
             (Ui.text (T.inviteLinkHint i18n))
         , Ui.html
             (Html.node "copy-button"
-                [ Html.Attributes.attribute "data-copy" link
-                , Html.Attributes.style "cursor" "pointer"
-                , Html.Attributes.style "display" "flex"
-                , Html.Attributes.style "align-items" "center"
-                , Html.Attributes.style "gap" "8px"
-                , Html.Attributes.style "padding" "8px 12px"
-                , Html.Attributes.style "border-radius" "6px"
-                , Html.Attributes.style "background" "#f3f4f6"
-                , Html.Attributes.style "font-size" (String.fromInt Theme.fontSize.sm ++ "px")
-                ]
+                (Html.Attributes.attribute "data-copy" link :: buttonStyles)
                 [ Html.text (T.inviteLinkCopy i18n ++ " 📋") ]
+            )
+        , Ui.html
+            (Html.node "share-button"
+                (Html.Attributes.attribute "data-share-url" link
+                    :: Html.Attributes.attribute "data-share-title" groupName
+                    :: buttonStyles
+                )
+                [ Html.text (T.inviteLinkShare i18n ++ " 🔗") ]
             )
         , Ui.el
             [ Ui.Events.onClick (toMsg ToggleQrCode)

@@ -19,6 +19,26 @@ class CopyButton extends HTMLElement {
 }
 customElements.define("copy-button", CopyButton);
 
+// Web Share API custom element (hidden when unsupported)
+class ShareButton extends HTMLElement {
+  connectedCallback() {
+    if (!navigator.share) {
+      this.style.display = "none";
+      return;
+    }
+    this.addEventListener("click", () => {
+      navigator
+        .share({
+          title: this.getAttribute("data-share-title") || "",
+          text: this.getAttribute("data-share-text") || "",
+          url: this.getAttribute("data-share-url") || "",
+        })
+        .catch(() => {});
+    });
+  }
+}
+customElements.define("share-button", ShareButton);
+
 // elm-url-navigation-port JS companion
 function initNavigation(ports) {
   function sendNavigation(state) {

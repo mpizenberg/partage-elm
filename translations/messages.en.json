@@ -78,6 +78,7 @@
   "inviteLinkHint": "Share this link to invite someone to the group",
   "inviteLinkShowQR": "Show QR code",
   "inviteLinkHideQR": "Hide QR code",
+  "inviteLinkShare": "Share invite link",
   "joinGroupFetching": "Loading group...",
   "joinGroupError": "Failed to load group",
   "joinGroupTitle": "Join Group",
