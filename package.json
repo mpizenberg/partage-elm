@@ -20,6 +20,7 @@
     "dev": "pnpm prebuild && pnpm pwa && run-pty % pnpm -F pb_server serve --dev % elm-watch hot % pnpm watch:html % pnpm watch:js % pnpm watch:i18n % pnpm watch:pwa",
     "test": "elm-test",
     "format": "elm-format --yes src/ tests/ review/",
+    "format:check": "elm-format src/ tests/ review/ --validate",
     "lint": "elm-review"
   },
   "pnpm": {
