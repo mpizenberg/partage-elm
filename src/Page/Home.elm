@@ -140,6 +140,7 @@ view i18n ctx toMsg (Model data) groups =
                     ]
               ]
             , joinInput i18n toMsg data
+            , [ aboutLink i18n ctx.onNavigate ]
             ]
         )
 
@@ -277,6 +278,22 @@ joinButton i18n toMsg =
         , Ui.Events.onClick (toMsg ShowJoinInput)
         ]
         (Ui.text (T.shellJoinGroup i18n))
+
+
+aboutLink : I18n -> (Route -> msg) -> Ui.Element msg
+aboutLink i18n onNavigate =
+    Ui.el
+        [ Ui.width Ui.fill
+        , Ui.Font.center
+        , Ui.Font.size Theme.fontSize.sm
+        , Ui.Font.color Theme.neutral500
+        , Ui.pointer
+        , Ui.paddingXY 0 Theme.spacing.md
+        , Ui.link (Route.toPath Route.About)
+        , Ui.Events.preventDefaultOn "click"
+            (Json.Decode.succeed ( onNavigate Route.About, True ))
+        ]
+        (Ui.text (T.aboutTitle i18n))
 
 
 joinInput : I18n -> (Msg -> msg) -> { a | showJoinInput : Bool, joinLink : String } -> List (Ui.Element msg)

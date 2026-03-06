@@ -1,6 +1,6 @@
 # Partage — Remaining Implementation Plan
 
-Phases 1–7 are complete. Remaining: usage stats, translations.
+Phases 1–8 are complete. Remaining: translations.
 
 ---
 
@@ -87,31 +87,13 @@ All PWA features implemented using vendor elm-pwa (https://github.com/mpizenberg
 
 ---
 
-## Phase 8: Usage Statistics
+## Phase 8: Usage Statistics (Done)
 
-### 8.1 Local usage tracking
+Local-only usage tracking and cost estimation on the About page.
 
-Track locally (never sent to server):
-- Total bytes transferred (cumulative network bandwidth).
-- Storage size (estimated, updated at most once per day).
-- Tracking start date.
-
-**Design:**
-- Add a `usageStats` IndexedDB store.
-- Use `PerformanceResourceTiming` API with `transferSize` to monitor (start and observer) network usage.
-- For storage costs, estimate total storage of all local groups, and update a total storage cost since last checked with a linear increase.
-
-### 8.2 Cost estimation display
-
-Show on the About screen: base cost, storage, compute, network, total, average per month. Rates from SPECIFICATION.md (Section 17.2).
-
-**Files:** `src/Page/About.elm`, translations
-
-### 8.3 Reset usage statistics
-
-Allow users to reset their usage stats (e.g., after a donation).
-
-**Files:** `src/Page/About.elm`, `src/Storage.elm`
+- **8.1** Local usage tracking: `usageStats` IndexedDB store (schema v4). `PerformanceObserver` in JS sums `transferSize` from resource timing entries, flushed to IDB every 10s and on page hide. `navigator.storage.estimate()` called via ConcurrentTask at app init, rescheduled every 24h via `Process.sleep`. PocketBase `Timing-Allow-Origin` hook enables cross-origin `transferSize` tracking.
+- **8.2** Cost estimation display: `src/UsageStats.elm` calculates costs (base $0.10/mo, storage ~$0.10/GB/mo, compute 5× storage, bandwidth ~$0.10/GB). `src/Page/About.elm` converted to stateful page showing cost breakdown table, tracking-since date, and average per month (after 10+ days). Link to About page added at the bottom of the home page.
+- **8.3** Reset usage statistics: Two-stage confirmation on the About page. Deletes stats from IDB; JS observer recreates on next flush.
 
 ---
 
