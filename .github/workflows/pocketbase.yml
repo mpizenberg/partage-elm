@@ -1,11 +1,6 @@
 name: Build PocketBase Image
 
 on:
-  push:
-    paths:
-      - "packages/pb_server/pb_hooks/**"
-      - "packages/pb_server/Dockerfile"
-    branches: [main]
   workflow_dispatch:
 
 jobs:
