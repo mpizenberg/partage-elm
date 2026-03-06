@@ -3,6 +3,7 @@ port module Main exposing (AppState, Flags, Model, Msg, main)
 import AppUrl
 import Browser
 import ConcurrentTask exposing (ConcurrentTask)
+import ConcurrentTaskExtra as Runner exposing (TaskRunner)
 import Dict
 import Domain.Date as Date
 import Domain.Event as Event
@@ -92,7 +93,7 @@ type alias Model =
     , generatingIdentity : Bool
     , i18n : I18n
     , language : Language
-    , pool : ConcurrentTask.Pool Msg
+    , runner : TaskRunner Msg
     , uuidState : UUID.V7State
     , randomSeed : Random.Seed
     , currentTime : Time.Posix
@@ -127,7 +128,7 @@ type Msg
     | NavigateTo Route
     | SwitchLanguage Language
     | GenerateIdentity
-    | OnTaskProgress ( ConcurrentTask.Pool Msg, Cmd Msg )
+    | OnTaskProgress ( TaskRunner Msg, Cmd Msg )
     | OnIdentityGenerated (ConcurrentTask.Response WebCrypto.Error Identity)
     | OnInitComplete (ConcurrentTask.Response Idb.Error Storage.InitData)
     | OnIdentitySaved (ConcurrentTask.Response Idb.Error ())
@@ -175,17 +176,12 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
         [ Navigation.onEvent onNavEvent OnNavEvent
-        , ConcurrentTask.onProgress
-            { send = sendTask
-            , receive = receiveTask
+        , Runner.onProgress
+            { receive = receiveTask
             , onProgress = OnTaskProgress
             }
-            model.pool
-        , Page.Group.onTaskProgress
-            { send = sendTask
-            , receive = receiveTask
-            }
-            model.groupModel
+            model.runner
+        , Page.Group.onTaskProgress receiveTask model.groupModel
             |> Sub.map GroupMsg
         , onClipboardCopy (\() -> ClipboardCopied)
         , onPocketbaseEvent (GroupMsg << Page.Group.pocketbaseEventMsg)
@@ -246,9 +242,9 @@ init flags =
         currentTime =
             Time.millisToPosix flags.currentTime
 
-        groupPool : ConcurrentTask.Pool Page.Group.Msg
-        groupPool =
-            ConcurrentTask.pool |> ConcurrentTask.withPoolId 1
+        groupRunner : TaskRunner Page.Group.Msg
+        groupRunner =
+            Runner.initTaskRunnerWithPool (ConcurrentTask.withPoolId 1 ConcurrentTask.pool) sendTask
 
         initStorage : ConcurrentTask Idb.Error Storage.InitData
         initStorage =
@@ -260,35 +256,26 @@ init flags =
                 (PushServer.notificationTranslations language)
                 |> ConcurrentTask.map (\_ -> initData)
 
-        ( pool0, initCmd ) =
-            ConcurrentTask.attempt
-                { pool = ConcurrentTask.pool
-                , send = sendTask
-                , onComplete = OnInitComplete
-                }
-                (initStorage |> ConcurrentTask.andThen storeNotificationTranslations)
-
-        ( pool, vapidCmd ) =
-            ConcurrentTask.attempt
-                { pool = pool0
-                , send = sendTask
-                , onComplete = PwaMsg << OnVapidKeyFetched
-                }
-                PushServer.fetchVapidKey
+        ( runner, initCmds ) =
+            ( Runner.initTaskRunner sendTask, Cmd.none )
+                |> Runner.andRun OnInitComplete
+                    (initStorage |> ConcurrentTask.andThen storeNotificationTranslations)
+                |> Runner.andRun (PwaMsg << OnVapidKeyFetched)
+                    PushServer.fetchVapidKey
     in
     ( { route = route
       , appState = Loading
       , generatingIdentity = False
       , i18n = i18n
       , language = language
-      , pool = pool
+      , runner = runner
       , uuidState = uuidState
       , randomSeed = mainSeed
       , currentTime = currentTime
       , newGroupModel = Page.NewGroup.init
       , groupModel =
             Page.Group.init
-                { pool = groupPool
+                { runner = groupRunner
                 , randomSeed = groupSeedAfterV7
                 , uuidState = groupUuidState
                 }
@@ -307,7 +294,7 @@ init flags =
       , pushSubscription = Nothing
       , vapidKey = Nothing
       }
-    , Cmd.batch [ initCmd, vapidCmd ]
+    , initCmds
     )
 
 
@@ -327,8 +314,7 @@ buildGroupConfig model =
             readyData.identity
                 |> Maybe.map
                     (\identity ->
-                        { sendTask = sendTask
-                        , db = readyData.db
+                        { db = readyData.db
                         , identity = identity
                         , pbClient = model.pbClient
                         , currentTime = model.currentTime
@@ -375,20 +361,17 @@ processGroupOutputs model groupCmd outputs =
                             case ( m.appState, m.pushSubscription ) of
                                 ( Ready readyData, Just subscription ) ->
                                     let
-                                        ( pool, unsubCmd ) =
-                                            ConcurrentTask.attempt
-                                                { pool = m.pool
-                                                , send = sendTask
-                                                , onComplete = always NoOp
-                                                }
-                                                (PushServer.unsubscribeFromGroup
-                                                    { subscription = subscription
-                                                    , groupId = groupId
-                                                    , memberRootId = memberRootId
-                                                    }
-                                                )
+                                        ( runner, unsubCmd ) =
+                                            ( m.runner, Cmd.none )
+                                                |> Runner.andRun (always NoOp)
+                                                    (PushServer.unsubscribeFromGroup
+                                                        { subscription = subscription
+                                                        , groupId = groupId
+                                                        , memberRootId = memberRootId
+                                                        }
+                                                    )
                                     in
-                                    ( { m | pool = pool, appState = Ready { readyData | groups = Dict.remove groupId readyData.groups } }
+                                    ( { m | runner = runner, appState = Ready { readyData | groups = Dict.remove groupId readyData.groups } }
                                     , unsubCmd :: cmds
                                     )
 
@@ -464,36 +447,23 @@ update msg model =
         SwitchLanguage lang ->
             case model.appState of
                 Ready readyData ->
-                    let
-                        ( pool, cmd ) =
-                            ConcurrentTask.attempt
-                                { pool = model.pool
-                                , send = sendTask
-                                , onComplete = \_ -> NoOp
-                                }
-                                (Storage.saveNotificationTranslations readyData.db
-                                    (PushServer.notificationTranslations lang)
-                                )
-                    in
-                    ( { model | language = lang, i18n = T.init lang, pool = pool }, cmd )
+                    ( model.runner, Cmd.none )
+                        |> Runner.andRun (\_ -> NoOp)
+                            (Storage.saveNotificationTranslations readyData.db
+                                (PushServer.notificationTranslations lang)
+                            )
+                        |> Tuple.mapFirst (\r -> { model | language = lang, i18n = T.init lang, runner = r })
 
                 _ ->
                     ( { model | language = lang, i18n = T.init lang }, Cmd.none )
 
         GenerateIdentity ->
-            let
-                ( pool, cmd ) =
-                    ConcurrentTask.attempt
-                        { pool = model.pool
-                        , send = sendTask
-                        , onComplete = OnIdentityGenerated
-                        }
-                        Identity.generate
-            in
-            ( { model | pool = pool, generatingIdentity = True }, cmd )
+            ( model.runner, Cmd.none )
+                |> Runner.andRun OnIdentityGenerated Identity.generate
+                |> Tuple.mapFirst (\r -> { model | runner = r, generatingIdentity = True })
 
-        OnTaskProgress ( pool, cmd ) ->
-            ( { model | pool = pool }, cmd )
+        OnTaskProgress ( runner, cmd ) ->
+            ( { model | runner = runner }, cmd )
 
         OnIdentityGenerated (ConcurrentTask.Success identity) ->
             case model.appState of
@@ -506,13 +476,10 @@ update msg model =
                         ( guardedRoute, navCmd_ ) =
                             applyRouteGuard (Just identity) model.route
 
-                        ( pool, taskCmd ) =
-                            ConcurrentTask.attempt
-                                { pool = model.pool
-                                , send = sendTask
-                                , onComplete = OnIdentitySaved
-                                }
-                                (Storage.saveIdentity readyData.db identity)
+                        ( runner, taskCmd ) =
+                            ( model.runner, Cmd.none )
+                                |> Runner.andRun OnIdentitySaved
+                                    (Storage.saveIdentity readyData.db identity)
 
                         modelWithIdentity : Model
                         modelWithIdentity =
@@ -520,7 +487,7 @@ update msg model =
                                 | appState = Ready updatedReadyData
                                 , generatingIdentity = False
                                 , route = guardedRoute
-                                , pool = pool
+                                , runner = runner
                                 , groupModel = Page.Group.setIdentityHash identity.publicKeyHash model.groupModel
                             }
                     in
@@ -544,8 +511,8 @@ update msg model =
                 ( guardedRoute, guardCmd ) =
                     applyRouteGuard readyData.identity model.route
 
-                modelWithData : Model
-                modelWithData =
+                modelWithReadyData : Model
+                modelWithReadyData =
                     { model
                         | appState = Ready readyData
                         , route = guardedRoute
@@ -565,40 +532,26 @@ update msg model =
                         GroupRoute _ (Join _) ->
                             -- Join needs PB client, which isn't ready yet.
                             -- Will be handled in OnPbClientInitialized.
-                            ( modelWithData, Cmd.none )
+                            ( modelWithReadyData, Cmd.none )
 
                         GroupRoute groupId groupView ->
-                            case buildGroupConfig modelWithData of
+                            case buildGroupConfig modelWithReadyData of
                                 Just config ->
-                                    Page.Group.handleNavigation config groupId groupView modelWithData.groupModel
-                                        |> Update.wrap GroupMsg (\gm -> { modelWithData | groupModel = gm })
+                                    Page.Group.handleNavigation config groupId groupView modelWithReadyData.groupModel
+                                        |> Update.wrap GroupMsg (\gm -> { modelWithReadyData | groupModel = gm })
 
                                 Nothing ->
-                                    ( modelWithData, Cmd.none )
+                                    ( modelWithReadyData, Cmd.none )
 
                         _ ->
-                            ( modelWithData, Cmd.none )
-
-                ( poolAfterPb, pbCmd ) =
-                    ConcurrentTask.attempt
-                        { pool = modelAfterNav.pool
-                        , send = sendTask
-                        , onComplete = OnPbClientInitialized
-                        }
-                        (PocketBase.init model.serverUrl)
-
-                -- Fire storage stats check
-                ( poolAfterStats, statsCmd ) =
-                    ConcurrentTask.attempt
-                        { pool = poolAfterPb
-                        , send = sendTask
-                        , onComplete = OnStorageCheckComplete
-                        }
-                        (storageCheckTask readyData.db)
+                            ( modelWithReadyData, Cmd.none )
             in
-            ( { modelAfterNav | pool = poolAfterStats }
-            , Cmd.batch [ guardCmd, navCmd_, pbCmd, statsCmd, rescheduleStorageCheckTomorrow ]
-            )
+            ( modelAfterNav.runner, Cmd.batch [ guardCmd, navCmd_, rescheduleStorageCheckTomorrow ] )
+                |> Runner.andRun OnPbClientInitialized
+                    (PocketBase.init model.serverUrl)
+                |> Runner.andRun OnStorageCheckComplete
+                    (storageCheckTask readyData.db)
+                |> Tuple.mapFirst (\r -> { modelAfterNav | runner = r })
 
         OnInitComplete (ConcurrentTask.Error err) ->
             ( { model | appState = InitError (Storage.errorToString err) }, Cmd.none )
@@ -633,12 +586,8 @@ update msg model =
             case model.appState of
                 Ready readyData ->
                     let
-                        newRoute : Route
-                        newRoute =
-                            GroupRoute summary.id (Tab EntriesTab)
-
                         -- Trigger server group creation in background
-                        ( poolAfterServer, serverCmd ) =
+                        ( runner, serverCmd ) =
                             case model.pbClient of
                                 Just client ->
                                     let
@@ -648,30 +597,31 @@ update msg model =
                                                 |> Maybe.map .publicKeyHash
                                                 |> Maybe.withDefault ""
                                     in
-                                    ConcurrentTask.attempt
-                                        { pool = model.pool
-                                        , send = sendTask
-                                        , onComplete = OnServerGroupCreated summary.id
-                                        }
-                                        (Storage.loadGroupKeyRequired readyData.db summary.id
-                                            |> ConcurrentTask.mapError (\_ -> Server.PbError (PocketBase.ServerError "Failed to load group key in IndexedDB"))
-                                            |> ConcurrentTask.andThen
-                                                (\key ->
-                                                    Server.createGroupOnServer client
-                                                        { groupId = summary.id
-                                                        , groupKey = key
-                                                        , createdBy = identityHash
-                                                        }
-                                                )
-                                        )
+                                    ( model.runner, Cmd.none )
+                                        |> Runner.andRun (OnServerGroupCreated summary.id)
+                                            (Storage.loadGroupKeyRequired readyData.db summary.id
+                                                |> ConcurrentTask.mapError (\_ -> Server.PbError (PocketBase.ServerError "Failed to load group key in IndexedDB"))
+                                                |> ConcurrentTask.andThen
+                                                    (\key ->
+                                                        Server.createGroupOnServer client
+                                                            { groupId = summary.id
+                                                            , groupKey = key
+                                                            , createdBy = identityHash
+                                                            }
+                                                    )
+                                            )
 
                                 Nothing ->
-                                    ( model.pool, Cmd.none )
+                                    ( model.runner, Cmd.none )
+
+                        newRoute : Route
+                        newRoute =
+                            GroupRoute summary.id (Tab EntriesTab)
                     in
                     ( { model
                         | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
                         , groupModel = Page.Group.resetLoadedGroup model.groupModel
-                        , pool = poolAfterServer
+                        , runner = runner
                       }
                     , Cmd.batch [ Navigation.pushUrl navCmd (Route.toAppUrl newRoute), serverCmd ]
                     )
@@ -739,26 +689,22 @@ update msg model =
                                     , isSubscribed = False
                                     }
 
-                                ( pool, cmd ) =
-                                    ConcurrentTask.attempt
-                                        { pool = model.pool
-                                        , send = sendTask
-                                        , onComplete = OnJoinGroupSaved groupId
-                                        }
-                                        (Storage.importGroup readyData.db summary (Just (Symmetric.exportKey groupKey)) preview.events (Just preview.syncCursor))
+                                updatedModel : Model
+                                updatedModel =
+                                    { model
+                                        | joinGroupModel = joinModel
+                                        , pendingJoinAction =
+                                            Just
+                                                { groupId = groupId
+                                                , action = joinData.selectedAction
+                                                , newMemberName = joinData.newMemberName
+                                                }
+                                    }
                             in
-                            ( { model
-                                | joinGroupModel = joinModel
-                                , pool = pool
-                                , pendingJoinAction =
-                                    Just
-                                        { groupId = groupId
-                                        , action = joinData.selectedAction
-                                        , newMemberName = joinData.newMemberName
-                                        }
-                              }
-                            , cmd
-                            )
+                            ( model.runner, Cmd.none )
+                                |> Runner.andRun (OnJoinGroupSaved groupId)
+                                    (Storage.importGroup readyData.db summary (Just (Symmetric.exportKey groupKey)) preview.events (Just preview.syncCursor))
+                                |> Tuple.mapFirst (\r -> { updatedModel | runner = r })
 
                         _ ->
                             ( { model | joinGroupModel = joinModel }, Cmd.none )
@@ -834,22 +780,13 @@ update msg model =
         ExportGroup groupId ->
             case model.appState of
                 Ready readyData ->
-                    let
-                        task : ConcurrentTask.ConcurrentTask Idb.Error ( List Event.Envelope, Maybe String )
-                        task =
-                            ConcurrentTask.map2 Tuple.pair
+                    ( model.runner, Cmd.none )
+                        |> Runner.andRun (OnExportDataLoaded groupId)
+                            (ConcurrentTask.map2 Tuple.pair
                                 (Storage.loadGroupEvents readyData.db groupId)
                                 (Storage.loadGroupKey readyData.db groupId)
-
-                        ( pool, cmd ) =
-                            ConcurrentTask.attempt
-                                { pool = model.pool
-                                , send = sendTask
-                                , onComplete = OnExportDataLoaded groupId
-                                }
-                                task
-                    in
-                    ( { model | pool = pool }, cmd )
+                            )
+                        |> Tuple.mapFirst (\r -> { model | runner = r })
 
                 _ ->
                     ( model, Cmd.none )
@@ -886,18 +823,10 @@ update msg model =
                     in
                     case maybeOutput of
                         Just (Page.Home.ImportReady exportData) ->
-                            let
-                                ( pool, taskCmd ) =
-                                    ConcurrentTask.attempt
-                                        { pool = model.pool
-                                        , send = sendTask
-                                        , onComplete = OnGroupImported exportData.group
-                                        }
-                                        (Storage.importGroup readyData.db exportData.group exportData.groupKey exportData.events Nothing)
-                            in
-                            ( { updatedModel | pool = pool }
-                            , Cmd.batch [ cmd, taskCmd ]
-                            )
+                            ( updatedModel.runner, cmd )
+                                |> Runner.andRun (OnGroupImported exportData.group)
+                                    (Storage.importGroup readyData.db exportData.group exportData.groupKey exportData.events Nothing)
+                                |> Tuple.mapFirst (\r -> { updatedModel | runner = r })
 
                         Just (Page.Home.JoinLink url) ->
                             let
@@ -1008,16 +937,9 @@ update msg model =
                 Just Page.About.RequestResetStats ->
                     case model.appState of
                         Ready readyData ->
-                            let
-                                ( pool, resetCmd ) =
-                                    ConcurrentTask.attempt
-                                        { pool = model.pool
-                                        , send = sendTask
-                                        , onComplete = OnAboutStatsReset
-                                        }
-                                        (Storage.resetUsageStats readyData.db)
-                            in
-                            ( { model | aboutModel = aboutModel, pool = pool }, resetCmd )
+                            ( model.runner, Cmd.none )
+                                |> Runner.andRun OnAboutStatsReset (Storage.resetUsageStats readyData.db)
+                                |> Tuple.mapFirst (\r -> { model | aboutModel = aboutModel, runner = r })
 
                         _ ->
                             ( { model | aboutModel = aboutModel }, Cmd.none )
@@ -1037,22 +959,6 @@ update msg model =
                         updatedStats =
                             UsageStats.updateStorageCost model.currentTime storageEstimate.usage stats
 
-                        needsSave : Bool
-                        needsSave =
-                            updatedStats /= stats || maybeStats == Nothing
-
-                        ( pool, saveCmd ) =
-                            if needsSave then
-                                ConcurrentTask.attempt
-                                    { pool = model.pool
-                                    , send = sendTask
-                                    , onComplete = \_ -> NoOp
-                                    }
-                                    (Storage.saveUsageStats readyData.db updatedStats)
-
-                            else
-                                ( model.pool, Cmd.none )
-
                         breakdown : UsageStats.CostBreakdown
                         breakdown =
                             UsageStats.calculateCosts model.currentTime updatedStats
@@ -1064,7 +970,15 @@ update msg model =
                         ( aboutModel, _ ) =
                             Page.About.update (Page.About.statsLoaded breakdown trackingSince) model.aboutModel
                     in
-                    ( { model | pool = pool, aboutModel = aboutModel }, saveCmd )
+                    -- If needs save, save usage stats to IndexedDB
+                    if updatedStats /= stats || maybeStats == Nothing then
+                        ( model.runner, Cmd.none )
+                            |> Runner.andRun (\_ -> NoOp)
+                                (Storage.saveUsageStats readyData.db updatedStats)
+                            |> Tuple.mapFirst (\r -> { model | aboutModel = aboutModel, runner = r })
+
+                    else
+                        ( { model | aboutModel = aboutModel }, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
@@ -1090,16 +1004,11 @@ update msg model =
 
                         ( aboutModel, _ ) =
                             Page.About.update (Page.About.statsLoaded breakdown trackingSince) model.aboutModel
-
-                        ( pool, saveCmd ) =
-                            ConcurrentTask.attempt
-                                { pool = model.pool
-                                , send = sendTask
-                                , onComplete = \_ -> NoOp
-                                }
-                                (Storage.saveUsageStats readyData.db freshStats)
                     in
-                    ( { model | aboutModel = aboutModel, pool = pool }, saveCmd )
+                    ( model.runner, Cmd.none )
+                        |> Runner.andRun (\_ -> NoOp)
+                            (Storage.saveUsageStats readyData.db freshStats)
+                        |> Tuple.mapFirst (\r -> { model | aboutModel = aboutModel, runner = r })
 
                 _ ->
                     ( model, Cmd.none )
@@ -1110,16 +1019,9 @@ update msg model =
         ScheduleStorageCheck ->
             case model.appState of
                 Ready readyData ->
-                    let
-                        ( pool, statsCmd ) =
-                            ConcurrentTask.attempt
-                                { pool = model.pool
-                                , send = sendTask
-                                , onComplete = OnStorageCheckComplete
-                                }
-                                (storageCheckTask readyData.db)
-                    in
-                    ( { model | pool = pool }, Cmd.batch [ statsCmd, rescheduleStorageCheckTomorrow ] )
+                    ( model.runner, rescheduleStorageCheckTomorrow )
+                        |> Runner.andRun OnStorageCheckComplete (storageCheckTask readyData.db)
+                        |> Tuple.mapFirst (\r -> { model | runner = r })
 
                 _ ->
                     ( model, rescheduleStorageCheckTomorrow )
@@ -1152,8 +1054,7 @@ submitNewGroup model readyData output =
             let
                 ctx : GroupOps.Context Msg
                 ctx =
-                    { pool = model.pool
-                    , sendTask = sendTask
+                    { runner = model.runner
                     , onComplete = \_ -> OnGroupCreated (ConcurrentTask.UnexpectedError (ConcurrentTask.InternalError "unused"))
                     , randomSeed = model.randomSeed
                     , uuidState = model.uuidState
@@ -1166,7 +1067,7 @@ submitNewGroup model readyData output =
                     GroupOps.newGroup ctx OnGroupCreated output
             in
             ( { model
-                | pool = state.pool
+                | runner = state.runner
                 , randomSeed = state.randomSeed
                 , uuidState = state.uuidState
               }
@@ -1237,20 +1138,17 @@ handleJoinRoute model route groupId key maybeIdentity =
                                         , groupKey = groupKey
                                         }
 
-                                    ( pool, cmd ) =
-                                        ConcurrentTask.attempt
-                                            { pool = model.pool
-                                            , send = sendTask
-                                            , onComplete = OnJoinGroupFetched
-                                            }
-                                            (Server.authenticateAndSync serverCtx
-                                                ""
-                                                { unpushedEvents = [], pullCursor = Nothing, notifyContext = Nothing }
-                                            )
+                                    ( runner, cmd ) =
+                                        ( model.runner, Cmd.none )
+                                            |> Runner.andRun OnJoinGroupFetched
+                                                (Server.authenticateAndSync serverCtx
+                                                    ""
+                                                    { unpushedEvents = [], pullCursor = Nothing, notifyContext = Nothing }
+                                                )
                                 in
                                 ( { model
                                     | route = route
-                                    , pool = pool
+                                    , runner = runner
                                     , joinGroupModel = Page.JoinGroup.init
                                   }
                                 , cmd
@@ -1267,18 +1165,9 @@ handleJoinRoute model route groupId key maybeIdentity =
 
                     Nothing ->
                         -- No identity: auto-generate one, then re-trigger join
-                        let
-                            ( pool, cmd ) =
-                                ConcurrentTask.attempt
-                                    { pool = model.pool
-                                    , send = sendTask
-                                    , onComplete = OnIdentityGenerated
-                                    }
-                                    Identity.generate
-                        in
-                        ( { model | route = route, joinGroupModel = Page.JoinGroup.init, pool = pool, generatingIdentity = True }
-                        , cmd
-                        )
+                        ( model.runner, Cmd.none )
+                            |> Runner.andRun OnIdentityGenerated Identity.generate
+                            |> Tuple.mapFirst (\r -> { model | route = route, joinGroupModel = Page.JoinGroup.init, runner = r, generatingIdentity = True })
 
         _ ->
             ( { model | route = route }, Cmd.none )
@@ -1395,22 +1284,16 @@ updatePwa pwaMsg model =
                 Ready readyData ->
                     case ( Dict.get groupId readyData.groups, model.pushSubscription ) of
                         ( Just summary, Just subscription ) ->
-                            let
-                                ( pool, cmd ) =
-                                    ConcurrentTask.attempt
-                                        { pool = model.pool
-                                        , send = sendTask
-                                        , onComplete = PwaMsg << OnToggleNotifResult groupId
+                            ( model.runner, Cmd.none )
+                                |> Runner.andRun (PwaMsg << OnToggleNotifResult groupId)
+                                    (PushServer.toggleGroupNotification
+                                        { db = readyData.db
+                                        , summary = summary
+                                        , subscription = subscription
+                                        , memberRootId = memberRootId
                                         }
-                                        (PushServer.toggleGroupNotification
-                                            { db = readyData.db
-                                            , summary = summary
-                                            , subscription = subscription
-                                            , memberRootId = memberRootId
-                                            }
-                                        )
-                            in
-                            ( { model | pool = pool }, cmd )
+                                    )
+                                |> Tuple.mapFirst (\r -> { model | runner = r })
 
                         _ ->
                             ( model, Cmd.none )

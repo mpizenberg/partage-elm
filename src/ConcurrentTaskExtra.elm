@@ -1,6 +1,6 @@
 module ConcurrentTaskExtra exposing
-    ( AttemptBatch, andAttempt, batchAttempt, initAttemptBatch
-    , TaskRunner, initTaskRunner, andRun
+    ( AttemptBatch, initAttemptBatch, andAttempt, batchAttempt
+    , TaskRunner, initTaskRunner, initTaskRunnerWithPool, andRun, onProgress
     )
 
 {-| Helpers for working with `ConcurrentTask`.
@@ -30,12 +30,13 @@ Thread a `( TaskRunner msg, Cmd msg )` tuple through multiple task attempts.
         |> andRun OnTask2Complete task2
         |> Tuple.mapFirst (\r -> { model | runner = r })
 
-@docs TaskRunner, initTaskRunner, andRun
+@docs TaskRunner, initTaskRunner, initTaskRunnerWithPool, andRun, onProgress
 
 -}
 
 import ConcurrentTask exposing (ConcurrentTask, Pool, Response)
 import Json.Decode as Decode
+import Json.Encode as Encode
 
 
 {-| An opaque builder that accumulates tasks to attempt on a shared pool.
@@ -47,58 +48,83 @@ type AttemptBatch msg
 {-| Start building a batch of attempts from a pool and a send function.
 -}
 initAttemptBatch : Pool msg -> (Decode.Value -> Cmd msg) -> AttemptBatch msg
-initAttemptBatch pool send =
-    AttemptBatch pool send []
+initAttemptBatch p s =
+    AttemptBatch p s []
 
 
 {-| Add a task to the batch with its own completion handler.
 Each task can have different error and success types.
 -}
 andAttempt : (Response x a -> msg) -> ConcurrentTask x a -> AttemptBatch msg -> AttemptBatch msg
-andAttempt onComplete task (AttemptBatch pool send cmds) =
+andAttempt onComplete task (AttemptBatch p s cmds) =
     let
         ( nextPool, cmd ) =
             ConcurrentTask.attempt
-                { pool = pool
-                , send = send
+                { pool = p
+                , send = s
                 , onComplete = onComplete
                 }
                 task
     in
-    AttemptBatch nextPool send (cmd :: cmds)
+    AttemptBatch nextPool s (cmd :: cmds)
 
 
 {-| Finalize the batch, returning the updated pool and a single batched command.
 -}
 batchAttempt : AttemptBatch msg -> ( Pool msg, Cmd msg )
-batchAttempt (AttemptBatch pool _ cmds) =
-    ( pool, Cmd.batch cmds )
+batchAttempt (AttemptBatch p _ cmds) =
+    ( p, Cmd.batch cmds )
 
 
 {-| An opaque wrapper around a task pool and its send port.
 -}
 type TaskRunner msg
-    = TaskRunner (Pool msg) (Decode.Value -> Cmd msg)
+    = TaskRunner (Pool msg) (Encode.Value -> Cmd msg)
 
 
 {-| Create a task runner from a send port. Initializes a fresh pool internally.
 -}
-initTaskRunner : (Decode.Value -> Cmd msg) -> TaskRunner msg
-initTaskRunner send =
-    TaskRunner ConcurrentTask.pool send
+initTaskRunner : (Encode.Value -> Cmd msg) -> TaskRunner msg
+initTaskRunner s =
+    TaskRunner ConcurrentTask.pool s
+
+
+{-| Create a task runner from an existing pool and a send port.
+Useful when the pool has a custom pool ID (e.g. `ConcurrentTask.withPoolId 1`).
+-}
+initTaskRunnerWithPool : Pool msg -> (Encode.Value -> Cmd msg) -> TaskRunner msg
+initTaskRunnerWithPool p s =
+    TaskRunner p s
 
 
 {-| Run a task, threading the runner and accumulating commands.
 -}
 andRun : (Response x a -> msg) -> ConcurrentTask x a -> ( TaskRunner msg, Cmd msg ) -> ( TaskRunner msg, Cmd msg )
-andRun onComplete task ( TaskRunner pool send, cmd ) =
+andRun onComplete task ( TaskRunner p s, cmd ) =
     let
         ( nextPool, newCmd ) =
             ConcurrentTask.attempt
-                { pool = pool
-                , send = send
+                { pool = p
+                , send = s
                 , onComplete = onComplete
                 }
                 task
     in
-    ( TaskRunner nextPool send, Cmd.batch [ cmd, newCmd ] )
+    ( TaskRunner nextPool s, Cmd.batch [ cmd, newCmd ] )
+
+
+{-| Subscribe to task progress events. Use in your `subscriptions`.
+-}
+onProgress :
+    { receive : (Decode.Value -> msg) -> Sub msg
+    , onProgress : ( TaskRunner msg, Cmd msg ) -> msg
+    }
+    -> TaskRunner msg
+    -> Sub msg
+onProgress config (TaskRunner p s) =
+    ConcurrentTask.onProgress
+        { send = s
+        , receive = config.receive
+        , onProgress = \( newPool, cmd ) -> config.onProgress ( TaskRunner newPool s, cmd )
+        }
+        p

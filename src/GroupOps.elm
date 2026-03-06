@@ -19,6 +19,7 @@ module GroupOps exposing
 
 import ConcurrentTask exposing (ConcurrentTask)
 import ConcurrentTask.Time
+import ConcurrentTaskExtra as Runner exposing (TaskRunner)
 import Crypto
 import Dict
 import Domain.Entry as Entry
@@ -30,7 +31,6 @@ import Form.NewGroup
 import IdGen
 import Identity exposing (Identity)
 import IndexedDb as Idb
-import Json.Encode
 import Page.Group.NewEntry
 import PocketBase
 import Random
@@ -42,11 +42,10 @@ import UUID
 import WebCrypto.Symmetric as Symmetric
 
 
-{-| Dependencies needed to submit events: task pool, identity, DB, and RNG state.
+{-| Dependencies needed to submit events: task runner, identity, DB, and RNG state.
 -}
 type alias Context msg =
-    { pool : ConcurrentTask.Pool msg
-    , sendTask : Json.Encode.Value -> Cmd msg
+    { runner : TaskRunner msg
     , onComplete : ConcurrentTask.Response Idb.Error Event.Envelope -> msg
     , randomSeed : Random.Seed
     , uuidState : UUID.V7State
@@ -56,10 +55,10 @@ type alias Context msg =
     }
 
 
-{-| Returned state after a submission, with updated pool and RNG state.
+{-| Returned state after a submission, with updated runner and RNG state.
 -}
 type alias State msg =
-    { pool : ConcurrentTask.Pool msg
+    { runner : TaskRunner msg
     , randomSeed : Random.Seed
     , uuidState : UUID.V7State
     }
@@ -122,21 +121,16 @@ attempt ctx makeEnvelope groupId =
                             ]
                             |> ConcurrentTask.map (\_ -> envelope)
                     )
-
-        ( pool, cmd ) =
-            ConcurrentTask.attempt
-                { pool = ctx.pool
-                , send = ctx.sendTask
-                , onComplete = ctx.onComplete
-                }
-                task
     in
-    ( { pool = pool
-      , randomSeed = ctx.randomSeed
-      , uuidState = ctx.uuidState
-      }
-    , cmd
-    )
+    ( ctx.runner, Cmd.none )
+        |> Runner.andRun ctx.onComplete task
+        |> Tuple.mapFirst
+            (\r ->
+                { runner = r
+                , randomSeed = ctx.randomSeed
+                , uuidState = ctx.uuidState
+                }
+            )
 
 
 
@@ -200,21 +194,16 @@ newGroup ctx onComplete output =
                             |> ConcurrentTask.andThen (\_ -> Storage.addUnpushedIds ctx.db groupId allEventIds)
                             |> ConcurrentTask.map (\_ -> summary)
                     )
-
-        ( pool, cmd ) =
-            ConcurrentTask.attempt
-                { pool = ctx.pool
-                , send = ctx.sendTask
-                , onComplete = onComplete
-                }
-                (generateEnvelopes |> ConcurrentTask.andThen allTasks)
     in
-    ( { pool = pool
-      , randomSeed = seedAfter
-      , uuidState = uuidStateAfter
-      }
-    , cmd
-    )
+    ( ctx.runner, Cmd.none )
+        |> Runner.andRun onComplete (generateEnvelopes |> ConcurrentTask.andThen allTasks)
+        |> Tuple.mapFirst
+            (\r ->
+                { runner = r
+                , randomSeed = seedAfter
+                , uuidState = uuidStateAfter
+                }
+            )
 
 
 

@@ -26,6 +26,7 @@ Owns its own ConcurrentTask.Pool and handles all group business logic
 -}
 
 import ConcurrentTask
+import ConcurrentTaskExtra as Runner exposing (TaskRunner)
 import Dict exposing (Dict)
 import Domain.Currency exposing (Currency(..))
 import Domain.Date as Date exposing (Date)
@@ -38,7 +39,6 @@ import GroupOps exposing (LoadedGroup)
 import Identity exposing (Identity)
 import IndexedDb as Idb
 import Json.Decode
-import Json.Encode
 import Page.Group.ActivityTab
 import Page.Group.AddMember
 import Page.Group.BalanceTab
@@ -78,7 +78,7 @@ import WebCrypto.Symmetric as Symmetric
 {-| Configuration for initializing Page.Group. Provided once at startup.
 -}
 type alias InitConfig =
-    { pool : ConcurrentTask.Pool Msg
+    { runner : TaskRunner Msg
     , randomSeed : Random.Seed
     , uuidState : UUID.V7State
     }
@@ -87,8 +87,7 @@ type alias InitConfig =
 {-| Runtime dependencies provided by Main on each update call.
 -}
 type alias UpdateConfig =
-    { sendTask : Json.Encode.Value -> Cmd Msg
-    , db : Idb.Db
+    { db : Idb.Db
     , identity : Identity
     , pbClient : Maybe PocketBase.Client
     , currentTime : Time.Posix
@@ -116,8 +115,8 @@ type alias ViewConfig msg =
 
 
 type alias Model =
-    -- ConcurrentTask pool and RNG state
-    { pool : ConcurrentTask.Pool Msg
+    -- ConcurrentTask runner and RNG state
+    { runner : TaskRunner Msg
     , randomSeed : Random.Seed
     , uuidState : UUID.V7State
     , identityHash : String
@@ -150,14 +149,13 @@ type alias Model =
 -- MSG
 
 
-onTaskProgress : { send : Json.Encode.Value -> Cmd Msg, receive : (Json.Decode.Value -> Msg) -> Sub Msg } -> Model -> Sub Msg
-onTaskProgress ports model =
-    ConcurrentTask.onProgress
-        { send = ports.send
-        , receive = ports.receive
+onTaskProgress : ((Json.Decode.Value -> Msg) -> Sub Msg) -> Model -> Sub Msg
+onTaskProgress receive model =
+    Runner.onProgress
+        { receive = receive
         , onProgress = OnTaskProgress
         }
-        model.pool
+        model.runner
 
 
 pocketbaseEventMsg : Json.Decode.Value -> Msg
@@ -168,7 +166,7 @@ pocketbaseEventMsg =
 type
     Msg
     -- Pool progress
-    = OnTaskProgress ( ConcurrentTask.Pool Msg, Cmd Msg )
+    = OnTaskProgress ( TaskRunner Msg, Cmd Msg )
       -- Navigation
     | RequestNavigation GroupView
       -- Tabs
@@ -224,7 +222,7 @@ type Output
 
 init : InitConfig -> Model
 init config =
-    { pool = config.pool
+    { runner = config.runner
     , randomSeed = config.randomSeed
     , uuidState = config.uuidState
     , identityHash = ""
@@ -273,16 +271,9 @@ ensureGroupLoaded config groupId model =
 
 loadGroup : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
 loadGroup config groupId model =
-    let
-        ( pool, cmd ) =
-            ConcurrentTask.attempt
-                { pool = model.pool
-                , send = config.sendTask
-                , onComplete = OnGroupEventsLoaded groupId
-                }
-                (Storage.loadGroup config.db groupId)
-    in
-    ( { model | pool = pool, loadedGroup = Nothing }, cmd )
+    ( model.runner, Cmd.none )
+        |> Runner.andRun (OnGroupEventsLoaded groupId) (Storage.loadGroup config.db groupId)
+        |> Tuple.mapFirst (\r -> { model | runner = r, loadedGroup = Nothing })
 
 
 {-| Trigger a server sync for the given group. Called by Main on OnServerGroupCreated.
@@ -376,8 +367,8 @@ joinPayload selfId joinData loaded =
 update : UpdateConfig -> Msg -> Model -> ( Model, Cmd Msg, List Output )
 update config msg model =
     case msg of
-        OnTaskProgress ( pool, cmd ) ->
-            ( { model | pool = pool }, cmd, [] )
+        OnTaskProgress ( runner, cmd ) ->
+            ( { model | runner = runner }, cmd, [] )
 
         RequestNavigation groupView ->
             case config.route of
@@ -455,7 +446,7 @@ update config msg model =
                         GroupRoute _ (EditEntry entryId) ->
                             case GroupOps.editEntry (submitContext (OnEntrySaved loaded.summary.id) config modelWithPage) loaded entryId entryOutput of
                                 Just ( state, cmd ) ->
-                                    ( { modelWithPage | pool = state.pool, randomSeed = state.randomSeed, uuidState = state.uuidState }, cmd, [] )
+                                    ( { modelWithPage | runner = state.runner, randomSeed = state.randomSeed, uuidState = state.uuidState }, cmd, [] )
 
                                 Nothing ->
                                     ( modelWithPage, Cmd.none, [] )
@@ -700,19 +691,15 @@ update config msg model =
                             result =
                                 GroupOps.applySyncResult pushedIds syncResult loaded
 
-                            ( taskPool, taskCmds ) =
-                                ConcurrentTask.attempt
-                                    { pool = model.pool
-                                    , send = config.sendTask
-                                    , onComplete = PostSyncTasksDone
-                                    }
-                                    (GroupOps.postSyncTasks config.db groupId config.pbClient result)
+                            ( runner, taskCmds ) =
+                                ( model.runner, Cmd.none )
+                                    |> Runner.andRun PostSyncTasksDone (GroupOps.postSyncTasks config.db groupId config.pbClient result)
 
                             modelAfterSync : Model
                             modelAfterSync =
                                 { model
                                     | loadedGroup = Just result.updatedGroup
-                                    , pool = taskPool
+                                    , runner = runner
                                     , syncInProgress = False
                                 }
                                     |> initPagesIfNeeded config (routeToGroupView config.route)
@@ -788,8 +775,7 @@ routeToGroupView route =
 -}
 submitContext : (ConcurrentTask.Response Idb.Error Event.Envelope -> Msg) -> UpdateConfig -> Model -> GroupOps.Context Msg
 submitContext onComplete config model =
-    { pool = model.pool
-    , sendTask = config.sendTask
+    { runner = model.runner
     , onComplete = onComplete
     , randomSeed = model.randomSeed
     , uuidState = model.uuidState
@@ -807,7 +793,7 @@ runSubmit onComplete config model submitFn =
         ( state, cmd ) =
             submitFn (submitContext onComplete config model)
     in
-    ( { model | pool = state.pool, randomSeed = state.randomSeed, uuidState = state.uuidState }
+    ( { model | runner = state.runner, randomSeed = state.randomSeed, uuidState = state.uuidState }
     , cmd
     , []
     )
@@ -996,48 +982,42 @@ triggerSyncInternal config groupId model =
             ( Just client, Just loaded ) ->
                 if loaded.summary.id == groupId then
                     let
-                        ( pool, cmd ) =
-                            ConcurrentTask.attempt
-                                { pool = model.pool
-                                , send = config.sendTask
-                                , onComplete = OnGroupSynced groupId loaded.unpushedIds
-                                }
-                                (let
-                                    unpushedEvents : List Event.Envelope
-                                    unpushedEvents =
-                                        List.filter (\e -> Set.member e.id loaded.unpushedIds) loaded.events
-                                            |> List.reverse
+                        unpushedEvents : List Event.Envelope
+                        unpushedEvents =
+                            List.filter (\e -> Set.member e.id loaded.unpushedIds) loaded.events
+                                |> List.reverse
 
-                                    notifyContext : Maybe PushServer.NotifyContext
-                                    notifyContext =
-                                        if List.isEmpty unpushedEvents then
-                                            Nothing
+                        notifyContext : Maybe PushServer.NotifyContext
+                        notifyContext =
+                            if List.isEmpty unpushedEvents then
+                                Nothing
 
-                                        else
-                                            let
-                                                actorId : Member.Id
-                                                actorId =
-                                                    currentUserRootId model loaded
-                                            in
-                                            Just
-                                                { groupId = groupId
-                                                , groupName = loaded.groupState.groupMeta.name
-                                                , actorRootId = actorId
-                                                , actorName = GroupState.resolveMemberName loaded.groupState actorId
-                                                , entries = loaded.groupState.entries
-                                                , url = Route.toPath (GroupRoute groupId (Tab ActivityTab))
-                                                }
-                                 in
-                                 Server.authenticateAndSync
-                                    { client = client, groupId = groupId, groupKey = loaded.groupKey }
-                                    config.identity.publicKeyHash
-                                    { unpushedEvents = unpushedEvents
-                                    , pullCursor = loaded.syncCursor
-                                    , notifyContext = notifyContext
+                            else
+                                let
+                                    actorId : Member.Id
+                                    actorId =
+                                        currentUserRootId model loaded
+                                in
+                                Just
+                                    { groupId = groupId
+                                    , groupName = loaded.groupState.groupMeta.name
+                                    , actorRootId = actorId
+                                    , actorName = GroupState.resolveMemberName loaded.groupState actorId
+                                    , entries = loaded.groupState.entries
+                                    , url = Route.toPath (GroupRoute groupId (Tab ActivityTab))
                                     }
-                                )
                     in
-                    ( { model | pool = pool, syncInProgress = True }, cmd )
+                    ( model.runner, Cmd.none )
+                        |> Runner.andRun (OnGroupSynced groupId loaded.unpushedIds)
+                            (Server.authenticateAndSync
+                                { client = client, groupId = groupId, groupKey = loaded.groupKey }
+                                config.identity.publicKeyHash
+                                { unpushedEvents = unpushedEvents
+                                , pullCursor = loaded.syncCursor
+                                , notifyContext = notifyContext
+                                }
+                            )
+                        |> Tuple.mapFirst (\r -> { model | runner = r, syncInProgress = True })
 
                 else
                     ( model, Cmd.none )
@@ -1061,21 +1041,13 @@ syncGroupSummaryName config groupId model =
                     , isSubscribed = loaded.summary.isSubscribed
                     }
 
-                ( pool, cmd ) =
-                    ConcurrentTask.attempt
-                        { pool = model.pool
-                        , send = config.sendTask
-                        , onComplete = OnGroupSummarySaved
-                        }
-                        (Storage.saveGroupSummary config.db updatedSummary)
+                updatedModel : Model
+                updatedModel =
+                    { model | loadedGroup = Just { loaded | summary = updatedSummary } }
             in
-            ( { model
-                | loadedGroup = Just { loaded | summary = updatedSummary }
-                , pool = pool
-              }
-            , cmd
-            , [ UpdateGroupSummary updatedSummary ]
-            )
+            ( model.runner, Cmd.none )
+                |> Runner.andRun OnGroupSummarySaved (Storage.saveGroupSummary config.db updatedSummary)
+                |> (\( r, cmd ) -> ( { updatedModel | runner = r }, cmd, [ UpdateGroupSummary updatedSummary ] ))
 
         Nothing ->
             ( model, Cmd.none, [] )
@@ -1083,16 +1055,9 @@ syncGroupSummaryName config groupId model =
 
 deleteGroup : UpdateConfig -> Model -> Group.Id -> ( Model, Cmd Msg, List Output )
 deleteGroup config model groupId =
-    let
-        ( pool, cmd ) =
-            ConcurrentTask.attempt
-                { pool = model.pool
-                , send = config.sendTask
-                , onComplete = OnGroupRemoved groupId
-                }
-                (Storage.deleteGroup config.db groupId)
-    in
-    ( { model | pool = pool }, cmd, [] )
+    ( model.runner, Cmd.none )
+        |> Runner.andRun (OnGroupRemoved groupId) (Storage.deleteGroup config.db groupId)
+        |> (\( r, cmd ) -> ( { model | runner = r }, cmd, [] ))
 
 
 {-| Apply loaded group data from IndexedDB, constructing a LoadedGroup.
