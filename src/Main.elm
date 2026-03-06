@@ -28,6 +28,7 @@ import Page.NewGroup
 import Page.NotFound
 import Page.Setup
 import PocketBase
+import Process
 import PushServer
 import Pwa
 import Random
@@ -35,6 +36,7 @@ import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import Server
 import Set
 import Storage exposing (GroupSummary)
+import Task
 import Time
 import Translations as T exposing (I18n, Language(..))
 import UI.Components
@@ -44,6 +46,7 @@ import UUID
 import Ui
 import Update
 import Url
+import UsageStats exposing (UsageStats)
 import WebCrypto
 import WebCrypto.Symmetric as Symmetric
 
@@ -96,6 +99,7 @@ type alias Model =
     , newGroupModel : Page.NewGroup.Model
     , groupModel : Page.Group.Model
     , homeModel : Page.Home.Model
+    , aboutModel : Page.About.Model
     , toastModel : Toast.Model
     , joinGroupModel : Page.JoinGroup.Model
     , pendingJoinAction : Maybe { groupId : Group.Id, action : Page.JoinGroup.JoinAction, newMemberName : String }
@@ -144,6 +148,11 @@ type Msg
       -- Server sync
     | OnPbClientInitialized (ConcurrentTask.Response PocketBase.Error PocketBase.Client)
     | OnServerGroupCreated Group.Id (ConcurrentTask.Response Server.Error ())
+      -- About / Usage stats
+    | AboutMsg Page.About.Msg
+    | OnStorageCheckComplete (ConcurrentTask.Response Never ( Maybe UsageStats, UsageStats.StorageEstimate ))
+    | OnAboutStatsReset (ConcurrentTask.Response Idb.Error ())
+    | ScheduleStorageCheck
       -- Toast notifications
     | ClipboardCopied
     | DismissToast Toast.ToastId
@@ -284,6 +293,7 @@ init flags =
                 , uuidState = groupUuidState
                 }
       , homeModel = Page.Home.init
+      , aboutModel = Page.About.init
       , joinGroupModel = Page.JoinGroup.init
       , pendingJoinAction = Nothing
       , toastModel = Toast.init
@@ -576,9 +586,18 @@ update msg model =
                         , onComplete = OnPbClientInitialized
                         }
                         (PocketBase.init model.serverUrl)
+
+                -- Fire storage stats check
+                ( poolAfterStats, statsCmd ) =
+                    ConcurrentTask.attempt
+                        { pool = poolAfterPb
+                        , send = sendTask
+                        , onComplete = OnStorageCheckComplete
+                        }
+                        (storageCheckTask readyData.db)
             in
-            ( { modelAfterNav | pool = poolAfterPb }
-            , Cmd.batch [ guardCmd, navCmd_, pbCmd ]
+            ( { modelAfterNav | pool = poolAfterStats }
+            , Cmd.batch [ guardCmd, navCmd_, pbCmd, statsCmd, rescheduleStorageCheckTomorrow ]
             )
 
         OnInitComplete (ConcurrentTask.Error err) ->
@@ -979,8 +998,149 @@ update msg model =
             , Cmd.none
             )
 
+        -- About / Usage stats
+        AboutMsg aboutMsg ->
+            let
+                ( aboutModel, maybeOutput ) =
+                    Page.About.update aboutMsg model.aboutModel
+            in
+            case maybeOutput of
+                Just Page.About.RequestResetStats ->
+                    case model.appState of
+                        Ready readyData ->
+                            let
+                                ( pool, resetCmd ) =
+                                    ConcurrentTask.attempt
+                                        { pool = model.pool
+                                        , send = sendTask
+                                        , onComplete = OnAboutStatsReset
+                                        }
+                                        (Storage.resetUsageStats readyData.db)
+                            in
+                            ( { model | aboutModel = aboutModel, pool = pool }, resetCmd )
+
+                        _ ->
+                            ( { model | aboutModel = aboutModel }, Cmd.none )
+
+                Nothing ->
+                    ( { model | aboutModel = aboutModel }, Cmd.none )
+
+        OnStorageCheckComplete (ConcurrentTask.Success ( maybeStats, storageEstimate )) ->
+            case model.appState of
+                Ready readyData ->
+                    let
+                        stats : UsageStats
+                        stats =
+                            maybeStats |> Maybe.withDefault (UsageStats.defaultStats model.currentTime)
+
+                        updatedStats : UsageStats
+                        updatedStats =
+                            UsageStats.updateStorageCost model.currentTime storageEstimate.usage stats
+
+                        needsSave : Bool
+                        needsSave =
+                            updatedStats /= stats || maybeStats == Nothing
+
+                        ( pool, saveCmd ) =
+                            if needsSave then
+                                ConcurrentTask.attempt
+                                    { pool = model.pool
+                                    , send = sendTask
+                                    , onComplete = \_ -> NoOp
+                                    }
+                                    (Storage.saveUsageStats readyData.db updatedStats)
+
+                            else
+                                ( model.pool, Cmd.none )
+
+                        breakdown : UsageStats.CostBreakdown
+                        breakdown =
+                            UsageStats.calculateCosts model.currentTime updatedStats
+
+                        trackingSince : String
+                        trackingSince =
+                            Date.toString (Date.posixToDate updatedStats.trackingStartDate)
+
+                        ( aboutModel, _ ) =
+                            Page.About.update (Page.About.statsLoaded breakdown trackingSince) model.aboutModel
+                    in
+                    ( { model | pool = pool, aboutModel = aboutModel }, saveCmd )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        OnStorageCheckComplete _ ->
+            ( model, Cmd.none )
+
+        OnAboutStatsReset (ConcurrentTask.Success ()) ->
+            case model.appState of
+                Ready readyData ->
+                    let
+                        freshStats : UsageStats
+                        freshStats =
+                            UsageStats.defaultStats model.currentTime
+
+                        breakdown : UsageStats.CostBreakdown
+                        breakdown =
+                            UsageStats.calculateCosts model.currentTime freshStats
+
+                        trackingSince : String
+                        trackingSince =
+                            Date.toString (Date.posixToDate freshStats.trackingStartDate)
+
+                        ( aboutModel, _ ) =
+                            Page.About.update (Page.About.statsLoaded breakdown trackingSince) model.aboutModel
+
+                        ( pool, saveCmd ) =
+                            ConcurrentTask.attempt
+                                { pool = model.pool
+                                , send = sendTask
+                                , onComplete = \_ -> NoOp
+                                }
+                                (Storage.saveUsageStats readyData.db freshStats)
+                    in
+                    ( { model | aboutModel = aboutModel, pool = pool }, saveCmd )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        OnAboutStatsReset _ ->
+            ( model, Cmd.none )
+
+        ScheduleStorageCheck ->
+            case model.appState of
+                Ready readyData ->
+                    let
+                        ( pool, statsCmd ) =
+                            ConcurrentTask.attempt
+                                { pool = model.pool
+                                , send = sendTask
+                                , onComplete = OnStorageCheckComplete
+                                }
+                                (storageCheckTask readyData.db)
+                    in
+                    ( { model | pool = pool }, Cmd.batch [ statsCmd, rescheduleStorageCheckTomorrow ] )
+
+                _ ->
+                    ( model, rescheduleStorageCheckTomorrow )
+
         PwaMsg pwaMsg ->
             updatePwa pwaMsg model
+
+
+storageCheckTask : Idb.Db -> ConcurrentTask Never ( Maybe UsageStats, UsageStats.StorageEstimate )
+storageCheckTask db =
+    ConcurrentTask.map2 Tuple.pair
+        (Storage.loadUsageStats db
+            |> ConcurrentTask.onError (\_ -> ConcurrentTask.succeed Nothing)
+        )
+        UsageStats.estimateStorage
+
+
+rescheduleStorageCheckTomorrow : Cmd Msg
+rescheduleStorageCheckTomorrow =
+    Process.sleep (24 * 60 * 60 * 1000)
+        |> Task.perform (\_ -> ScheduleStorageCheck)
 
 
 {-| Submit a new group using Main's own pool/seed/uuid.
@@ -1387,7 +1547,7 @@ viewReady model readyData =
                 model.groupModel
 
         About ->
-            shell (T.shellPartage i18n) (Page.About.view i18n)
+            shell (T.shellPartage i18n) (Ui.map AboutMsg (Page.About.view i18n model.aboutModel))
 
         NotFound ->
             shell (T.shellPartage i18n) (Page.NotFound.view i18n)

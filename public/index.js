@@ -92,13 +92,94 @@ pbTasks.setEventCallback(function (event) {
   app.ports.onPocketbaseEvent.send(event);
 });
 
+function createUsageStatsTasks() {
+  return {
+    "usageStats:estimateStorage": () => {
+      if (navigator.storage && navigator.storage.estimate) {
+        return navigator.storage.estimate().then((est) => ({
+          usage: est.usage || 0,
+          quota: est.quota || 0,
+        }));
+      }
+      return Promise.resolve({ usage: 0, quota: 0 });
+    },
+  };
+}
+
 ConcurrentTask.register({
-  tasks: { ...createWebCryptoTasks(), ...createIndexedDbTasks(), ...pbTasks },
+  tasks: {
+    ...createWebCryptoTasks(),
+    ...createIndexedDbTasks(),
+    ...pbTasks,
+    ...createUsageStatsTasks(),
+  },
   ports: {
     send: app.ports.sendTask,
     receive: app.ports.receiveTask,
   },
 });
+
+// Network bandwidth tracking via PerformanceObserver
+if (typeof PerformanceObserver !== "undefined") {
+  let pendingBytes = 0;
+
+  try {
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (entry.transferSize > 0) {
+          pendingBytes += entry.transferSize;
+        }
+      }
+    });
+    observer.observe({ type: "resource", buffered: true });
+  } catch (e) {
+    // PerformanceObserver not supported for resource type
+  }
+
+  function flushBytesToIdb() {
+    if (pendingBytes === 0) return;
+    const bytesToAdd = pendingBytes;
+    pendingBytes = 0;
+    const req = indexedDB.open("partage");
+    req.onsuccess = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains("usageStats")) {
+        db.close();
+        pendingBytes += bytesToAdd;
+        return;
+      }
+      const tx = db.transaction("usageStats", "readwrite");
+      const store = tx.objectStore("usageStats");
+      const getReq = store.get("stats");
+      getReq.onsuccess = () => {
+        const stats = getReq.result || {
+          trackingStartDate: Date.now(),
+          totalBytesTransferred: 0,
+          storageBytes: 0,
+          storageLastCheckedDate: "",
+          storageCostAccumulatorCentNanos: 0,
+        };
+        stats.totalBytesTransferred += bytesToAdd;
+        store.put(stats, "stats");
+      };
+      tx.oncomplete = () => db.close();
+      tx.onerror = () => {
+        db.close();
+        pendingBytes += bytesToAdd;
+      };
+    };
+    req.onerror = () => {
+      pendingBytes += bytesToAdd;
+    };
+  }
+
+  setInterval(flushBytesToIdb, 10000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      flushBytesToIdb();
+    }
+  });
+}
 
 initPwa({
   ports: {

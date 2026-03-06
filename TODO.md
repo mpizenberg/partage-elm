@@ -103,7 +103,7 @@ Track locally (never sent to server):
 
 ### 8.2 Cost estimation display
 
-Show on the About screen: base cost, storage, compute, network, total, average per month. Rates from spec (Section 17.2).
+Show on the About screen: base cost, storage, compute, network, total, average per month. Rates from SPECIFICATION.md (Section 17.2).
 
 **Files:** `src/Page/About.elm`, translations
 

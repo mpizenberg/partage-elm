@@ -14,7 +14,9 @@ module Storage exposing
     , loadGroupKey
     , loadGroupKeyRequired
     , loadIdentity
+    , loadUsageStats
     , open
+    , resetUsageStats
     , saveEvents
     , saveGroupKey
     , saveGroupSummary
@@ -22,6 +24,7 @@ module Storage exposing
     , saveNotificationTranslations
     , saveSyncCursor
     , saveUnpushedIds
+    , saveUsageStats
     )
 
 import ConcurrentTask exposing (ConcurrentTask)
@@ -35,6 +38,7 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import Set exposing (Set)
 import Time
+import UsageStats exposing (UsageStats)
 import WebCrypto.Symmetric as Symmetric
 
 
@@ -63,13 +67,14 @@ type alias GroupSummary =
 
 dbSchema : Idb.Schema
 dbSchema =
-    Idb.schema "partage" 3
+    Idb.schema "partage" 4
         |> Idb.withStore identityStore
         |> Idb.withStore groupsStore
         |> Idb.withStore groupKeysStore
         |> Idb.withStore eventsStore
         |> Idb.withStore syncCursorsStore
         |> Idb.withStore unpushedIdsStore
+        |> Idb.withStore usageStatsStore
 
 
 identityStore : Idb.Store Idb.ExplicitKey
@@ -108,6 +113,11 @@ syncCursorsStore =
 unpushedIdsStore : Idb.Store Idb.ExplicitKey
 unpushedIdsStore =
     Idb.defineStore "unpushedIds"
+
+
+usageStatsStore : Idb.Store Idb.ExplicitKey
+usageStatsStore =
+    Idb.defineStore "usageStats"
 
 
 
@@ -317,6 +327,31 @@ importGroup db summary maybeKey events maybeCursor =
         , saveCursorTask
         ]
         |> ConcurrentTask.map (\_ -> ())
+
+
+
+-- Usage stats
+
+
+{-| Load usage statistics, if they exist.
+-}
+loadUsageStats : Idb.Db -> ConcurrentTask Idb.Error (Maybe UsageStats)
+loadUsageStats db =
+    Idb.get db usageStatsStore (Idb.StringKey "stats") UsageStats.decoder
+
+
+{-| Save usage statistics.
+-}
+saveUsageStats : Idb.Db -> UsageStats -> ConcurrentTask Idb.Error ()
+saveUsageStats db stats =
+    Idb.putAt db usageStatsStore (Idb.StringKey "stats") (UsageStats.encode stats)
+
+
+{-| Delete usage statistics (reset).
+-}
+resetUsageStats : Idb.Db -> ConcurrentTask Idb.Error ()
+resetUsageStats db =
+    Idb.delete db usageStatsStore (Idb.StringKey "stats")
 
 
 

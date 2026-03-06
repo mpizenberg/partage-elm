@@ -287,6 +287,17 @@
   "notificationsEnable": "Enable Notifications",
   "notificationsEnabled": "Notifications enabled",
   "notificationsDenied": "Notifications blocked in browser settings",
-  "toastPushError": "Failed to update notification settings"
+  "toastPushError": "Failed to update notification settings",
+  "aboutUsageTitle": "Usage Statistics",
+  "aboutUsageLoading": "Loading usage data...",
+  "aboutUsageTrackingSince": "Tracking since {date}",
+  "aboutCostBase": "Base cost ($0.10/mo)",
+  "aboutCostStorage": "Storage",
+  "aboutCostCompute": "Compute",
+  "aboutCostNetwork": "Network",
+  "aboutCostTotal": "Total",
+  "aboutCostAvgPerMonth": "Average per month",
+  "aboutResetStats": "Reset statistics",
+  "aboutResetConfirm": "This will reset all usage statistics. This cannot be undone."
 }
 

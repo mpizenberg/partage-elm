@@ -287,5 +287,16 @@
   "notificationsEnable": "Activer les notifications",
   "notificationsEnabled": "Notifications activées",
   "notificationsDenied": "Notifications bloquées dans les paramètres du navigateur",
-  "toastPushError": "Échec de la mise à jour des notifications"
+  "toastPushError": "Échec de la mise à jour des notifications",
+  "aboutUsageTitle": "Statistiques d'utilisation",
+  "aboutUsageLoading": "Chargement des données...",
+  "aboutUsageTrackingSince": "Suivi depuis le {date}",
+  "aboutCostBase": "Coût de base (0,10 $/mois)",
+  "aboutCostStorage": "Stockage",
+  "aboutCostCompute": "Calcul",
+  "aboutCostNetwork": "Réseau",
+  "aboutCostTotal": "Total",
+  "aboutCostAvgPerMonth": "Moyenne par mois",
+  "aboutResetStats": "Réinitialiser les statistiques",
+  "aboutResetConfirm": "Cela réinitialisera toutes les statistiques d'utilisation. Cette action est irréversible."
 }
