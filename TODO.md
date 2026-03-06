@@ -1,6 +1,6 @@
 # Partage — Remaining Implementation Plan
 
-Phases 1–5, 7 are complete. Phase 6 is partially done (QR code and Web Share remain). Remaining: usage stats, translations.
+Phases 1–7 are complete. Remaining: usage stats, translations.
 
 ---
 
@@ -61,24 +61,14 @@ Detect relationship between local and imported data (`new`, `local_subset`, `imp
 
 ---
 
-## Phase 6: Invitation & Group Joining
+## Phase 6: Invitation & Group Joining (Done)
 
-Invite link generation and the join flow are complete. QR code and Web Share remain.
+All invitation and group joining features are complete.
 
-- **6.1** Invite link generation (Done): URL format `https://<domain>/join/<groupId>#<base64url-group-key>` with copy button in `Page.Group.MembersTab`. Group key passed as fragment (never sent to server).
-- **6.2** Join flow UI (Done): `Page.JoinGroup` extracts group ID and key from URL, authenticates, fetches and decrypts events, shows group name and members, offers claim virtual member / re-join / join as new member options, records member event and syncs.
-
-### 6.3 QR code generation
-
-Generate QR code from invite link. Likely requires a JS library (e.g., `qrcode`) via ports or an Elm QR library.
-
-**Files:** `public/index.js` (QR port or inline lib), invite modal
-
-### 6.4 Web Share API
-
-On supported devices, offer native share via `navigator.share()` through a port.
-
-**Files:** `public/index.js` (share port), invite modal
+- **6.1** Invite link generation: URL format `https://<domain>/join/<groupId>#<base64url-group-key>` with copy button in `Page.Group.MembersTab`. Group key passed as fragment (never sent to server).
+- **6.2** Join flow UI: `Page.JoinGroup` extracts group ID and key from URL, authenticates, fetches and decrypts events, shows group name and members, offers claim virtual member / re-join / join as new member options, records member event and syncs.
+- **6.3** QR code generation: `pablohirafuji/elm-qrcode` renders the invite link as an inline SVG with a show/hide toggle. `MembersTab` converted to stateful page (Model/Msg/update) to track QR visibility.
+- **6.4** Web Share API: `<share-button>` custom element in `public/index.js` calls `navigator.share()` on supported devices, auto-hides when unavailable. Appears alongside the copy button in the invite section.
 
 ---
 
