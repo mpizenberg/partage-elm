@@ -208,34 +208,30 @@ fetchPowChallenge client =
 -- Event push
 
 
-{-| Push local events to the server. Encrypts each event with the group key.
+{-| Push local events to the server as a single encrypted batch.
 -}
 pushEvents : ServerContext -> String -> List Event.Envelope -> ConcurrentTask Error ()
 pushEvents ctx actorId envelopes =
-    envelopes
-        |> List.map (pushSingleEvent ctx actorId)
-        |> ConcurrentTask.batch
-        |> ConcurrentTask.map (\_ -> ())
+    if List.isEmpty envelopes then
+        ConcurrentTask.succeed ()
 
-
-pushSingleEvent : ServerContext -> String -> Event.Envelope -> ConcurrentTask Error ()
-pushSingleEvent ctx actorId envelope =
-    Symmetric.encryptJson ctx.groupKey (Event.encodeEnvelope envelope)
-        |> ConcurrentTask.mapError CryptoError
-        |> ConcurrentTask.andThen
-            (\encrypted ->
-                PocketBase.Collection.create ctx.client
-                    { collection = "events"
-                    , body =
-                        Encode.object
-                            [ ( "groupId", Encode.string ctx.groupId )
-                            , ( "actorId", Encode.string actorId )
-                            , ( "eventData", Encode.string (Encode.encode 0 (Symmetric.encodeEncryptedData encrypted)) )
-                            ]
-                    , decoder = Decode.succeed ()
-                    }
-                    |> ConcurrentTask.mapError PbError
-            )
+    else
+        Symmetric.encryptJson ctx.groupKey (Encode.list Event.encodeEnvelope envelopes)
+            |> ConcurrentTask.mapError CryptoError
+            |> ConcurrentTask.andThen
+                (\encrypted ->
+                    PocketBase.Collection.create ctx.client
+                        { collection = "events"
+                        , body =
+                            Encode.object
+                                [ ( "groupId", Encode.string ctx.groupId )
+                                , ( "actorId", Encode.string actorId )
+                                , ( "eventData", Encode.string (Encode.encode 0 (Symmetric.encodeEncryptedData encrypted)) )
+                                ]
+                        , decoder = Decode.succeed ()
+                        }
+                        |> ConcurrentTask.mapError PbError
+                )
 
 
 
@@ -364,15 +360,16 @@ pullAllPages ctx maybeCursor page accEvents =
 decryptServerEvents : Symmetric.Key -> List ServerEventRecord -> ConcurrentTask Error (List Event.Envelope)
 decryptServerEvents key records =
     records
-        |> List.map (decryptServerEvent key)
+        |> List.map (decryptServerEventBatch key)
         |> ConcurrentTask.batch
+        |> ConcurrentTask.map List.concat
 
 
-decryptServerEvent : Symmetric.Key -> ServerEventRecord -> ConcurrentTask Error Event.Envelope
-decryptServerEvent key record =
+decryptServerEventBatch : Symmetric.Key -> ServerEventRecord -> ConcurrentTask Error (List Event.Envelope)
+decryptServerEventBatch key record =
     case Decode.decodeString Symmetric.encryptedDataDecoder record.eventData of
         Ok encrypted ->
-            Symmetric.decryptJson key Event.envelopeDecoder encrypted
+            Symmetric.decryptJson key (Decode.list Event.envelopeDecoder) encrypted
                 |> ConcurrentTask.mapError CryptoError
 
         Err err ->
