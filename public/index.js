@@ -173,7 +173,7 @@ if (typeof PerformanceObserver !== "undefined") {
     };
   }
 
-  setInterval(flushBytesToIdb, 10000);
+  setInterval(flushBytesToIdb, 100_000);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
       flushBytesToIdb();
