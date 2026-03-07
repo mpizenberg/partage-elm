@@ -9,10 +9,6 @@
 [submodule "vendor/elm-webcrypto"]
 	path = vendor/elm-webcrypto
 	url = https://github.com/mpizenberg/elm-webcrypto
-[submodule "vendor/elm-uuid"]
-	path = vendor/elm-uuid
-	url = https://github.com/mpizenberg/elm-uuid
-	branch = v7
 [submodule "vendor/elm-indexeddb"]
 	path = vendor/elm-indexeddb
 	url = https://github.com/mpizenberg/elm-indexeddb
