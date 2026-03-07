@@ -218,6 +218,10 @@ async function createEventsCollection() {
         max: 1000000, // 1MB limit for encrypted event data
       },
       {
+        name: "compressed",
+        type: "bool",
+      },
+      {
         name: "created",
         type: "autodate",
         onCreate: true,

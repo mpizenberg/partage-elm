@@ -18,6 +18,7 @@ All operations are ConcurrentTasks that compose with the existing task pool.
 
 -}
 
+import Compression
 import ConcurrentTask exposing (ConcurrentTask)
 import Crypto
 import Domain.Event as Event
@@ -51,6 +52,7 @@ type alias ServerEventRecord =
     , groupId : String
     , actorId : String
     , eventData : String
+    , compressed : Bool
     , created : String
     }
 
@@ -209,6 +211,7 @@ fetchPowChallenge client =
 
 
 {-| Push local events to the server as a single encrypted batch.
+Compresses the payload before encryption when gzip achieves at least 30% reduction.
 -}
 pushEvents : ServerContext -> String -> List Event.Envelope -> ConcurrentTask Error ()
 pushEvents ctx actorId envelopes =
@@ -216,17 +219,18 @@ pushEvents ctx actorId envelopes =
         ConcurrentTask.succeed ()
 
     else
-        Symmetric.encryptJson ctx.groupKey (Encode.list Event.encodeEnvelope envelopes)
+        Compression.encryptJson ctx.groupKey (Encode.list Event.encodeEnvelope envelopes)
             |> ConcurrentTask.mapError CryptoError
             |> ConcurrentTask.andThen
-                (\encrypted ->
+                (\result ->
                     PocketBase.Collection.create ctx.client
                         { collection = "events"
                         , body =
                             Encode.object
                                 [ ( "groupId", Encode.string ctx.groupId )
                                 , ( "actorId", Encode.string actorId )
-                                , ( "eventData", Encode.string (Encode.encode 0 (Symmetric.encodeEncryptedData encrypted)) )
+                                , ( "eventData", Encode.string (Encode.encode 0 (Compression.encodeEventData result)) )
+                                , ( "compressed", Encode.bool result.compressed )
                                 ]
                         , decoder = Decode.succeed ()
                         }
@@ -369,7 +373,12 @@ decryptServerEventBatch : Symmetric.Key -> ServerEventRecord -> ConcurrentTask E
 decryptServerEventBatch key record =
     case Decode.decodeString Symmetric.encryptedDataDecoder record.eventData of
         Ok encrypted ->
-            Symmetric.decryptJson key (Decode.list Event.envelopeDecoder) encrypted
+            Compression.decryptJson key
+                (Decode.list Event.envelopeDecoder)
+                { ciphertext = encrypted.ciphertext
+                , iv = encrypted.iv
+                , compressed = record.compressed
+                }
                 |> ConcurrentTask.mapError CryptoError
 
         Err err ->
@@ -378,11 +387,12 @@ decryptServerEventBatch key record =
 
 serverEventRecordDecoder : Decode.Decoder ServerEventRecord
 serverEventRecordDecoder =
-    Decode.map5 ServerEventRecord
+    Decode.map6 ServerEventRecord
         (Decode.field "id" Decode.string)
         (Decode.field "groupId" Decode.string)
         (Decode.field "actorId" Decode.string)
         (Decode.field "eventData" Decode.string)
+        (Decode.field "compressed" Decode.bool)
         (Decode.field "created" Decode.string)
 
 

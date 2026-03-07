@@ -106,12 +106,110 @@ function createUsageStatsTasks() {
   };
 }
 
+function createCompressionTasks() {
+  function toBase64(uint8array) {
+    let binary = "";
+    for (let i = 0; i < uint8array.length; i++) {
+      binary += String.fromCharCode(uint8array[i]);
+    }
+    return btoa(binary);
+  }
+
+  function fromBase64(base64) {
+    return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  }
+
+  function importAesKey(base64) {
+    return crypto.subtle.importKey(
+      "raw",
+      fromBase64(base64),
+      { name: "AES-GCM", length: 256 },
+      true,
+      ["encrypt", "decrypt"],
+    );
+  }
+
+  return {
+    // Compress (if beneficial) then encrypt a JSON string.
+    // Returns { ciphertext, iv, compressed }.
+    "compression:encryptJson": async ({ key, json, threshold }) => {
+      try {
+        const encoder = new TextEncoder();
+        const originalBytes = encoder.encode(json);
+        let dataToEncrypt = originalBytes;
+        let compressed = false;
+
+        if (typeof CompressionStream !== "undefined") {
+          try {
+            const compressedBytes = new Uint8Array(
+              await new Response(
+                new Blob([originalBytes])
+                  .stream()
+                  .pipeThrough(new CompressionStream("gzip")),
+              ).arrayBuffer(),
+            );
+            console.log("Original   size: ", originalBytes.length);
+            console.log("Compressed size: ", compressedBytes.length);
+            if (compressedBytes.length <= threshold * originalBytes.length) {
+              dataToEncrypt = compressedBytes;
+              compressed = true;
+            }
+          } catch (_) {
+            // Compression unavailable or failed, use original
+          }
+        }
+
+        const cryptoKey = await importAesKey(key);
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const ciphertext = await crypto.subtle.encrypt(
+          { name: "AES-GCM", iv },
+          cryptoKey,
+          dataToEncrypt,
+        );
+        return {
+          ciphertext: toBase64(new Uint8Array(ciphertext)),
+          iv: toBase64(iv),
+          compressed,
+        };
+      } catch (e) {
+        return { error: "ENCRYPTION_FAILED:" + e.message };
+      }
+    },
+
+    // Decrypt then decompress (if needed) to a JSON string.
+    "compression:decryptJson": async ({ key, ciphertext, iv, compressed }) => {
+      try {
+        const cryptoKey = await importAesKey(key);
+        const decrypted = await crypto.subtle.decrypt(
+          { name: "AES-GCM", iv: fromBase64(iv) },
+          cryptoKey,
+          fromBase64(ciphertext),
+        );
+        let bytes = new Uint8Array(decrypted);
+        if (compressed) {
+          bytes = new Uint8Array(
+            await new Response(
+              new Blob([bytes])
+                .stream()
+                .pipeThrough(new DecompressionStream("gzip")),
+            ).arrayBuffer(),
+          );
+        }
+        return new TextDecoder().decode(bytes);
+      } catch (e) {
+        return { error: "DECRYPTION_FAILED:Invalid key or corrupted data" };
+      }
+    },
+  };
+}
+
 ConcurrentTask.register({
   tasks: {
     ...createWebCryptoTasks(),
     ...createIndexedDbTasks(),
     ...pbTasks,
     ...createUsageStatsTasks(),
+    ...createCompressionTasks(),
   },
   ports: {
     send: app.ports.sendTask,
