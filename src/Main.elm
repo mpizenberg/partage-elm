@@ -35,7 +35,7 @@ import Pwa
 import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import Server
-import Set
+import Set exposing (Set)
 import Storage exposing (GroupSummary)
 import Task
 import Time
@@ -107,6 +107,7 @@ type alias Model =
     , serverUrl : String
     , origin : String
     , pbClient : Maybe PocketBase.Client
+    , pendingServerCreations : Set Group.Id
     , isOnline : Bool
     , updateAvailable : Bool
     , installAvailable : Bool
@@ -279,6 +280,7 @@ init flags =
       , serverUrl = flags.serverUrl
       , origin = flags.origin
       , pbClient = Nothing
+      , pendingServerCreations = Set.empty
       , isOnline = flags.isOnline
       , updateAvailable = False
       , installAvailable = False
@@ -384,6 +386,10 @@ processGroupOutputs model groupCmd outputs =
                                     updatePwa (ToggleGroupNotification groupId memberRootId) m
                             in
                             ( toggledModel, toggleCmd :: cmds )
+
+                        Page.Group.RequestServerGroupCreation groupId ->
+                            attemptServerGroupCreation groupId m
+                                |> Tuple.mapSecond (\attemptCmd -> attemptCmd :: cmds)
                 )
                 ( model, [] )
                 outputs
@@ -578,43 +584,21 @@ update msg model =
             case model.appState of
                 Ready readyData ->
                     let
-                        -- Trigger server group creation in background
-                        ( runner, serverCmd ) =
-                            case model.pbClient of
-                                Just client ->
-                                    let
-                                        identityHash : String
-                                        identityHash =
-                                            readyData.identity
-                                                |> Maybe.map .publicKeyHash
-                                                |> Maybe.withDefault ""
-                                    in
-                                    ( model.runner, Cmd.none )
-                                        |> Runner.andRun (OnServerGroupCreated summary.id)
-                                            (Storage.loadGroupKeyRequired readyData.db summary.id
-                                                |> ConcurrentTask.mapError (\_ -> Server.PbError (PocketBase.ServerError "Failed to load group key in IndexedDB"))
-                                                |> ConcurrentTask.andThen
-                                                    (\key ->
-                                                        Server.createGroupOnServer client
-                                                            { groupId = summary.id
-                                                            , groupKey = key
-                                                            , createdBy = identityHash
-                                                            }
-                                                    )
-                                            )
+                        modelWithGroup : Model
+                        modelWithGroup =
+                            { model
+                                | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
+                                , groupModel = Page.Group.resetLoadedGroup model.groupModel
+                            }
 
-                                Nothing ->
-                                    ( model.runner, Cmd.none )
+                        ( modelAfterAttempt, serverCmd ) =
+                            attemptServerGroupCreation summary.id modelWithGroup
 
                         newRoute : Route
                         newRoute =
                             GroupRoute summary.id (Tab EntriesTab)
                     in
-                    ( { model
-                        | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
-                        , groupModel = Page.Group.resetLoadedGroup model.groupModel
-                        , runner = runner
-                      }
+                    ( modelAfterAttempt
                     , Cmd.batch [ Navigation.pushUrl navCmd (Route.toAppUrl newRoute), serverCmd ]
                     )
 
@@ -881,7 +865,17 @@ update msg model =
                     handleJoinRoute modelWithClient model.route groupId key maybeIdentity
 
                 _ ->
-                    ( modelWithClient, Cmd.none )
+                    -- Check if the currently loaded group needs server creation
+                    case modelWithClient.groupModel.loadedGroup of
+                        Just loaded ->
+                            if loaded.syncCursor == Nothing then
+                                attemptServerGroupCreation loaded.summary.id modelWithClient
+
+                            else
+                                ( modelWithClient, Cmd.none )
+
+                        Nothing ->
+                            ( modelWithClient, Cmd.none )
 
         OnPbClientInitialized (ConcurrentTask.Error err) ->
             -- Server unavailable — continue in offline mode
@@ -892,24 +886,33 @@ update msg model =
 
         OnServerGroupCreated groupId (ConcurrentTask.Success _) ->
             -- Server group created; now sync (push initial events + pull + subscribe)
-            case buildGroupConfig model of
+            let
+                cleanModel : Model
+                cleanModel =
+                    { model | pendingServerCreations = Set.remove groupId model.pendingServerCreations }
+            in
+            case buildGroupConfig cleanModel of
                 Just config ->
-                    Page.Group.triggerSync config groupId model.groupModel
-                        |> Update.wrap GroupMsg (\gm -> { model | groupModel = gm })
+                    Page.Group.triggerSync config groupId cleanModel.groupModel
+                        |> Update.wrap GroupMsg (\gm -> { cleanModel | groupModel = gm })
 
                 Nothing ->
-                    ( model, Cmd.none )
+                    ( cleanModel, Cmd.none )
 
-        OnServerGroupCreated _ (ConcurrentTask.Error err) ->
+        OnServerGroupCreated groupId (ConcurrentTask.Error err) ->
             -- Server group creation failed — local group still works
             let
+                cleanModel : Model
+                cleanModel =
+                    { model | pendingServerCreations = Set.remove groupId model.pendingServerCreations }
+
                 _ =
                     Debug.log "OnServerGroupCreated error" err
             in
-            addToast Toast.Error ("Sync: " ++ Server.errorToString err) model
+            addToast Toast.Error ("Sync: " ++ Server.errorToString err) cleanModel
 
-        OnServerGroupCreated _ (ConcurrentTask.UnexpectedError _) ->
-            ( model, Cmd.none )
+        OnServerGroupCreated groupId (ConcurrentTask.UnexpectedError _) ->
+            ( { model | pendingServerCreations = Set.remove groupId model.pendingServerCreations }, Cmd.none )
 
         ClipboardCopied ->
             addToast Toast.Success (T.toastCopied model.i18n) model
@@ -1175,7 +1178,25 @@ updatePwa pwaMsg model =
         GotPwaEvent (Ok event) ->
             case event of
                 Pwa.ConnectionChanged online ->
-                    ( { model | isOnline = online }, Cmd.none )
+                    let
+                        modelWithOnline : Model
+                        modelWithOnline =
+                            { model | isOnline = online }
+                    in
+                    if online then
+                        case model.groupModel.loadedGroup of
+                            Just loaded ->
+                                if loaded.syncCursor == Nothing then
+                                    attemptServerGroupCreation loaded.summary.id modelWithOnline
+
+                                else
+                                    ( modelWithOnline, Cmd.none )
+
+                            Nothing ->
+                                ( modelWithOnline, Cmd.none )
+
+                    else
+                        ( modelWithOnline, Cmd.none )
 
                 Pwa.UpdateAvailable ->
                     ( { model | updateAvailable = True }, Cmd.none )
@@ -1431,3 +1452,37 @@ viewReady model readyData =
 pushIsActive : Model -> Bool
 pushIsActive model =
     model.notificationPermission == Just Pwa.Granted && model.pushSubscription /= Nothing
+
+
+{-| Attempt to create a group on the server. No-op if pbClient is missing or creation already in progress.
+-}
+attemptServerGroupCreation : Group.Id -> Model -> ( Model, Cmd Msg )
+attemptServerGroupCreation groupId model =
+    case ( model.pbClient, model.appState ) of
+        ( Just client, Ready readyData ) ->
+            if Set.member groupId model.pendingServerCreations then
+                ( model, Cmd.none )
+
+            else
+                let
+                    createGroupOnServer : Symmetric.Key -> ConcurrentTask Server.Error ()
+                    createGroupOnServer key =
+                        Server.createGroupOnServer client
+                            { groupId = groupId
+                            , groupKey = key
+                            , createdBy =
+                                readyData.identity
+                                    |> Maybe.map .publicKeyHash
+                                    |> Maybe.withDefault ""
+                            }
+                in
+                ( model.runner, Cmd.none )
+                    |> Runner.andRun (OnServerGroupCreated groupId)
+                        (Storage.loadGroupKeyRequired readyData.db groupId
+                            |> ConcurrentTask.mapError (\_ -> Server.PbError (PocketBase.ServerError "Failed to load group key in IndexedDB"))
+                            |> ConcurrentTask.andThen createGroupOnServer
+                        )
+                    |> Tuple.mapFirst (\r -> { model | runner = r, pendingServerCreations = Set.insert groupId model.pendingServerCreations })
+
+        _ ->
+            ( model, Cmd.none )

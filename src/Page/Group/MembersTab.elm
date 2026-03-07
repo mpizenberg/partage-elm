@@ -47,6 +47,7 @@ type alias Config msg =
     , onAddMember : msg
     , onEditGroupMetadata : msg
     , inviteLink : String
+    , isSynced : Bool
     , onToggleNotification : msg
     , isSubscribed : Bool
     , pushActive : Bool
@@ -85,8 +86,16 @@ view i18n config toMsg model currentUserRootId state =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         [ groupInfoSection i18n state
         , editGroupButton i18n config.onEditGroupMetadata
-        , inviteLinkSection i18n toMsg model config state.groupMeta.name
-        , notificationToggle config
+        , if config.isSynced then
+            inviteLinkSection i18n toMsg model config state.groupMeta.name
+
+          else
+            Ui.none
+        , if config.isSynced then
+            notificationToggle config
+
+          else
+            Ui.none
         , Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.membersTabTitle i18n))
         , Ui.column [ Ui.width Ui.fill ]
             (List.map viewMember active)

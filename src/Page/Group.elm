@@ -213,6 +213,7 @@ type Output
     | RemoveGroup Group.Id Member.Id
     | UpdateCurrentTime Time.Posix
     | ToggleGroupNotification Group.Id Member.Id
+    | RequestServerGroupCreation Group.Id
 
 
 
@@ -682,7 +683,7 @@ update config msg model =
                     ( syncModel, syncCmd, [] )
 
                 Nothing ->
-                    ( modelAfterLoad, Cmd.none, [] )
+                    ( modelAfterLoad, Cmd.none, [ RequestServerGroupCreation groupId ] )
 
         OnGroupEventsLoaded _ _ ->
             ( model, Cmd.none, [] )
@@ -1321,6 +1322,7 @@ tabContent config userRootId loaded model =
                 , onAddMember = config.toMsg (RequestNavigation AddVirtualMember)
                 , onEditGroupMetadata = config.toMsg (RequestNavigation EditGroupMetadata)
                 , inviteLink = config.origin ++ Route.toPath (GroupRoute config.groupId (Join (Symmetric.exportKey loaded.groupKey)))
+                , isSynced = loaded.syncCursor /= Nothing
                 , onToggleNotification = config.toMsg ToggleNotification
                 , isSubscribed = loaded.summary.isSubscribed
                 , pushActive = config.pushActive

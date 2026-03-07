@@ -7,6 +7,7 @@
 onEvent("OnServe", (e) => {
   const allowed = [
     "http://localhost:50217",
+    "http://localhost:54448",
     // Add production origin here
   ];
 
