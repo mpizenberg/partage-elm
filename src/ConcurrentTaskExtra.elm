@@ -1,6 +1,6 @@
 module ConcurrentTaskExtra exposing
     ( AttemptBatch, initAttemptBatch, andAttempt, batchAttempt
-    , TaskRunner, initTaskRunner, initTaskRunnerWithPool, andRun, onProgress
+    , TaskRunner, TaskRunnerConfig, initTaskRunner, andRun, subscription
     )
 
 {-| Helpers for working with `ConcurrentTask`.
@@ -30,7 +30,7 @@ Thread a `( TaskRunner msg, Cmd msg )` tuple through multiple task attempts.
         |> andRun OnTask2Complete task2
         |> Tuple.mapFirst (\r -> { model | runner = r })
 
-@docs TaskRunner, initTaskRunner, initTaskRunnerWithPool, andRun, onProgress
+@docs TaskRunner, TaskRunnerConfig, initTaskRunner, andRun, subscription
 
 -}
 
@@ -76,55 +76,59 @@ batchAttempt (AttemptBatch p _ cmds) =
     ( p, Cmd.batch cmds )
 
 
-{-| An opaque wrapper around a task pool and its send port.
+{-| Configuration to initialize a TaskRunner.
+-}
+type alias TaskRunnerConfig msg =
+    { pool : Pool msg
+    , send : Encode.Value -> Cmd msg
+    , receive : (Decode.Value -> msg) -> Sub msg
+    , onProgress : ( TaskRunner msg, Cmd msg ) -> msg
+    }
+
+
+{-| An opaque wrapper around a task pool, send/receive ports, and progress handler.
 -}
 type TaskRunner msg
-    = TaskRunner (Pool msg) (Encode.Value -> Cmd msg)
+    = TaskRunner (TaskRunnerConfig msg)
 
 
-{-| Create a task runner from a send port. Initializes a fresh pool internally.
+{-| Create a task runner from a pool, ports, and a progress handler.
 -}
-initTaskRunner : (Encode.Value -> Cmd msg) -> TaskRunner msg
-initTaskRunner s =
-    TaskRunner ConcurrentTask.pool s
-
-
-{-| Create a task runner from an existing pool and a send port.
-Useful when the pool has a custom pool ID (e.g. `ConcurrentTask.withPoolId 1`).
--}
-initTaskRunnerWithPool : Pool msg -> (Encode.Value -> Cmd msg) -> TaskRunner msg
-initTaskRunnerWithPool p s =
-    TaskRunner p s
+initTaskRunner : TaskRunnerConfig msg -> TaskRunner msg
+initTaskRunner config =
+    TaskRunner config
 
 
 {-| Run a task, threading the runner and accumulating commands.
 -}
 andRun : (Response x a -> msg) -> ConcurrentTask x a -> ( TaskRunner msg, Cmd msg ) -> ( TaskRunner msg, Cmd msg )
-andRun onComplete task ( TaskRunner p s, cmd ) =
+andRun onComplete task ( TaskRunner r, cmd ) =
     let
         ( nextPool, newCmd ) =
             ConcurrentTask.attempt
-                { pool = p
-                , send = s
+                { pool = r.pool
+                , send = r.send
                 , onComplete = onComplete
                 }
                 task
     in
-    ( TaskRunner nextPool s, Cmd.batch [ cmd, newCmd ] )
+    ( TaskRunner
+        { pool = nextPool
+        , send = r.send
+        , receive = r.receive
+        , onProgress = r.onProgress
+        }
+    , Cmd.batch [ cmd, newCmd ]
+    )
 
 
 {-| Subscribe to task progress events. Use in your `subscriptions`.
 -}
-onProgress :
-    { receive : (Decode.Value -> msg) -> Sub msg
-    , onProgress : ( TaskRunner msg, Cmd msg ) -> msg
-    }
-    -> TaskRunner msg
-    -> Sub msg
-onProgress config (TaskRunner p s) =
+subscription : TaskRunner msg -> Sub msg
+subscription (TaskRunner r) =
     ConcurrentTask.onProgress
-        { send = s
-        , receive = config.receive
-        , onProgress = \( newPool, cmd ) -> config.onProgress ( TaskRunner newPool s, cmd )
+        { send = r.send
+        , receive = r.receive
+        , onProgress = \( newPool, cmd ) -> r.onProgress ( TaskRunner { r | pool = newPool }, cmd )
         }
-        p
+        r.pool

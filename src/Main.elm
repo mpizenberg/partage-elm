@@ -176,13 +176,8 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
         [ Navigation.onEvent onNavEvent OnNavEvent
-        , Runner.onProgress
-            { receive = receiveTask
-            , onProgress = OnTaskProgress
-            }
-            model.runner
-        , Page.Group.onTaskProgress receiveTask model.groupModel
-            |> Sub.map GroupMsg
+        , Runner.subscription model.runner
+        , Page.Group.subscription model.groupModel |> Sub.map GroupMsg
         , onClipboardCopy (\() -> ClipboardCopied)
         , onPocketbaseEvent (GroupMsg << Page.Group.pocketbaseEventMsg)
         , pwaIn (PwaMsg << GotPwaEvent << Pwa.decodeEvent)
@@ -217,10 +212,6 @@ init flags =
                 |> T.languageFromString
                 |> Maybe.withDefault En
 
-        i18n : I18n
-        i18n =
-            T.init language
-
         initialSeed : Random.Seed
         initialSeed =
             List.foldl
@@ -238,14 +229,6 @@ init flags =
         ( groupUuidState, groupSeedAfterV7 ) =
             Random.step UUID.initialV7State groupSeed
 
-        currentTime : Time.Posix
-        currentTime =
-            Time.millisToPosix flags.currentTime
-
-        groupRunner : TaskRunner Page.Group.Msg
-        groupRunner =
-            Runner.initTaskRunnerWithPool (ConcurrentTask.withPoolId 1 ConcurrentTask.pool) sendTask
-
         initStorage : ConcurrentTask Idb.Error Storage.InitData
         initStorage =
             Storage.open |> ConcurrentTask.andThen Storage.init
@@ -257,7 +240,14 @@ init flags =
                 |> ConcurrentTask.map (\_ -> initData)
 
         ( runner, initCmds ) =
-            ( Runner.initTaskRunner sendTask, Cmd.none )
+            ( Runner.initTaskRunner
+                { pool = ConcurrentTask.pool
+                , send = sendTask
+                , receive = receiveTask
+                , onProgress = OnTaskProgress
+                }
+            , Cmd.none
+            )
                 |> Runner.andRun OnInitComplete
                     (initStorage |> ConcurrentTask.andThen storeNotificationTranslations)
                 |> Runner.andRun (PwaMsg << OnVapidKeyFetched)
@@ -266,16 +256,18 @@ init flags =
     ( { route = route
       , appState = Loading
       , generatingIdentity = False
-      , i18n = i18n
+      , i18n = T.init language
       , language = language
       , runner = runner
       , uuidState = uuidState
       , randomSeed = mainSeed
-      , currentTime = currentTime
+      , currentTime = Time.millisToPosix flags.currentTime
       , newGroupModel = Page.NewGroup.init
       , groupModel =
             Page.Group.init
-                { runner = groupRunner
+                { pool = ConcurrentTask.withPoolId 1 ConcurrentTask.pool
+                , send = sendTask
+                , receive = receiveTask
                 , randomSeed = groupSeedAfterV7
                 , uuidState = groupUuidState
                 }

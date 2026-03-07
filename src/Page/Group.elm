@@ -7,11 +7,11 @@ module Page.Group exposing
     , ViewConfig
     , handleNavigation
     , init
-    , onTaskProgress
     , pocketbaseEventMsg
     , resetLoadedGroup
     , setIdentityHash
     , submitJoinEvent
+    , subscription
     , triggerSync
     , update
     , updateLoadedSummary
@@ -39,6 +39,7 @@ import GroupOps exposing (LoadedGroup)
 import Identity exposing (Identity)
 import IndexedDb as Idb
 import Json.Decode
+import Json.Encode
 import Page.Group.ActivityTab
 import Page.Group.AddMember
 import Page.Group.BalanceTab
@@ -78,7 +79,9 @@ import WebCrypto.Symmetric as Symmetric
 {-| Configuration for initializing Page.Group. Provided once at startup.
 -}
 type alias InitConfig =
-    { runner : TaskRunner Msg
+    { pool : ConcurrentTask.Pool Msg
+    , send : Json.Encode.Value -> Cmd Msg
+    , receive : (Json.Decode.Value -> Msg) -> Sub Msg
     , randomSeed : Random.Seed
     , uuidState : UUID.V7State
     }
@@ -149,13 +152,9 @@ type alias Model =
 -- MSG
 
 
-onTaskProgress : ((Json.Decode.Value -> Msg) -> Sub Msg) -> Model -> Sub Msg
-onTaskProgress receive model =
-    Runner.onProgress
-        { receive = receive
-        , onProgress = OnTaskProgress
-        }
-        model.runner
+subscription : Model -> Sub Msg
+subscription model =
+    Runner.subscription model.runner
 
 
 pocketbaseEventMsg : Json.Decode.Value -> Msg
@@ -222,7 +221,13 @@ type Output
 
 init : InitConfig -> Model
 init config =
-    { runner = config.runner
+    { runner =
+        Runner.initTaskRunner
+            { pool = config.pool
+            , send = config.send
+            , receive = config.receive
+            , onProgress = OnTaskProgress
+            }
     , randomSeed = config.randomSeed
     , uuidState = config.uuidState
     , identityHash = ""
