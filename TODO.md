@@ -1,6 +1,6 @@
 # Partage — Remaining Implementation Plan
 
-Phases 1–10 are complete. Remaining: compression (optional), translations.
+Phases 1–10 are complete. Remaining: translations.
 
 ---
 
@@ -112,7 +112,7 @@ Reduced sync payload sizes through batched encryption and shorter JSON field nam
 
 - **10.1** Batched event encryption: Replaced per-event encrypt+push (1 PocketBase record per event) with batched encrypt+push (1 record per sync) in `Server.elm`. `pushEvents` now encrypts the full `List Event.Envelope` as a JSON array in a single `Symmetric.encryptJson` call. `decryptServerEventBatch` decrypts each record to `List Event.Envelope` and `List.concat` flattens across records. Deleted `pushSingleEvent` and `decryptServerEvent`. No changes needed to `ServerEventRecord`, `SyncResult`, `PullResult`, or any code above the push/pull layer.
 - **10.2** Shortened JSON field names: Reduced all event/entry/member/group JSON field names to 1–4 character keys across encoders and decoders. Changes span `Domain/Event.elm` (envelope fields and all 13 payload type tags), `Domain/Entry.elm` (metadata, expense, transfer, payer, beneficiary, kind), `Domain/Member.elm` (metadata, payment info, type), `Domain/Group.elm` (link), `Domain/Date.elm` (date fields), and `Storage.elm` (event storage, group summary). Estimated ~25–35% payload size reduction with zero runtime cost. No JS code affected — all changed fields are either encrypted before reaching the server or scoped to IndexedDB values that JS never inspects.
-- **10.3** Compression analysis: Benchmarked gzip (CompressionStream API) on realistic payloads. Single small events (<200B): negligible gain, gzip header overhead dominates. Single expenses (500–900B): 30–40% savings. Batched payloads benefit most due to repeated UUIDs and structural keys — group creation batch (4 events, 886B): 51% savings, typical sync (3 expenses, 2KB): 68% savings, large sync (20 expenses, 16KB): 82% savings. Compression is not yet implemented but would be most valuable applied to the batched push/pull path.
+- **10.3** Conditional gzip compression: `src/Compression.elm` + JS tasks in `public/index.js` combine compression and AES-256-GCM encryption in a single JS round-trip via `CompressionStream`/`DecompressionStream` Web APIs. Compression is applied only when gzip reduces the payload by at least 30%. A `compressed` boolean field on the PocketBase events record signals whether decompression is needed on pull. Benchmarks on realistic payloads: single small events (<200B) are not compressed (gzip header overhead), single expenses (500–900B) save 30–40%, batched payloads benefit most — group creation (4 events, 886B): 51%, typical sync (3 expenses, 2KB): 68%, large sync (20 expenses, 16KB): 82%.
 
 ---
 
