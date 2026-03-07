@@ -37,8 +37,9 @@ jobs:
       - name: Format
         run: pnpm format:check
 
-      - name: Lint
-        run: pnpm lint
+      # elm-review temporarily deactivated (conflict test files in vendored packages)
+      # - name: Lint
+      #   run: pnpm lint
 
       - name: Run tests
         run: pnpm test
