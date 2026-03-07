@@ -166,14 +166,14 @@ encodePaymentInfo : PaymentInfo -> Encode.Value
 encodePaymentInfo info =
     Encode.object
         (List.filterMap identity
-            [ Maybe.map (\v -> ( "iban", Encode.string v )) info.iban
-            , Maybe.map (\v -> ( "wero", Encode.string v )) info.wero
-            , Maybe.map (\v -> ( "lydia", Encode.string v )) info.lydia
-            , Maybe.map (\v -> ( "revolut", Encode.string v )) info.revolut
-            , Maybe.map (\v -> ( "paypal", Encode.string v )) info.paypal
-            , Maybe.map (\v -> ( "venmo", Encode.string v )) info.venmo
-            , Maybe.map (\v -> ( "btcAddress", Encode.string v )) info.btcAddress
-            , Maybe.map (\v -> ( "adaAddress", Encode.string v )) info.adaAddress
+            [ Maybe.map (\v -> ( "ib", Encode.string v )) info.iban
+            , Maybe.map (\v -> ( "we", Encode.string v )) info.wero
+            , Maybe.map (\v -> ( "ly", Encode.string v )) info.lydia
+            , Maybe.map (\v -> ( "rv", Encode.string v )) info.revolut
+            , Maybe.map (\v -> ( "pp", Encode.string v )) info.paypal
+            , Maybe.map (\v -> ( "vn", Encode.string v )) info.venmo
+            , Maybe.map (\v -> ( "btc", Encode.string v )) info.btcAddress
+            , Maybe.map (\v -> ( "ada", Encode.string v )) info.adaAddress
             ]
         )
 
@@ -183,14 +183,14 @@ encodePaymentInfo info =
 paymentInfoDecoder : Decode.Decoder PaymentInfo
 paymentInfoDecoder =
     Decode.map8 PaymentInfo
-        (Decode.maybe (Decode.field "iban" Decode.string))
-        (Decode.maybe (Decode.field "wero" Decode.string))
-        (Decode.maybe (Decode.field "lydia" Decode.string))
-        (Decode.maybe (Decode.field "revolut" Decode.string))
-        (Decode.maybe (Decode.field "paypal" Decode.string))
-        (Decode.maybe (Decode.field "venmo" Decode.string))
-        (Decode.maybe (Decode.field "btcAddress" Decode.string))
-        (Decode.maybe (Decode.field "adaAddress" Decode.string))
+        (Decode.maybe (Decode.field "ib" Decode.string))
+        (Decode.maybe (Decode.field "we" Decode.string))
+        (Decode.maybe (Decode.field "ly" Decode.string))
+        (Decode.maybe (Decode.field "rv" Decode.string))
+        (Decode.maybe (Decode.field "pp" Decode.string))
+        (Decode.maybe (Decode.field "vn" Decode.string))
+        (Decode.maybe (Decode.field "btc" Decode.string))
+        (Decode.maybe (Decode.field "ada" Decode.string))
 
 
 {-| Encode member Metadata as a JSON object, omitting Nothing fields.
@@ -199,10 +199,10 @@ encodeMetadata : Metadata -> Encode.Value
 encodeMetadata meta =
     Encode.object
         (List.filterMap identity
-            [ Maybe.map (\v -> ( "phone", Encode.string v )) meta.phone
-            , Maybe.map (\v -> ( "email", Encode.string v )) meta.email
-            , Maybe.map (\v -> ( "payment", encodePaymentInfo v )) meta.payment
-            , Maybe.map (\v -> ( "notes", Encode.string v )) meta.notes
+            [ Maybe.map (\v -> ( "ph", Encode.string v )) meta.phone
+            , Maybe.map (\v -> ( "em", Encode.string v )) meta.email
+            , Maybe.map (\v -> ( "pm", encodePaymentInfo v )) meta.payment
+            , Maybe.map (\v -> ( "nt", Encode.string v )) meta.notes
             ]
         )
 
@@ -212,7 +212,7 @@ encodeMetadata meta =
 metadataDecoder : Decode.Decoder Metadata
 metadataDecoder =
     Decode.map4 Metadata
-        (Decode.maybe (Decode.field "phone" Decode.string))
-        (Decode.maybe (Decode.field "email" Decode.string))
-        (Decode.maybe (Decode.field "payment" paymentInfoDecoder))
-        (Decode.maybe (Decode.field "notes" Decode.string))
+        (Decode.maybe (Decode.field "ph" Decode.string))
+        (Decode.maybe (Decode.field "em" Decode.string))
+        (Decode.maybe (Decode.field "pm" paymentInfoDecoder))
+        (Decode.maybe (Decode.field "nt" Decode.string))

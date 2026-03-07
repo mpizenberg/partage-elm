@@ -26,8 +26,8 @@ type alias Link =
 encodeLink : Link -> Encode.Value
 encodeLink link =
     Encode.object
-        [ ( "label", Encode.string link.label )
-        , ( "url", Encode.string link.url )
+        [ ( "l", Encode.string link.label )
+        , ( "u", Encode.string link.url )
         ]
 
 
@@ -36,5 +36,5 @@ encodeLink link =
 linkDecoder : Decode.Decoder Link
 linkDecoder =
     Decode.map2 Link
-        (Decode.field "label" Decode.string)
-        (Decode.field "url" Decode.string)
+        (Decode.field "l" Decode.string)
+        (Decode.field "u" Decode.string)

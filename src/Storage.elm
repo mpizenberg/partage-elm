@@ -362,9 +362,9 @@ encodeGroupSummary : GroupSummary -> Encode.Value
 encodeGroupSummary summary =
     Encode.object
         [ ( "id", Encode.string summary.id )
-        , ( "name", Encode.string summary.name )
-        , ( "defaultCurrency", Currency.encodeCurrency summary.defaultCurrency )
-        , ( "isSubscribed", Encode.bool summary.isSubscribed )
+        , ( "n", Encode.string summary.name )
+        , ( "dc", Currency.encodeCurrency summary.defaultCurrency )
+        , ( "sub", Encode.bool summary.isSubscribed )
         ]
 
 
@@ -372,9 +372,9 @@ groupSummaryDecoder : Decode.Decoder GroupSummary
 groupSummaryDecoder =
     Decode.map4 GroupSummary
         (Decode.field "id" Decode.string)
-        (Decode.field "name" Decode.string)
-        (Decode.field "defaultCurrency" Currency.currencyDecoder)
-        (Decode.field "isSubscribed" Decode.bool)
+        (Decode.field "n" Decode.string)
+        (Decode.field "dc" Currency.currencyDecoder)
+        (Decode.field "sub" Decode.bool)
 
 
 encodeEventForStorage : Group.Id -> Event.Envelope -> Encode.Value
@@ -382,9 +382,9 @@ encodeEventForStorage groupId envelope =
     Encode.object
         [ ( "id", Encode.string envelope.id )
         , ( "groupId", Encode.string groupId )
-        , ( "clientTimestamp", Encode.int (Time.posixToMillis envelope.clientTimestamp) )
-        , ( "triggeredBy", Encode.string envelope.triggeredBy )
-        , ( "payload", Event.encodePayload envelope.payload )
+        , ( "ts", Encode.int (Time.posixToMillis envelope.clientTimestamp) )
+        , ( "by", Encode.string envelope.triggeredBy )
+        , ( "p", Event.encodePayload envelope.payload )
         ]
 
 

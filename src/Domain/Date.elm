@@ -24,9 +24,9 @@ type alias Date =
 encodeDate : Date -> Encode.Value
 encodeDate date =
     Encode.object
-        [ ( "year", Encode.int date.year )
-        , ( "month", Encode.int date.month )
-        , ( "day", Encode.int date.day )
+        [ ( "y", Encode.int date.year )
+        , ( "mo", Encode.int date.month )
+        , ( "dy", Encode.int date.day )
         ]
 
 
@@ -35,9 +35,9 @@ encodeDate date =
 dateDecoder : Decode.Decoder Date
 dateDecoder =
     Decode.map3 Date
-        (Decode.field "year" Decode.int)
-        (Decode.field "month" Decode.int)
-        (Decode.field "day" Decode.int)
+        (Decode.field "y" Decode.int)
+        (Decode.field "mo" Decode.int)
+        (Decode.field "dy" Decode.int)
 
 
 {-| Format a date as "YYYY-MM-DD".

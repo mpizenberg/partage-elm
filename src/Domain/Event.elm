@@ -122,9 +122,9 @@ encodeEnvelope : Envelope -> Encode.Value
 encodeEnvelope envelope =
     Encode.object
         [ ( "id", Encode.string envelope.id )
-        , ( "clientTimestamp", Encode.int (Time.posixToMillis envelope.clientTimestamp) )
-        , ( "triggeredBy", Encode.string envelope.triggeredBy )
-        , ( "payload", encodePayload envelope.payload )
+        , ( "ts", Encode.int (Time.posixToMillis envelope.clientTimestamp) )
+        , ( "by", Encode.string envelope.triggeredBy )
+        , ( "p", encodePayload envelope.payload )
         ]
 
 
@@ -134,9 +134,9 @@ envelopeDecoder : Decode.Decoder Envelope
 envelopeDecoder =
     Decode.map4 Envelope
         (Decode.field "id" Decode.string)
-        (Decode.field "clientTimestamp" (Decode.map Time.millisToPosix Decode.int))
-        (Decode.field "triggeredBy" Decode.string)
-        (Decode.field "payload" payloadDecoder)
+        (Decode.field "ts" (Decode.map Time.millisToPosix Decode.int))
+        (Decode.field "by" Decode.string)
+        (Decode.field "p" payloadDecoder)
 
 
 {-| Encode a Payload as a tagged JSON object with a "type" discriminator.
@@ -146,90 +146,90 @@ encodePayload payload =
     case payload of
         MemberCreated data ->
             Encode.object
-                [ ( "type", Encode.string "MemberCreated" )
-                , ( "memberId", Encode.string data.memberId )
-                , ( "name", Encode.string data.name )
-                , ( "memberType", Member.encodeType data.memberType )
-                , ( "addedBy", Encode.string data.addedBy )
+                [ ( "t", Encode.string "mc" )
+                , ( "m", Encode.string data.memberId )
+                , ( "n", Encode.string data.name )
+                , ( "mt", Member.encodeType data.memberType )
+                , ( "ab", Encode.string data.addedBy )
                 ]
 
         MemberRenamed data ->
             Encode.object
-                [ ( "type", Encode.string "MemberRenamed" )
-                , ( "rootId", Encode.string data.rootId )
-                , ( "oldName", Encode.string data.oldName )
-                , ( "newName", Encode.string data.newName )
+                [ ( "t", Encode.string "mr" )
+                , ( "r", Encode.string data.rootId )
+                , ( "on", Encode.string data.oldName )
+                , ( "nn", Encode.string data.newName )
                 ]
 
         MemberRetired data ->
             Encode.object
-                [ ( "type", Encode.string "MemberRetired" )
-                , ( "rootId", Encode.string data.rootId )
+                [ ( "t", Encode.string "mrt" )
+                , ( "r", Encode.string data.rootId )
                 ]
 
         MemberUnretired data ->
             Encode.object
-                [ ( "type", Encode.string "MemberUnretired" )
-                , ( "rootId", Encode.string data.rootId )
+                [ ( "t", Encode.string "mur" )
+                , ( "r", Encode.string data.rootId )
                 ]
 
         MemberReplaced data ->
             Encode.object
-                [ ( "type", Encode.string "MemberReplaced" )
-                , ( "rootId", Encode.string data.rootId )
-                , ( "previousId", Encode.string data.previousId )
-                , ( "newId", Encode.string data.newId )
+                [ ( "t", Encode.string "mrp" )
+                , ( "r", Encode.string data.rootId )
+                , ( "pi", Encode.string data.previousId )
+                , ( "ni", Encode.string data.newId )
                 ]
 
         MemberMetadataUpdated data ->
             Encode.object
-                [ ( "type", Encode.string "MemberMetadataUpdated" )
-                , ( "rootId", Encode.string data.rootId )
-                , ( "metadata", Member.encodeMetadata data.metadata )
+                [ ( "t", Encode.string "mmu" )
+                , ( "r", Encode.string data.rootId )
+                , ( "md", Member.encodeMetadata data.metadata )
                 ]
 
         EntryAdded entry ->
             Encode.object
-                [ ( "type", Encode.string "EntryAdded" )
-                , ( "entry", Entry.encodeEntry entry )
+                [ ( "t", Encode.string "ea" )
+                , ( "e", Entry.encodeEntry entry )
                 ]
 
         EntryModified entry ->
             Encode.object
-                [ ( "type", Encode.string "EntryModified" )
-                , ( "entry", Entry.encodeEntry entry )
+                [ ( "t", Encode.string "em" )
+                , ( "e", Entry.encodeEntry entry )
                 ]
 
         EntryDeleted data ->
             Encode.object
-                [ ( "type", Encode.string "EntryDeleted" )
-                , ( "rootId", Encode.string data.rootId )
+                [ ( "t", Encode.string "ed" )
+                , ( "r", Encode.string data.rootId )
                 ]
 
         EntryUndeleted data ->
             Encode.object
-                [ ( "type", Encode.string "EntryUndeleted" )
-                , ( "rootId", Encode.string data.rootId )
+                [ ( "t", Encode.string "eu" )
+                , ( "r", Encode.string data.rootId )
                 ]
 
         GroupCreated data ->
             Encode.object
-                [ ( "type", Encode.string "GroupCreated" )
-                , ( "name", Encode.string data.name )
-                , ( "defaultCurrency", Currency.encodeCurrency data.defaultCurrency )
+                [ ( "t", Encode.string "gc" )
+                , ( "n", Encode.string data.name )
+                , ( "dc", Currency.encodeCurrency data.defaultCurrency )
                 ]
 
         GroupMetadataUpdated change ->
             Encode.object
-                [ ( "type", Encode.string "GroupMetadataUpdated" )
-                , ( "change", encodeGroupMetadataChange change )
+                [ ( "t", Encode.string "gmu" )
+                , ( "c", encodeGroupMetadataChange change )
                 ]
 
         SettlementPreferencesUpdated data ->
             Encode.object
-                [ ( "type", Encode.string "SettlementPreferencesUpdated" )
-                , ( "memberRootId", Encode.string data.memberRootId )
-                , ( "preferredRecipients", Encode.list Encode.string data.preferredRecipients )
+                [ ( "t", Encode.string "spu" )
+                , ( "mr", Encode.string data.memberRootId )
+                , ( "pr", Encode.list Encode.string data.preferredRecipients )
                 ]
 
 
@@ -237,11 +237,11 @@ encodePayload payload =
 -}
 payloadDecoder : Decode.Decoder Payload
 payloadDecoder =
-    Decode.field "type" Decode.string
+    Decode.field "t" Decode.string
         |> Decode.andThen
             (\t ->
                 case t of
-                    "MemberCreated" ->
+                    "mc" ->
                         Decode.map4
                             (\mid name mt addedBy ->
                                 MemberCreated
@@ -251,12 +251,12 @@ payloadDecoder =
                                     , addedBy = addedBy
                                     }
                             )
-                            (Decode.field "memberId" Decode.string)
-                            (Decode.field "name" Decode.string)
-                            (Decode.field "memberType" Member.typeDecoder)
-                            (Decode.field "addedBy" Decode.string)
+                            (Decode.field "m" Decode.string)
+                            (Decode.field "n" Decode.string)
+                            (Decode.field "mt" Member.typeDecoder)
+                            (Decode.field "ab" Decode.string)
 
-                    "MemberRenamed" ->
+                    "mr" ->
                         Decode.map3
                             (\rid oldN newN ->
                                 MemberRenamed
@@ -265,19 +265,19 @@ payloadDecoder =
                                     , newName = newN
                                     }
                             )
-                            (Decode.field "rootId" Decode.string)
-                            (Decode.field "oldName" Decode.string)
-                            (Decode.field "newName" Decode.string)
+                            (Decode.field "r" Decode.string)
+                            (Decode.field "on" Decode.string)
+                            (Decode.field "nn" Decode.string)
 
-                    "MemberRetired" ->
+                    "mrt" ->
                         Decode.map (\rid -> MemberRetired { rootId = rid })
-                            (Decode.field "rootId" Decode.string)
+                            (Decode.field "r" Decode.string)
 
-                    "MemberUnretired" ->
+                    "mur" ->
                         Decode.map (\rid -> MemberUnretired { rootId = rid })
-                            (Decode.field "rootId" Decode.string)
+                            (Decode.field "r" Decode.string)
 
-                    "MemberReplaced" ->
+                    "mrp" ->
                         Decode.map3
                             (\rid prevId newId ->
                                 MemberReplaced
@@ -286,11 +286,11 @@ payloadDecoder =
                                     , newId = newId
                                     }
                             )
-                            (Decode.field "rootId" Decode.string)
-                            (Decode.field "previousId" Decode.string)
-                            (Decode.field "newId" Decode.string)
+                            (Decode.field "r" Decode.string)
+                            (Decode.field "pi" Decode.string)
+                            (Decode.field "ni" Decode.string)
 
-                    "MemberMetadataUpdated" ->
+                    "mmu" ->
                         Decode.map2
                             (\rid meta ->
                                 MemberMetadataUpdated
@@ -298,36 +298,36 @@ payloadDecoder =
                                     , metadata = meta
                                     }
                             )
-                            (Decode.field "rootId" Decode.string)
-                            (Decode.field "metadata" Member.metadataDecoder)
+                            (Decode.field "r" Decode.string)
+                            (Decode.field "md" Member.metadataDecoder)
 
-                    "EntryAdded" ->
+                    "ea" ->
                         Decode.map EntryAdded
-                            (Decode.field "entry" Entry.entryDecoder)
+                            (Decode.field "e" Entry.entryDecoder)
 
-                    "EntryModified" ->
+                    "em" ->
                         Decode.map EntryModified
-                            (Decode.field "entry" Entry.entryDecoder)
+                            (Decode.field "e" Entry.entryDecoder)
 
-                    "EntryDeleted" ->
+                    "ed" ->
                         Decode.map (\rid -> EntryDeleted { rootId = rid })
-                            (Decode.field "rootId" Decode.string)
+                            (Decode.field "r" Decode.string)
 
-                    "EntryUndeleted" ->
+                    "eu" ->
                         Decode.map (\rid -> EntryUndeleted { rootId = rid })
-                            (Decode.field "rootId" Decode.string)
+                            (Decode.field "r" Decode.string)
 
-                    "GroupCreated" ->
+                    "gc" ->
                         Decode.map2
                             (\n c -> GroupCreated { name = n, defaultCurrency = c })
-                            (Decode.field "name" Decode.string)
-                            (Decode.field "defaultCurrency" Currency.currencyDecoder)
+                            (Decode.field "n" Decode.string)
+                            (Decode.field "dc" Currency.currencyDecoder)
 
-                    "GroupMetadataUpdated" ->
+                    "gmu" ->
                         Decode.map GroupMetadataUpdated
-                            (Decode.field "change" groupMetadataChangeDecoder)
+                            (Decode.field "c" groupMetadataChangeDecoder)
 
-                    "SettlementPreferencesUpdated" ->
+                    "spu" ->
                         Decode.map2
                             (\rid prefs ->
                                 SettlementPreferencesUpdated
@@ -335,8 +335,8 @@ payloadDecoder =
                                     , preferredRecipients = prefs
                                     }
                             )
-                            (Decode.field "memberRootId" Decode.string)
-                            (Decode.field "preferredRecipients" (Decode.list Decode.string))
+                            (Decode.field "mr" Decode.string)
+                            (Decode.field "pr" (Decode.list Decode.string))
 
                     _ ->
                         Decode.fail ("Unknown payload type: " ++ t)
@@ -349,10 +349,10 @@ encodeGroupMetadataChange : GroupMetadataChange -> Encode.Value
 encodeGroupMetadataChange change =
     Encode.object
         (List.filterMap identity
-            [ Maybe.map (\v -> ( "name", Encode.string v )) change.name
-            , Maybe.map (encodeMaybeString "subtitle") change.subtitle
-            , Maybe.map (encodeMaybeString "description") change.description
-            , Maybe.map (\links -> ( "links", Encode.list Group.encodeLink links )) change.links
+            [ Maybe.map (\v -> ( "n", Encode.string v )) change.name
+            , Maybe.map (encodeMaybeString "sub") change.subtitle
+            , Maybe.map (encodeMaybeString "desc") change.description
+            , Maybe.map (\links -> ( "lk", Encode.list Group.encodeLink links )) change.links
             ]
         )
 
@@ -374,10 +374,10 @@ encodeMaybeString fieldName maybeValue =
 groupMetadataChangeDecoder : Decode.Decoder GroupMetadataChange
 groupMetadataChangeDecoder =
     Decode.map4 GroupMetadataChange
-        (Decode.maybe (Decode.field "name" Decode.string))
-        (maybeFieldAsDoubleMaybe "subtitle")
-        (maybeFieldAsDoubleMaybe "description")
-        (Decode.maybe (Decode.field "links" (Decode.list Group.linkDecoder)))
+        (Decode.maybe (Decode.field "n" Decode.string))
+        (maybeFieldAsDoubleMaybe "sub")
+        (maybeFieldAsDoubleMaybe "desc")
+        (Decode.maybe (Decode.field "lk" (Decode.list Group.linkDecoder)))
 
 
 {-| Decode a field that may be absent (Nothing), null (Just Nothing),

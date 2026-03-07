@@ -246,8 +246,8 @@ categoryDecoder =
 encodePayer : Payer -> Encode.Value
 encodePayer payer =
     Encode.object
-        [ ( "memberId", Encode.string payer.memberId )
-        , ( "amount", Encode.int payer.amount )
+        [ ( "m", Encode.string payer.memberId )
+        , ( "a", Encode.int payer.amount )
         ]
 
 
@@ -256,8 +256,8 @@ encodePayer payer =
 payerDecoder : Decode.Decoder Payer
 payerDecoder =
     Decode.map2 Payer
-        (Decode.field "memberId" Decode.string)
-        (Decode.field "amount" Decode.int)
+        (Decode.field "m" Decode.string)
+        (Decode.field "a" Decode.int)
 
 
 {-| Encode a Beneficiary as a tagged JSON object.
@@ -267,16 +267,16 @@ encodeBeneficiary beneficiary =
     case beneficiary of
         ShareBeneficiary data ->
             Encode.object
-                [ ( "type", Encode.string "share" )
-                , ( "memberId", Encode.string data.memberId )
-                , ( "shares", Encode.int data.shares )
+                [ ( "t", Encode.string "share" )
+                , ( "m", Encode.string data.memberId )
+                , ( "s", Encode.int data.shares )
                 ]
 
         ExactBeneficiary data ->
             Encode.object
-                [ ( "type", Encode.string "exact" )
-                , ( "memberId", Encode.string data.memberId )
-                , ( "amount", Encode.int data.amount )
+                [ ( "t", Encode.string "exact" )
+                , ( "m", Encode.string data.memberId )
+                , ( "a", Encode.int data.amount )
                 ]
 
 
@@ -284,19 +284,19 @@ encodeBeneficiary beneficiary =
 -}
 beneficiaryDecoder : Decode.Decoder Beneficiary
 beneficiaryDecoder =
-    Decode.field "type" Decode.string
+    Decode.field "t" Decode.string
         |> Decode.andThen
             (\t ->
                 case t of
                     "share" ->
                         Decode.map2 (\mid s -> ShareBeneficiary { memberId = mid, shares = s })
-                            (Decode.field "memberId" Decode.string)
-                            (Decode.field "shares" Decode.int)
+                            (Decode.field "m" Decode.string)
+                            (Decode.field "s" Decode.int)
 
                     "exact" ->
                         Decode.map2 (\mid a -> ExactBeneficiary { memberId = mid, amount = a })
-                            (Decode.field "memberId" Decode.string)
-                            (Decode.field "amount" Decode.int)
+                            (Decode.field "m" Decode.string)
+                            (Decode.field "a" Decode.int)
 
                     _ ->
                         Decode.fail ("Unknown beneficiary type: " ++ t)
@@ -309,15 +309,15 @@ encodeMetadata : Metadata -> Encode.Value
 encodeMetadata meta =
     Encode.object
         ([ ( "id", Encode.string meta.id )
-         , ( "rootId", Encode.string meta.rootId )
-         , ( "depth", Encode.int meta.depth )
-         , ( "isDeleted", Encode.bool meta.isDeleted )
-         , ( "createdBy", Encode.string meta.createdBy )
-         , ( "createdAt", Encode.int (Time.posixToMillis meta.createdAt) )
+         , ( "r", Encode.string meta.rootId )
+         , ( "dp", Encode.int meta.depth )
+         , ( "del", Encode.bool meta.isDeleted )
+         , ( "cb", Encode.string meta.createdBy )
+         , ( "ca", Encode.int (Time.posixToMillis meta.createdAt) )
          ]
             ++ (case meta.previousVersionId of
                     Just prevId ->
-                        [ ( "previousVersionId", Encode.string prevId ) ]
+                        [ ( "pv", Encode.string prevId ) ]
 
                     Nothing ->
                         []
@@ -331,12 +331,12 @@ entryMetadataDecoder : Decode.Decoder Metadata
 entryMetadataDecoder =
     Decode.map7 Metadata
         (Decode.field "id" Decode.string)
-        (Decode.field "rootId" Decode.string)
-        (Decode.maybe (Decode.field "previousVersionId" Decode.string))
-        (Decode.field "depth" Decode.int)
-        (Decode.field "isDeleted" Decode.bool)
-        (Decode.field "createdBy" Decode.string)
-        (Decode.field "createdAt" (Decode.map Time.millisToPosix Decode.int))
+        (Decode.field "r" Decode.string)
+        (Decode.maybe (Decode.field "pv" Decode.string))
+        (Decode.field "dp" Decode.int)
+        (Decode.field "del" Decode.bool)
+        (Decode.field "cb" Decode.string)
+        (Decode.field "ca" (Decode.map Time.millisToPosix Decode.int))
 
 
 {-| Encode ExpenseData as a JSON object, omitting Nothing fields.
@@ -344,18 +344,18 @@ entryMetadataDecoder =
 encodeExpenseData : ExpenseData -> Encode.Value
 encodeExpenseData data =
     Encode.object
-        ([ ( "description", Encode.string data.description )
-         , ( "amount", Encode.int data.amount )
-         , ( "currency", Currency.encodeCurrency data.currency )
-         , ( "date", Date.encodeDate data.date )
-         , ( "payers", Encode.list encodePayer data.payers )
-         , ( "beneficiaries", Encode.list encodeBeneficiary data.beneficiaries )
+        ([ ( "desc", Encode.string data.description )
+         , ( "a", Encode.int data.amount )
+         , ( "cur", Currency.encodeCurrency data.currency )
+         , ( "dt", Date.encodeDate data.date )
+         , ( "pay", Encode.list encodePayer data.payers )
+         , ( "ben", Encode.list encodeBeneficiary data.beneficiaries )
          ]
             ++ List.filterMap identity
-                [ Maybe.map (\v -> ( "defaultCurrencyAmount", Encode.int v )) data.defaultCurrencyAmount
-                , Maybe.map (\v -> ( "category", encodeCategory v )) data.category
-                , Maybe.map (\v -> ( "location", Encode.string v )) data.location
-                , Maybe.map (\v -> ( "notes", Encode.string v )) data.notes
+                [ Maybe.map (\v -> ( "dca", Encode.int v )) data.defaultCurrencyAmount
+                , Maybe.map (\v -> ( "cat", encodeCategory v )) data.category
+                , Maybe.map (\v -> ( "loc", Encode.string v )) data.location
+                , Maybe.map (\v -> ( "nt", Encode.string v )) data.notes
                 ]
         )
 
@@ -365,16 +365,16 @@ encodeExpenseData data =
 expenseDataDecoder : Decode.Decoder ExpenseData
 expenseDataDecoder =
     Decode.succeed ExpenseData
-        |> andMap (Decode.field "description" Decode.string)
-        |> andMap (Decode.field "amount" Decode.int)
-        |> andMap (Decode.field "currency" Currency.currencyDecoder)
-        |> andMap (Decode.maybe (Decode.field "defaultCurrencyAmount" Decode.int))
-        |> andMap (Decode.field "date" Date.dateDecoder)
-        |> andMap (Decode.field "payers" (Decode.list payerDecoder))
-        |> andMap (Decode.field "beneficiaries" (Decode.list beneficiaryDecoder))
-        |> andMap (Decode.maybe (Decode.field "category" categoryDecoder))
-        |> andMap (Decode.maybe (Decode.field "location" Decode.string))
-        |> andMap (Decode.maybe (Decode.field "notes" Decode.string))
+        |> andMap (Decode.field "desc" Decode.string)
+        |> andMap (Decode.field "a" Decode.int)
+        |> andMap (Decode.field "cur" Currency.currencyDecoder)
+        |> andMap (Decode.maybe (Decode.field "dca" Decode.int))
+        |> andMap (Decode.field "dt" Date.dateDecoder)
+        |> andMap (Decode.field "pay" (Decode.list payerDecoder))
+        |> andMap (Decode.field "ben" (Decode.list beneficiaryDecoder))
+        |> andMap (Decode.maybe (Decode.field "cat" categoryDecoder))
+        |> andMap (Decode.maybe (Decode.field "loc" Decode.string))
+        |> andMap (Decode.maybe (Decode.field "nt" Decode.string))
 
 
 {-| Encode TransferData as a JSON object, omitting Nothing fields.
@@ -382,15 +382,15 @@ expenseDataDecoder =
 encodeTransferData : TransferData -> Encode.Value
 encodeTransferData data =
     Encode.object
-        ([ ( "amount", Encode.int data.amount )
-         , ( "currency", Currency.encodeCurrency data.currency )
-         , ( "date", Date.encodeDate data.date )
-         , ( "from", Encode.string data.from )
+        ([ ( "a", Encode.int data.amount )
+         , ( "cur", Currency.encodeCurrency data.currency )
+         , ( "dt", Date.encodeDate data.date )
+         , ( "f", Encode.string data.from )
          , ( "to", Encode.string data.to )
          ]
             ++ List.filterMap identity
-                [ Maybe.map (\v -> ( "defaultCurrencyAmount", Encode.int v )) data.defaultCurrencyAmount
-                , Maybe.map (\v -> ( "notes", Encode.string v )) data.notes
+                [ Maybe.map (\v -> ( "dca", Encode.int v )) data.defaultCurrencyAmount
+                , Maybe.map (\v -> ( "nt", Encode.string v )) data.notes
                 ]
         )
 
@@ -400,13 +400,13 @@ encodeTransferData data =
 transferDataDecoder : Decode.Decoder TransferData
 transferDataDecoder =
     Decode.map7 TransferData
-        (Decode.field "amount" Decode.int)
-        (Decode.field "currency" Currency.currencyDecoder)
-        (Decode.maybe (Decode.field "defaultCurrencyAmount" Decode.int))
-        (Decode.field "date" Date.dateDecoder)
-        (Decode.field "from" Decode.string)
+        (Decode.field "a" Decode.int)
+        (Decode.field "cur" Currency.currencyDecoder)
+        (Decode.maybe (Decode.field "dca" Decode.int))
+        (Decode.field "dt" Date.dateDecoder)
+        (Decode.field "f" Decode.string)
         (Decode.field "to" Decode.string)
-        (Decode.maybe (Decode.field "notes" Decode.string))
+        (Decode.maybe (Decode.field "nt" Decode.string))
 
 
 {-| Encode a Kind as a tagged JSON object with "type" and "data" fields.
@@ -416,14 +416,14 @@ encodeKind kind =
     case kind of
         Expense data ->
             Encode.object
-                [ ( "type", Encode.string "expense" )
-                , ( "data", encodeExpenseData data )
+                [ ( "t", Encode.string "expense" )
+                , ( "d", encodeExpenseData data )
                 ]
 
         Transfer data ->
             Encode.object
-                [ ( "type", Encode.string "transfer" )
-                , ( "data", encodeTransferData data )
+                [ ( "t", Encode.string "transfer" )
+                , ( "d", encodeTransferData data )
                 ]
 
 
@@ -431,28 +431,28 @@ encodeKind kind =
 -}
 kindDecoder : Decode.Decoder Kind
 kindDecoder =
-    Decode.field "type" Decode.string
+    Decode.field "t" Decode.string
         |> Decode.andThen
             (\t ->
                 case t of
                     "expense" ->
-                        Decode.map Expense (Decode.field "data" expenseDataDecoder)
+                        Decode.map Expense (Decode.field "d" expenseDataDecoder)
 
                     "transfer" ->
-                        Decode.map Transfer (Decode.field "data" transferDataDecoder)
+                        Decode.map Transfer (Decode.field "d" transferDataDecoder)
 
                     _ ->
                         Decode.fail ("Unknown entry kind: " ++ t)
             )
 
 
-{-| Encode an Entry as a JSON object with "meta" and "kind" fields.
+{-| Encode an Entry as a JSON object.
 -}
 encodeEntry : Entry -> Encode.Value
 encodeEntry entry =
     Encode.object
-        [ ( "meta", encodeMetadata entry.meta )
-        , ( "kind", encodeKind entry.kind )
+        [ ( "m", encodeMetadata entry.meta )
+        , ( "k", encodeKind entry.kind )
         ]
 
 
@@ -461,5 +461,5 @@ encodeEntry entry =
 entryDecoder : Decode.Decoder Entry
 entryDecoder =
     Decode.map2 Entry
-        (Decode.field "meta" entryMetadataDecoder)
-        (Decode.field "kind" kindDecoder)
+        (Decode.field "m" entryMetadataDecoder)
+        (Decode.field "k" kindDecoder)
