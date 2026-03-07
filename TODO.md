@@ -1,6 +1,6 @@
 # Partage — Remaining Implementation Plan
 
-Phases 1–8 are complete. Remaining: translations.
+Phases 1–9 are complete. Remaining: translations.
 
 ---
 
@@ -97,13 +97,22 @@ Local-only usage tracking and cost estimation on the About page.
 
 ---
 
-## Phase 9: Spanish Translations
+## Phase 9: Offline Group Creation Retry (Done)
 
-### 9.1 Add `messages.es.json`
+Automatic retry of server-side group creation for groups created while offline.
+
+- **9.1** Offline group creation retry: Extracted `attemptServerGroupCreation` helper in `Main.elm` with `pendingServerCreations : Set Group.Id` guard against concurrent attempts. Retries triggered on group navigation (`syncCursor = Nothing` emits `RequestServerGroupCreation` output from `Page.Group`), on reconnect (`ConnectionChanged True`), and on PB client initialization (`OnPbClientInitialized`). No new IndexedDB store needed — `syncCursor = Nothing` is the existing signal for unsynced groups.
+- **9.2** Hide invite link and notification toggle for unsynced groups: `MembersTab` receives `isSynced` flag (`syncCursor /= Nothing`) and conditionally hides the invite link section and notification toggle, since these features require a server-side group.
+
+---
+
+## Phase 10: Spanish Translations
+
+### 10.1 Add `messages.es.json`
 
 Translate all ~221 keys from English and French to Spanish.
 
-### 9.2 Add Spanish to language selector
+### 10.2 Add Spanish to language selector
 
 Add a Spanish flag option (🇪🇸) to the language selector.
 
