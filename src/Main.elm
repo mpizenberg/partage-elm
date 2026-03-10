@@ -20,6 +20,7 @@ import Json.Encode
 import Maybe.Extra
 import Navigation
 import Page.About
+import Page.DesignSystem
 import Page.Group
 import Page.Home
 import Page.InitError
@@ -101,6 +102,7 @@ type alias Model =
     , groupModel : Page.Group.Model
     , homeModel : Page.Home.Model
     , aboutModel : Page.About.Model
+    , designSystemModel : Page.DesignSystem.Model
     , toastModel : Toast.Model
     , joinGroupModel : Page.JoinGroup.Model
     , pendingJoinAction : Maybe { groupId : Group.Id, action : Page.JoinGroup.JoinAction, newMemberName : String }
@@ -152,6 +154,7 @@ type Msg
     | OnServerGroupCreated Group.Id (ConcurrentTask.Response Server.Error ())
       -- About / Usage stats
     | AboutMsg Page.About.Msg
+    | DesignSystemMsg Page.DesignSystem.Msg
     | OnStorageCheckComplete (ConcurrentTask.Response Never ( Maybe UsageStats, UsageStats.StorageEstimate ))
     | OnAboutStatsReset (ConcurrentTask.Response Idb.Error ())
     | ScheduleStorageCheck
@@ -274,6 +277,7 @@ init flags =
                 }
       , homeModel = Page.Home.init
       , aboutModel = Page.About.init
+      , designSystemModel = Page.DesignSystem.init
       , joinGroupModel = Page.JoinGroup.init
       , pendingJoinAction = Nothing
       , toastModel = Toast.init
@@ -922,6 +926,9 @@ update msg model =
             , Cmd.none
             )
 
+        DesignSystemMsg dsMsg ->
+            ( { model | designSystemModel = Page.DesignSystem.update dsMsg model.designSystemModel }, Cmd.none )
+
         -- About / Usage stats
         AboutMsg aboutMsg ->
             let
@@ -1444,6 +1451,9 @@ viewReady model readyData =
 
         About ->
             shell (T.shellPartage i18n) (Ui.map AboutMsg (Page.About.view i18n model.aboutModel))
+
+        DesignSystem ->
+            shell "Design System" (Ui.map DesignSystemMsg (Page.DesignSystem.view model.designSystemModel))
 
         NotFound ->
             shell (T.shellPartage i18n) (Page.NotFound.view i18n)

@@ -18,6 +18,7 @@ type Route
     | NewGroup
     | GroupRoute Group.Id GroupView
     | About
+    | DesignSystem
     | NotFound
 
 
@@ -97,6 +98,9 @@ fromAppUrl appUrl =
         [ "about" ] ->
             About
 
+        [ "design-system" ] ->
+            DesignSystem
+
         _ ->
             NotFound
 
@@ -169,6 +173,9 @@ toPathSegments route =
         About ->
             [ "about" ]
 
+        DesignSystem ->
+            [ "design-system" ]
+
         NotFound ->
             []
 
@@ -225,6 +232,9 @@ toPath route =
 
         About ->
             "/about"
+
+        DesignSystem ->
+            "/design-system"
 
         NotFound ->
             "/"
