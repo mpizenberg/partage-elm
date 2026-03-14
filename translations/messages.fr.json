@@ -198,6 +198,8 @@
   "settlementPreferencesShow": "Préférences de remboursement",
   "settlementPreferencesHint": "Choisissez à qui vous préférez payer en priorité. Il est recommandé de ne pas y toucher pour un meilleur plan de remboursement pour l'ensemble du groupe.",
   "settlementPreferPayFirst": "Payer en priorité",
+  "settlementNoPaymentMethods": "{name} n'a pas de méthode de paiement configurée",
+  "settlementRecordTransfer": "Enregistrer ce transfert",
   "homeExportGroup": "Exporter",
   "homeImportGroup": "Importer un groupe",
   "importErrorAlreadyExists": "Ce groupe existe déjà sur votre appareil.",

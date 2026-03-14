@@ -177,8 +177,6 @@ type
     | NewEntryMsg Page.Group.NewEntry.Msg
       -- Group pages
     | EditGroupMetadataMsg Page.Group.EditGroupMetadata.Msg
-      -- User actions
-    | PayMember { toMemberId : Member.Id, amountCents : Int }
     | SettleTransaction Settlement.Transaction
     | SaveSettlementPreferences { memberRootId : Member.Id, preferredRecipients : List Member.Id }
     | ToggleNotification
@@ -497,18 +495,6 @@ update config msg model =
 
                     _ ->
                         ( modelWithPage, Cmd.none, [] )
-
-        -- User actions
-        PayMember payData ->
-            case config.route of
-                GroupRoute groupId _ ->
-                    ( { model | pendingTransfer = Just payData }
-                    , Cmd.none
-                    , [ NavigateTo (GroupRoute groupId NewEntry) ]
-                    )
-
-                _ ->
-                    ( model, Cmd.none, [] )
 
         SettleTransaction tx ->
             case model.loadedGroup of
@@ -1262,8 +1248,7 @@ tabContent config userRootId loaded model =
     case model.activeTab of
         BalanceTab ->
             Page.Group.BalanceTab.view config.i18n
-                { onSettle = \tx -> config.toMsg (SettleTransaction tx)
-                , onPayMember = \payData -> config.toMsg (PayMember payData)
+                { onRecordTransfer = \tx -> config.toMsg (SettleTransaction tx)
                 , onSavePreferences = \prefData -> config.toMsg (SaveSettlementPreferences prefData)
                 , onNewTransfer = config.toMsg (RequestNavigation NewEntry)
                 , toMsg = config.toMsg << BalanceTabMsg

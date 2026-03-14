@@ -8,7 +8,10 @@ import Domain.Balance as Balance exposing (MemberBalance)
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
 import Domain.Settlement as Settlement
+import FeatherIcons
 import Format
+import Html
+import Html.Attributes
 import List.Extra
 import Translations as T exposing (I18n)
 import UI.Components
@@ -21,16 +24,18 @@ import Ui.Input
 type Model
     = Model
         { expandedMember : Maybe Member.Id
+        , selectedSettlement : Maybe Int
         }
 
 
 type Msg
     = ToggleMember Member.Id
+    | ToggleSettlement Int
 
 
 init : Model
 init =
-    Model { expandedMember = Nothing }
+    Model { expandedMember = Nothing, selectedSettlement = Nothing }
 
 
 update : Msg -> Model -> Model
@@ -47,12 +52,22 @@ update msg (Model data) =
                             Just memberId
                 }
 
+        ToggleSettlement idx ->
+            Model
+                { data
+                    | selectedSettlement =
+                        if data.selectedSettlement == Just idx then
+                            Nothing
+
+                        else
+                            Just idx
+                }
+
 
 {-| Configuration for callbacks used by the balance tab.
 -}
 type alias Config msg =
-    { onSettle : Settlement.Transaction -> msg
-    , onPayMember : { toMemberId : Member.Id, amountCents : Int } -> msg
+    { onRecordTransfer : Settlement.Transaction -> msg
     , onSavePreferences : { memberRootId : Member.Id, preferredRecipients : List Member.Id } -> msg
     , onNewTransfer : msg
     , toMsg : Msg -> msg
@@ -74,7 +89,7 @@ view i18n config currentUserRootId (Model data) state =
         Ui.column [ Ui.spacing Theme.spacing.lg ]
             [ yourBalanceCard i18n currentUserRootId state
             , otherMembersSection i18n config data.expandedMember currentUserRootId state
-            , settlementSection i18n config.onSettle currentUserRootId state
+            , settlementSection i18n config currentUserRootId data.selectedSettlement state
             , preferencesSection i18n config currentUserRootId state
             ]
 
@@ -330,8 +345,8 @@ transferActionBtn onPress =
 -- SETTLEMENT SECTION
 
 
-settlementSection : I18n -> (Settlement.Transaction -> msg) -> Member.Id -> GroupState -> Ui.Element msg
-settlementSection i18n onSettle currentUserRootId state =
+settlementSection : I18n -> Config msg -> Member.Id -> Maybe Int -> GroupState -> Ui.Element msg
+settlementSection i18n config currentUserRootId selectedSettlement state =
     let
         transactions : List Settlement.Transaction
         transactions =
@@ -346,20 +361,24 @@ settlementSection i18n onSettle currentUserRootId state =
             resolveName =
                 GroupState.resolveMemberName state
 
-            settlementRow : Int -> Settlement.Transaction -> Ui.Element msg
+            settlementRow : Int -> Settlement.Transaction -> List (Ui.Element msg)
             settlementRow idx tx =
-                -- Show top border (separator) for rows > 0
-                settlementItem resolveName currentUserRootId onSettle (idx > 0) tx
+                let
+                    isSelected : Bool
+                    isSelected =
+                        selectedSettlement == Just idx
+                in
+                settlementItem i18n config resolveName currentUserRootId (idx > 0) isSelected idx tx state
         in
         Ui.column []
             [ UI.Components.sectionLabel (T.balanceSettlementPlan i18n)
             , UI.Components.card [ Ui.clip ]
-                (List.indexedMap settlementRow transactions)
+                (List.concat (List.indexedMap settlementRow transactions))
             ]
 
 
-settlementItem : (Member.Id -> String) -> Member.Id -> (Settlement.Transaction -> msg) -> Bool -> Settlement.Transaction -> Ui.Element msg
-settlementItem resolveName currentUserRootId onSettle showTopBorder t =
+settlementItem : I18n -> Config msg -> (Member.Id -> String) -> Member.Id -> Bool -> Bool -> Int -> Settlement.Transaction -> GroupState -> List (Ui.Element msg)
+settlementItem i18n config resolveName currentUserRootId showTopBorder isSelected idx t state =
     let
         isCurrentUser : Bool
         isCurrentUser =
@@ -383,29 +402,166 @@ settlementItem resolveName currentUserRootId onSettle showTopBorder t =
 
             else
                 ( Ui.noAttr, Ui.noAttr )
+
+        headerRow : Ui.Element msg
+        headerRow =
+            Ui.row
+                [ Ui.Input.button (config.toMsg (ToggleSettlement idx))
+                , Ui.paddingXY Theme.spacing.lg Theme.spacing.md
+                , Ui.pointer
+                , Ui.contentCenterY
+                , topBorder
+                , borderColor
+                , bgColor
+                , textColor
+                ]
+                [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.Font.size Theme.font.md, Ui.contentCenterY, Ui.width Ui.shrink ]
+                    [ Ui.el [ Ui.Font.weight Theme.fontWeight.semibold ] (Ui.text (resolveName t.from))
+                    , Ui.el [ Ui.Font.color Theme.base.textSubtle ] (Ui.text "→")
+                    , Ui.el [ Ui.Font.weight Theme.fontWeight.semibold ] (Ui.text (resolveName t.to))
+                    ]
+                , Ui.el
+                    [ Ui.alignRight
+                    , Ui.Font.weight Theme.fontWeight.semibold
+                    , amountColor
+                    ]
+                    (Ui.text (Format.formatCents t.amount))
+                ]
     in
-    Ui.row
-        [ Ui.Input.button (onSettle t)
-        , Ui.paddingXY Theme.spacing.lg Theme.spacing.md
-        , Ui.pointer
-        , Ui.contentCenterY
-        , topBorder
-        , borderColor
-        , bgColor
-        , textColor
+    if isSelected then
+        [ headerRow
+        , settlementDetail i18n config resolveName t state
         ]
-        [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.Font.size Theme.font.md, Ui.contentCenterY, Ui.width Ui.shrink ]
-            [ Ui.el [ Ui.Font.weight Theme.fontWeight.semibold ] (Ui.text (resolveName t.from))
-            , Ui.el [ Ui.Font.color Theme.base.textSubtle ] (Ui.text "→")
-            , Ui.el [ Ui.Font.weight Theme.fontWeight.semibold ] (Ui.text (resolveName t.to))
-            ]
+
+    else
+        [ headerRow ]
+
+
+settlementDetail : I18n -> Config msg -> (Member.Id -> String) -> Settlement.Transaction -> GroupState -> Ui.Element msg
+settlementDetail i18n config resolveName t state =
+    let
+        recipientMetadata : Maybe Member.Metadata
+        recipientMetadata =
+            Dict.get t.to state.members
+                |> Maybe.map .metadata
+
+        paymentMethodRows : List (Ui.Element msg)
+        paymentMethodRows =
+            case recipientMetadata |> Maybe.andThen .payment of
+                Just payment ->
+                    List.filterMap identity
+                        [ Maybe.map (\v -> paymentRow FeatherIcons.creditCard (T.memberMetadataIban i18n) v Nothing) payment.iban
+                        , Maybe.map (\v -> paymentRow FeatherIcons.smartphone (T.memberMetadataWero i18n) v Nothing) payment.wero
+                        , Maybe.map (\v -> paymentRow FeatherIcons.dollarSign (T.memberMetadataLydia i18n) v (Just (normalizeHandle "https://pay.lydia.me/l?t=" v))) payment.lydia
+                        , Maybe.map (\v -> paymentRow FeatherIcons.dollarSign (T.memberMetadataRevolut i18n) v (Just (normalizeHandle "https://revolut.me/" v))) payment.revolut
+                        , Maybe.map (\v -> paymentRow FeatherIcons.dollarSign (T.memberMetadataPaypal i18n) v (Just (normalizeHandle "https://paypal.me/" v))) payment.paypal
+                        , Maybe.map (\v -> paymentRow FeatherIcons.dollarSign (T.memberMetadataVenmo i18n) v (Just (normalizeHandle "https://venmo.com/" v))) payment.venmo
+                        , Maybe.map (\v -> paymentRow FeatherIcons.key (T.memberMetadataBtc i18n) v (Just ("bitcoin:" ++ v))) payment.btcAddress
+                        , Maybe.map (\v -> paymentRow FeatherIcons.key (T.memberMetadataAda i18n) v Nothing) payment.adaAddress
+                        ]
+
+                Nothing ->
+                    []
+    in
+    Ui.column
+        [ Ui.paddingXY Theme.spacing.lg Theme.spacing.md
+        , Ui.spacing Theme.spacing.md
+        , Ui.width Ui.fill
+        , Ui.borderWith { top = Theme.border, bottom = 0, left = 0, right = 0 }
+        , Ui.borderColor Theme.base.accent
+        , Ui.background Theme.base.bgSubtle
+        ]
+        [ if List.isEmpty paymentMethodRows then
+            Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.base.textSubtle
+                ]
+                (Ui.text (T.settlementNoPaymentMethods (resolveName t.to) i18n))
+
+          else
+            Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ] paymentMethodRows
+        , UI.Components.btnPrimary []
+            { label = T.settlementRecordTransfer i18n
+            , onPress = config.onRecordTransfer t
+            }
+        ]
+
+
+paymentRow : FeatherIcons.Icon -> String -> String -> Maybe String -> Ui.Element msg
+paymentRow icon label value maybeUrl =
+    Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
+        [ Ui.el [ Ui.Font.color Theme.base.textSubtle, Ui.width Ui.shrink ] (UI.Components.featherIcon 16 icon)
         , Ui.el
-            [ Ui.alignRight
-            , Ui.Font.weight Theme.fontWeight.semibold
-            , amountColor
+            [ Ui.Font.size Theme.font.sm
+            , Ui.Font.color Theme.base.textSubtle
+            , Ui.width Ui.shrink
             ]
-            (Ui.text (Format.formatCents t.amount))
+            (Ui.text label)
+        , case maybeUrl of
+            Just url ->
+                Ui.el
+                    [ Ui.linkNewTab url
+                    , Ui.Font.size Theme.font.md
+                    , Ui.Font.color Theme.primary.text
+                    , Ui.Font.underline
+                    , Ui.pointer
+                    , Ui.width Ui.shrink
+                    , Ui.clipWithEllipsis
+                    ]
+                    (Ui.text value)
+
+            Nothing ->
+                Ui.el [ Ui.Font.size Theme.font.md, Ui.clipWithEllipsis ] (Ui.text value)
+        , copyButton value
         ]
+
+
+copyButton : String -> Ui.Element msg
+copyButton value =
+    Ui.el
+        [ Ui.width Ui.shrink
+        , Ui.alignRight
+        , Ui.inFront
+            (Ui.el [ Ui.width Ui.fill, Ui.height Ui.fill ]
+                (Ui.html
+                    (Html.node "copy-button"
+                        [ Html.Attributes.attribute "data-copy" value
+                        , Html.Attributes.style "display" "block"
+                        , Html.Attributes.style "width" "100%"
+                        , Html.Attributes.style "height" "100%"
+                        , Html.Attributes.style "cursor" "pointer"
+                        ]
+                        []
+                    )
+                )
+            )
+        , Ui.Font.color Theme.base.textSubtle
+        , Ui.pointer
+        ]
+        (UI.Components.featherIcon 16 FeatherIcons.copy)
+
+
+normalizeHandle : String -> String -> String
+normalizeHandle prefix value =
+    let
+        trimmed : String
+        trimmed =
+            String.trim value
+    in
+    if String.startsWith prefix trimmed then
+        trimmed
+
+    else
+        let
+            withoutLeadingAt : String
+            withoutLeadingAt =
+                if String.startsWith "@" trimmed then
+                    String.dropLeft 1 trimmed
+
+                else
+                    trimmed
+        in
+        prefix ++ withoutLeadingAt
 
 
 
