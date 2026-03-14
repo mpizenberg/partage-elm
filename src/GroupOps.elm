@@ -450,8 +450,29 @@ areConflicting a b =
         ( Event.GroupMetadataUpdated _, Event.GroupMetadataUpdated _ ) ->
             True
 
+        ( Event.MemberReplaced r1, Event.MemberReplaced r2 ) ->
+            r1.rootId == r2.rootId
+
         ( Event.SettlementPreferencesUpdated r1, Event.SettlementPreferencesUpdated r2 ) ->
             r1.memberRootId == r2.memberRootId
+
+        ( Event.EntryDeleted r1, Event.EntryUndeleted r2 ) ->
+            r1.rootId == r2.rootId
+
+        ( Event.EntryUndeleted r1, Event.EntryDeleted r2 ) ->
+            r1.rootId == r2.rootId
+
+        ( Event.EntryDeleted r1, Event.EntryModified e2 ) ->
+            r1.rootId == e2.meta.rootId
+
+        ( Event.EntryModified e1, Event.EntryDeleted r2 ) ->
+            e1.meta.rootId == r2.rootId
+
+        ( Event.EntryUndeleted r1, Event.EntryModified e2 ) ->
+            r1.rootId == e2.meta.rootId
+
+        ( Event.EntryModified e1, Event.EntryUndeleted r2 ) ->
+            e1.meta.rootId == r2.rootId
 
         _ ->
             False
