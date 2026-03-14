@@ -333,13 +333,13 @@ groupedByDate i18n config expandedActivities activities =
     List.Extra.groupWhile (\a1 a2 -> dateKey a1 == dateKey a2) activities
         |> List.concatMap
             (\( first, rest ) ->
-                dateSeparator first.timestamp
+                dateSeparator i18n first.timestamp
                     :: List.map (activityItem i18n config expandedActivities) (first :: rest)
             )
 
 
-dateSeparator : Time.Posix -> Ui.Element msg
-dateSeparator posix =
+dateSeparator : I18n -> Time.Posix -> Ui.Element msg
+dateSeparator i18n posix =
     let
         year : Int
         year =
@@ -360,47 +360,47 @@ dateSeparator posix =
         , Ui.Font.letterSpacing Theme.letterSpacing.wide
         , Ui.Font.color Theme.base.textSubtle
         ]
-        (Ui.text (String.toUpper (monthName month ++ " " ++ String.fromInt day ++ ", " ++ String.fromInt year)))
+        (Ui.text (String.toUpper (monthName i18n month ++ " " ++ String.fromInt day ++ ", " ++ String.fromInt year)))
 
 
-monthName : Int -> String
-monthName m =
+monthName : I18n -> Int -> String
+monthName i18n m =
     case m of
         1 ->
-            "January"
+            T.monthJanuary i18n
 
         2 ->
-            "February"
+            T.monthFebruary i18n
 
         3 ->
-            "March"
+            T.monthMarch i18n
 
         4 ->
-            "April"
+            T.monthApril i18n
 
         5 ->
-            "May"
+            T.monthMay i18n
 
         6 ->
-            "June"
+            T.monthJune i18n
 
         7 ->
-            "July"
+            T.monthJuly i18n
 
         8 ->
-            "August"
+            T.monthAugust i18n
 
         9 ->
-            "September"
+            T.monthSeptember i18n
 
         10 ->
-            "October"
+            T.monthOctober i18n
 
         11 ->
-            "November"
+            T.monthNovember i18n
 
         12 ->
-            "December"
+            T.monthDecember i18n
 
         _ ->
             ""

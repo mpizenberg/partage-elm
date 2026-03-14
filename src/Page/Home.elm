@@ -145,7 +145,7 @@ view i18n ctx toMsg (Model data) groups =
         [ homeHeader i18n
 
         -- Notifications
-        , notifSection ctx
+        , notifSection i18n ctx
 
         -- Import error
         , case data.importError of
@@ -199,8 +199,8 @@ homeHeader i18n =
 -- NOTIFICATION SECTION
 
 
-notifSection : Context msg -> Ui.Element msg
-notifSection ctx =
+notifSection : I18n -> Context msg -> Ui.Element msg
+notifSection i18n ctx =
     case ctx.notificationPermission of
         Just Pwa.Granted ->
             Ui.none
@@ -213,14 +213,14 @@ notifSection ctx =
 
         _ ->
             Ui.column []
-                [ UI.Components.sectionLabel "NOTIFICATIONS"
+                [ UI.Components.sectionLabel (T.homeNotificationsTitle i18n)
                 , Ui.row [ Ui.spacing Theme.spacing.md ]
                     [ Ui.el
                         [ Ui.Font.size Theme.font.sm
                         , Ui.Font.color Theme.base.textSubtle
                         , Ui.width Ui.fill
                         ]
-                        (Ui.text "This is a global setting to activate notifications in the app. Per-group Push notifications are configured inside each group.")
+                        (Ui.text (T.homeNotificationsHint i18n))
                     , Ui.el
                         [ Ui.Input.button ctx.onEnableNotifications
                         , Ui.width (Ui.px Theme.sizing.lg)
@@ -268,7 +268,7 @@ groupCard i18n ctx summary =
                         [ Ui.Font.size Theme.font.sm
                         , Ui.Font.color Theme.base.textSubtle
                         ]
-                        (Ui.text "Your balance: ")
+                        (Ui.text (T.homeYourBalance i18n ++ " "))
             in
             if cents > 0 then
                 Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.shrink ]
@@ -402,7 +402,7 @@ joinInput i18n toMsg data =
                 , label = Ui.Input.labelHidden (T.shellJoinGroup i18n)
                 }
             , UI.Components.btnDark [ Ui.width Ui.shrink ]
-                { label = "Go", onPress = toMsg SubmitJoinLink }
+                { label = T.homeGoButton i18n, onPress = toMsg SubmitJoinLink }
             ]
 
 

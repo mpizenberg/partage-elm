@@ -92,7 +92,7 @@ view i18n config model =
 languageSection : I18n -> (Language -> msg) -> Ui.Element msg
 languageSection i18n onSwitchLanguage =
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ UI.Components.sectionLabel "Language"
+        [ UI.Components.sectionLabel (T.aboutLanguageTitle i18n)
         , UI.Components.languageSelector onSwitchLanguage (T.currentLanguage i18n)
         ]
 

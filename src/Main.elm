@@ -1436,7 +1436,7 @@ viewPage model =
         InitError errorMsg ->
             noOverlay <|
                 UI.Shell.pageShell { title = T.shellPartage model.i18n, onBack = NavigateTo Home }
-                    (Page.InitError.view errorMsg)
+                    (Page.InitError.view model.i18n errorMsg)
 
         Ready readyData ->
             viewReady model readyData

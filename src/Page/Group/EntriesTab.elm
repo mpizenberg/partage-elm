@@ -234,7 +234,7 @@ view i18n config today (Model data) state =
             UI.Components.btnPrimary [] { label = T.newEntryTitle i18n, onPress = config.onNewEntry }
 
         -- Search bar + filter button
-        , searchFilterRow data.showFilters (Filter.isEntryFilterActive data.filters || data.showDeleted) data.searchQuery |> Ui.map toMsg
+        , searchFilterRow i18n data.showFilters (Filter.isEntryFilterActive data.filters || data.showDeleted) data.searchQuery |> Ui.map toMsg
 
         -- Filter panel or active filter summary
         , if data.showFilters then
@@ -281,8 +281,8 @@ summaryRow entryCount totalAmount =
 -- SEARCH BAR + FILTER BUTTON
 
 
-searchFilterRow : Bool -> Bool -> String -> Ui.Element Msg
-searchFilterRow showFilters hasActiveFilters query =
+searchFilterRow : I18n -> Bool -> Bool -> String -> Ui.Element Msg
+searchFilterRow i18n showFilters hasActiveFilters query =
     Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
         [ Ui.row
             [ Ui.width Ui.fill
@@ -304,8 +304,8 @@ searchFilterRow showFilters hasActiveFilters query =
                 ]
                 { onChange = InputSearch
                 , text = query
-                , placeholder = Just "Search entries..."
-                , label = Ui.Input.labelHidden "Search entries"
+                , placeholder = Just (T.entriesSearchLabel i18n ++ "...")
+                , label = Ui.Input.labelHidden (T.entriesSearchLabel i18n)
                 }
             ]
         , filterButton showFilters hasActiveFilters
@@ -614,13 +614,13 @@ groupedByDate i18n resolveName expandedEntries confirmingAction entries =
     groupEntries entries
         |> List.concatMap
             (\( date, group ) ->
-                dateSeparator date
+                dateSeparator i18n date
                     :: List.map (entryCardView i18n resolveName expandedEntries confirmingAction) group
             )
 
 
-dateSeparator : Date -> Ui.Element msg
-dateSeparator date =
+dateSeparator : I18n -> Date -> Ui.Element msg
+dateSeparator i18n date =
     Ui.el
         [ Ui.paddingTop Theme.spacing.md
         , Ui.Font.size Theme.font.xs
@@ -628,7 +628,7 @@ dateSeparator date =
         , Ui.Font.letterSpacing Theme.letterSpacing.wide
         , Ui.Font.color Theme.base.textSubtle
         ]
-        (Ui.text (String.toUpper (formatDate date)))
+        (Ui.text (String.toUpper (formatDate i18n date)))
 
 
 
@@ -701,7 +701,7 @@ expenseCardHeader i18n resolveName data =
             , Ui.Font.size Theme.font.sm
             , Ui.Font.color Theme.base.textSubtle
             ]
-            [ Ui.el [ Ui.width Ui.shrink ] (Ui.text (formatShortDate data.date))
+            [ Ui.el [ Ui.width Ui.shrink ] (Ui.text (formatShortDate i18n data.date))
             , case data.category of
                 Just cat ->
                     entryTag (categoryLabel i18n cat)
@@ -751,7 +751,7 @@ transferCardHeader i18n resolveName data =
             , Ui.Font.size Theme.font.sm
             , Ui.contentCenterY
             ]
-            [ Ui.el [ Ui.width Ui.shrink ] (Ui.text (formatShortDate data.date))
+            [ Ui.el [ Ui.width Ui.shrink ] (Ui.text (formatShortDate i18n data.date))
             , entryTag ("💸 " ++ T.filterCategoryTransfer i18n)
 
             -- Flow: from → to
@@ -1206,59 +1206,97 @@ entrySortKey entry =
 -- DATE FORMATTING HELPERS
 
 
-monthName : Int -> String
-monthName m =
+monthName : I18n -> Int -> String
+monthName i18n m =
     case m of
         1 ->
-            "January"
+            T.monthJanuary i18n
 
         2 ->
-            "February"
+            T.monthFebruary i18n
 
         3 ->
-            "March"
+            T.monthMarch i18n
 
         4 ->
-            "April"
+            T.monthApril i18n
 
         5 ->
-            "May"
+            T.monthMay i18n
 
         6 ->
-            "June"
+            T.monthJune i18n
 
         7 ->
-            "July"
+            T.monthJuly i18n
 
         8 ->
-            "August"
+            T.monthAugust i18n
 
         9 ->
-            "September"
+            T.monthSeptember i18n
 
         10 ->
-            "October"
+            T.monthOctober i18n
 
         11 ->
-            "November"
+            T.monthNovember i18n
 
         12 ->
-            "December"
+            T.monthDecember i18n
 
         _ ->
             ""
 
 
-shortMonthName : Int -> String
-shortMonthName m =
-    String.left 3 (monthName m)
+shortMonthName : I18n -> Int -> String
+shortMonthName i18n m =
+    case m of
+        1 ->
+            T.monthShortJan i18n
+
+        2 ->
+            T.monthShortFeb i18n
+
+        3 ->
+            T.monthShortMar i18n
+
+        4 ->
+            T.monthShortApr i18n
+
+        5 ->
+            T.monthShortMay i18n
+
+        6 ->
+            T.monthShortJun i18n
+
+        7 ->
+            T.monthShortJul i18n
+
+        8 ->
+            T.monthShortAug i18n
+
+        9 ->
+            T.monthShortSep i18n
+
+        10 ->
+            T.monthShortOct i18n
+
+        11 ->
+            T.monthShortNov i18n
+
+        12 ->
+            T.monthShortDec i18n
+
+        _ ->
+            ""
 
 
-formatDate : Date -> String
-formatDate date =
-    monthName date.month ++ " " ++ String.fromInt date.day ++ ", " ++ String.fromInt date.year
+formatDate : I18n -> Date -> String
+formatDate i18n date =
+    monthName i18n date.month ++ " " ++ String.fromInt date.day ++ ", " ++ String.fromInt date.year
 
 
-formatShortDate : Date -> String
-formatShortDate date =
-    shortMonthName date.month ++ " " ++ String.fromInt date.day
+formatShortDate : I18n -> Date -> String
+formatShortDate i18n date =
+    shortMonthName i18n date.month ++ " " ++ String.fromInt date.day

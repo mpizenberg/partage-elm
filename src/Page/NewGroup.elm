@@ -248,7 +248,7 @@ virtualMembersSection i18n form =
                 , Ui.Font.color Theme.base.textSubtle
                 , Ui.width Ui.fill
                 ]
-                (Ui.text "Add the names of other members of this group.")
+                (Ui.text (T.newGroupVirtualMembersHint i18n))
             ]
         , Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
             (List.map
@@ -258,7 +258,7 @@ virtualMembersSection i18n form =
                 members
             )
         , UI.Components.btnOutline [ Ui.width Ui.shrink, Ui.paddingXY Theme.spacing.md Theme.spacing.sm ]
-            { label = "Add member"
+            { label = T.newGroupAddVirtualMember i18n
             , icon = Just (UI.Components.featherIcon 16 FeatherIcons.plus)
             , onPress = AddVirtualMember
             }

@@ -120,13 +120,13 @@ view i18n config toMsg model currentUserRootId state =
     Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill ]
         [ -- Push Notifications
           if config.isSynced then
-            notificationRow config
+            notificationRow i18n config
 
           else
             Ui.none
 
         -- Group Info
-        , groupInfoSection config.onEditGroupMetadata state
+        , groupInfoSection i18n config.onEditGroupMetadata state
 
         -- Invite
         , if config.isSynced then
@@ -170,19 +170,19 @@ view i18n config toMsg model currentUserRootId state =
 -- NOTIFICATION ROW
 
 
-notificationRow : Config msg -> Ui.Element msg
-notificationRow config =
+notificationRow : I18n -> Config msg -> Ui.Element msg
+notificationRow i18n config =
     let
         ( statusText, toggleEl ) =
             if not config.pushActive then
-                ( "Not available", Ui.none )
+                ( T.notificationsNotAvailable i18n, Ui.none )
 
             else
                 ( if config.isSubscribed then
-                    "Enabled"
+                    T.notificationsEnabled i18n
 
                   else
-                    "Disabled"
+                    T.notificationsDisabled i18n
                 , UI.Components.toggle { isOn = config.isSubscribed, onPress = config.onToggleNotification }
                 )
     in
@@ -194,7 +194,7 @@ notificationRow config =
                     [ Ui.Font.size Theme.font.md
                     , Ui.Font.weight Theme.fontWeight.medium
                     ]
-                    (Ui.text "Notifications")
+                    (Ui.text (T.notificationsLabel i18n))
                 , Ui.el
                     [ Ui.Font.size Theme.font.xs
                     , Ui.Font.color Theme.base.textSubtle
@@ -224,8 +224,8 @@ notifIcon =
 -- GROUP INFO CARD
 
 
-groupInfoSection : msg -> GroupState -> Ui.Element msg
-groupInfoSection onEditGroupMetadata state =
+groupInfoSection : I18n -> msg -> GroupState -> Ui.Element msg
+groupInfoSection i18n onEditGroupMetadata state =
     let
         meta : GroupMetadata
         meta =
@@ -255,10 +255,10 @@ groupInfoSection onEditGroupMetadata state =
         editLabel : String
         editLabel =
             if hasInfo then
-                "Edit group info"
+                T.groupEditInfo i18n
 
             else
-                "Edit group name or add a description"
+                T.groupEditInfoEmpty i18n
     in
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         [ Maybe.map viewSubtitle meta.subtitle
@@ -541,7 +541,7 @@ memberCard i18n toMsg expandedMembers currentUserRootId member =
                             Theme.base.textSubtle
                         )
                     ]
-                    (Ui.text (formatJoinDate member.joinedAt))
+                    (Ui.text (formatJoinDate i18n member.joinedAt))
                 ]
             , metadataIcons isCurrentUser member.metadata
             ]
@@ -853,8 +853,8 @@ boolToInt b =
         0
 
 
-formatJoinDate : Time.Posix -> String
-formatJoinDate posix =
+formatJoinDate : I18n -> Time.Posix -> String
+formatJoinDate i18n posix =
     let
         zone : Time.Zone
         zone =
@@ -864,43 +864,43 @@ formatJoinDate posix =
         month =
             case Time.toMonth zone posix of
                 Time.Jan ->
-                    "Jan"
+                    T.monthShortJan i18n
 
                 Time.Feb ->
-                    "Feb"
+                    T.monthShortFeb i18n
 
                 Time.Mar ->
-                    "Mar"
+                    T.monthShortMar i18n
 
                 Time.Apr ->
-                    "Apr"
+                    T.monthShortApr i18n
 
                 Time.May ->
-                    "May"
+                    T.monthShortMay i18n
 
                 Time.Jun ->
-                    "Jun"
+                    T.monthShortJun i18n
 
                 Time.Jul ->
-                    "Jul"
+                    T.monthShortJul i18n
 
                 Time.Aug ->
-                    "Aug"
+                    T.monthShortAug i18n
 
                 Time.Sep ->
-                    "Sep"
+                    T.monthShortSep i18n
 
                 Time.Oct ->
-                    "Oct"
+                    T.monthShortOct i18n
 
                 Time.Nov ->
-                    "Nov"
+                    T.monthShortNov i18n
 
                 Time.Dec ->
-                    "Dec"
+                    T.monthShortDec i18n
 
         year : String
         year =
             String.fromInt (Time.toYear zone posix)
     in
-    "Joined " ++ month ++ " " ++ year
+    T.memberJoinedDate (month ++ " " ++ year) i18n

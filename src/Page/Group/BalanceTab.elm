@@ -313,15 +313,15 @@ memberBalanceCard i18n config resolveName expandedMember b =
                 )
             ]
         , if isExpanded then
-            transferActionBtn config.onNewTransfer
+            transferActionBtn i18n config.onNewTransfer
 
           else
             Ui.none
         ]
 
 
-transferActionBtn : msg -> Ui.Element msg
-transferActionBtn onPress =
+transferActionBtn : I18n -> msg -> Ui.Element msg
+transferActionBtn i18n onPress =
     Ui.row
         [ Ui.Input.button onPress
         , Ui.width Ui.fill
@@ -338,7 +338,7 @@ transferActionBtn onPress =
         , Ui.Font.color Theme.primary.text
         , Ui.pointer
         ]
-        [ Ui.text "+ Record new transfer" ]
+        [ Ui.text (T.balanceNewTransfer i18n) ]
 
 
 
