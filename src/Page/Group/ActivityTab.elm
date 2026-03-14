@@ -723,7 +723,6 @@ detailContent i18n config detail =
             ]
 
 
-
 entryDetailRows : I18n -> Currency -> (Member.Id -> String) -> Entry.Entry -> List (Ui.Element msg)
 entryDetailRows i18n groupCurrency resolveName entry =
     case entry.kind of
