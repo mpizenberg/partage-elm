@@ -543,6 +543,7 @@ memberCard i18n toMsg expandedMembers currentUserRootId member =
                     ]
                     (Ui.text (formatJoinDate member.joinedAt))
                 ]
+            , metadataIcons isCurrentUser member.metadata
             ]
 
         -- Expanded detail content
@@ -552,6 +553,54 @@ memberCard i18n toMsg expandedMembers currentUserRootId member =
           else
             Ui.none
         ]
+
+
+metadataIcons : Bool -> Member.Metadata -> Ui.Element msg
+metadataIcons isCurrentUser meta =
+    let
+        hasPaymentMethod : Bool
+        hasPaymentMethod =
+            case meta.payment of
+                Just p ->
+                    List.any ((/=) Nothing)
+                        [ p.lydia, p.revolut, p.paypal, p.venmo, p.btcAddress, p.adaAddress, p.wero ]
+
+                Nothing ->
+                    False
+
+        icons : List (Ui.Element msg)
+        icons =
+            List.filterMap identity
+                [ Maybe.map (\_ -> UI.Components.featherIcon 14 FeatherIcons.phone) meta.phone
+                , Maybe.map (\_ -> UI.Components.featherIcon 14 FeatherIcons.atSign) meta.email
+                , Maybe.map (\_ -> UI.Components.featherIcon 14 FeatherIcons.creditCard) (meta.payment |> Maybe.andThen .iban)
+                , if hasPaymentMethod then
+                    Just (UI.Components.featherIcon 14 FeatherIcons.dollarSign)
+
+                  else
+                    Nothing
+                ]
+    in
+    if List.isEmpty icons then
+        Ui.none
+
+    else
+        let
+            iconColor : Ui.Color
+            iconColor =
+                if isCurrentUser then
+                    Theme.base.bgSubtle
+
+                else
+                    Theme.base.textSubtle
+        in
+        Ui.row
+            [ Ui.spacing Theme.spacing.xs
+            , Ui.alignRight
+            , Ui.Font.color iconColor
+            , Ui.width Ui.shrink
+            ]
+            icons
 
 
 virtualTag : I18n -> Ui.Element msg
