@@ -13,7 +13,6 @@ import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
 import FeatherIcons
 import Format
-import Json.Decode
 import List.Extra
 import Set exposing (Set)
 import Time
@@ -22,7 +21,6 @@ import UI.Components
 import UI.Theme as Theme
 import Ui
 import Ui.Anim as Anim
-import Ui.Events
 import Ui.Font
 import Ui.Input
 
@@ -235,10 +233,7 @@ view i18n config today (Model data) state =
         -- New Entry button
         , Ui.el [ Ui.paddingXY 0 Theme.spacing.lg ] <|
             UI.Components.btnPrimary
-                [ Ui.link config.newEntryHref
-                , Ui.Events.preventDefaultOn "click"
-                    (Json.Decode.succeed ( config.onNewEntry, True ))
-                ]
+                (UI.Components.spaLinkAttrs config.newEntryHref config.onNewEntry)
                 { label = T.newEntryTitle i18n, onPress = config.onNewEntry }
 
         -- Search bar + filter button
@@ -330,23 +325,16 @@ filterButton showFilters hasActiveFilters =
             else
                 ( Theme.base.bgSubtle, Theme.base.accent, Theme.base.textSubtle )
     in
-    Ui.el
-        [ Ui.Input.button ToggleFilters
-        , Ui.alignRight
-        , Ui.width (Ui.px Theme.sizing.lg)
-        , Ui.height (Ui.px Theme.sizing.lg)
-        , Ui.rounded Theme.radius.md
+    UI.Components.iconButton
+        [ Ui.alignRight
         , Ui.border Theme.border
-        , Ui.contentCenterX
-        , Ui.contentCenterY
-        , Ui.pointer
         , Anim.transition (Anim.ms 200)
             [ Anim.backgroundColor bg
             , Anim.borderColor border
             , Anim.fontColor fontColor
             ]
         ]
-        (UI.Components.featherIcon 18 FeatherIcons.filter)
+        { onPress = ToggleFilters, size = 18, icon = FeatherIcons.filter }
 
 
 
@@ -1133,11 +1121,7 @@ confirmSection i18n config =
                 [ UI.Components.featherIcon 16 config.confirmIcon
                 , Ui.text config.confirmLabel
                 ]
-            , UI.Components.btnOutline []
-                { label = T.memberRenameCancel i18n
-                , icon = Nothing
-                , onPress = CancelConfirm
-                }
+            , UI.Components.btnOutline [] { label = T.memberRenameCancel i18n, icon = Nothing, onPress = CancelConfirm }
             ]
         ]
 
@@ -1151,40 +1135,18 @@ defaultButtons i18n entryId isDeleted =
             , onPress = ClickEdit entryId
             }
         , if isDeleted then
-            Ui.row
-                [ Ui.Input.button (ClickRestore entryId)
-                , Ui.width Ui.fill
-                , Ui.spacing Theme.spacing.sm
-                , Ui.contentCenterX
-                , Ui.contentCenterY
-                , Ui.padding Theme.spacing.md
-                , Ui.rounded Theme.radius.md
-                , Ui.background Theme.success.solid
-                , Ui.Font.color Theme.success.solidText
-                , Ui.Font.weight Theme.fontWeight.semibold
-                , Ui.pointer
-                ]
-                [ UI.Components.featherIcon 16 FeatherIcons.rotateCcw
-                , Ui.text (T.entryDetailRestoreButton i18n)
-                ]
+            UI.Components.btnSuccess []
+                { label = T.entryDetailRestoreButton i18n
+                , icon = FeatherIcons.rotateCcw
+                , onPress = ClickRestore entryId
+                }
 
           else
-            Ui.row
-                [ Ui.Input.button (ClickDelete entryId)
-                , Ui.width Ui.fill
-                , Ui.spacing Theme.spacing.sm
-                , Ui.contentCenterX
-                , Ui.contentCenterY
-                , Ui.padding Theme.spacing.md
-                , Ui.rounded Theme.radius.md
-                , Ui.background Theme.danger.solid
-                , Ui.Font.color Theme.danger.solidText
-                , Ui.Font.weight Theme.fontWeight.semibold
-                , Ui.pointer
-                ]
-                [ UI.Components.featherIcon 16 FeatherIcons.trash2
-                , Ui.text (T.entryDetailDeleteButton i18n)
-                ]
+            UI.Components.btnDanger []
+                { label = T.entryDetailDeleteButton i18n
+                , icon = FeatherIcons.trash2
+                , onPress = ClickDelete entryId
+                }
         ]
 
 

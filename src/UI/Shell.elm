@@ -11,12 +11,10 @@ Three layout types:
 -}
 
 import FeatherIcons
-import Json.Decode
 import Route exposing (GroupTab(..))
 import UI.Components
 import UI.Theme as Theme
 import Ui
-import Ui.Events
 import Ui.Font
 import Ui.Input
 
@@ -133,32 +131,29 @@ tabBar labels tabHref activeTab onTabClick =
 tab : GroupTab -> (GroupTab -> String) -> (GroupTab -> msg) -> GroupTab -> FeatherIcons.Icon -> String -> Ui.Element msg
 tab activeTab tabHref onTabClick thisTab icon label =
     let
-        isActive : Bool
-        isActive =
-            thisTab == activeTab
+        ( fontColor, fontWeight ) =
+            if thisTab == activeTab then
+                ( Ui.Font.color Theme.primary.solid
+                , Ui.Font.weight Theme.fontWeight.semibold
+                )
+
+            else
+                ( Ui.Font.color Theme.base.textSubtle
+                , Ui.noAttr
+                )
     in
     Ui.column
-        [ Ui.width Ui.fill
-        , Ui.paddingXY Theme.spacing.sm Theme.spacing.sm
-        , Ui.spacing Theme.spacing.xs
-        , Ui.pointer
-        , Ui.link (tabHref thisTab)
-        , Ui.Events.preventDefaultOn "click"
-            (Json.Decode.succeed ( onTabClick thisTab, True ))
-        , Ui.contentCenterX
-        , Ui.Font.center
-        , Ui.Font.size Theme.font.xs
-        , if isActive then
-            Ui.Font.color Theme.primary.solid
-
-          else
-            Ui.Font.color Theme.base.textSubtle
-        , if isActive then
-            Ui.Font.weight Theme.fontWeight.semibold
-
-          else
-            Ui.noAttr
-        ]
+        (Ui.width Ui.fill
+            :: Ui.paddingXY Theme.spacing.sm Theme.spacing.sm
+            :: Ui.spacing Theme.spacing.xs
+            :: Ui.pointer
+            :: Ui.contentCenterX
+            :: Ui.Font.center
+            :: Ui.Font.size Theme.font.xs
+            :: fontColor
+            :: fontWeight
+            :: UI.Components.spaLinkAttrs (tabHref thisTab) (onTabClick thisTab)
+        )
         [ Ui.el [ Ui.centerX ] (UI.Components.featherIcon 18 icon)
         , Ui.text label
         ]

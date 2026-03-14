@@ -1,11 +1,11 @@
 module Page.About exposing (Model, Msg, Output(..), init, statsLoaded, update, view)
 
+import FeatherIcons
 import Translations as T exposing (I18n, Language)
 import UI.Components
 import UI.Theme as Theme
 import Ui
 import Ui.Font
-import Ui.Input
 import UsageStats exposing (CostBreakdown)
 
 
@@ -165,18 +165,11 @@ resetSection i18n confirmingReset =
                     ]
                     (Ui.text (T.aboutResetConfirm i18n))
                 ]
-            , Ui.el
-                [ Ui.Input.button ConfirmReset
-                , Ui.width Ui.fill
-                , Ui.padding Theme.spacing.md
-                , Ui.rounded Theme.radius.md
-                , Ui.background Theme.danger.solid
-                , Ui.Font.color Theme.danger.solidText
-                , Ui.Font.center
-                , Ui.Font.weight Theme.fontWeight.semibold
-                , Ui.pointer
-                ]
-                (Ui.text (T.aboutResetStats i18n))
+            , UI.Components.btnDanger []
+                { label = T.aboutResetStats i18n
+                , icon = FeatherIcons.trash2
+                , onPress = ConfirmReset
+                }
             ]
 
     else

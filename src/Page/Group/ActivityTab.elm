@@ -149,23 +149,16 @@ filterToggleRow toMsg showFilters filters =
                 ( Theme.base.bgSubtle, Theme.base.accent, Theme.base.textSubtle )
     in
     Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY, Ui.width Ui.fill ]
-        [ Ui.el
-            [ Ui.Input.button (toMsg ToggleFilters)
-            , Ui.alignRight
-            , Ui.width (Ui.px Theme.sizing.lg)
-            , Ui.height (Ui.px Theme.sizing.lg)
-            , Ui.rounded Theme.radius.md
+        [ UI.Components.iconButton
+            [ Ui.alignRight
             , Ui.border Theme.border
-            , Ui.contentCenterX
-            , Ui.contentCenterY
-            , Ui.pointer
             , Anim.transition (Anim.ms 200)
                 [ Anim.backgroundColor bg
                 , Anim.borderColor border
                 , Anim.fontColor fontColor
                 ]
             ]
-            (UI.Components.featherIcon 18 FeatherIcons.filter)
+            { onPress = toMsg ToggleFilters, size = 18, icon = FeatherIcons.filter }
         ]
 
 

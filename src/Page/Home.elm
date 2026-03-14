@@ -132,10 +132,7 @@ view i18n ctx toMsg (Model data) groups =
                     ]
                 , joinInput i18n toMsg data
                 , UI.Components.btnPrimary
-                    [ Ui.link (Route.toPath Route.NewGroup)
-                    , Ui.Events.preventDefaultOn "click"
-                        (Json.Decode.succeed ( ctx.onNavigate Route.NewGroup, True ))
-                    ]
+                    (UI.Components.spaLinkAttrs (Route.toPath Route.NewGroup) (ctx.onNavigate Route.NewGroup))
                     { label = T.homeNewGroup i18n
                     , onPress = ctx.onNavigate Route.NewGroup
                     }
@@ -225,17 +222,12 @@ notifSection i18n ctx =
                         , Ui.width Ui.fill
                         ]
                         (Ui.text (T.homeNotificationsHint i18n))
-                    , Ui.el
-                        [ Ui.Input.button ctx.onEnableNotifications
-                        , Ui.width (Ui.px Theme.sizing.lg)
-                        , Ui.height (Ui.px Theme.sizing.lg)
-                        , Ui.rounded Theme.radius.md
-                        , Ui.background Theme.primary.tint
-                        , Ui.contentCenterX
-                        , Ui.contentCenterY
-                        , Ui.pointer
-                        ]
-                        (UI.Components.featherIcon (toFloat Theme.sizing.sm) FeatherIcons.bell)
+                    , UI.Components.iconButton
+                        [ Ui.background Theme.primary.tint ]
+                        { onPress = ctx.onEnableNotifications
+                        , size = toFloat Theme.sizing.sm
+                        , icon = FeatherIcons.bell
+                        }
                     ]
                 ]
 
@@ -307,12 +299,10 @@ groupCard i18n ctx summary =
                     ]
     in
     UI.Components.card
-        [ Ui.padding Theme.spacing.lg
-        , Ui.pointer
-        , Ui.link (Route.toPath groupRoute)
-        , Ui.Events.preventDefaultOn "click"
-            (Json.Decode.succeed ( ctx.onNavigate groupRoute, True ))
-        ]
+        (Ui.padding Theme.spacing.lg
+            :: Ui.pointer
+            :: UI.Components.spaLinkAttrs (Route.toPath groupRoute) (ctx.onNavigate groupRoute)
+        )
         [ Ui.el
             [ Ui.Font.size Theme.font.lg
             , Ui.Font.weight Theme.fontWeight.semibold
@@ -423,15 +413,13 @@ footer i18n onNavigate =
         ]
         [ UI.Components.horizontalSeparator
         , Ui.el
-            [ Ui.paddingXY 0 Theme.spacing.lg
-            , Ui.centerX
-            , Ui.Font.size Theme.font.sm
-            , Ui.Font.weight Theme.fontWeight.medium
-            , Ui.Font.color Theme.base.textSubtle
-            , Ui.pointer
-            , Ui.link (Route.toPath Route.About)
-            , Ui.Events.preventDefaultOn "click"
-                (Json.Decode.succeed ( onNavigate Route.About, True ))
-            ]
+            (Ui.paddingXY 0 Theme.spacing.lg
+                :: Ui.centerX
+                :: Ui.Font.size Theme.font.sm
+                :: Ui.Font.weight Theme.fontWeight.medium
+                :: Ui.Font.color Theme.base.textSubtle
+                :: Ui.pointer
+                :: UI.Components.spaLinkAttrs (Route.toPath Route.About) (onNavigate Route.About)
+            )
             (Ui.text (T.aboutTitle i18n))
         ]

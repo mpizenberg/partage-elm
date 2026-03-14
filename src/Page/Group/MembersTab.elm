@@ -9,7 +9,6 @@ import Domain.Member as Member
 import FeatherIcons
 import Html
 import Html.Attributes
-import Json.Decode
 import QRCode
 import Set exposing (Set)
 import Time
@@ -17,7 +16,6 @@ import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
 import Ui
-import Ui.Events
 import Ui.Font
 import Ui.Input
 
@@ -167,10 +165,7 @@ view i18n config toMsg model currentUserRootId state =
 
         -- Add Member
         , UI.Components.btnPrimary
-            [ Ui.link config.addMemberHref
-            , Ui.Events.preventDefaultOn "click"
-                (Json.Decode.succeed ( config.onAddMember, True ))
-            ]
+            (UI.Components.spaLinkAttrs config.addMemberHref config.onAddMember)
             { label = T.memberAddButton i18n, onPress = config.onAddMember }
         ]
 
@@ -276,11 +271,9 @@ groupInfoSection i18n editHref onEditGroupMetadata state =
             |> Maybe.withDefault Ui.none
         , viewLinks
         , UI.Components.btnOutline
-            [ Ui.paddingXY Theme.spacing.md Theme.spacing.sm
-            , Ui.link editHref
-            , Ui.Events.preventDefaultOn "click"
-                (Json.Decode.succeed ( onEditGroupMetadata, True ))
-            ]
+            (Ui.paddingXY Theme.spacing.md Theme.spacing.sm
+                :: UI.Components.spaLinkAttrs editHref onEditGroupMetadata
+            )
             { label = editLabel
             , icon = Just (UI.Components.featherIcon 14 FeatherIcons.edit)
             , onPress = onEditGroupMetadata
@@ -637,40 +630,18 @@ memberDetail i18n toMsg currentUserRootId member =
         retireButton : Ui.Element msg
         retireButton =
             if member.isRetired then
-                Ui.row
-                    [ Ui.Input.button (toMsg (Unretire member.rootId))
-                    , Ui.width Ui.fill
-                    , Ui.spacing Theme.spacing.sm
-                    , Ui.contentCenterX
-                    , Ui.contentCenterY
-                    , Ui.padding Theme.spacing.md
-                    , Ui.rounded Theme.radius.md
-                    , Ui.background Theme.success.solid
-                    , Ui.Font.color Theme.success.solidText
-                    , Ui.Font.weight Theme.fontWeight.semibold
-                    , Ui.pointer
-                    ]
-                    [ UI.Components.featherIcon 16 FeatherIcons.userPlus
-                    , Ui.text (T.memberUnretireButton i18n)
-                    ]
+                UI.Components.btnSuccess []
+                    { label = T.memberUnretireButton i18n
+                    , icon = FeatherIcons.userPlus
+                    , onPress = toMsg (Unretire member.rootId)
+                    }
 
             else if member.rootId /= currentUserRootId then
-                Ui.row
-                    [ Ui.Input.button (toMsg (Retire member.rootId))
-                    , Ui.width Ui.fill
-                    , Ui.spacing Theme.spacing.sm
-                    , Ui.contentCenterX
-                    , Ui.contentCenterY
-                    , Ui.padding Theme.spacing.md
-                    , Ui.rounded Theme.radius.md
-                    , Ui.background Theme.danger.solid
-                    , Ui.Font.color Theme.danger.solidText
-                    , Ui.Font.weight Theme.fontWeight.semibold
-                    , Ui.pointer
-                    ]
-                    [ UI.Components.featherIcon 16 FeatherIcons.trash2
-                    , Ui.text (T.memberRetireButton i18n)
-                    ]
+                UI.Components.btnDanger []
+                    { label = T.memberRetireButton i18n
+                    , icon = FeatherIcons.trash2
+                    , onPress = toMsg (Retire member.rootId)
+                    }
 
             else
                 Ui.none

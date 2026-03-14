@@ -12,13 +12,11 @@ import FeatherIcons
 import Format
 import Html
 import Html.Attributes
-import Json.Decode
 import List.Extra
 import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
 import Ui
-import Ui.Events
 import Ui.Font
 import Ui.Input
 
@@ -328,23 +326,21 @@ memberBalanceCard i18n config resolveName expandedMember b =
 transferActionBtn : I18n -> String -> msg -> Ui.Element msg
 transferActionBtn i18n href onPress =
     Ui.row
-        [ Ui.link href
-        , Ui.Events.preventDefaultOn "click"
-            (Json.Decode.succeed ( onPress, True ))
-        , Ui.width Ui.fill
-        , Ui.spacing Theme.spacing.xs
-        , Ui.contentCenterX
-        , Ui.contentCenterY
-        , Ui.paddingXY Theme.spacing.md Theme.spacing.sm
-        , Ui.border Theme.border
-        , Ui.borderColor Theme.base.accent
-        , Ui.rounded Theme.radius.sm
-        , Ui.background Theme.base.bgSubtle
-        , Ui.Font.size Theme.font.sm
-        , Ui.Font.weight Theme.fontWeight.medium
-        , Ui.Font.color Theme.primary.text
-        , Ui.pointer
-        ]
+        (Ui.width Ui.fill
+            :: Ui.spacing Theme.spacing.xs
+            :: Ui.contentCenterX
+            :: Ui.contentCenterY
+            :: Ui.paddingXY Theme.spacing.md Theme.spacing.sm
+            :: Ui.border Theme.border
+            :: Ui.borderColor Theme.base.accent
+            :: Ui.rounded Theme.radius.sm
+            :: Ui.background Theme.base.bgSubtle
+            :: Ui.Font.size Theme.font.sm
+            :: Ui.Font.weight Theme.fontWeight.medium
+            :: Ui.Font.color Theme.primary.text
+            :: Ui.pointer
+            :: UI.Components.spaLinkAttrs href onPress
+        )
         [ Ui.text (T.balanceNewTransfer i18n) ]
 
 

@@ -306,18 +306,11 @@ deleteSection i18n confirmingDelete =
                     , Ui.Font.color Theme.danger.text
                     ]
                     (Ui.text (T.groupRemoveWarning i18n))
-                , Ui.el
-                    [ Ui.Input.button ConfirmDelete
-                    , Ui.width Ui.fill
-                    , Ui.padding Theme.spacing.md
-                    , Ui.rounded Theme.radius.md
-                    , Ui.background Theme.danger.solid
-                    , Ui.Font.color Theme.danger.solidText
-                    , Ui.Font.center
-                    , Ui.Font.weight Theme.fontWeight.semibold
-                    , Ui.pointer
-                    ]
-                    (Ui.text (T.groupRemoveConfirm i18n))
+                , UI.Components.btnDanger []
+                    { label = T.groupRemoveConfirm i18n
+                    , icon = FeatherIcons.trash2
+                    , onPress = ConfirmDelete
+                    }
                 ]
 
           else

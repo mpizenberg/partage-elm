@@ -1,7 +1,9 @@
 module UI.Components exposing
     ( sectionLabel, formLabel
     , card, horizontalSeparator
-    , btnPrimary, btnOutline, btnOutlineAttrs, btnDark
+    , btnPrimary, btnOutline, btnOutlineAttrs, btnDark, btnDanger, btnSuccess
+    , iconButton
+    , spaLinkAttrs
     , chip, toggle, expandTrigger, toggleMemberBtn
     , avatar, AvatarColor(..)
     , fab
@@ -20,7 +22,9 @@ module UI.Components exposing
 
 # Buttons
 
-@docs btnPrimary, btnOutline, btnOutlineAttrs, btnDark
+@docs btnPrimary, btnOutline, btnOutlineAttrs, btnDark, btnDanger, btnSuccess
+@docs iconButton
+@docs spaLinkAttrs
 
 
 # Interactive
@@ -214,6 +218,80 @@ btnDark attrs config =
             :: attrs
         )
         (Ui.text config.label)
+
+
+{-| Danger button with icon (solid red, full width).
+-}
+btnDanger : List (Ui.Attribute msg) -> { label : String, icon : FeatherIcons.Icon, onPress : msg } -> Ui.Element msg
+btnDanger attrs config =
+    Ui.row
+        (Ui.Input.button config.onPress
+            :: Ui.width Ui.fill
+            :: Ui.spacing Theme.spacing.sm
+            :: Ui.contentCenterX
+            :: Ui.contentCenterY
+            :: Ui.padding Theme.spacing.md
+            :: Ui.rounded Theme.radius.md
+            :: Ui.background Theme.danger.solid
+            :: Ui.Font.color Theme.danger.solidText
+            :: Ui.Font.weight Theme.fontWeight.semibold
+            :: Ui.pointer
+            :: attrs
+        )
+        [ featherIcon 16 config.icon
+        , Ui.text config.label
+        ]
+
+
+{-| Success button with icon (solid green, full width).
+-}
+btnSuccess : List (Ui.Attribute msg) -> { label : String, icon : FeatherIcons.Icon, onPress : msg } -> Ui.Element msg
+btnSuccess attrs config =
+    Ui.row
+        (Ui.Input.button config.onPress
+            :: Ui.width Ui.fill
+            :: Ui.spacing Theme.spacing.sm
+            :: Ui.contentCenterX
+            :: Ui.contentCenterY
+            :: Ui.padding Theme.spacing.md
+            :: Ui.rounded Theme.radius.md
+            :: Ui.background Theme.success.solid
+            :: Ui.Font.color Theme.success.solidText
+            :: Ui.Font.weight Theme.fontWeight.semibold
+            :: Ui.pointer
+            :: attrs
+        )
+        [ featherIcon 16 config.icon
+        , Ui.text config.label
+        ]
+
+
+{-| Attributes for SPA link+button pattern: renders as `<a>` with href
+but intercepts clicks for client-side navigation.
+-}
+spaLinkAttrs : String -> msg -> List (Ui.Attribute msg)
+spaLinkAttrs href onPress =
+    [ Ui.link href
+    , Ui.Events.preventDefaultOn "click"
+        (Json.Decode.succeed ( onPress, True ))
+    ]
+
+
+{-| Icon-only button (square, rounded, with a single Feather icon).
+-}
+iconButton : List (Ui.Attribute msg) -> { onPress : msg, size : Float, icon : FeatherIcons.Icon } -> Ui.Element msg
+iconButton attrs config =
+    Ui.el
+        (Ui.Input.button config.onPress
+            :: Ui.width (Ui.px Theme.sizing.lg)
+            :: Ui.height (Ui.px Theme.sizing.lg)
+            :: Ui.rounded Theme.radius.md
+            :: Ui.contentCenterX
+            :: Ui.contentCenterY
+            :: Ui.pointer
+            :: attrs
+        )
+        (featherIcon config.size config.icon)
 
 
 
@@ -417,20 +495,19 @@ toggleMemberBtn config =
 fab : { label : String, href : String, onPress : msg } -> Ui.Element msg
 fab config =
     Ui.el
-        [ Ui.link config.href
-        , Ui.Events.preventDefaultOn "click"
-            (Json.Decode.succeed ( config.onPress, True ))
-        , Ui.width (Ui.px Theme.sizing.xl)
-        , Ui.height (Ui.px Theme.sizing.xl)
-        , Ui.rounded Theme.radius.lg
-        , Ui.background Theme.primary.solid
-        , Ui.Font.color Theme.primary.solidText
-        , Theme.shadowAccent
-        , Ui.alignRight
-        , Ui.pointer
-        , Ui.contentCenterX
-        , Ui.contentCenterY
-        ]
+        (spaLinkAttrs config.href config.onPress
+            ++ [ Ui.width (Ui.px Theme.sizing.xl)
+               , Ui.height (Ui.px Theme.sizing.xl)
+               , Ui.rounded Theme.radius.lg
+               , Ui.background Theme.primary.solid
+               , Ui.Font.color Theme.primary.solidText
+               , Theme.shadowAccent
+               , Ui.alignRight
+               , Ui.pointer
+               , Ui.contentCenterX
+               , Ui.contentCenterY
+               ]
+        )
         (featherIconColored "white" (toFloat Theme.sizing.sm) FeatherIcons.plus)
 
 
