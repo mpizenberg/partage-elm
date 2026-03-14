@@ -18,6 +18,7 @@ import UI.Theme as Theme
 import Ui
 import Ui.Events
 import Ui.Font
+import Ui.Input
 
 
 {-| Labels for each tab in the group tab bar.
@@ -40,7 +41,6 @@ it should be placed in Ui.layout's Ui.inFront for viewport-fixed positioning.
 tabbedShell :
     { title : String
     , subtitle : String
-    , backHref : String
     , onBack : msg
     , content : Ui.Element msg
     }
@@ -48,7 +48,7 @@ tabbedShell :
 tabbedShell config =
     Ui.column
         [ Ui.height Ui.fill, Ui.paddingBottom Theme.sizing.xxxl ]
-        [ pageHeader { title = config.title, subtitle = config.subtitle, backHref = config.backHref, onBack = config.onBack }
+        [ pageHeader { title = config.title, subtitle = config.subtitle, onBack = config.onBack }
         , Ui.el
             [ Ui.width Ui.fill
             , Ui.height Ui.fill
@@ -64,10 +64,10 @@ tabbedShell config =
 
 {-| Page shell with a page header (back button + title). No tabs.
 -}
-pageShell : { title : String, backHref : String, onBack : msg } -> Ui.Element msg -> Ui.Element msg
+pageShell : { title : String, onBack : msg } -> Ui.Element msg -> Ui.Element msg
 pageShell config content =
     Ui.column [ Ui.height Ui.fill, Ui.paddingBottom Theme.spacing.xl ]
-        [ pageHeader { title = config.title, subtitle = "", backHref = config.backHref, onBack = config.onBack }
+        [ pageHeader { title = config.title, subtitle = "", onBack = config.onBack }
         , content
         ]
 
@@ -76,7 +76,7 @@ pageShell config content =
 -- PAGE HEADER
 
 
-pageHeader : { title : String, subtitle : String, backHref : String, onBack : msg } -> Ui.Element msg
+pageHeader : { title : String, subtitle : String, onBack : msg } -> Ui.Element msg
 pageHeader config =
     Ui.row
         [ Ui.width Ui.fill
@@ -87,9 +87,7 @@ pageHeader config =
             [ Ui.spacing Theme.spacing.md
             , Ui.contentCenterY
             , Ui.width Ui.shrink
-            , Ui.link config.backHref
-            , Ui.Events.preventDefaultOn "click"
-                (Json.Decode.succeed ( config.onBack, True ))
+            , Ui.Input.button config.onBack
             , Ui.pointer
             ]
             [ Ui.el [] (UI.Components.featherIcon (toFloat Theme.sizing.sm) FeatherIcons.chevronLeft)

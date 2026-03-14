@@ -105,6 +105,7 @@ type alias ViewConfig msg =
     { i18n : I18n
     , toMsg : Msg -> msg
     , onNavigateHome : msg
+    , onGoBack : msg
     , today : Date
     , groupId : Group.Id
     , origin : String
@@ -1147,7 +1148,7 @@ view config groupView model =
 
 viewLoadingShell : ViewConfig msg -> Ui.Element msg
 viewLoadingShell config =
-    UI.Shell.pageShell { title = T.shellPartage config.i18n, backHref = Route.toPath Home, onBack = config.onNavigateHome } <|
+    UI.Shell.pageShell { title = T.shellPartage config.i18n, onBack = config.onNavigateHome } <|
         Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
             (Ui.text (T.loadingGroup config.i18n))
 
@@ -1212,7 +1213,7 @@ viewGroupPage config groupView loaded model =
 
 pageShell : ViewConfig msg -> String -> Ui.Element msg -> Ui.Element msg
 pageShell config title content =
-    UI.Shell.pageShell { title = title, backHref = Route.toPath (GroupRoute config.groupId (Tab BalanceTab)), onBack = config.onNavigateHome } content
+    UI.Shell.pageShell { title = title, onBack = config.onGoBack } content
 
 
 viewTabs : ViewConfig msg -> Member.Id -> LoadedGroup -> Model -> ViewResult msg
@@ -1226,7 +1227,6 @@ viewTabs config userRootId loaded model =
         UI.Shell.tabbedShell
             { title = loaded.groupState.groupMeta.name
             , subtitle = ""
-            , backHref = Route.toPath Home
             , onBack = config.onNavigateHome
             , content = tabContent config userRootId loaded model
             }
