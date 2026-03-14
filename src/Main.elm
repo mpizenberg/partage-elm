@@ -459,8 +459,11 @@ update msg model =
                 Ready readyData ->
                     ( model.runner, Cmd.none )
                         |> Runner.andRun (\_ -> NoOp)
-                            (Storage.saveNotificationTranslations readyData.db
-                                (PushServer.notificationTranslations lang)
+                            (ConcurrentTask.map2 (\_ _ -> ())
+                                (Storage.saveLanguage readyData.db (T.languageToString lang))
+                                (Storage.saveNotificationTranslations readyData.db
+                                    (PushServer.notificationTranslations lang)
+                                )
                             )
                         |> Tuple.mapFirst (\r -> { updatedModel | runner = r })
 
@@ -518,12 +521,22 @@ update msg model =
 
         OnInitComplete (ConcurrentTask.Success readyData) ->
             let
+                -- Override language if a saved preference exists
+                modelWithLanguage : Model
+                modelWithLanguage =
+                    case readyData.savedLanguage |> Maybe.andThen T.languageFromString of
+                        Just savedLang ->
+                            { model | i18n = T.load savedLang model.i18n }
+
+                        Nothing ->
+                            model
+
                 ( guardedRoute, guardCmd ) =
-                    applyRouteGuard readyData.identity model.route
+                    applyRouteGuard readyData.identity modelWithLanguage.route
 
                 modelWithReadyData : Model
                 modelWithReadyData =
-                    { model
+                    { modelWithLanguage
                         | appState = Ready readyData
                         , route = guardedRoute
                         , groupModel =

@@ -4,7 +4,6 @@
   "learn more": "elm-review suppress --help",
   "suppressions": [
     { "count": 3, "filePath": "src/ConcurrentTaskExtra.elm" },
-    { "count": 2, "filePath": "src/Storage.elm" },
-    { "count": 1, "filePath": "src/Translations.elm" }
+    { "count": 2, "filePath": "src/Storage.elm" }
   ]
 }

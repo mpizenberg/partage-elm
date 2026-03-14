@@ -18,6 +18,7 @@ module Storage exposing
     , saveGroupKey
     , saveGroupSummary
     , saveIdentity
+    , saveLanguage
     , saveNotificationTranslations
     , saveSyncCursor
     , saveUnpushedIds
@@ -44,6 +45,7 @@ type alias InitData =
     { db : Idb.Db
     , identity : Maybe Identity
     , groups : Dict Group.Id Group.Summary
+    , savedLanguage : Maybe String
     }
 
 
@@ -121,9 +123,10 @@ open =
 -}
 init : Idb.Db -> ConcurrentTask Idb.Error InitData
 init db =
-    ConcurrentTask.map2 (InitData db)
+    ConcurrentTask.map3 (InitData db)
         (loadIdentity db)
         (loadAllGroups db)
+        (loadLanguage db)
 
 
 {-| Save the user's identity to the database.
@@ -138,6 +141,20 @@ saveIdentity db identity =
 loadIdentity : Idb.Db -> ConcurrentTask Idb.Error (Maybe Identity)
 loadIdentity db =
     Idb.get db identityStore (Idb.StringKey "default") Identity.decoder
+
+
+{-| Load the saved language preference, if any.
+-}
+loadLanguage : Idb.Db -> ConcurrentTask Idb.Error (Maybe String)
+loadLanguage db =
+    Idb.get db identityStore (Idb.StringKey "language") Decode.string
+
+
+{-| Save the user's language preference.
+-}
+saveLanguage : Idb.Db -> String -> ConcurrentTask Idb.Error ()
+saveLanguage db lang =
+    Idb.putAt db identityStore (Idb.StringKey "language") (Encode.string lang)
 
 
 {-| Save notification translations for the service worker to use.
