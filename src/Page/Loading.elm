@@ -15,8 +15,8 @@ view i18n =
         (Ui.el
             [ Ui.centerX
             , Ui.centerY
-            , Ui.Font.size Theme.fontSize.lg
-            , Ui.Font.color Theme.neutral500
+            , Ui.Font.size Theme.font.lg
+            , Ui.Font.color Theme.base.textSubtle
             ]
             (Ui.text (T.loadingApp i18n))
         )

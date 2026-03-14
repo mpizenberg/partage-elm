@@ -120,6 +120,7 @@ view model =
             , Ui.width Ui.fill
             , Ui.widthMax 400
             , Ui.htmlAttribute (Html.Attributes.style "pointer-events" "none")
+            , Ui.htmlAttribute (Html.Attributes.style "z-index" "9999")
             ]
             (keyframesStyle :: List.map viewToast model.toasts)
 
@@ -139,18 +140,18 @@ viewToast toast =
         ( bgColor, fgColor ) =
             case toast.level of
                 Success ->
-                    ( Theme.successLight, Theme.success )
+                    ( Theme.success.tint, Theme.success.text )
 
                 Error ->
-                    ( Theme.dangerLight, Theme.danger )
+                    ( Theme.danger.tint, Theme.danger.text )
     in
     Ui.el
         [ Ui.width Ui.fill
         , Ui.padding Theme.spacing.md
-        , Ui.rounded Theme.rounding.md
+        , Ui.rounded Theme.radius.md
         , Ui.background bgColor
         , Ui.Font.color fgColor
-        , Ui.Font.size Theme.fontSize.sm
+        , Ui.Font.size Theme.font.sm
         , Ui.htmlAttribute (Html.Attributes.style "animation" "toast-slide-in 0.3s ease-out")
         , Ui.htmlAttribute (Html.Attributes.style "box-shadow" "0 2px 8px rgba(0,0,0,0.15)")
         , Ui.htmlAttribute (Html.Attributes.style "pointer-events" "auto")

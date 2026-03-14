@@ -1,12 +1,8 @@
 module Storage exposing
-    ( GroupSummary
-    , InitData
+    ( InitData
     , addUnpushedIds
     , deleteGroup
-    , encodeGroupSummary
     , errorToString
-    , groupSummaryDecoder
-    , importGroup
     , init
     , loadAllGroups
     , loadGroup
@@ -18,6 +14,7 @@ module Storage exposing
     , open
     , resetUsageStats
     , saveEvents
+    , saveGroup
     , saveGroupKey
     , saveGroupSummary
     , saveIdentity
@@ -29,7 +26,6 @@ module Storage exposing
 
 import ConcurrentTask exposing (ConcurrentTask)
 import Dict exposing (Dict)
-import Domain.Currency as Currency exposing (Currency)
 import Domain.Event as Event
 import Domain.Group as Group
 import Identity exposing (Identity)
@@ -47,17 +43,7 @@ import WebCrypto.Symmetric as Symmetric
 type alias InitData =
     { db : Idb.Db
     , identity : Maybe Identity
-    , groups : Dict Group.Id GroupSummary
-    }
-
-
-{-| Summary of a group for the home page list.
--}
-type alias GroupSummary =
-    { id : Group.Id
-    , name : String
-    , defaultCurrency : Currency
-    , isSubscribed : Bool
+    , groups : Dict Group.Id Group.Summary
     }
 
 
@@ -164,16 +150,16 @@ saveNotificationTranslations db translations =
 
 {-| Save a group summary to the database.
 -}
-saveGroupSummary : Idb.Db -> GroupSummary -> ConcurrentTask Idb.Error Idb.Key
+saveGroupSummary : Idb.Db -> Group.Summary -> ConcurrentTask Idb.Error Idb.Key
 saveGroupSummary db summary =
-    Idb.put db groupsStore (encodeGroupSummary summary)
+    Idb.put db groupsStore (Group.encodeSummary summary)
 
 
 {-| Load all group summaries from the database as a dictionary keyed by group ID.
 -}
-loadAllGroups : Idb.Db -> ConcurrentTask Idb.Error (Dict Group.Id GroupSummary)
+loadAllGroups : Idb.Db -> ConcurrentTask Idb.Error (Dict Group.Id Group.Summary)
 loadAllGroups db =
-    Idb.getAll db groupsStore groupSummaryDecoder
+    Idb.getAll db groupsStore Group.summaryDecoder
         |> ConcurrentTask.map (List.map (\( _, s ) -> ( s.id, s )) >> Dict.fromList)
 
 
@@ -297,10 +283,10 @@ deleteGroup db groupId =
         |> ConcurrentTask.map (\_ -> ())
 
 
-{-| Import a group by saving its summary, events, optional encryption key, and optional sync cursor.
+{-| Save a group summary, events, optional encryption key, and optional sync cursor.
 -}
-importGroup : Idb.Db -> GroupSummary -> Maybe String -> List Event.Envelope -> Maybe String -> ConcurrentTask Idb.Error ()
-importGroup db summary maybeKey events maybeCursor =
+saveGroup : Idb.Db -> Group.Summary -> Maybe String -> List Event.Envelope -> Maybe String -> ConcurrentTask Idb.Error ()
+saveGroup db summary maybeKey events maybeCursor =
     let
         saveKeyTask : ConcurrentTask Idb.Error ()
         saveKeyTask =
@@ -356,25 +342,6 @@ resetUsageStats db =
 
 
 -- Internal codecs
-
-
-encodeGroupSummary : GroupSummary -> Encode.Value
-encodeGroupSummary summary =
-    Encode.object
-        [ ( "id", Encode.string summary.id )
-        , ( "n", Encode.string summary.name )
-        , ( "dc", Currency.encodeCurrency summary.defaultCurrency )
-        , ( "sub", Encode.bool summary.isSubscribed )
-        ]
-
-
-groupSummaryDecoder : Decode.Decoder GroupSummary
-groupSummaryDecoder =
-    Decode.map4 GroupSummary
-        (Decode.field "id" Decode.string)
-        (Decode.field "n" Decode.string)
-        (Decode.field "dc" Currency.currencyDecoder)
-        (Decode.field "sub" Decode.bool)
 
 
 encodeEventForStorage : Group.Id -> Event.Envelope -> Encode.Value

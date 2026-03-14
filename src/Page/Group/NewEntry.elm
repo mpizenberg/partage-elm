@@ -5,12 +5,20 @@ import Domain.Currency as Currency exposing (Currency)
 import Domain.Date exposing (Date)
 import Domain.Entry as Entry
 import Domain.Member as Member
+import FeatherIcons
 import Field
 import Form
 import Form.NewEntry as NewEntry exposing (Output)
+import Format
+import Html
+import Html.Attributes
+import Html.Events
+import List.Extra
 import Translations as T exposing (I18n)
+import UI.Components
 import UI.Theme as Theme
 import Ui
+import Ui.Anim as Anim
 import Ui.Font
 import Ui.Input
 import Validation as V
@@ -21,11 +29,6 @@ import Validation as V
 type EntryKind
     = ExpenseKind
     | TransferKind
-
-
-type PayerMode
-    = SinglePayer
-    | MultiPayer
 
 
 type SplitMode
@@ -77,14 +80,12 @@ type alias ModelData =
     , isEditing : Bool
     , kind : EntryKind
     , kindLocked : Bool
-    , payerMode : PayerMode
-    , payerId : Member.Id
     , payerAmounts : Dict Member.Id String
     , beneficiaries : Dict Member.Id Int
     , splitMode : SplitMode
     , exactAmounts : Dict Member.Id String
-    , fromMemberId : Member.Id
-    , toMemberId : Member.Id
+    , fromMemberId : Maybe Member.Id
+    , toMemberId : Maybe Member.Id
     , category : Maybe Entry.Category
     , notes : String
     , currency : Currency
@@ -106,20 +107,18 @@ type alias Config =
 {-| Messages produced by user interaction on the new entry form.
 -}
 type Msg
-    = InputDescription String
+    = SelectEntryKind EntryKind
+    | InputDescription String
     | InputAmount String
     | InputNotes String
-    | InputKind EntryKind
-    | InputPayerMode PayerMode
-    | InputPayer Member.Id
     | TogglePayer Member.Id
     | InputPayerAmount Member.Id String
     | ToggleBeneficiary Member.Id
-    | InputBeneficiaryShares Member.Id String
+    | IncrementShares Member.Id
+    | DecrementShares Member.Id
     | InputSplitMode SplitMode
     | InputExactAmount Member.Id String
-    | InputFromMember Member.Id
-    | InputToMember Member.Id
+    | CycleTransferRole Member.Id
     | InputCategory (Maybe Entry.Category)
     | InputCurrency Currency
     | InputDefaultCurrencyAmount String
@@ -131,36 +130,18 @@ type Msg
 -}
 init : Config -> Model
 init config =
-    let
-        ( from, to ) =
-            case config.activeMembersRootIds of
-                first :: second :: _ ->
-                    if first == config.currentUserRootId then
-                        ( first, second )
-
-                    else
-                        ( config.currentUserRootId, first )
-
-                first :: _ ->
-                    ( config.currentUserRootId, first )
-
-                [] ->
-                    ( config.currentUserRootId, config.currentUserRootId )
-    in
     Model
         { form = NewEntry.form |> NewEntry.initDate config.today
         , submitted = False
         , isEditing = False
         , kind = ExpenseKind
         , kindLocked = False
-        , payerMode = SinglePayer
-        , payerId = config.currentUserRootId
-        , payerAmounts = Dict.empty
+        , payerAmounts = Dict.singleton config.currentUserRootId ""
         , beneficiaries = Dict.fromList (List.map (\mid -> ( mid, 1 )) config.activeMembersRootIds)
         , splitMode = ShareSplit
         , exactAmounts = Dict.empty
-        , fromMemberId = from
-        , toMemberId = to
+        , fromMemberId = Just config.currentUserRootId
+        , toMemberId = Nothing
         , category = Nothing
         , notes = ""
         , currency = config.defaultCurrency
@@ -182,8 +163,8 @@ initTransfer config { toMemberId, amountCents } =
         { data
             | kind = TransferKind
             , kindLocked = True
-            , fromMemberId = config.currentUserRootId
-            , toMemberId = toMemberId
+            , fromMemberId = Just config.currentUserRootId
+            , toMemberId = Just toMemberId
             , form = data.form |> NewEntry.initAmount amountCents
         }
 
@@ -240,27 +221,10 @@ initFromEntry config entry =
                     else
                         Dict.empty
 
-                isMultiPayer : Bool
-                isMultiPayer =
-                    List.length data.payers > 1
-
-                payerId : Member.Id
-                payerId =
-                    case data.payers of
-                        p :: _ ->
-                            p.memberId
-
-                        [] ->
-                            config.currentUserRootId
-
                 payerAmountsDict : Dict Member.Id String
                 payerAmountsDict =
-                    if isMultiPayer then
-                        List.map (\p -> ( p.memberId, centsToDecimalString p.amount )) data.payers
-                            |> Dict.fromList
-
-                    else
-                        Dict.empty
+                    List.map (\p -> ( p.memberId, centsToDecimalString p.amount )) data.payers
+                        |> Dict.fromList
             in
             Model
                 { form =
@@ -272,13 +236,6 @@ initFromEntry config entry =
                 , isEditing = True
                 , kind = ExpenseKind
                 , kindLocked = True
-                , payerMode =
-                    if isMultiPayer then
-                        MultiPayer
-
-                    else
-                        SinglePayer
-                , payerId = payerId
                 , payerAmounts = payerAmountsDict
                 , beneficiaries = beneficiaryDict
                 , splitMode =
@@ -288,8 +245,8 @@ initFromEntry config entry =
                     else
                         ShareSplit
                 , exactAmounts = exactAmountsDict
-                , fromMemberId = config.currentUserRootId
-                , toMemberId = config.currentUserRootId
+                , fromMemberId = Nothing
+                , toMemberId = Nothing
                 , category = data.category
                 , notes = Maybe.withDefault "" data.notes
                 , currency = data.currency
@@ -313,14 +270,12 @@ initFromEntry config entry =
                 , isEditing = True
                 , kind = TransferKind
                 , kindLocked = True
-                , payerMode = SinglePayer
-                , payerId = config.currentUserRootId
-                , payerAmounts = Dict.empty
+                , payerAmounts = Dict.singleton config.currentUserRootId ""
                 , beneficiaries = Dict.fromList (List.map (\mid -> ( mid, 1 )) config.activeMembersRootIds)
                 , splitMode = ShareSplit
                 , exactAmounts = Dict.empty
-                , fromMemberId = data.from
-                , toMemberId = data.to
+                , fromMemberId = Just data.from
+                , toMemberId = Just data.to
                 , category = Nothing
                 , notes = Maybe.withDefault "" data.notes
                 , currency = data.currency
@@ -353,14 +308,8 @@ update msg (Model data) =
         InputNotes s ->
             ( Model { data | notes = s }, Nothing )
 
-        InputKind kind ->
+        SelectEntryKind kind ->
             ( Model { data | kind = kind }, Nothing )
-
-        InputPayerMode mode ->
-            ( Model { data | payerMode = mode }, Nothing )
-
-        InputPayer memberId ->
-            ( Model { data | payerId = memberId }, Nothing )
 
         TogglePayer memberId ->
             let
@@ -389,15 +338,34 @@ update msg (Model data) =
             in
             ( Model { data | beneficiaries = newDict }, Nothing )
 
-        InputBeneficiaryShares memberId s ->
+        IncrementShares memberId ->
             let
-                shares : Int
-                shares =
-                    String.toInt s |> Maybe.withDefault 1 |> max 1
-
                 newDict : Dict Member.Id Int
                 newDict =
-                    Dict.update memberId (Maybe.map (\_ -> shares)) data.beneficiaries
+                    case Dict.get memberId data.beneficiaries of
+                        Just s ->
+                            Dict.insert memberId (s + 1) data.beneficiaries
+
+                        Nothing ->
+                            Dict.insert memberId 1 data.beneficiaries
+            in
+            ( Model { data | beneficiaries = newDict }, Nothing )
+
+        DecrementShares memberId ->
+            let
+                newDict : Dict Member.Id Int
+                newDict =
+                    Dict.update memberId
+                        (Maybe.andThen
+                            (\s ->
+                                if s <= 1 then
+                                    Nothing
+
+                                else
+                                    Just (s - 1)
+                            )
+                        )
+                        data.beneficiaries
             in
             ( Model { data | beneficiaries = newDict }, Nothing )
 
@@ -407,11 +375,26 @@ update msg (Model data) =
         InputExactAmount memberId s ->
             ( Model { data | exactAmounts = Dict.insert memberId s data.exactAmounts }, Nothing )
 
-        InputFromMember memberId ->
-            ( Model { data | fromMemberId = memberId }, Nothing )
+        CycleTransferRole memberId ->
+            if data.fromMemberId == Just memberId then
+                -- Already From -> unset
+                ( Model { data | fromMemberId = Nothing }, Nothing )
 
-        InputToMember memberId ->
-            ( Model { data | toMemberId = memberId }, Nothing )
+            else if data.toMemberId == Just memberId then
+                -- Already To -> unset
+                ( Model { data | toMemberId = Nothing }, Nothing )
+
+            else if data.fromMemberId == Nothing then
+                -- No From yet -> set as From
+                ( Model { data | fromMemberId = Just memberId }, Nothing )
+
+            else if data.toMemberId == Nothing then
+                -- No To yet -> set as To
+                ( Model { data | toMemberId = Just memberId }, Nothing )
+
+            else
+                -- Both set, leave unchanged
+                ( Model data, Nothing )
 
         InputCategory cat ->
             ( Model { data | category = cat }, Nothing )
@@ -487,11 +470,19 @@ submitExpense data =
 
                     payersResult : Result () (List Entry.Payer)
                     payersResult =
-                        case data.payerMode of
-                            SinglePayer ->
-                                Ok [ { memberId = data.payerId, amount = formOutput.amountCents } ]
+                        let
+                            selectedPayers : List Member.Id
+                            selectedPayers =
+                                Dict.keys data.payerAmounts
+                        in
+                        case selectedPayers of
+                            [] ->
+                                Err ()
 
-                            MultiPayer ->
+                            [ singlePayerId ] ->
+                                Ok [ { memberId = singlePayerId, amount = formOutput.amountCents } ]
+
+                            _ ->
                                 let
                                     parsed : List Entry.Payer
                                     parsed =
@@ -502,7 +493,7 @@ submitExpense data =
                                                         |> Maybe.map (\cents -> { memberId = mid, amount = cents })
                                                 )
                                 in
-                                if List.length parsed /= Dict.size data.payerAmounts then
+                                if List.length parsed /= List.length selectedPayers then
                                     Err ()
 
                                 else
@@ -514,14 +505,24 @@ submitExpense data =
                                     if totalPayer /= formOutput.amountCents then
                                         Err ()
 
-                                    else if List.isEmpty parsed then
-                                        Err ()
-
                                     else
                                         Ok parsed
+
+                    defaultCurrencyAmountResult : Result () (Maybe Int)
+                    defaultCurrencyAmountResult =
+                        if data.currency /= data.groupDefaultCurrency then
+                            case parseAmountCents (String.trim data.defaultCurrencyAmount) of
+                                Just amt ->
+                                    Ok (Just amt)
+
+                                Nothing ->
+                                    Err ()
+
+                        else
+                            Ok Nothing
                 in
-                case ( splitResult, payersResult ) of
-                    ( Ok splitData, Ok payers ) ->
+                case ( splitResult, payersResult, defaultCurrencyAmountResult ) of
+                    ( Ok splitData, Ok payers, Ok defaultCurrencyAmount ) ->
                         let
                             notes : Maybe String
                             notes =
@@ -530,14 +531,6 @@ submitExpense data =
 
                                 else
                                     Just (String.trim data.notes)
-
-                            defaultCurrencyAmount : Maybe Int
-                            defaultCurrencyAmount =
-                                if data.currency /= data.groupDefaultCurrency then
-                                    parseAmountCents (String.trim data.defaultCurrencyAmount)
-
-                                else
-                                    Nothing
                         in
                         ( Model { data | submitted = False }
                         , Just
@@ -576,44 +569,55 @@ submitTransfer data =
                             |> Maybe.map (\date -> ( amountCents, date ))
                     )
     in
-    case amountAndDate of
-        Just ( amountCents, date ) ->
-            if data.fromMemberId == data.toMemberId then
+    case ( amountAndDate, data.fromMemberId, data.toMemberId ) of
+        ( Just ( amountCents, date ), Just fromId, Just toId ) ->
+            if fromId == toId then
                 ( Model { data | submitted = True }, Nothing )
 
             else
                 let
-                    notes : Maybe String
-                    notes =
-                        if String.isEmpty (String.trim data.notes) then
-                            Nothing
-
-                        else
-                            Just (String.trim data.notes)
-
-                    defaultCurrencyAmount : Maybe Int
-                    defaultCurrencyAmount =
+                    defaultCurrencyAmountResult : Result () (Maybe Int)
+                    defaultCurrencyAmountResult =
                         if data.currency /= data.groupDefaultCurrency then
-                            parseAmountCents (String.trim data.defaultCurrencyAmount)
+                            case parseAmountCents (String.trim data.defaultCurrencyAmount) of
+                                Just amt ->
+                                    Ok (Just amt)
+
+                                Nothing ->
+                                    Err ()
 
                         else
-                            Nothing
+                            Ok Nothing
                 in
-                ( Model { data | submitted = False }
-                , Just
-                    (TransferOutput
-                        { amountCents = amountCents
-                        , currency = data.currency
-                        , defaultCurrencyAmount = defaultCurrencyAmount
-                        , fromMemberId = data.fromMemberId
-                        , toMemberId = data.toMemberId
-                        , notes = notes
-                        , date = date
-                        }
-                    )
-                )
+                case defaultCurrencyAmountResult of
+                    Ok defaultCurrencyAmount ->
+                        let
+                            notes : Maybe String
+                            notes =
+                                if String.isEmpty (String.trim data.notes) then
+                                    Nothing
 
-        Nothing ->
+                                else
+                                    Just (String.trim data.notes)
+                        in
+                        ( Model { data | submitted = False }
+                        , Just
+                            (TransferOutput
+                                { amountCents = amountCents
+                                , currency = data.currency
+                                , defaultCurrencyAmount = defaultCurrencyAmount
+                                , fromMemberId = fromId
+                                , toMemberId = toId
+                                , notes = notes
+                                , date = date
+                                }
+                            )
+                        )
+
+                    Err () ->
+                        ( Model { data | submitted = True }, Nothing )
+
+        _ ->
             ( Model { data | submitted = True }, Nothing )
 
 
@@ -626,54 +630,87 @@ submitTransfer data =
 view : I18n -> List Member.ChainState -> (Msg -> msg) -> Model -> Ui.Element msg
 view i18n activeMembers toMsg (Model data) =
     let
-        content : List (Ui.Element Msg)
+        content : Ui.Element Msg
         content =
             case data.kind of
                 ExpenseKind ->
-                    expenseFields i18n activeMembers data
+                    Ui.column [ Ui.spacing Theme.spacing.lg ] <|
+                        expenseFields i18n activeMembers data
 
                 TransferKind ->
-                    transferFields i18n activeMembers data
+                    Ui.column [ Ui.spacing Theme.spacing.lg ] <|
+                        transferFields i18n activeMembers data
+
+        ( entryKindTabs, confirmButton ) =
+            if data.isEditing then
+                ( Ui.none
+                , UI.Components.btnPrimary [] { label = T.editEntrySubmit i18n, onPress = Submit }
+                )
+
+            else
+                ( modeToggle i18n data.kind
+                , UI.Components.btnPrimary [] { label = T.newEntrySubmit i18n, onPress = Submit }
+                )
     in
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
-        (List.concat
-            [ [ Ui.el [ Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text (T.newEntryTitle i18n))
-              , if data.kindLocked then
-                    Ui.none
-
-                else
-                    kindToggle i18n data
-              ]
-            , content
-            , [ submitButton i18n data.isEditing ]
-            ]
-        )
+        [ entryKindTabs
+        , content
+        , confirmButton
+        , Ui.el [] Ui.none -- bottom spacer
+        ]
         |> Ui.map toMsg
 
 
-kindToggle : I18n -> ModelData -> Ui.Element Msg
-kindToggle i18n data =
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
-            (Ui.text (T.newEntryKindLabel i18n))
-        , Ui.Input.chooseOne Ui.row
-            [ Ui.spacing Theme.spacing.sm ]
-            { onChange = InputKind
-            , options =
-                [ Ui.Input.option ExpenseKind (Ui.text (T.newEntryKindExpense i18n))
-                , Ui.Input.option TransferKind (Ui.text (T.newEntryKindTransfer i18n))
-                ]
-            , selected = Just data.kind
-            , label = Ui.Input.labelHidden (T.newEntryKindLabel i18n)
-            }
+modeToggle : I18n -> EntryKind -> Ui.Element Msg
+modeToggle i18n current =
+    Ui.row
+        [ Ui.width Ui.fill
+        , Ui.background Theme.base.bgSubtle
+        , Ui.rounded Theme.radius.md
+        , Ui.border Theme.border
+        , Ui.borderColor Theme.base.accent
+        , Ui.padding Theme.spacing.xs
         ]
+        [ modeBtn { label = T.newEntryKindExpense i18n, active = current == ExpenseKind, onPress = SelectEntryKind ExpenseKind }
+        , modeBtn { label = T.newEntryKindTransfer i18n, active = current == TransferKind, onPress = SelectEntryKind TransferKind }
+        ]
+
+
+modeBtn : { label : String, active : Bool, onPress : msg } -> Ui.Element msg
+modeBtn config =
+    Ui.el
+        [ Ui.Input.button config.onPress
+        , Ui.width Ui.fill
+        , Ui.paddingXY 0 Theme.spacing.sm
+        , Ui.rounded Theme.radius.sm
+        , Ui.Font.size Theme.font.md
+        , Ui.Font.weight Theme.fontWeight.semibold
+        , Ui.Font.center
+        , Ui.pointer
+        , Anim.transition (Anim.ms 200)
+            [ Anim.backgroundColor
+                (if config.active then
+                    Theme.primary.solid
+
+                 else
+                    Theme.base.bgSubtle
+                )
+            , Anim.fontColor
+                (if config.active then
+                    Theme.primary.solidText
+
+                 else
+                    Theme.base.textSubtle
+                )
+            ]
+        ]
+        (Ui.text config.label)
 
 
 expenseFields : I18n -> List Member.ChainState -> ModelData -> List (Ui.Element Msg)
 expenseFields i18n activeMembers data =
     [ descriptionField i18n data
-    , amountField i18n data
-    , currencyField i18n data
+    , amountCurrencyField i18n data
     , defaultCurrencyAmountField i18n data
     , dateField i18n data
     , payerField i18n activeMembers data
@@ -685,15 +722,112 @@ expenseFields i18n activeMembers data =
 
 transferFields : I18n -> List Member.ChainState -> ModelData -> List (Ui.Element Msg)
 transferFields i18n activeMembers data =
-    [ amountField i18n data
-    , currencyField i18n data
+    [ amountCurrencyField i18n data
     , defaultCurrencyAmountField i18n data
     , dateField i18n data
-    , memberDropdown (T.newEntryFromLabel i18n) InputFromMember activeMembers data.fromMemberId
-    , memberDropdown (T.newEntryToLabel i18n) InputToMember activeMembers data.toMemberId
-    , errorWhen (data.submitted && data.fromMemberId == data.toMemberId) (T.newEntrySameFromTo i18n)
+    , transferMembersField i18n activeMembers data
     , notesField i18n data
+    , transferSummary activeMembers data
     ]
+
+
+transferMembersField : I18n -> List Member.ChainState -> ModelData -> Ui.Element Msg
+transferMembersField i18n activeMembers data =
+    let
+        memberRole : Member.Id -> Maybe String
+        memberRole memberId =
+            if data.fromMemberId == Just memberId then
+                Just "From"
+
+            else if data.toMemberId == Just memberId then
+                Just "To"
+
+            else
+                Nothing
+
+        missingSelection : Bool
+        missingSelection =
+            data.submitted && (data.fromMemberId == Nothing || data.toMemberId == Nothing)
+
+        sameFromTo : Bool
+        sameFromTo =
+            data.submitted
+                && data.fromMemberId
+                /= Nothing
+                && data.fromMemberId
+                == data.toMemberId
+    in
+    formField { label = T.newEntryTransferLabel i18n, required = True }
+        [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.wrap ]
+            (List.map
+                (\member ->
+                    transferMemberBtn
+                        { name = member.name
+                        , initials = String.left 2 (String.toUpper member.name)
+                        , role = memberRole member.rootId
+                        , onPress = CycleTransferRole member.rootId
+                        }
+                )
+                activeMembers
+            )
+        , errorWhen missingSelection (T.newEntrySelectBoth i18n)
+        , errorWhen sameFromTo (T.newEntrySameFromTo i18n)
+        ]
+
+
+transferSummary : List Member.ChainState -> ModelData -> Ui.Element Msg
+transferSummary activeMembers data =
+    case ( data.fromMemberId, data.toMemberId ) of
+        ( Just fromId, Just toId ) ->
+            let
+                amountCents : Int
+                amountCents =
+                    Form.get .amount data.form |> Field.toMaybe |> Maybe.withDefault 0
+
+                amountText : String
+                amountText =
+                    Format.formatCentsWithCurrency amountCents data.currency
+
+                memberSummary : Ui.Attribute Msg -> String -> Ui.Element Msg
+                memberSummary alignAttr name =
+                    Ui.el
+                        [ Ui.Font.size Theme.font.lg
+                        , Ui.Font.weight Theme.fontWeight.semibold
+                        , Ui.width Ui.shrink
+                        , alignAttr
+                        ]
+                        (Ui.text name)
+
+                findName : Member.Id -> String
+                findName mid =
+                    activeMembers
+                        |> List.Extra.find (\m -> m.rootId == mid)
+                        |> Maybe.map .name
+                        |> Maybe.withDefault "?"
+            in
+            Ui.row
+                [ Ui.contentCenterX
+                , Ui.contentBottom
+                , Ui.spacing Theme.spacing.md
+                , Ui.width Ui.shrink
+                , Ui.centerX
+                , Ui.Font.color Theme.base.textSubtle
+                ]
+                [ memberSummary Ui.alignRight (findName fromId)
+                , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.contentCenterX ]
+                    [ Ui.el
+                        [ Ui.Font.size Theme.font.sm
+                        , Ui.Font.weight Theme.fontWeight.medium
+                        ]
+                        (Ui.text amountText)
+                    , Ui.el [ Ui.centerX ]
+                        (UI.Components.featherIcon 20 FeatherIcons.arrowRight)
+                    ]
+                , memberSummary Ui.alignLeft (findName toId)
+                ]
+
+        _ ->
+            Ui.none
 
 
 descriptionField : I18n -> ModelData -> Ui.Element Msg
@@ -703,59 +837,69 @@ descriptionField i18n data =
         field =
             Form.get .description data.form
     in
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
-            (Ui.text (T.newEntryDescriptionLabel i18n))
-        , Ui.Input.text [ Ui.width Ui.fill ]
+    formField { label = T.newEntryDescriptionLabel i18n, required = True }
+        [ Ui.Input.text [ Ui.width Ui.fill ]
             { onChange = InputDescription
             , text = Field.toRawString field
             , placeholder = Just (T.newEntryDescriptionPlaceholder i18n)
             , label = Ui.Input.labelHidden (T.newEntryDescriptionLabel i18n)
             }
-        , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-            (Ui.text (T.newEntryDescriptionHint i18n))
+        , formHint (T.newEntryDescriptionHint i18n)
         , fieldError i18n data.submitted field
         ]
 
 
-amountField : I18n -> ModelData -> Ui.Element Msg
-amountField i18n data =
+amountCurrencyField : I18n -> ModelData -> Ui.Element Msg
+amountCurrencyField i18n data =
     let
         field : Field.Field Int
         field =
             Form.get .amount data.form
     in
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
-            (Ui.text (T.newEntryAmountLabel i18n))
-        , Ui.Input.text [ Ui.width Ui.fill ]
-            { onChange = InputAmount
-            , text = Field.toRawString field
-            , placeholder = Just (T.newEntryAmountPlaceholder i18n)
-            , label = Ui.Input.labelHidden (T.newEntryAmountLabel i18n)
-            }
-        , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-            (Ui.text (T.newEntryAmountHint i18n))
+    formField { label = T.newEntryAmountLabel i18n, required = True }
+        [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill, Ui.contentCenterY ]
+            [ Ui.Input.text [ Ui.width Ui.fill ]
+                { onChange = InputAmount
+                , text = Field.toRawString field
+                , placeholder = Just (T.newEntryAmountPlaceholder i18n)
+                , label = Ui.Input.labelHidden (T.newEntryAmountLabel i18n)
+                }
+            , currencySelect data.currency
+            ]
+        , formHint (T.newEntryAmountHint i18n)
         , fieldError i18n data.submitted field
         ]
 
 
-currencyField : I18n -> ModelData -> Ui.Element Msg
-currencyField i18n data =
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
-            (Ui.text (T.newEntryCurrencyLabel i18n))
-        , Ui.Input.chooseOne Ui.row
-            [ Ui.spacing Theme.spacing.sm, Ui.wrap ]
-            { onChange = InputCurrency
-            , options =
-                List.map
-                    (\c -> Ui.Input.option c (Ui.text (Currency.currencyCode c)))
-                    Currency.allCurrencies
-            , selected = Just data.currency
-            , label = Ui.Input.labelHidden (T.newEntryCurrencyLabel i18n)
-            }
-        ]
+currencySelect : Currency -> Ui.Element Msg
+currencySelect selected =
+    Ui.html
+        (Html.select
+            [ Html.Events.onInput
+                (\code ->
+                    case Currency.currencyFromCode code of
+                        Just c ->
+                            InputCurrency c
+
+                        Nothing ->
+                            InputCurrency selected
+                )
+            , Html.Attributes.style "border" "none"
+            , Html.Attributes.style "background" "transparent"
+            , Html.Attributes.style "font" "inherit"
+            , Html.Attributes.style "color" "inherit"
+            ]
+            (List.map
+                (\c ->
+                    Html.option
+                        [ Html.Attributes.value (Currency.currencyCode c)
+                        , Html.Attributes.selected (c == selected)
+                        ]
+                        [ Html.text (Currency.currencyCode c) ]
+                )
+                Currency.allCurrencies
+            )
+        )
 
 
 defaultCurrencyAmountField : I18n -> ModelData -> Ui.Element Msg
@@ -764,17 +908,25 @@ defaultCurrencyAmountField i18n data =
         Ui.none
 
     else
-        Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-            [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
-                (Ui.text (T.newEntryDefaultCurrencyAmountLabel (Currency.currencyCode data.groupDefaultCurrency) i18n))
-            , Ui.Input.text [ Ui.width Ui.fill ]
+        let
+            isEmpty : Bool
+            isEmpty =
+                String.isEmpty (String.trim data.defaultCurrencyAmount)
+
+            isInvalid : Bool
+            isInvalid =
+                not isEmpty && parseAmountCents (String.trim data.defaultCurrencyAmount) == Nothing
+        in
+        formField { label = T.newEntryDefaultCurrencyAmountLabel (Currency.currencyCode data.groupDefaultCurrency) i18n, required = True }
+            [ Ui.Input.text [ Ui.width Ui.fill ]
                 { onChange = InputDefaultCurrencyAmount
                 , text = data.defaultCurrencyAmount
                 , placeholder = Just (T.newEntryAmountPlaceholder i18n)
                 , label = Ui.Input.labelHidden (T.newEntryDefaultCurrencyAmountLabel (Currency.currencyCode data.groupDefaultCurrency) i18n)
                 }
-            , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                (Ui.text (T.newEntryDefaultCurrencyAmountHint (Currency.currencyCode data.groupDefaultCurrency) i18n))
+            , formHint (T.newEntryDefaultCurrencyAmountHint (Currency.currencyCode data.groupDefaultCurrency) i18n)
+            , errorWhen (data.submitted && isEmpty) (T.fieldRequired i18n)
+            , errorWhen (data.submitted && isInvalid) (T.fieldInvalidFormat i18n)
             ]
 
 
@@ -785,10 +937,8 @@ dateField i18n data =
         field =
             Form.get .date data.form
     in
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
-            (Ui.text (T.newEntryDateLabel i18n))
-        , Ui.Input.text [ Ui.width Ui.fill ]
+    formField { label = T.newEntryDateLabel i18n, required = True }
+        [ Ui.Input.text [ Ui.width Ui.fill ]
             { onChange = InputDate
             , text = Field.toRawString field
             , placeholder = Just "YYYY-MM-DD"
@@ -801,109 +951,130 @@ dateField i18n data =
 payerField : I18n -> List Member.ChainState -> ModelData -> Ui.Element Msg
 payerField i18n activeMembers data =
     let
-        modeToggle : Ui.Element Msg
-        modeToggle =
-            Ui.Input.chooseOne Ui.row
-                [ Ui.spacing Theme.spacing.sm ]
-                { onChange = InputPayerMode
-                , options =
-                    [ Ui.Input.option SinglePayer (Ui.text (T.newEntryPayerSingle i18n))
-                    , Ui.Input.option MultiPayer (Ui.text (T.newEntryPayerMultiple i18n))
-                    ]
-                , selected = Just data.payerMode
-                , label = Ui.Input.labelHidden (T.newEntryPayerMode i18n)
-                }
+        isMultiPayer : Bool
+        isMultiPayer =
+            Dict.size data.payerAmounts > 1
 
-        payerContent : List (Ui.Element Msg)
-        payerContent =
-            case data.payerMode of
-                SinglePayer ->
-                    [ memberDropdown (T.newEntryPayerLabel i18n) InputPayer activeMembers data.payerId ]
+        payerAmountRows : List (Ui.Element Msg)
+        payerAmountRows =
+            if isMultiPayer then
+                let
+                    payerMismatchError : Ui.Element Msg
+                    payerMismatchError =
+                        let
+                            totalPayer : Int
+                            totalPayer =
+                                Dict.values data.payerAmounts
+                                    |> List.filterMap parseAmountCents
+                                    |> List.sum
 
-                MultiPayer ->
-                    let
-                        payerMismatchError : Ui.Element Msg
-                        payerMismatchError =
-                            let
-                                totalPayer : Int
-                                totalPayer =
-                                    Dict.values data.payerAmounts
-                                        |> List.filterMap parseAmountCents
-                                        |> List.sum
+                            totalAmount : Int
+                            totalAmount =
+                                Form.get .amount data.form |> Field.toMaybe |> Maybe.withDefault 0
+                        in
+                        errorWhen (data.submitted && totalPayer /= totalAmount) (T.newEntryPayerMismatch i18n)
 
-                                totalAmount : Int
-                                totalAmount =
-                                    Form.get .amount data.form |> Field.toMaybe |> Maybe.withDefault 0
-                            in
-                            if data.submitted && (Dict.isEmpty data.payerAmounts || totalPayer /= totalAmount) then
-                                errorWhen True (T.newEntryPayerMismatch i18n)
+                    amountRow : Member.ChainState -> Ui.Element Msg
+                    amountRow member =
+                        Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
+                            [ Ui.el [ Ui.alignRight ] (Ui.text member.name)
+                            , Ui.Input.text [ Ui.width (Ui.px 100) ]
+                                { onChange = InputPayerAmount member.rootId
+                                , text = Maybe.withDefault "" (Dict.get member.rootId data.payerAmounts)
+                                , placeholder = Just "0.00"
+                                , label = Ui.Input.labelHidden member.name
+                                }
+                            , Ui.text <| "(" ++ Currency.currencyCode data.currency ++ ")"
+                            ]
+                in
+                List.filterMap
+                    (\member ->
+                        if Dict.member member.rootId data.payerAmounts then
+                            Just (amountRow member)
 
-                            else
-                                Ui.none
-                    in
-                    List.map (payerRow data.payerAmounts) activeMembers ++ [ payerMismatchError ]
+                        else
+                            Nothing
+                    )
+                    activeMembers
+                    ++ [ payerMismatchError ]
+
+            else
+                []
     in
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        ([ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
-            (Ui.text (T.newEntryPayerLabel i18n))
-         , modeToggle
+    formField { label = T.newEntryPayerLabel i18n, required = True }
+        ([ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.wrap ]
+            (List.map
+                (\member ->
+                    UI.Components.toggleMemberBtn
+                        { name = member.name
+                        , initials = String.left 2 (String.toUpper member.name)
+                        , selected = Dict.member member.rootId data.payerAmounts
+                        , onPress = TogglePayer member.rootId
+                        }
+                )
+                activeMembers
+            )
+         , errorWhen (data.submitted && Dict.isEmpty data.payerAmounts) (T.newEntryNoPayerError i18n)
          ]
-            ++ payerContent
+            ++ payerAmountRows
         )
 
 
-payerRow : Dict Member.Id String -> Member.ChainState -> Ui.Element Msg
-payerRow payerAmounts member =
+transferMemberBtn :
+    { name : String
+    , initials : String
+    , role : Maybe String
+    , onPress : msg
+    }
+    -> Ui.Element msg
+transferMemberBtn config =
     let
-        isSelected : Bool
-        isSelected =
-            Dict.member member.rootId payerAmounts
+        ( borderClr, backgroundColor, avatarColor ) =
+            case config.role of
+                Just "From" ->
+                    ( Theme.success.solid, Theme.success.bg, UI.Components.AvatarAccent )
 
-        checkLabel : { element : Ui.Element Msg, id : Ui.Input.Label }
-        checkLabel =
-            Ui.Input.label ("payer-" ++ member.rootId) [] (Ui.text member.name)
+                Just "To" ->
+                    ( Theme.warning.solid, Theme.warning.bg, UI.Components.AvatarRed )
 
-        amountInput : Ui.Element Msg
-        amountInput =
-            if isSelected then
-                Ui.Input.text [ Ui.width (Ui.px 80) ]
-                    { onChange = InputPayerAmount member.rootId
-                    , text = Maybe.withDefault "" (Dict.get member.rootId payerAmounts)
-                    , placeholder = Just "0.00"
-                    , label = Ui.Input.labelHidden member.name
-                    }
-
-            else
-                Ui.none
+                _ ->
+                    ( Theme.base.solid, Theme.base.bg, UI.Components.AvatarNeutral )
     in
-    Ui.row [ Ui.spacing Theme.spacing.sm ]
-        [ Ui.Input.checkbox []
-            { onChange = \_ -> TogglePayer member.rootId
-            , icon = Nothing
-            , checked = isSelected
-            , label = checkLabel.id
-            }
-        , checkLabel.element
-        , amountInput
+    Ui.row
+        [ Ui.Input.button config.onPress
+        , Ui.width Ui.shrink
+        , Ui.paddingWith { top = 0, bottom = 0, left = 0, right = Theme.spacing.sm }
+        , Ui.rounded Theme.radius.xxxl
+        , Ui.border Theme.border
+        , Ui.spacing Theme.spacing.sm
+        , Ui.contentCenterY
+        , Ui.pointer
+        , Anim.transition (Anim.ms 200)
+            [ Anim.borderColor borderClr
+            , Anim.backgroundColor backgroundColor
+            ]
+        ]
+        [ UI.Components.avatar avatarColor config.initials
+        , case config.role of
+            Just role ->
+                Ui.el
+                    [ Ui.alignRight
+                    , Ui.Font.size Theme.font.md
+                    , Ui.Font.weight Theme.fontWeight.semibold
+                    , Ui.Font.color borderClr
+                    ]
+                    (Ui.text <| String.toUpper role ++ ":")
+
+            Nothing ->
+                Ui.none
+        , Ui.el [ Ui.Font.weight Theme.fontWeight.medium ]
+            (Ui.text config.name)
         ]
 
 
 beneficiariesField : I18n -> List Member.ChainState -> ModelData -> Ui.Element Msg
 beneficiariesField i18n activeMembers data =
     let
-        splitModeToggle : Ui.Element Msg
-        splitModeToggle =
-            Ui.Input.chooseOne Ui.row
-                [ Ui.spacing Theme.spacing.sm ]
-                { onChange = InputSplitMode
-                , options =
-                    [ Ui.Input.option ShareSplit (Ui.text (T.newEntrySplitShares i18n))
-                    , Ui.Input.option ExactSplit (Ui.text (T.newEntrySplitExact i18n))
-                    ]
-                , selected = Just data.splitMode
-                , label = Ui.Input.labelHidden (T.newEntrySplitMode i18n)
-                }
-
         exactMismatchError : Ui.Element Msg
         exactMismatchError =
             case data.splitMode of
@@ -919,118 +1090,195 @@ beneficiariesField i18n activeMembers data =
                         totalAmount =
                             Form.get .amount data.form |> Field.toMaybe |> Maybe.withDefault 0
                     in
-                    if data.submitted && totalExact /= totalAmount then
-                        errorWhen True (T.newEntryExactMismatch i18n)
-
-                    else
-                        Ui.none
+                    errorWhen (data.submitted && totalExact /= totalAmount) (T.newEntryExactMismatch i18n)
 
                 ShareSplit ->
                     Ui.none
+
+        headerRow : Ui.Element Msg
+        headerRow =
+            Ui.row [ Ui.width Ui.fill, Ui.contentCenterY ]
+                [ fieldTitle (T.newEntryBeneficiariesLabel i18n) True
+                , Ui.row [ Ui.alignRight, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
+                    [ Ui.el
+                        [ Ui.Font.size Theme.font.sm
+                        , Ui.Font.color Theme.base.textSubtle
+                        ]
+                        (Ui.text (T.newEntrySplitExact i18n))
+                    , UI.Components.toggle
+                        { isOn = data.splitMode == ExactSplit
+                        , onPress = InputSplitMode (toggleSplitMode data.splitMode)
+                        }
+                    ]
+                ]
     in
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        (List.concat
-            [ [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
-                    (Ui.text (T.newEntryBeneficiariesLabel i18n))
-              , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                    (Ui.text (T.newEntryBeneficiariesHint i18n))
-              , splitModeToggle
-              ]
-            , List.map (beneficiaryRow i18n data.splitMode data.beneficiaries data.exactAmounts) activeMembers
-            , [ errorWhen (data.submitted && Dict.isEmpty data.beneficiaries) (T.newEntryNoBeneficiaries i18n)
-              , exactMismatchError
-              ]
-            ]
-        )
+    Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+        [ headerRow
+        , formHint (T.newEntryBeneficiariesHint i18n)
+        , Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+            (List.map (beneficiaryRow data) activeMembers)
+        , errorWhen (data.submitted && Dict.isEmpty data.beneficiaries) (T.newEntryNoBeneficiaries i18n)
+        , exactMismatchError
+        ]
 
 
-beneficiaryRow : I18n -> SplitMode -> Dict Member.Id Int -> Dict Member.Id String -> Member.ChainState -> Ui.Element Msg
-beneficiaryRow i18n splitMode selectedBeneficiaries exactAmounts member =
+toggleSplitMode : SplitMode -> SplitMode
+toggleSplitMode mode =
+    case mode of
+        ShareSplit ->
+            ExactSplit
+
+        ExactSplit ->
+            ShareSplit
+
+
+beneficiaryRow : ModelData -> Member.ChainState -> Ui.Element Msg
+beneficiaryRow data member =
     let
-        checkLabel : { element : Ui.Element Msg, id : Ui.Input.Label }
-        checkLabel =
-            Ui.Input.label ("beneficiary-" ++ member.rootId) [] (Ui.text member.name)
-
         isSelected : Bool
         isSelected =
-            Dict.member member.rootId selectedBeneficiaries
+            Dict.member member.rootId data.beneficiaries
 
-        extraInput : Ui.Element Msg
-        extraInput =
-            if not isSelected then
+        shares : Int
+        shares =
+            Dict.get member.rootId data.beneficiaries |> Maybe.withDefault 0
+
+        totalShares : Int
+        totalShares =
+            Dict.values data.beneficiaries |> List.sum
+
+        splitAmount : Ui.Element Msg
+        splitAmount =
+            if not isSelected || totalShares == 0 then
                 Ui.none
 
             else
-                case splitMode of
+                case data.splitMode of
                     ShareSplit ->
-                        case Dict.get member.rootId selectedBeneficiaries of
-                            Just shares ->
-                                Ui.row [ Ui.spacing Theme.spacing.xs ]
-                                    [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                                        (Ui.text (T.newEntrySharesLabel i18n))
-                                    , Ui.Input.text [ Ui.width (Ui.px 50) ]
-                                        { onChange = InputBeneficiaryShares member.rootId
-                                        , text = String.fromInt shares
-                                        , placeholder = Nothing
-                                        , label = Ui.Input.labelHidden (T.newEntrySharesLabel i18n)
-                                        }
-                                    ]
+                        let
+                            totalAmountCents : Int
+                            totalAmountCents =
+                                Form.get .amount data.form |> Field.toMaybe |> Maybe.withDefault 0
 
-                            Nothing ->
-                                Ui.none
+                            cents : Int
+                            cents =
+                                (totalAmountCents * shares) // totalShares
+                        in
+                        Ui.el
+                            [ Ui.Font.size Theme.font.sm
+                            , Ui.Font.color Theme.base.textSubtle
+                            ]
+                            (Ui.text (Format.formatCentsWithCurrency cents data.currency))
 
                     ExactSplit ->
-                        Ui.Input.text [ Ui.width (Ui.px 80) ]
-                            { onChange = InputExactAmount member.rootId
-                            , text = Maybe.withDefault "" (Dict.get member.rootId exactAmounts)
-                            , placeholder = Just "0.00"
-                            , label = Ui.Input.labelHidden (T.newEntrySplitExact i18n)
-                            }
+                        Ui.none
+
+        rightControl : Ui.Element Msg
+        rightControl =
+            case data.splitMode of
+                ShareSplit ->
+                    shareStepper member.rootId shares
+
+                ExactSplit ->
+                    if isSelected then
+                        Ui.row [ Ui.spacing Theme.spacing.xs, Ui.contentCenterY ]
+                            [ Ui.Input.text [ Ui.width (Ui.px 100) ]
+                                { onChange = InputExactAmount member.rootId
+                                , text = Maybe.withDefault "" (Dict.get member.rootId data.exactAmounts)
+                                , placeholder = Just "0.00"
+                                , label = Ui.Input.labelHidden member.name
+                                }
+                            , Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
+                                (Ui.text (Currency.currencyCode data.currency))
+                            ]
+
+                    else
+                        Ui.none
     in
-    Ui.row [ Ui.spacing Theme.spacing.sm ]
-        [ Ui.Input.checkbox []
-            { onChange = \_ -> ToggleBeneficiary member.rootId
-            , icon = Nothing
-            , checked = isSelected
-            , label = checkLabel.id
+    Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
+        [ UI.Components.toggleMemberBtn
+            { name = member.name
+            , initials = String.left 2 (String.toUpper member.name)
+            , selected = isSelected
+            , onPress = ToggleBeneficiary member.rootId
             }
-        , checkLabel.element
-        , extraInput
+        , splitAmount
+        , Ui.el [ Ui.alignRight ] rightControl
         ]
+
+
+shareStepper : Member.Id -> Int -> Ui.Element Msg
+shareStepper memberId shares =
+    Ui.row
+        [ Ui.spacing Theme.spacing.xs
+        , Ui.contentCenterY
+        , Ui.rounded Theme.radius.md
+        , Ui.border Theme.border
+        , Ui.borderColor Theme.base.accent
+        , Ui.paddingXY Theme.spacing.xs 0
+        ]
+        [ stepperBtn (DecrementShares memberId) FeatherIcons.minus (shares > 0)
+        , Ui.el
+            [ Ui.Font.center
+            , Ui.Font.weight Theme.fontWeight.semibold
+            , Ui.widthMin Theme.sizing.xs
+            ]
+            (Ui.text (String.fromInt shares))
+        , stepperBtn (IncrementShares memberId) FeatherIcons.plus True
+        ]
+
+
+stepperBtn : msg -> FeatherIcons.Icon -> Bool -> Ui.Element msg
+stepperBtn onPress icon enabled =
+    Ui.el
+        (Ui.width (Ui.px Theme.sizing.md)
+            :: Ui.height (Ui.px Theme.sizing.md)
+            :: Ui.contentCenterX
+            :: Ui.contentCenterY
+            :: (if enabled then
+                    [ Ui.Input.button onPress
+                    , Ui.pointer
+                    , Ui.Font.color Theme.base.text
+                    ]
+
+                else
+                    [ Ui.Font.color Theme.base.accent ]
+               )
+        )
+        (UI.Components.featherIcon (toFloat Theme.sizing.xs) icon)
 
 
 categoryField : I18n -> ModelData -> Ui.Element Msg
 categoryField i18n data =
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
-            (Ui.text (T.newEntryCategoryLabel i18n))
-        , Ui.Input.chooseOne Ui.column
-            [ Ui.spacing Theme.spacing.xs ]
-            { onChange = InputCategory
-            , options =
-                [ Ui.Input.option Nothing (Ui.text (T.newEntryCategoryNone i18n))
-                , Ui.Input.option (Just Entry.Food) (Ui.text (T.categoryFood i18n))
-                , Ui.Input.option (Just Entry.Transport) (Ui.text (T.categoryTransport i18n))
-                , Ui.Input.option (Just Entry.Accommodation) (Ui.text (T.categoryAccommodation i18n))
-                , Ui.Input.option (Just Entry.Entertainment) (Ui.text (T.categoryEntertainment i18n))
-                , Ui.Input.option (Just Entry.Shopping) (Ui.text (T.categoryShopping i18n))
-                , Ui.Input.option (Just Entry.Groceries) (Ui.text (T.categoryGroceries i18n))
-                , Ui.Input.option (Just Entry.Utilities) (Ui.text (T.categoryUtilities i18n))
-                , Ui.Input.option (Just Entry.Healthcare) (Ui.text (T.categoryHealthcare i18n))
-                , Ui.Input.option (Just Entry.Other) (Ui.text (T.categoryOther i18n))
+    formField { label = T.newEntryCategoryLabel i18n, required = False }
+        [ Ui.row [ Ui.spacing Theme.spacing.xs, Ui.wrap ]
+            (List.map
+                (\( cat, label ) ->
+                    UI.Components.chip
+                        { label = label
+                        , selected = data.category == cat
+                        , onPress = InputCategory cat
+                        }
+                )
+                [ ( Nothing, T.newEntryCategoryNone i18n )
+                , ( Just Entry.Food, "🍽️ " ++ T.categoryFood i18n )
+                , ( Just Entry.Transport, "🚗 " ++ T.categoryTransport i18n )
+                , ( Just Entry.Accommodation, "🏠 " ++ T.categoryAccommodation i18n )
+                , ( Just Entry.Entertainment, "🎭 " ++ T.categoryEntertainment i18n )
+                , ( Just Entry.Shopping, "🛍️ " ++ T.categoryShopping i18n )
+                , ( Just Entry.Groceries, "🛒 " ++ T.categoryGroceries i18n )
+                , ( Just Entry.Utilities, "⚡ " ++ T.categoryUtilities i18n )
+                , ( Just Entry.Healthcare, "💊 " ++ T.categoryHealthcare i18n )
+                , ( Just Entry.Other, "📦 " ++ T.categoryOther i18n )
                 ]
-            , selected = Just data.category
-            , label = Ui.Input.labelHidden (T.newEntryCategoryLabel i18n)
-            }
+            )
         ]
 
 
 notesField : I18n -> ModelData -> Ui.Element Msg
 notesField i18n data =
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
-            (Ui.text (T.newEntryNotesLabel i18n))
-        , Ui.Input.text [ Ui.width Ui.fill ]
+    formField { label = T.newEntryNotesLabel i18n, required = False }
+        [ Ui.Input.text [ Ui.width Ui.fill ]
             { onChange = InputNotes
             , text = data.notes
             , placeholder = Just (T.newEntryNotesPlaceholder i18n)
@@ -1039,47 +1287,37 @@ notesField i18n data =
         ]
 
 
-memberDropdown : String -> (Member.Id -> Msg) -> List Member.ChainState -> Member.Id -> Ui.Element Msg
-memberDropdown label onChange activeMembers selectedId =
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
+
+-- FORM COMPONENTS
+
+
+formField : { label : String, required : Bool } -> List (Ui.Element msg) -> Ui.Element msg
+formField config children =
+    Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.xs ]
+        (fieldTitle config.label config.required :: children)
+
+
+fieldTitle : String -> Bool -> Ui.Element msg
+fieldTitle label required =
+    Ui.row [ Ui.spacing Theme.spacing.xs, Ui.width Ui.shrink ]
+        [ Ui.el
+            [ Ui.Font.size Theme.font.sm
+            , Ui.Font.weight Theme.fontWeight.semibold
+            , Ui.Font.color Theme.base.textSubtle
+            ]
             (Ui.text label)
-        , Ui.Input.chooseOne Ui.column
-            [ Ui.spacing Theme.spacing.xs ]
-            { onChange = onChange
-            , options =
-                List.map
-                    (\member ->
-                        Ui.Input.option member.rootId (Ui.text member.name)
-                    )
-                    activeMembers
-            , selected = Just selectedId
-            , label = Ui.Input.labelHidden label
-            }
+        , if required then
+            Ui.el [ Ui.Font.color Theme.primary.solid, Ui.Font.size Theme.font.sm ] (Ui.text "*")
+
+          else
+            Ui.none
         ]
 
 
-submitButton : I18n -> Bool -> Ui.Element Msg
-submitButton i18n isEditing =
-    Ui.el
-        [ Ui.Input.button Submit
-        , Ui.width Ui.fill
-        , Ui.padding Theme.spacing.md
-        , Ui.rounded Theme.rounding.md
-        , Ui.background Theme.primary
-        , Ui.Font.color Theme.white
-        , Ui.Font.center
-        , Ui.Font.bold
-        , Ui.pointer
-        ]
-        (Ui.text
-            (if isEditing then
-                T.editEntrySubmit i18n
-
-             else
-                T.newEntrySubmit i18n
-            )
-        )
+formHint : String -> Ui.Element msg
+formHint text =
+    Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
+        (Ui.text text)
 
 
 fieldError : I18n -> Bool -> Field.Field a -> Ui.Element msg
@@ -1100,7 +1338,7 @@ fieldError i18n submitted field =
                     Nothing ->
                         T.fieldRequired i18n
         in
-        Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.danger ]
+        Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
             (Ui.text message)
 
     else
@@ -1110,7 +1348,7 @@ fieldError i18n submitted field =
 errorWhen : Bool -> String -> Ui.Element msg
 errorWhen condition message =
     if condition then
-        Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.danger ]
+        Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
             (Ui.text message)
 
     else

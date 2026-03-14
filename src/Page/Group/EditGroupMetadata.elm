@@ -2,11 +2,13 @@ module Page.Group.EditGroupMetadata exposing (Model, Msg, Output, UpdateResult, 
 
 import Domain.Event as Event
 import Domain.GroupState as GroupState
+import FeatherIcons
 import Field
 import Form
 import Form.EditGroupMetadata as MetaForm
 import Form.List
 import Translations as T exposing (I18n)
+import UI.Components
 import UI.Theme as Theme
 import Ui
 import Ui.Font
@@ -148,12 +150,14 @@ buildChange original output =
 view : I18n -> (Msg -> msg) -> Model -> Ui.Element msg
 view i18n toMsg (Model data) =
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text (T.groupSettingsTitle i18n))
-        , nameField i18n data
+        [ nameField i18n data
         , textField (T.groupSettingsSubtitle i18n) (Just (T.groupSettingsSubtitlePlaceholder i18n)) InputSubtitle .subtitle data.form
         , textField (T.groupSettingsDescription i18n) (Just (T.groupSettingsDescriptionPlaceholder i18n)) InputDescription .description data.form
         , linksSection i18n data.submitted data.form
-        , saveButton i18n
+        , UI.Components.btnPrimary []
+            { label = T.groupSettingsSave i18n
+            , onPress = Submit
+            }
         , deleteSection i18n data.confirmingDelete
         ]
         |> Ui.map toMsg
@@ -167,15 +171,21 @@ nameField i18n data =
             Form.get .name data.form
     in
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ] (Ui.text (T.groupSettingsName i18n))
-        , Ui.Input.text [ Ui.width Ui.fill ]
+        [ UI.Components.formLabel (T.groupSettingsName i18n) True
+        , Ui.Input.text
+            [ Ui.width Ui.fill
+            , Ui.padding Theme.spacing.sm
+            , Ui.rounded Theme.radius.sm
+            , Ui.border Theme.border
+            , Ui.borderColor Theme.base.accent
+            ]
             { onChange = InputName
             , text = Field.toRawString field
             , placeholder = Nothing
             , label = Ui.Input.labelHidden (T.groupSettingsName i18n)
             }
         , if Field.isInvalid field && (data.submitted || Field.isDirty field) then
-            Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.danger ]
+            Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
                 (Ui.text (T.fieldRequired i18n))
 
           else
@@ -186,8 +196,14 @@ nameField i18n data =
 textField : String -> Maybe String -> (String -> Msg) -> (MetaForm.Accessors -> Form.Accessor MetaForm.State (Field.Field (Maybe String))) -> MetaForm.Form -> Ui.Element Msg
 textField label placeholder onChange accessor formData =
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ] (Ui.text label)
-        , Ui.Input.text [ Ui.width Ui.fill ]
+        [ UI.Components.formLabel label False
+        , Ui.Input.text
+            [ Ui.width Ui.fill
+            , Ui.padding Theme.spacing.sm
+            , Ui.rounded Theme.radius.sm
+            , Ui.border Theme.border
+            , Ui.borderColor Theme.base.accent
+            ]
             { onChange = onChange
             , text = Form.get accessor formData |> Field.toRawString
             , placeholder = placeholder
@@ -203,17 +219,15 @@ linksSection i18n submitted formData =
         linkEntries =
             Form.List.toList (Form.get .links formData)
     in
-    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.groupSettingsLinks i18n))
+    Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+        [ UI.Components.formLabel (T.groupSettingsLinks i18n) False
         , Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
             (List.map (\( id, _ ) -> linkRow i18n submitted id formData) linkEntries)
-        , Ui.el
-            [ Ui.Input.button AddLink
-            , Ui.Font.color Theme.primary
-            , Ui.Font.bold
-            , Ui.pointer
-            ]
-            (Ui.text (T.groupSettingsAddLink i18n))
+        , UI.Components.btnOutline [ Ui.width Ui.shrink, Ui.paddingXY Theme.spacing.md Theme.spacing.sm ]
+            { label = T.groupSettingsAddLink i18n
+            , icon = Just (UI.Components.featherIcon 16 FeatherIcons.plus)
+            , onPress = AddLink
+            }
         ]
 
 
@@ -233,33 +247,43 @@ linkRow i18n submitted id formData =
             Field.isInvalid field && (submitted || Field.isDirty field)
     in
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-            [ Ui.Input.text [ Ui.width Ui.fill ]
+        [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill, Ui.contentCenterY ]
+            [ Ui.Input.text
+                [ Ui.width Ui.fill
+                , Ui.padding Theme.spacing.sm
+                , Ui.rounded Theme.radius.sm
+                , Ui.border Theme.border
+                , Ui.borderColor Theme.base.accent
+                ]
                 { onChange = InputLinkLabel id
                 , text = Field.toRawString labelField
                 , placeholder = Just (T.groupSettingsLinkLabelPlaceholder i18n)
                 , label = Ui.Input.labelHidden (T.groupSettingsLinkLabelPlaceholder i18n)
                 }
-            , Ui.Input.text [ Ui.width Ui.fill ]
-                { onChange = InputLinkUrl id
-                , text = Field.toRawString urlField
-                , placeholder = Just (T.groupSettingsLinkUrlPlaceholder i18n)
-                , label = Ui.Input.labelHidden (T.groupSettingsLinkUrlPlaceholder i18n)
+            , UI.Components.btnOutline [ Ui.width Ui.shrink, Ui.paddingXY Theme.spacing.md Theme.spacing.sm ]
+                { label = T.groupSettingsRemoveLink i18n
+                , icon = Just (UI.Components.featherIcon 14 FeatherIcons.trash2)
+                , onPress = RemoveLink id
                 }
-            , Ui.el
-                [ Ui.Input.button (RemoveLink id)
-                , Ui.Font.color Theme.danger
-                , Ui.Font.size Theme.fontSize.sm
-                , Ui.pointer
-                ]
-                (Ui.text (T.groupSettingsRemoveLink i18n))
             ]
+        , Ui.Input.text
+            [ Ui.width Ui.fill
+            , Ui.padding Theme.spacing.sm
+            , Ui.rounded Theme.radius.sm
+            , Ui.border Theme.border
+            , Ui.borderColor Theme.base.accent
+            ]
+            { onChange = InputLinkUrl id
+            , text = Field.toRawString urlField
+            , placeholder = Just (T.groupSettingsLinkUrlPlaceholder i18n)
+            , label = Ui.Input.labelHidden (T.groupSettingsLinkUrlPlaceholder i18n)
+            }
         , if showError labelField then
-            Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.danger ]
+            Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
                 (Ui.text (T.fieldRequired i18n))
 
           else if showError urlField then
-            Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.danger ]
+            Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
                 (Ui.text (T.fieldInvalidUrl i18n))
 
           else
@@ -267,61 +291,39 @@ linkRow i18n submitted id formData =
         ]
 
 
-saveButton : I18n -> Ui.Element Msg
-saveButton i18n =
-    Ui.el
-        [ Ui.Input.button Submit
-        , Ui.width Ui.fill
-        , Ui.padding Theme.spacing.md
-        , Ui.rounded Theme.rounding.md
-        , Ui.background Theme.primary
-        , Ui.Font.color Theme.white
-        , Ui.Font.center
-        , Ui.Font.bold
-        , Ui.pointer
-        ]
-        (Ui.text (T.groupSettingsSave i18n))
-
-
 deleteSection : I18n -> Bool -> Ui.Element Msg
 deleteSection i18n confirmingDelete =
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-        [ Ui.el
-            [ Ui.height (Ui.px 1)
-            , Ui.width Ui.fill
-            , Ui.background Theme.neutral300
-            ]
-            Ui.none
+        [ UI.Components.horizontalSeparator
         , if confirmingDelete then
             Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-                [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.danger ]
+                [ Ui.el
+                    [ Ui.width Ui.fill
+                    , Ui.padding Theme.spacing.md
+                    , Ui.rounded Theme.radius.md
+                    , Ui.background Theme.danger.tint
+                    , Ui.Font.size Theme.font.sm
+                    , Ui.Font.color Theme.danger.text
+                    ]
                     (Ui.text (T.groupRemoveWarning i18n))
                 , Ui.el
                     [ Ui.Input.button ConfirmDelete
                     , Ui.width Ui.fill
                     , Ui.padding Theme.spacing.md
-                    , Ui.rounded Theme.rounding.md
-                    , Ui.background Theme.danger
-                    , Ui.Font.color Theme.white
+                    , Ui.rounded Theme.radius.md
+                    , Ui.background Theme.danger.solid
+                    , Ui.Font.color Theme.danger.solidText
                     , Ui.Font.center
-                    , Ui.Font.bold
+                    , Ui.Font.weight Theme.fontWeight.semibold
                     , Ui.pointer
                     ]
                     (Ui.text (T.groupRemoveConfirm i18n))
                 ]
 
           else
-            Ui.el
-                [ Ui.Input.button ToggleDeleteConfirm
-                , Ui.width Ui.fill
-                , Ui.padding Theme.spacing.md
-                , Ui.rounded Theme.rounding.md
-                , Ui.border Theme.borderWidth.md
-                , Ui.borderColor Theme.danger
-                , Ui.Font.color Theme.danger
-                , Ui.Font.center
-                , Ui.Font.bold
-                , Ui.pointer
-                ]
-                (Ui.text (T.groupRemoveButton i18n))
+            UI.Components.btnOutline []
+                { label = T.groupRemoveButton i18n
+                , icon = Nothing
+                , onPress = ToggleDeleteConfirm
+                }
         ]

@@ -1,241 +1,462 @@
-module UI.Components exposing (balanceCard, entryCard, languageSelector, memberRow, pwaBanners, settlementRow)
+module UI.Components exposing
+    ( sectionLabel, formLabel
+    , card, horizontalSeparator
+    , btnPrimary, btnOutline, btnOutlineAttrs, btnDark
+    , chip, toggle, expandTrigger, toggleMemberBtn
+    , avatar, AvatarColor(..)
+    , fab
+    , featherIcon
+    , languageSelector, pwaBanners
+    )
 
-{-| Reusable view components for group data display.
+{-| Reusable UI components.
+
+
+# Layout
+
+@docs sectionLabel, formLabel
+@docs card, horizontalSeparator
+
+
+# Buttons
+
+@docs btnPrimary, btnOutline, btnOutlineAttrs, btnDark
+
+
+# Interactive
+
+@docs chip, toggle, expandTrigger, toggleMemberBtn
+
+
+# Avatar
+
+@docs avatar, AvatarColor
+
+
+# Overlays
+
+@docs fab
+
+
+# Icons
+
+@docs featherIcon
+
+
+# Domain components
+
+@docs languageSelector, pwaBanners
+
 -}
 
-import Domain.Balance as Balance exposing (MemberBalance)
-import Domain.Entry as Entry exposing (Entry, Kind(..))
-import Domain.Member as Member
-import Domain.Settlement as Settlement
-import Format
+import FeatherIcons
+import Svg.Attributes
 import Translations as T exposing (I18n, Language(..))
 import UI.Theme as Theme
 import Ui
+import Ui.Anim as Anim
 import Ui.Events
 import Ui.Font
 import Ui.Input
 
 
-{-| A card showing a member's balance with color coding.
-Shows a "Pay Them" button for non-current-user creditors.
+
+-- SECTION LABEL
+
+
+{-| Uppercase section label for content grouping.
 -}
-balanceCard : I18n -> Maybe msg -> { name : String, balance : MemberBalance, isCurrentUser : Bool } -> Ui.Element msg
-balanceCard i18n onPay config =
-    let
-        balanceStatus : Balance.Status
-        balanceStatus =
-            Balance.status config.balance
+sectionLabel : String -> Ui.Element msg
+sectionLabel label =
+    Ui.el sectionLabelAttrs (Ui.text (String.toUpper label))
 
-        bgColor : Ui.Color
-        bgColor =
-            case balanceStatus of
-                Balance.Creditor ->
-                    Theme.successLight
 
-                Balance.Debtor ->
-                    Theme.dangerLight
+sectionLabelAttrs : List (Ui.Attribute msg)
+sectionLabelAttrs =
+    [ Ui.Font.size Theme.font.xs
+    , Ui.Font.weight Theme.fontWeight.semibold
+    , Ui.Font.letterSpacing Theme.letterSpacing.wide
+    , Ui.Font.color Theme.base.textSubtle
+    , Ui.paddingBottom Theme.spacing.md
+    ]
 
-                Balance.Settled ->
-                    Theme.neutral200
 
-        fgColor : Ui.Color
-        fgColor =
-            Theme.balanceColor balanceStatus
+{-| Form field label with optional required indicator.
+-}
+formLabel : String -> Bool -> Ui.Element msg
+formLabel label required =
+    Ui.row [ Ui.spacing Theme.spacing.xs, Ui.width Ui.shrink ]
+        [ Ui.el
+            [ Ui.Font.size Theme.font.sm
+            , Ui.Font.weight Theme.fontWeight.semibold
+            ]
+            (Ui.text label)
+        , if required then
+            Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.primary.solid
+                ]
+                (Ui.text "*")
 
-        statusText : String
-        statusText =
-            case ( balanceStatus, config.isCurrentUser ) of
-                ( Balance.Creditor, True ) ->
-                    T.balanceIsOwedYou i18n
+          else
+            Ui.none
+        ]
 
-                ( Balance.Creditor, False ) ->
-                    T.balanceIsOwed i18n
 
-                ( Balance.Debtor, True ) ->
-                    T.balanceOwesYou i18n
 
-                ( Balance.Debtor, False ) ->
-                    T.balanceOwes i18n
+-- CARD
 
-                ( Balance.Settled, _ ) ->
-                    T.balanceSettled i18n
 
-        nameLabel : String
-        nameLabel =
-            if config.isCurrentUser then
-                T.nameYouSuffix config.name i18n
-
-            else
-                config.name
-    in
+{-| Card container with white background, border, shadow, and rounded corners.
+-}
+card : List (Ui.Attribute msg) -> List (Ui.Element msg) -> Ui.Element msg
+card attrs children =
     Ui.column
+        ([ Ui.background (Ui.rgb 255 255 255)
+         , Ui.rounded Theme.radius.lg
+         , Theme.shadow
+         , Ui.border Theme.border
+         , Ui.borderColor Theme.base.accent
+         , Ui.width Ui.fill
+         ]
+            ++ attrs
+        )
+        children
+
+
+{-| Horizontal line separator.
+-}
+horizontalSeparator : Ui.Element msg
+horizontalSeparator =
+    Ui.el
         [ Ui.width Ui.fill
-        , Ui.background bgColor
-        , Ui.rounded Theme.rounding.md
-        , Ui.padding Theme.spacing.md
-        , Ui.spacing Theme.spacing.xs
+        , Ui.height (Ui.px 1)
+        , Ui.background Theme.base.accent
         ]
-        [ Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
-            [ Ui.el [ Ui.Font.bold, Ui.Font.size Theme.fontSize.md ] (Ui.text nameLabel)
-            , Ui.el [ Ui.alignRight, Ui.Font.color fgColor, Ui.Font.bold, Ui.Font.size Theme.fontSize.lg ]
-                (Ui.text (Format.formatCents (abs config.balance.netBalance)))
-            ]
-        , Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
-            [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral700 ]
-                (Ui.text statusText)
-            , case onPay of
-                Just msg ->
-                    Ui.el
-                        [ Ui.alignRight
-                        , Ui.Font.size Theme.fontSize.sm
-                        , Ui.Font.color Theme.white
-                        , Ui.background Theme.primary
-                        , Ui.rounded Theme.rounding.sm
-                        , Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
-                        , Ui.pointer
-                        , Ui.Events.onClick msg
-                        ]
-                        (Ui.text (T.balancePayThem i18n))
-
-                Nothing ->
-                    Ui.none
-            ]
-        ]
+        Ui.none
 
 
-{-| A card displaying an entry (expense or transfer). Clickable via onClick.
+
+-- BUTTONS
+
+
+{-| Primary action button (solid accent color, full width).
 -}
-entryCard : I18n -> (Member.Id -> String) -> msg -> Entry -> Ui.Element msg
-entryCard i18n resolveName onClick entry =
-    let
-        rowAttrs : List (Ui.Attribute msg)
-        rowAttrs =
-            [ Ui.width Ui.fill
-            , Ui.padding Theme.spacing.md
-            , Ui.borderWith { bottom = Theme.borderWidth.sm, top = 0, left = 0, right = 0 }
-            , Ui.borderColor Theme.neutral200
-            , Ui.spacing Theme.spacing.md
-            , Ui.pointer
-            , Ui.Events.onClick onClick
-            ]
-    in
-    case entry.kind of
-        Expense data ->
-            Ui.row rowAttrs
-                [ Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.xs ]
-                    [ Ui.el [ Ui.Font.bold ] (Ui.text data.description)
-                    , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                        (Ui.text (payerSummary i18n resolveName data.payers))
-                    ]
-                , Ui.el [ Ui.alignRight, Ui.Font.bold ]
-                    (Ui.text (Format.formatCentsWithCurrency data.amount data.currency))
-                ]
-
-        Transfer data ->
-            Ui.row rowAttrs
-                [ Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.xs ]
-                    [ Ui.el [ Ui.Font.bold ] (Ui.text (T.entryTransfer i18n))
-                    , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                        (Ui.text (T.entryTransferDirection { from = resolveName data.from, to = resolveName data.to } i18n))
-                    ]
-                , Ui.el [ Ui.alignRight, Ui.Font.bold ]
-                    (Ui.text (Format.formatCentsWithCurrency data.amount data.currency))
-                ]
+btnPrimary : List (Ui.Attribute msg) -> { label : String, onPress : msg } -> Ui.Element msg
+btnPrimary attrs config =
+    Ui.el
+        (Ui.Input.button config.onPress
+            :: Ui.width Ui.fill
+            :: Ui.background Theme.primary.solid
+            :: Ui.rounded Theme.radius.md
+            :: Ui.paddingXY Theme.spacing.xl Theme.spacing.md
+            :: Ui.Font.size Theme.font.md
+            :: Ui.Font.weight Theme.fontWeight.semibold
+            :: Ui.Font.color Theme.primary.solidText
+            :: Ui.Font.center
+            :: Ui.pointer
+            :: attrs
+        )
+        (Ui.text config.label)
 
 
-payerSummary : I18n -> (Member.Id -> String) -> List Entry.Payer -> String
-payerSummary i18n resolveName payers =
-    case payers of
-        [] ->
-            ""
-
-        [ single ] ->
-            T.entryPaidBySingle (resolveName single.memberId) i18n
-
-        multiple ->
-            T.entryPaidByMultiple (String.join ", " (List.map (.memberId >> resolveName) multiple)) i18n
-
-
-{-| A row displaying a member in the member list. Clickable via onClick.
+{-| Common visual attributes for outline-style buttons.
+Useful when building custom buttons that should match the outline style.
 -}
-memberRow : I18n -> msg -> { member : Member.ChainState, isCurrentUser : Bool } -> Ui.Element msg
-memberRow i18n onClick config =
+btnOutlineAttrs : List (Ui.Attribute msg)
+btnOutlineAttrs =
+    [ Ui.spacing Theme.spacing.sm
+    , Ui.contentCenterX
+    , Ui.contentCenterY
+    , Ui.background Theme.base.bg
+    , Ui.border Theme.border
+    , Ui.borderColor Theme.base.accent
+    , Ui.rounded Theme.radius.md
+    , Ui.paddingXY Theme.spacing.lg Theme.spacing.md
+    , Ui.Font.size Theme.font.md
+    , Ui.Font.weight Theme.fontWeight.medium
+    , Ui.Font.color Theme.base.text
+    , Ui.pointer
+    ]
+
+
+{-| Outline button with optional icon (bordered, full width).
+-}
+btnOutline : List (Ui.Attribute msg) -> { label : String, icon : Maybe (Ui.Element msg), onPress : msg } -> Ui.Element msg
+btnOutline attrs config =
+    Ui.row
+        (Ui.Input.button config.onPress :: Ui.width Ui.fill :: btnOutlineAttrs ++ attrs)
+        (case config.icon of
+            Just icon ->
+                [ icon, Ui.text config.label ]
+
+            Nothing ->
+                [ Ui.text config.label ]
+        )
+
+
+{-| Dark button (dark background, light text).
+-}
+btnDark : List (Ui.Attribute msg) -> { label : String, onPress : msg } -> Ui.Element msg
+btnDark attrs config =
+    Ui.el
+        (Ui.Input.button config.onPress
+            :: Ui.background Theme.base.text
+            :: Ui.rounded Theme.radius.md
+            :: Ui.paddingXY Theme.spacing.lg Theme.spacing.md
+            :: Ui.Font.color Theme.base.bg
+            :: Ui.Font.size Theme.font.md
+            :: Ui.Font.weight Theme.fontWeight.semibold
+            :: Ui.Font.center
+            :: Ui.contentCenterX
+            :: Ui.pointer
+            :: attrs
+        )
+        (Ui.text config.label)
+
+
+
+-- CHIP
+
+
+{-| Selectable pill for filters and multi-select.
+-}
+chip : { label : String, selected : Bool, onPress : msg } -> Ui.Element msg
+chip config =
     let
-        nameLabel : String
-        nameLabel =
-            if config.isCurrentUser then
-                T.nameYouSuffix config.member.name i18n
+        ( bg, borderColor, textColor ) =
+            if config.selected then
+                ( Theme.primary.solid, Theme.primary.solid, Theme.primary.solidText )
 
             else
-                config.member.name
-
-        typeLabel : String
-        typeLabel =
-            case config.member.currentMember.memberType of
-                Member.Virtual ->
-                    T.memberVirtualLabel i18n
-
-                Member.Real ->
-                    ""
+                ( Ui.rgba 0 0 0 0, Theme.base.accent, Theme.base.textSubtle )
     in
-    Ui.row
-        [ Ui.width Ui.fill
-        , Ui.padding Theme.spacing.md
-        , Ui.borderWith { bottom = Theme.borderWidth.sm, top = 0, left = 0, right = 0 }
-        , Ui.borderColor Theme.neutral200
-        , Ui.spacing Theme.spacing.sm
+    Ui.el
+        [ Ui.Input.button config.onPress
+        , Ui.paddingXY Theme.spacing.md Theme.spacing.sm
+        , Ui.border Theme.border
+        , Ui.rounded Theme.radius.xxl
+        , Ui.Font.size Theme.font.sm
+        , Ui.Font.weight Theme.fontWeight.medium
         , Ui.pointer
-        , Ui.Events.onClick onClick
+        , Ui.width Ui.shrink
+        , Anim.transition (Anim.ms 200)
+            [ Anim.backgroundColor bg
+            , Anim.borderColor borderColor
+            , Anim.fontColor textColor
+            ]
         ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.md ] (Ui.text nameLabel)
-        , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ] (Ui.text typeLabel)
-        ]
+        (Ui.text config.label)
 
 
-{-| A row displaying a settlement transaction, with a "Mark as Paid" button
-and highlighting when the current user is involved.
+
+-- TOGGLE
+
+
+{-| Toggle switch control.
 -}
-settlementRow : I18n -> (Member.Id -> String) -> Member.Id -> (Settlement.Transaction -> msg) -> Settlement.Transaction -> Ui.Element msg
-settlementRow i18n resolveName currentUserRootId onSettle t =
+toggle : { isOn : Bool, onPress : msg } -> Ui.Element msg
+toggle config =
     let
-        isCurrentUser : Bool
-        isCurrentUser =
-            t.from == currentUserRootId || t.to == currentUserRootId
-
-        bgColor : Ui.Color
-        bgColor =
-            if isCurrentUser then
-                Theme.primaryLight
+        ( knobX, bgColor ) =
+            if config.isOn then
+                ( 21, Theme.primary.solid )
 
             else
-                Theme.neutral200
+                ( 3, Theme.base.accent )
+    in
+    Ui.el
+        [ Ui.Input.button config.onPress
+        , Ui.alignRight
+        , Ui.width (Ui.px 44)
+        , Ui.height (Ui.px 26)
+        , Ui.rounded 13
+        , Ui.pointer
+        , Ui.contentCenterY
+        , Anim.transition (Anim.ms 250)
+            [ Anim.backgroundColor bgColor ]
+        ]
+        (Ui.el
+            [ Ui.width (Ui.px 20)
+            , Ui.height (Ui.px 20)
+            , Ui.rounded Theme.radius.xxxl
+            , Ui.background Theme.base.solidText
+            , Theme.shadowKnob
+            , Anim.transition (Anim.ms 250)
+                [ Anim.x knobX
+                    |> Anim.withTransition (Anim.bezier 0.16 1 0.3 1)
+                ]
+            ]
+            Ui.none
+        )
+
+
+
+-- AVATAR
+
+
+type AvatarColor
+    = AvatarAccent
+    | AvatarNeutral
+    | AvatarNeutralInversed
+    | AvatarRed
+
+
+{-| Circular avatar with initials.
+-}
+avatar : AvatarColor -> String -> Ui.Element msg
+avatar color initials =
+    let
+        ( bgColor, textColor ) =
+            case color of
+                AvatarAccent ->
+                    ( Theme.primary.tint, Theme.primary.accent )
+
+                AvatarNeutral ->
+                    ( Theme.base.tint, Theme.base.textSubtle )
+
+                AvatarNeutralInversed ->
+                    ( Theme.base.bgSubtle, Theme.base.textSubtle )
+
+                AvatarRed ->
+                    ( Theme.danger.tint, Theme.danger.accent )
+    in
+    Ui.el
+        [ Ui.width (Ui.px Theme.sizing.lg)
+        , Ui.height (Ui.px Theme.sizing.lg)
+        , Ui.rounded Theme.radius.xxxl
+        , Ui.background bgColor
+        , Ui.Font.color textColor
+        , Ui.Font.weight Theme.fontWeight.semibold
+        , Ui.Font.size Theme.font.md
+        , Ui.contentCenterX
+        , Ui.contentCenterY
+        ]
+        (Ui.text initials)
+
+
+
+-- EXPAND TRIGGER
+
+
+{-| Collapsible section header with animated chevron.
+-}
+expandTrigger : { label : String, isOpen : Bool, onPress : msg } -> Ui.Element msg
+expandTrigger config =
+    Ui.row
+        ([ Ui.Input.button config.onPress
+         , Ui.width Ui.fill
+         , Ui.pointer
+         ]
+            ++ sectionLabelAttrs
+        )
+        [ Ui.text (String.toUpper config.label)
+        , Ui.el
+            [ Ui.alignRight
+            , Anim.transition (Anim.ms 300)
+                [ Anim.rotation
+                    (if config.isOpen then
+                        0.5
+
+                     else
+                        0
+                    )
+                    |> Anim.withTransition (Anim.bezier 0.16 1 0.3 1)
+                ]
+            ]
+            (featherIcon 18 FeatherIcons.chevronDown)
+        ]
+
+
+{-| Pill-shaped member toggle button with avatar and name.
+Selected state uses primary colors, unselected uses neutral.
+-}
+toggleMemberBtn :
+    { name : String
+    , initials : String
+    , selected : Bool
+    , onPress : msg
+    }
+    -> Ui.Element msg
+toggleMemberBtn config =
+    let
+        ( borderClr, backgroundColor, avatarColor ) =
+            if config.selected then
+                ( Theme.primary.solid, Theme.primary.bg, AvatarAccent )
+
+            else
+                ( Theme.base.solid, Theme.base.bg, AvatarNeutral )
     in
     Ui.row
-        [ Ui.width Ui.fill
-        , Ui.padding Theme.spacing.sm
+        [ Ui.Input.button config.onPress
+        , Ui.width Ui.shrink
+        , Ui.paddingWith { top = 0, bottom = 0, left = 0, right = Theme.spacing.sm }
+        , Ui.rounded Theme.radius.xxxl
+        , Ui.border Theme.border
         , Ui.spacing Theme.spacing.sm
-        , Ui.background bgColor
-        , Ui.rounded Theme.rounding.sm
-        ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.sm ]
-            (Ui.text (resolveName t.from))
-        , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-            (Ui.text (T.settlementPays i18n))
-        , Ui.el [ Ui.Font.size Theme.fontSize.sm ]
-            (Ui.text (resolveName t.to))
-        , Ui.el [ Ui.alignRight, Ui.Font.bold, Ui.Font.size Theme.fontSize.sm ]
-            (Ui.text (Format.formatCents t.amount))
-        , Ui.el
-            [ Ui.Font.size Theme.fontSize.sm
-            , Ui.Font.color Theme.white
-            , Ui.background Theme.primary
-            , Ui.rounded Theme.rounding.sm
-            , Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
-            , Ui.pointer
-            , Ui.Events.onClick (onSettle t)
+        , Ui.contentCenterY
+        , Ui.pointer
+        , Anim.transition (Anim.ms 200)
+            [ Anim.borderColor borderClr
+            , Anim.backgroundColor backgroundColor
             ]
-            (Ui.text (T.settlementMarkAsPaid i18n))
         ]
+        [ avatar avatarColor config.initials
+        , Ui.el [ Ui.Font.weight Theme.fontWeight.medium ]
+            (Ui.text config.name)
+        ]
+
+
+
+-- FAB
+
+
+{-| Floating action button (circular, accent color, positioned bottom-right).
+-}
+fab : { label : String, onPress : msg } -> Ui.Element msg
+fab config =
+    Ui.el
+        [ Ui.Input.button config.onPress
+        , Ui.width (Ui.px Theme.sizing.xl)
+        , Ui.height (Ui.px Theme.sizing.xl)
+        , Ui.rounded Theme.radius.lg
+        , Ui.background Theme.primary.solid
+        , Ui.Font.color Theme.primary.solidText
+        , Theme.shadowAccent
+        , Ui.alignRight
+        , Ui.pointer
+        , Ui.contentCenterX
+        , Ui.contentCenterY
+        ]
+        (featherIconColored "white" (toFloat Theme.sizing.sm) FeatherIcons.plus)
+
+
+
+-- ICONS
+
+
+{-| Render a Feather icon as a UI element at the given size.
+-}
+featherIcon : Float -> FeatherIcons.Icon -> Ui.Element msg
+featherIcon size icon =
+    icon
+        |> FeatherIcons.withSize size
+        |> FeatherIcons.toHtml []
+        |> Ui.html
+
+
+{-| Render a Feather icon with a custom stroke color.
+-}
+featherIconColored : String -> Float -> FeatherIcons.Icon -> Ui.Element msg
+featherIconColored strokeColor size icon =
+    icon
+        |> FeatherIcons.withSize size
+        |> FeatherIcons.toHtml [ Svg.Attributes.stroke strokeColor ]
+        |> Ui.html
+
+
+
+-- LANGUAGE SELECTOR
 
 
 {-| Flag-based language selector. Active language is full opacity, others dimmed.
@@ -247,7 +468,7 @@ languageSelector onSwitch current =
             (\lang ->
                 Ui.el
                     [ Ui.pointer
-                    , Ui.Font.size Theme.fontSize.lg
+                    , Ui.Font.size Theme.font.lg
                     , Ui.Events.onClick (onSwitch lang)
                     , if lang == current then
                         Ui.opacity 1.0
@@ -271,86 +492,105 @@ languageFlag lang =
             "🇫🇷"
 
 
+
+-- PWA BANNERS
+
+
 {-| PWA banners: offline indicator, update prompt, and install prompt.
 -}
-pwaBanners : I18n -> { isOnline : Bool, updateAvailable : Bool, installAvailable : Bool, onUpdate : msg, onInstall : msg, onDismissInstall : msg } -> List (Ui.Element msg)
+pwaBanners : I18n -> { isOnline : Bool, updateAvailable : Bool, installAvailable : Bool, onUpdate : msg, onInstall : msg, onDismissInstall : msg } -> Ui.Element msg
 pwaBanners i18n config =
-    List.filterMap identity
-        [ if not config.isOnline then
-            Just (pwaBanner Theme.warningLight Theme.warning (T.pwaOffline i18n) Nothing)
+    let
+        showIf : Bool -> a -> Maybe a
+        showIf condition elem =
+            if condition then
+                Just elem
 
-          else
-            Nothing
-        , if config.updateAvailable then
-            Just (pwaBanner Theme.primaryLight Theme.primary (T.pwaUpdateAvailable i18n) (Just ( T.pwaUpdateButton i18n, config.onUpdate )))
+            else
+                Nothing
 
-          else
-            Nothing
-        , if config.installAvailable then
-            Just (pwaInstallBanner i18n config.onInstall config.onDismissInstall)
+        banners : List (Ui.Element msg)
+        banners =
+            List.filterMap identity <|
+                [ showIf config.isOnline <|
+                    pwaBanner (T.pwaOffline i18n)
+                        { bgColor = Theme.warning.tint
+                        , textColor = Theme.warning.text
+                        , action = Nothing
+                        , dismiss = Nothing
+                        }
+                , showIf (not config.updateAvailable) <|
+                    pwaBanner (T.pwaUpdateAvailable i18n)
+                        { bgColor = Theme.warning.tint
+                        , textColor = Theme.warning.text
+                        , action = Just ( T.pwaUpdateButton i18n, config.onUpdate )
+                        , dismiss = Nothing
+                        }
+                , showIf (not config.installAvailable) <|
+                    pwaBanner (T.pwaInstallPrompt i18n)
+                        { bgColor = Theme.warning.tint
+                        , textColor = Theme.warning.text
+                        , action = Just ( T.pwaInstallButton i18n, config.onInstall )
+                        , dismiss = Just config.onDismissInstall
+                        }
+                ]
+    in
+    if List.isEmpty banners then
+        Ui.none
 
-          else
-            Nothing
-        ]
+    else
+        Ui.column [ Ui.spacing Theme.spacing.md ] banners
 
 
-{-| A colored banner with a message and an optional action button.
--}
-pwaBanner : Ui.Color -> Ui.Color -> String -> Maybe ( String, msg ) -> Ui.Element msg
-pwaBanner bgColor textColor message action =
+pwaBanner :
+    String
+    ->
+        { bgColor : Ui.Color
+        , textColor : Ui.Color
+        , action : Maybe ( String, msg )
+        , dismiss : Maybe msg
+        }
+    -> Ui.Element msg
+pwaBanner message { bgColor, textColor, action, dismiss } =
     Ui.row
         [ Ui.width Ui.fill
         , Ui.paddingXY Theme.spacing.md Theme.spacing.sm
         , Ui.background bgColor
         , Ui.spacing Theme.spacing.md
+        , Ui.Font.size Theme.font.sm
         ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color textColor, Ui.width Ui.fill ] (Ui.text message)
+        [ Ui.el [ Ui.Font.color textColor, Ui.width Ui.fill ] (Ui.text message)
         , case action of
             Just ( label, msg ) ->
                 Ui.el
                     [ Ui.Input.button msg
-                    , Ui.paddingXY Theme.spacing.md Theme.spacing.xs
-                    , Ui.rounded Theme.rounding.sm
+                    , Ui.paddingXY Theme.spacing.md Theme.spacing.sm
+                    , Ui.rounded Theme.radius.sm
                     , Ui.background textColor
-                    , Ui.Font.color Theme.white
-                    , Ui.Font.size Theme.fontSize.sm
-                    , Ui.Font.bold
+                    , Ui.Font.color Theme.primary.solidText
+                    , Ui.Font.weight Theme.fontWeight.semibold
                     , Ui.pointer
+                    , Ui.width Ui.shrink
                     ]
                     (Ui.text label)
 
             Nothing ->
                 Ui.none
-        ]
+        , case dismiss of
+            Just msg ->
+                Ui.el
+                    [ Ui.Input.button msg
+                    , Ui.Font.size Theme.font.md
+                    , Ui.Font.color Theme.base.textSubtle
+                    , Ui.pointer
+                    , Ui.alignRight
+                    , Ui.height <| Ui.px Theme.sizing.md
+                    , Ui.width <| Ui.px Theme.sizing.md
+                    , Ui.contentCenterX
+                    , Ui.contentCenterY
+                    ]
+                    (featherIcon 18 FeatherIcons.x)
 
-
-{-| Install prompt banner with install and dismiss buttons.
--}
-pwaInstallBanner : I18n -> msg -> msg -> Ui.Element msg
-pwaInstallBanner i18n onInstall onDismiss =
-    Ui.row
-        [ Ui.width Ui.fill
-        , Ui.paddingXY Theme.spacing.md Theme.spacing.sm
-        , Ui.background Theme.primaryLight
-        , Ui.spacing Theme.spacing.md
-        ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.primary, Ui.width Ui.fill ] (Ui.text (T.pwaInstallPrompt i18n))
-        , Ui.el
-            [ Ui.Input.button onInstall
-            , Ui.paddingXY Theme.spacing.md Theme.spacing.xs
-            , Ui.rounded Theme.rounding.sm
-            , Ui.background Theme.primary
-            , Ui.Font.color Theme.white
-            , Ui.Font.size Theme.fontSize.sm
-            , Ui.Font.bold
-            , Ui.pointer
-            ]
-            (Ui.text (T.pwaInstallButton i18n))
-        , Ui.el
-            [ Ui.Input.button onDismiss
-            , Ui.Font.size Theme.fontSize.md
-            , Ui.Font.color Theme.neutral500
-            , Ui.pointer
-            ]
-            (Ui.text "✕")
+            Nothing ->
+                Ui.none
         ]

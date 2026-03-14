@@ -7,7 +7,6 @@ module Domain.Filter exposing
     , activityTypeToString
     , categoryFilterToString
     , countActiveActivityFilters
-    , countActiveEntryFilters
     , emptyActivityFilters
     , emptyEntryFilters
     , isActivityFilterActive
@@ -102,14 +101,6 @@ isActivityFilterActive f =
     not (Set.isEmpty f.activityTypes)
         || not (Set.isEmpty f.actors)
         || not (Set.isEmpty f.involvedMembers)
-
-
-countActiveEntryFilters : EntryFilters -> Int
-countActiveEntryFilters f =
-    boolToInt (not (Set.isEmpty f.persons))
-        + boolToInt (not (Set.isEmpty f.categories))
-        + boolToInt (not (Set.isEmpty f.currencies))
-        + boolToInt (not (List.isEmpty f.dateRanges))
 
 
 countActiveActivityFilters : ActivityFilters -> Int

@@ -11,15 +11,19 @@ import Domain.Entry as Entry exposing (Kind(..))
 import Domain.Event as Event
 import Domain.Filter as Filter exposing (ActivityFilters, ActivityType(..))
 import Domain.Member as Member
+import FeatherIcons
 import Format
-import Json.Decode
+import List.Extra
 import Set exposing (Set)
 import Time
 import Translations as T exposing (I18n)
+import UI.Components
 import UI.Theme as Theme
 import Ui
+import Ui.Anim as Anim
 import Ui.Events
 import Ui.Font
+import Ui.Input
 
 
 type Model
@@ -42,8 +46,6 @@ type Msg
 type alias Config msg =
     { resolveName : Member.Id -> String
     , currentUserRootId : Member.Id
-    , onEntryClick : Entry.Id -> msg
-    , entryDetailPath : Entry.Id -> String
     , groupDefaultCurrency : Currency
     , toMsg : Msg -> msg
     , allMembers : List ( Member.Id, String )
@@ -112,51 +114,64 @@ view i18n config (Model data) activities =
         filteredActivities =
             List.filter (Filter.matchesActivityFilters data.filters) activities
     in
-    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.md ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.activityTabTitle i18n))
-        , activityFilterToggle i18n config.toMsg data.showFilters data.filters
+    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+        [ filterToggleRow i18n config.toMsg data.showFilters data.filters
         , if data.showFilters then
-            activityFilterBar i18n config data.filters
+            filterPanel i18n config data.filters
 
           else
             Ui.none
         , if List.isEmpty filteredActivities then
-            Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
+            Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.base.textSubtle
+                , Ui.paddingXY 0 Theme.spacing.lg
+                ]
                 (Ui.text (T.activityComingSoon i18n))
 
           else
             Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-                (List.map (activityItem i18n config data.expandedActivities) filteredActivities)
+                (groupedByDate i18n config data.expandedActivities filteredActivities)
         ]
 
 
-activityFilterToggle : I18n -> (Msg -> msg) -> Bool -> ActivityFilters -> Ui.Element msg
-activityFilterToggle i18n toMsg showFilters filters =
+filterToggleRow : I18n -> (Msg -> msg) -> Bool -> ActivityFilters -> Ui.Element msg
+filterToggleRow i18n toMsg showFilters filters =
     let
-        label : String
-        label =
-            if showFilters then
-                T.filterToggleHide i18n
-
-            else
-                T.filterToggleShow i18n
-
         activeCount : Int
         activeCount =
             Filter.countActiveActivityFilters filters
+
+        ( bg, border, fontColor ) =
+            if showFilters then
+                ( Theme.primary.solid, Theme.primary.solid, Theme.primary.solidText )
+
+            else
+                ( Theme.base.bgSubtle, Theme.base.accent, Theme.base.textSubtle )
     in
-    Ui.row [ Ui.spacing Theme.spacing.sm ]
+    Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY, Ui.width Ui.fill ]
         [ Ui.el
-            [ Ui.pointer
-            , Ui.Events.onClick (toMsg ToggleFilters)
-            , Ui.Font.size Theme.fontSize.sm
-            , Ui.Font.color Theme.primary
+            [ Ui.Input.button (toMsg ToggleFilters)
+            , Ui.alignRight
+            , Ui.width (Ui.px Theme.sizing.lg)
+            , Ui.height (Ui.px Theme.sizing.lg)
+            , Ui.rounded Theme.radius.md
+            , Ui.border Theme.border
+            , Ui.contentCenterX
+            , Ui.contentCenterY
+            , Ui.pointer
+            , Anim.transition (Anim.ms 200)
+                [ Anim.backgroundColor bg
+                , Anim.borderColor border
+                , Anim.fontColor fontColor
+                ]
             ]
-            (Ui.text label)
+            (UI.Components.featherIcon 18 FeatherIcons.filter)
         , if not showFilters && activeCount > 0 then
             Ui.el
-                [ Ui.Font.size Theme.fontSize.sm
-                , Ui.Font.color Theme.neutral500
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.primary.text
+                , Ui.Font.weight Theme.fontWeight.medium
                 ]
                 (Ui.text (T.filterActiveCount (String.fromInt activeCount) i18n))
 
@@ -165,29 +180,26 @@ activityFilterToggle i18n toMsg showFilters filters =
         ]
 
 
-activityFilterBar : I18n -> Config msg -> ActivityFilters -> Ui.Element msg
-activityFilterBar i18n config filters =
-    Ui.column
-        [ Ui.spacing Theme.spacing.sm
-        , Ui.width Ui.fill
-        , Ui.padding Theme.spacing.sm
-        , Ui.rounded Theme.rounding.sm
-        , Ui.background Theme.neutral200
-        ]
-        [ activityTypeFilterSection i18n config.toMsg filters.activityTypes
-        , actorFilterSection i18n config filters.actors
-        , involvedFilterSection i18n config filters.involvedMembers
-        , if Filter.isActivityFilterActive filters then
-            Ui.el
-                [ Ui.pointer
-                , Ui.Events.onClick (config.toMsg ClearAllFilters)
-                , Ui.Font.size Theme.fontSize.sm
-                , Ui.Font.color Theme.danger
-                ]
-                (Ui.text (T.filterClearAll i18n))
+filterPanel : I18n -> Config msg -> ActivityFilters -> Ui.Element msg
+filterPanel i18n config filters =
+    UI.Components.card [ Ui.padding Theme.spacing.lg ]
+        [ Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+            [ activityTypeFilterSection i18n config.toMsg filters.activityTypes
+            , actorFilterSection i18n config filters.actors
+            , involvedFilterSection i18n config filters.involvedMembers
+            , if Filter.isActivityFilterActive filters then
+                Ui.el
+                    [ Ui.pointer
+                    , Ui.Events.onClick (config.toMsg ClearAllFilters)
+                    , Ui.Font.size Theme.font.sm
+                    , Ui.Font.color Theme.danger.text
+                    , Ui.Font.weight Theme.fontWeight.medium
+                    ]
+                    (Ui.text (T.filterClearAll i18n))
 
-          else
-            Ui.none
+              else
+                Ui.none
+            ]
         ]
 
 
@@ -204,7 +216,11 @@ activityTypeFilterSection i18n toMsg selected =
     filterSection (T.filterActivityTypeLabel i18n)
         (List.map
             (\( key, label ) ->
-                filterChip toMsg (ToggleActivityType key) label (Set.member key selected)
+                UI.Components.chip
+                    { label = label
+                    , selected = Set.member key selected
+                    , onPress = toMsg (ToggleActivityType key)
+                    }
             )
             types
         )
@@ -215,7 +231,11 @@ actorFilterSection i18n config selected =
     filterSection (T.filterActorLabel i18n)
         (List.map
             (\( id, name ) ->
-                filterChip config.toMsg (ToggleActor id) name (Set.member id selected)
+                UI.Components.chip
+                    { label = name
+                    , selected = Set.member id selected
+                    , onPress = config.toMsg (ToggleActor id)
+                    }
             )
             config.allMembers
         )
@@ -226,7 +246,11 @@ involvedFilterSection i18n config selected =
     filterSection (T.filterInvolvedLabel i18n)
         (List.map
             (\( id, name ) ->
-                filterChip config.toMsg (ToggleInvolvedMember id) name (Set.member id selected)
+                UI.Components.chip
+                    { label = name
+                    , selected = Set.member id selected
+                    , onPress = config.toMsg (ToggleInvolvedMember id)
+                    }
             )
             config.allMembers
         )
@@ -235,78 +259,131 @@ involvedFilterSection i18n config selected =
 filterSection : String -> List (Ui.Element msg) -> Ui.Element msg
 filterSection label chips =
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ] (Ui.text label)
+        [ Ui.el
+            [ Ui.Font.size Theme.font.sm
+            , Ui.Font.color Theme.base.textSubtle
+            , Ui.Font.weight Theme.fontWeight.medium
+            ]
+            (Ui.text label)
         , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.xs ] chips
         ]
 
 
-filterChip : (Msg -> msg) -> Msg -> String -> Bool -> Ui.Element msg
-filterChip toMsg msg label isActive =
+groupedByDate : I18n -> Config msg -> Set Event.Id -> List Activity -> List (Ui.Element msg)
+groupedByDate i18n config expandedActivities activities =
     let
-        bgColor : Ui.Attribute msg
-        bgColor =
-            if isActive then
-                Ui.background Theme.primaryLight
+        dateKey : Activity -> ( Int, Int, Int )
+        dateKey activity =
+            ( Time.toYear Time.utc activity.timestamp
+            , monthToInt (Time.toMonth Time.utc activity.timestamp)
+            , Time.toDay Time.utc activity.timestamp
+            )
+    in
+    List.Extra.groupWhile (\a1 a2 -> dateKey a1 == dateKey a2) activities
+        |> List.concatMap
+            (\( first, rest ) ->
+                dateSeparator first.timestamp
+                    :: List.map (activityItem i18n config expandedActivities) (first :: rest)
+            )
 
-            else
-                Ui.background Theme.white
 
-        borderColor : Ui.Attribute msg
-        borderColor =
-            if isActive then
-                Ui.borderColor Theme.primary
+dateSeparator : Time.Posix -> Ui.Element msg
+dateSeparator posix =
+    let
+        year : Int
+        year =
+            Time.toYear Time.utc posix
 
-            else
-                Ui.borderColor Theme.neutral300
+        month : Int
+        month =
+            monthToInt (Time.toMonth Time.utc posix)
+
+        day : Int
+        day =
+            Time.toDay Time.utc posix
     in
     Ui.el
-        [ Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
-        , Ui.rounded Theme.rounding.sm
-        , Ui.border Theme.borderWidth.sm
-        , bgColor
-        , borderColor
-        , Ui.pointer
-        , Ui.Font.size Theme.fontSize.sm
-        , Ui.Events.onClick (toMsg msg)
+        [ Ui.paddingTop Theme.spacing.md
+        , Ui.Font.size Theme.font.xs
+        , Ui.Font.weight Theme.fontWeight.semibold
+        , Ui.Font.letterSpacing Theme.letterSpacing.wide
+        , Ui.Font.color Theme.base.textSubtle
         ]
-        (Ui.text label)
+        (Ui.text (String.toUpper (monthName month ++ " " ++ String.fromInt day ++ ", " ++ String.fromInt year)))
+
+
+monthName : Int -> String
+monthName m =
+    case m of
+        1 ->
+            "January"
+
+        2 ->
+            "February"
+
+        3 ->
+            "March"
+
+        4 ->
+            "April"
+
+        5 ->
+            "May"
+
+        6 ->
+            "June"
+
+        7 ->
+            "July"
+
+        8 ->
+            "August"
+
+        9 ->
+            "September"
+
+        10 ->
+            "October"
+
+        11 ->
+            "November"
+
+        12 ->
+            "December"
+
+        _ ->
+            ""
 
 
 activityItem : I18n -> Config msg -> Set Event.Id -> Activity -> Ui.Element msg
 activityItem i18n config expandedActivities activity =
     let
-        isInvolved : Bool
-        isInvolved =
-            List.member config.currentUserRootId activity.involvedMembers
-
         isExpanded : Bool
         isExpanded =
             Set.member activity.eventId expandedActivities
 
-        innerAttrs : List (Ui.Attribute msg)
-        innerAttrs =
+        isInvolved : Bool
+        isInvolved =
+            List.member config.currentUserRootId activity.involvedMembers
+
+        ( borderWidth, borderColor ) =
             if isInvolved then
-                [ Ui.borderWith { left = 3, top = 0, right = 0, bottom = 0 }
-                , Ui.borderColor Theme.primary
-                , Ui.paddingWith { left = Theme.spacing.sm, top = 0, right = 0, bottom = 0 }
-                ]
+                ( Ui.borderWith { left = 4, top = Theme.border, right = Theme.border, bottom = Theme.border }
+                , Ui.borderColor Theme.base.text
+                )
 
             else
-                [ Ui.paddingWith { left = Theme.spacing.sm + 3, top = 0, right = 0, bottom = 0 } ]
+                ( Ui.noAttr, Ui.noAttr )
     in
-    Ui.column
-        [ Ui.width Ui.fill
-        , Ui.borderWith { bottom = Theme.borderWidth.sm, top = 0, left = 0, right = 0 }
-        , Ui.borderColor Theme.neutral200
-        , Ui.paddingXY 0 Theme.spacing.xs
+    UI.Components.card
+        [ Ui.Input.button (config.toMsg (ToggleExpanded activity.eventId))
+        , Ui.paddingXY Theme.spacing.lg Theme.spacing.md
         , Ui.pointer
-        , Ui.Events.onClick (config.toMsg (ToggleExpanded activity.eventId))
+        , borderWidth
+        , borderColor
         ]
-        [ Ui.column
-            ([ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ] ++ innerAttrs)
+        [ Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
             [ summaryRow i18n config.resolveName activity
-            , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                (Ui.text (formatTimestamp activity.timestamp))
             , if isExpanded then
                 detailPanel i18n config activity.detail
 
@@ -316,12 +393,75 @@ activityItem i18n config expandedActivities activity =
         ]
 
 
+detailIcon : Detail -> FeatherIcons.Icon
+detailIcon detail =
+    case detail of
+        EntryAddedDetail _ ->
+            FeatherIcons.plusCircle
+
+        EntryModifiedDetail _ ->
+            FeatherIcons.edit
+
+        TransferAddedDetail _ ->
+            FeatherIcons.arrowRight
+
+        TransferModifiedDetail _ ->
+            FeatherIcons.edit
+
+        EntryDeletedDetail _ ->
+            FeatherIcons.trash2
+
+        EntryUndeletedDetail _ ->
+            FeatherIcons.rotateCcw
+
+        MemberCreatedDetail _ ->
+            FeatherIcons.userPlus
+
+        MemberReplacedDetail _ ->
+            FeatherIcons.userCheck
+
+        MemberRenamedDetail _ ->
+            FeatherIcons.user
+
+        MemberRetiredDetail _ ->
+            FeatherIcons.userMinus
+
+        MemberUnretiredDetail _ ->
+            FeatherIcons.userCheck
+
+        MemberMetadataUpdatedDetail _ ->
+            FeatherIcons.user
+
+        GroupCreatedDetail _ ->
+            FeatherIcons.folder
+
+        GroupMetadataUpdatedDetail _ ->
+            FeatherIcons.settings
+
+        SettlementPreferencesUpdatedDetail _ ->
+            FeatherIcons.sliders
+
+
 summaryRow : I18n -> (Member.Id -> String) -> Activity -> Ui.Element msg
 summaryRow i18n resolveName activity =
-    Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.bold, Ui.Font.size Theme.fontSize.sm ]
-            (Ui.text (resolveName activity.actorId))
-        , Ui.el [ Ui.Font.size Theme.fontSize.sm ]
+    Ui.row [ Ui.spacing Theme.spacing.md, Ui.contentCenterY ]
+        [ Ui.el [ Ui.width Ui.shrink, Ui.Font.color Theme.base.textSubtle ]
+            (UI.Components.featherIcon 16 (detailIcon activity.detail))
+        , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.shrink ]
+            [ Ui.el
+                [ Ui.Font.weight Theme.fontWeight.semibold
+                , Ui.Font.size Theme.font.sm
+                , Ui.clipWithEllipsis
+                ]
+                (Ui.text (resolveName activity.actorId))
+            , Ui.el
+                [ Ui.Font.size Theme.font.xs
+                , Ui.Font.color Theme.base.textSubtle
+                , Ui.clipWithEllipsis
+                ]
+                (Ui.text (formatTimestamp activity.timestamp))
+            ]
+        , Ui.el [ Ui.Font.size Theme.font.sm ]
             (Ui.text (detailSummaryText i18n activity.detail))
         ]
 
@@ -338,7 +478,6 @@ detailSummaryText i18n detail =
                         ++ ")"
 
                 Transfer _ ->
-                    -- Should not happen (TransferAddedDetail used instead)
                     T.activityTransferAdded i18n
 
         EntryModifiedDetail data ->
@@ -489,8 +628,8 @@ detailPanel i18n config detail =
         [ Ui.spacing Theme.spacing.sm
         , Ui.width Ui.fill
         , Ui.paddingWith { top = Theme.spacing.sm, bottom = 0, left = Theme.spacing.md, right = 0 }
-        , Ui.borderWith { left = Theme.borderWidth.sm, top = 0, right = 0, bottom = 0 }
-        , Ui.borderColor Theme.neutral300
+        , Ui.borderWith { left = 2, top = 0, right = 0, bottom = 0 }
+        , Ui.borderColor Theme.primary.accent
         ]
         (detailContent i18n config detail)
 
@@ -501,33 +640,24 @@ detailContent i18n config detail =
         resolveName : Member.Id -> String
         resolveName =
             config.resolveName
-
-        withEntryLink : Entry.Entry -> List (Ui.Element msg) -> List (Ui.Element msg)
-        withEntryLink entry rows =
-            rows ++ [ entryDetailLink i18n config entry ]
     in
     case detail of
         EntryAddedDetail data ->
             entryDetailRows i18n config.groupDefaultCurrency resolveName data.entry
-                |> withEntryLink data.entry
 
         EntryModifiedDetail data ->
             entryModifiedDiffRows i18n config.groupDefaultCurrency resolveName data.entry data.previousEntry
-                |> withEntryLink data.entry
 
         TransferAddedDetail data ->
             entryDetailRows i18n config.groupDefaultCurrency resolveName data.entry
-                |> withEntryLink data.entry
 
         TransferModifiedDetail data ->
             entryModifiedDiffRows i18n config.groupDefaultCurrency resolveName data.entry data.previousEntry
-                |> withEntryLink data.entry
 
         EntryDeletedDetail data ->
             case data.entry of
                 Just entry ->
                     entryDetailRows i18n config.groupDefaultCurrency resolveName entry
-                        |> withEntryLink entry
 
                 Nothing ->
                     [ detailRow (T.newEntryDescriptionLabel i18n) data.entryDescription ]
@@ -536,7 +666,6 @@ detailContent i18n config detail =
             case data.entry of
                 Just entry ->
                     entryDetailRows i18n config.groupDefaultCurrency resolveName entry
-                        |> withEntryLink entry
 
                 Nothing ->
                     [ detailRow (T.newEntryDescriptionLabel i18n) data.entryDescription ]
@@ -594,18 +723,6 @@ detailContent i18n config detail =
             ]
 
 
-entryDetailLink : I18n -> Config msg -> Entry.Entry -> Ui.Element msg
-entryDetailLink i18n config entry =
-    Ui.el
-        [ Ui.Font.size Theme.fontSize.sm
-        , Ui.Font.color Theme.primary
-        , Ui.pointer
-        , Ui.link (config.entryDetailPath entry.meta.rootId)
-        , Ui.Events.preventDefaultOn "click"
-            (Json.Decode.succeed ( config.onEntryClick entry.meta.rootId, True ))
-        ]
-        (Ui.text (T.activityViewEntryDetails i18n))
-
 
 entryDetailRows : I18n -> Currency -> (Member.Id -> String) -> Entry.Entry -> List (Ui.Element msg)
 entryDetailRows i18n groupCurrency resolveName entry =
@@ -641,7 +758,10 @@ defaultCurrencyAmountRow : Currency -> Maybe Int -> List (Ui.Element msg)
 defaultCurrencyAmountRow groupCurrency maybeAmount =
     case maybeAmount of
         Just amount ->
-            [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
+            [ Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.base.textSubtle
+                ]
                 (Ui.text ("≈ " ++ Format.formatCentsWithCurrency amount groupCurrency))
             ]
 
@@ -1058,20 +1178,35 @@ linksToString links =
 detailRow : String -> String -> Ui.Element msg
 detailRow label value =
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ] (Ui.text label)
-        , Ui.el [ Ui.Font.size Theme.fontSize.sm ] (Ui.text value)
+        [ Ui.el
+            [ Ui.Font.size Theme.font.sm
+            , Ui.Font.color Theme.base.textSubtle
+            ]
+            (Ui.text label)
+        , Ui.el [ Ui.Font.size Theme.font.sm ] (Ui.text value)
         ]
 
 
 diffRow : String -> String -> String -> Ui.Element msg
 diffRow label oldValue newValue =
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ] (Ui.text label)
+        [ Ui.el
+            [ Ui.Font.size Theme.font.sm
+            , Ui.Font.color Theme.base.textSubtle
+            ]
+            (Ui.text label)
         , Ui.row [ Ui.spacing Theme.spacing.sm ]
-            [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.danger, Ui.Font.strike ]
+            [ Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.danger.text
+                , Ui.Font.strike
+                ]
                 (Ui.text oldValue)
-            , Ui.el [ Ui.Font.size Theme.fontSize.sm ] (Ui.text "→")
-            , Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.success ]
+            , Ui.el [ Ui.Font.size Theme.font.sm ] (Ui.text "→")
+            , Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.success.text
+                ]
                 (Ui.text newValue)
             ]
         ]

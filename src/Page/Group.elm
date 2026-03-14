@@ -5,6 +5,7 @@ module Page.Group exposing
     , Output(..)
     , UpdateConfig
     , ViewConfig
+    , ViewResult
     , handleNavigation
     , init
     , pocketbaseEventMsg
@@ -46,12 +47,9 @@ import Page.Group.BalanceTab
 import Page.Group.EditGroupMetadata
 import Page.Group.EditMemberMetadata
 import Page.Group.EntriesTab
-import Page.Group.EntryDetail
-import Page.Group.MemberDetail
 import Page.Group.MembersTab
 import Page.Group.NewEntry
 import Page.JoinGroup
-import Page.NotFound
 import PocketBase
 import PocketBase.Realtime
 import PushServer
@@ -59,9 +57,10 @@ import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import Server
 import Set exposing (Set)
-import Storage exposing (GroupSummary)
+import Storage
 import Time
 import Translations as T exposing (I18n)
+import UI.Components
 import UI.Shell
 import UI.Theme as Theme
 import UI.Toast as Toast
@@ -96,7 +95,7 @@ type alias UpdateConfig =
     , currentTime : Time.Posix
     , route : Route
     , i18n : I18n
-    , groups : Dict Group.Id GroupSummary
+    , groups : Dict Group.Id Group.Summary
     }
 
 
@@ -134,13 +133,11 @@ type alias Model =
     , membersTabModel : Page.Group.MembersTab.Model
 
     -- Member pages
-    , memberDetailModel : Page.Group.MemberDetail.Model
     , addMemberModel : Page.Group.AddMember.Model
     , editMemberMetadataModel : Page.Group.EditMemberMetadata.Model
 
     -- Entry pages
     , newEntryModel : Page.Group.NewEntry.Model
-    , entryDetailModel : Page.Group.EntryDetail.Model
     , pendingTransfer : Maybe { toMemberId : Member.Id, amountCents : Int }
 
     -- Group pages
@@ -174,12 +171,10 @@ type
     | ActivityTabMsg Page.Group.ActivityTab.Msg
     | MembersTabMsg Page.Group.MembersTab.Msg
       -- Member pages
-    | MemberDetailMsg Page.Group.MemberDetail.Msg
     | AddMemberMsg Page.Group.AddMember.Msg
     | EditMemberMetadataMsg Page.Group.EditMemberMetadata.Msg
       -- Entry pages
     | NewEntryMsg Page.Group.NewEntry.Msg
-    | EntryDetailMsg Page.Group.EntryDetail.Msg
       -- Group pages
     | EditGroupMetadataMsg Page.Group.EditGroupMetadata.Msg
       -- User actions
@@ -209,7 +204,7 @@ type
 type Output
     = NavigateTo Route
     | ShowToast Toast.ToastLevel String
-    | UpdateGroupSummary GroupSummary
+    | UpdateGroupSummary Group.Summary
     | RemoveGroup Group.Id Member.Id
     | UpdateCurrentTime Time.Posix
     | ToggleGroupNotification Group.Id Member.Id
@@ -239,11 +234,9 @@ init config =
     , balanceTabModel = Page.Group.BalanceTab.init
     , activityTabModel = Page.Group.ActivityTab.init
     , membersTabModel = Page.Group.MembersTab.init
-    , memberDetailModel = Page.Group.MemberDetail.init Member.emptyChainState
     , addMemberModel = Page.Group.AddMember.init
     , editMemberMetadataModel = Page.Group.EditMemberMetadata.init "" "" Member.emptyMetadata
     , newEntryModel = Page.Group.NewEntry.init { currentUserRootId = "", activeMembersRootIds = [], today = { year = 2000, month = 1, day = 1 }, defaultCurrency = EUR }
-    , entryDetailModel = Page.Group.EntryDetail.init
     , pendingTransfer = Nothing
     , editGroupMetadataModel = Page.Group.EditGroupMetadata.init GroupState.empty.groupMeta
     }
@@ -298,7 +291,7 @@ resetLoadedGroup model =
 
 {-| Update the loaded group's summary if it matches the given group ID.
 -}
-updateLoadedSummary : GroupSummary -> Model -> Model
+updateLoadedSummary : Group.Summary -> Model -> Model
 updateLoadedSummary summary model =
     case model.loadedGroup of
         Just loaded ->
@@ -386,7 +379,20 @@ update config msg model =
 
         -- Tab sub-page messages
         EntriesTabMsg subMsg ->
-            ( { model | entriesTabModel = Page.Group.EntriesTab.update subMsg model.entriesTabModel }, Cmd.none, [] )
+            let
+                ( newEntriesTabModel, maybeOutput ) =
+                    Page.Group.EntriesTab.update subMsg model.entriesTabModel
+
+                modelWithTab : Model
+                modelWithTab =
+                    { model | entriesTabModel = newEntriesTabModel }
+            in
+            case maybeOutput of
+                Just output ->
+                    handleEntriesTabOutput config modelWithTab output
+
+                Nothing ->
+                    ( modelWithTab, Cmd.none, [] )
 
         BalanceTabMsg subMsg ->
             ( { model | balanceTabModel = Page.Group.BalanceTab.update subMsg model.balanceTabModel }, Cmd.none, [] )
@@ -395,21 +401,20 @@ update config msg model =
             ( { model | activityTabModel = Page.Group.ActivityTab.update subMsg model.activityTabModel }, Cmd.none, [] )
 
         MembersTabMsg subMsg ->
-            ( { model | membersTabModel = Page.Group.MembersTab.update subMsg model.membersTabModel }, Cmd.none, [] )
-
-        -- Member detail
-        MemberDetailMsg subMsg ->
             let
-                ( modelWithPage, maybeOutput ) =
-                    Page.Group.MemberDetail.update subMsg model.memberDetailModel
-                        |> Tuple.mapFirst (\subModel -> { model | memberDetailModel = subModel })
+                ( newMembersTabModel, maybeOutput ) =
+                    Page.Group.MembersTab.update subMsg model.membersTabModel
+
+                modelWithTab : Model
+                modelWithTab =
+                    { model | membersTabModel = newMembersTabModel }
             in
             case maybeOutput of
-                Just detailOutput ->
-                    handleMemberDetailOutput config modelWithPage detailOutput
+                Just output ->
+                    handleMembersTabOutput config modelWithTab output
 
                 Nothing ->
-                    ( modelWithPage, Cmd.none, [] )
+                    ( modelWithTab, Cmd.none, [] )
 
         -- Add member
         AddMemberMsg subMsg ->
@@ -461,20 +466,6 @@ update config msg model =
                             runSubmit (OnEntrySaved loaded.summary.id) config modelWithPage (\ctx -> GroupOps.newEntry ctx loaded entryOutput)
 
                 _ ->
-                    ( modelWithPage, Cmd.none, [] )
-
-        -- Entry detail
-        EntryDetailMsg subMsg ->
-            let
-                ( modelWithPage, maybeOutput ) =
-                    Page.Group.EntryDetail.update subMsg model.entryDetailModel
-                        |> Tuple.mapFirst (\subModel -> { model | entryDetailModel = subModel })
-            in
-            case maybeOutput of
-                Just detailOutput ->
-                    handleEntryDetailOutput config modelWithPage detailOutput
-
-                Nothing ->
                     ( modelWithPage, Cmd.none, [] )
 
         -- Edit group metadata
@@ -602,8 +593,8 @@ update config msg model =
                             , NavigateTo (GroupRoute gid (Tab MembersTab)) :: timeOutputs
                             )
 
-                        GroupRoute gid (EditMemberMetadata memberId) ->
-                            ( syncModel, syncCmd, NavigateTo (GroupRoute gid (MemberDetail memberId)) :: timeOutputs )
+                        GroupRoute gid (EditMemberMetadata _) ->
+                            ( syncModel, syncCmd, NavigateTo (GroupRoute gid (Tab MembersTab)) :: timeOutputs )
 
                         _ ->
                             ( initPagesIfNeeded config (routeToGroupView config.route) syncModel, syncCmd, timeOutputs )
@@ -709,17 +700,20 @@ update config msg model =
                                     , syncInProgress = False
                                 }
                                     |> initPagesIfNeeded config (routeToGroupView config.route)
+
+                            ( summaryModel, summaryCmd, summaryOutputs ) =
+                                syncGroupSummaryName config groupId modelAfterSync
                         in
                         -- If new events were added during sync, trigger follow-up
                         if Set.isEmpty result.updatedGroup.unpushedIds then
-                            ( modelAfterSync, taskCmds, [] )
+                            ( summaryModel, Cmd.batch [ taskCmds, summaryCmd ], summaryOutputs )
 
                         else
                             let
                                 ( followUpModel, followUpCmd ) =
-                                    triggerSyncInternal config groupId modelAfterSync
+                                    triggerSyncInternal config groupId summaryModel
                             in
-                            ( followUpModel, Cmd.batch [ taskCmds, followUpCmd ], [] )
+                            ( followUpModel, Cmd.batch [ taskCmds, summaryCmd, followUpCmd ], summaryOutputs )
 
                     else
                         ( { model | syncInProgress = False }, Cmd.none, [] )
@@ -851,44 +845,26 @@ submitMemberMetadata config model loaded output =
         ( modelAfterMeta, metaCmd, [] )
 
 
-handleEntryDetailOutput : UpdateConfig -> Model -> Page.Group.EntryDetail.Output -> ( Model, Cmd Msg, List Output )
-handleEntryDetailOutput config model output =
+handleEntriesTabOutput : UpdateConfig -> Model -> Page.Group.EntriesTab.Output -> ( Model, Cmd Msg, List Output )
+handleEntriesTabOutput config model output =
     case output of
-        Page.Group.EntryDetail.DeleteRequested ->
+        Page.Group.EntriesTab.DeleteOutput entryId ->
+            submitEntryAction config model (\ctx ld -> GroupOps.deleteEntry ctx ld entryId)
+
+        Page.Group.EntriesTab.RestoreOutput entryId ->
+            submitEntryAction config model (\ctx ld -> GroupOps.restoreEntry ctx ld entryId)
+
+        Page.Group.EntriesTab.EditOutput entryId ->
             case config.route of
-                GroupRoute _ (EntryDetail entryId) ->
-                    submitEntryAction config model (\ctx ld -> GroupOps.deleteEntry ctx ld entryId)
-
-                _ ->
-                    ( model, Cmd.none, [] )
-
-        Page.Group.EntryDetail.RestoreRequested ->
-            case config.route of
-                GroupRoute _ (EntryDetail entryId) ->
-                    submitEntryAction config model (\ctx ld -> GroupOps.restoreEntry ctx ld entryId)
-
-                _ ->
-                    ( model, Cmd.none, [] )
-
-        Page.Group.EntryDetail.EditRequested ->
-            case config.route of
-                GroupRoute groupId (EntryDetail entryId) ->
+                GroupRoute groupId _ ->
                     ( model, Cmd.none, [ NavigateTo (GroupRoute groupId (EditEntry entryId)) ] )
 
                 _ ->
                     ( model, Cmd.none, [] )
 
-        Page.Group.EntryDetail.BackRequested ->
-            case config.route of
-                GroupRoute groupId _ ->
-                    ( model, Cmd.none, [ NavigateTo (GroupRoute groupId (Tab EntriesTab)) ] )
 
-                _ ->
-                    ( model, Cmd.none, [] )
-
-
-handleMemberDetailOutput : UpdateConfig -> Model -> Page.Group.MemberDetail.Output -> ( Model, Cmd Msg, List Output )
-handleMemberDetailOutput config model output =
+handleMembersTabOutput : UpdateConfig -> Model -> Page.Group.MembersTab.Output -> ( Model, Cmd Msg, List Output )
+handleMembersTabOutput config model output =
     case model.loadedGroup of
         Just loaded ->
             let
@@ -897,33 +873,16 @@ handleMemberDetailOutput config model output =
                     runSubmit (OnMemberActionSaved loaded.summary.id) config model (\ctx -> GroupOps.event ctx loaded payload)
             in
             case output of
-                Page.Group.MemberDetail.RenameOutput data ->
-                    submit
-                        (Event.MemberRenamed
-                            { rootId = data.memberId
-                            , oldName = data.oldName
-                            , newName = data.newName
-                            }
-                        )
-
-                Page.Group.MemberDetail.RetireOutput memberId ->
+                Page.Group.MembersTab.RetireOutput memberId ->
                     submit (Event.MemberRetired { rootId = memberId })
 
-                Page.Group.MemberDetail.UnretireOutput memberId ->
+                Page.Group.MembersTab.UnretireOutput memberId ->
                     submit (Event.MemberUnretired { rootId = memberId })
 
-                Page.Group.MemberDetail.NavigateToEditMetadata ->
-                    case config.route of
-                        GroupRoute groupId (MemberDetail memberId) ->
-                            ( model, Cmd.none, [ NavigateTo (GroupRoute groupId (EditMemberMetadata memberId)) ] )
-
-                        _ ->
-                            ( model, Cmd.none, [] )
-
-                Page.Group.MemberDetail.NavigateBack ->
+                Page.Group.MembersTab.EditMetadataOutput memberId ->
                     case config.route of
                         GroupRoute groupId _ ->
-                            ( model, Cmd.none, [ NavigateTo (GroupRoute groupId (Tab MembersTab)) ] )
+                            ( model, Cmd.none, [ NavigateTo (GroupRoute groupId (EditMemberMetadata memberId)) ] )
 
                         _ ->
                             ( model, Cmd.none, [] )
@@ -939,8 +898,17 @@ applyAndSync : UpdateConfig -> Group.Id -> Event.Envelope -> Model -> Maybe ( Mo
 applyAndSync config groupId envelope model =
     appendEventAndRecompute model groupId envelope
         |> Maybe.map (addUnpushedIdToModel envelope.id)
-        |> Maybe.map (triggerSyncInternal config groupId)
-        |> Maybe.map (\( m, cmd ) -> ( m, cmd, [ UpdateCurrentTime envelope.clientTimestamp ] ))
+        |> Maybe.map
+            (\m ->
+                let
+                    ( summaryModel, summaryCmd, summaryOutputs ) =
+                        syncGroupSummaryName config groupId m
+
+                    ( syncModel, syncCmd ) =
+                        triggerSyncInternal config groupId summaryModel
+                in
+                ( syncModel, Cmd.batch [ summaryCmd, syncCmd ], UpdateCurrentTime envelope.clientTimestamp :: summaryOutputs )
+            )
 
 
 {-| Append an event to the loaded group and recompute state.
@@ -1032,19 +1000,26 @@ triggerSyncInternal config groupId model =
                 ( model, Cmd.none )
 
 
-{-| After a group metadata event is applied, sync the group name in the summary and persist to IndexedDB.
+{-| After a group event is applied, sync the summary fields and persist to IndexedDB.
 -}
 syncGroupSummaryName : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg, List Output )
 syncGroupSummaryName config groupId model =
     case model.loadedGroup of
         Just loaded ->
             let
-                updatedSummary : GroupSummary
+                userRootId : Member.Id
+                userRootId =
+                    currentUserRootId model loaded
+
+                updatedSummary : Group.Summary
                 updatedSummary =
                     { id = groupId
                     , name = loaded.groupState.groupMeta.name
                     , defaultCurrency = loaded.summary.defaultCurrency
                     , isSubscribed = loaded.summary.isSubscribed
+                    , createdAt = loaded.groupState.groupMeta.createdAt
+                    , memberCount = Dict.size loaded.groupState.members
+                    , myBalanceCents = Dict.get userRootId loaded.groupState.balances |> Maybe.map .netBalance |> Maybe.withDefault 0
                     }
 
                 updatedModel : Model
@@ -1099,21 +1074,10 @@ initPagesIfNeeded config groupView model =
                         Nothing ->
                             { model | newEntryModel = Page.Group.NewEntry.init entryFormConfig }
 
-                EntryDetail _ ->
-                    { model | entryDetailModel = Page.Group.EntryDetail.init }
-
                 EditEntry entryId ->
                     case Dict.get entryId loaded.groupState.entries of
                         Just entryState ->
                             { model | newEntryModel = Page.Group.NewEntry.initFromEntry entryFormConfig entryState.currentVersion }
-
-                        Nothing ->
-                            model
-
-                MemberDetail memberId ->
-                    case Dict.get memberId loaded.groupState.members of
-                        Just memberState ->
-                            { model | memberDetailModel = Page.Group.MemberDetail.init memberState }
 
                         Nothing ->
                             model
@@ -1169,127 +1133,128 @@ handleRealtimeRecord config loaded record model =
 -- VIEW
 
 
+{-| Result of rendering a group page: the main content plus an optional
+viewport-level overlay (e.g. the tab bar) to be placed in Ui.layout's Ui.inFront.
+-}
+type alias ViewResult msg =
+    { content : Ui.Element msg
+    , overlay : Maybe (Ui.Element msg)
+    }
+
+
 {-| Render the group page for a given route, dispatching to the right sub-page view.
 Handles loading state internally.
 -}
-view : ViewConfig msg -> Ui.Element msg -> GroupView -> Model -> Ui.Element msg
-view config headerExtra groupView model =
+view : ViewConfig msg -> GroupView -> Model -> ViewResult msg
+view config groupView model =
     case model.loadedGroup of
         Just loaded ->
             if loaded.summary.id == config.groupId then
-                viewGroupPage config headerExtra groupView loaded model
+                viewGroupPage config groupView loaded model
 
             else
-                viewLoadingShell config headerExtra
+                { content = viewLoadingShell config, overlay = Nothing }
 
         Nothing ->
-            viewLoadingShell config headerExtra
+            { content = viewLoadingShell config, overlay = Nothing }
 
 
-viewLoadingShell : ViewConfig msg -> Ui.Element msg -> Ui.Element msg
-viewLoadingShell config headerExtra =
-    UI.Shell.appShell
-        { title = T.shellPartage config.i18n
-        , onTitleClick = config.onNavigateHome
-        , headerExtra = headerExtra
-        , content =
-            Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                (Ui.text (T.loadingGroup config.i18n))
-        }
+viewLoadingShell : ViewConfig msg -> Ui.Element msg
+viewLoadingShell config =
+    UI.Shell.pageShell { title = T.shellPartage config.i18n, onBack = config.onNavigateHome } <|
+        Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
+            (Ui.text (T.loadingGroup config.i18n))
 
 
-viewGroupPage : ViewConfig msg -> Ui.Element msg -> GroupView -> LoadedGroup -> Model -> Ui.Element msg
-viewGroupPage config headerExtra groupView loaded model =
+viewGroupPage : ViewConfig msg -> GroupView -> LoadedGroup -> Model -> ViewResult msg
+viewGroupPage config groupView loaded model =
     let
-        userRootId : Member.Id
-        userRootId =
-            currentUserRootId model loaded
+        noOverlay : Ui.Element msg -> ViewResult msg
+        noOverlay content =
+            { content = content, overlay = Nothing }
     in
     case groupView of
         Tab tab ->
-            viewTabs config headerExtra userRootId loaded { model | activeTab = tab }
+            let
+                userRootId : Member.Id
+                userRootId =
+                    currentUserRootId model loaded
+            in
+            viewTabs config userRootId loaded { model | activeTab = tab }
 
         Join _ ->
             -- Handled by Main.elm, should not reach here
-            Ui.none
+            noOverlay Ui.none
 
         NewEntry ->
-            subPageShell config.onNavigateHome headerExtra (T.shellNewEntry config.i18n) <|
-                Page.Group.NewEntry.view config.i18n
-                    (GroupState.activeMembers loaded.groupState)
-                    (config.toMsg << NewEntryMsg)
-                    model.newEntryModel
+            noOverlay <|
+                pageShell config.onNavigateHome (T.shellNewEntry config.i18n) <|
+                    Page.Group.NewEntry.view config.i18n
+                        (GroupState.activeMembers loaded.groupState)
+                        (config.toMsg << NewEntryMsg)
+                        model.newEntryModel
 
         EditEntry _ ->
-            subPageShell config.onNavigateHome headerExtra (T.editEntryTitle config.i18n) <|
-                Page.Group.NewEntry.view config.i18n
-                    (GroupState.activeMembers loaded.groupState)
-                    (config.toMsg << NewEntryMsg)
-                    model.newEntryModel
-
-        EntryDetail entryId ->
-            case Dict.get entryId loaded.groupState.entries of
-                Just entryState ->
-                    subPageShell config.onNavigateHome headerExtra (T.entryDetailTitle config.i18n) <|
-                        Page.Group.EntryDetail.view config.i18n
-                            { currentUserRootId = userRootId
-                            , resolveName = GroupState.resolveMemberName loaded.groupState
-                            }
-                            (config.toMsg << EntryDetailMsg)
-                            model.entryDetailModel
-                            entryState
-
-                Nothing ->
-                    subPageShell config.onNavigateHome headerExtra (T.shellPartage config.i18n) <|
-                        Page.NotFound.view config.i18n
-
-        MemberDetail _ ->
-            subPageShell config.onNavigateHome headerExtra (T.memberDetailTitle config.i18n) <|
-                Page.Group.MemberDetail.view config.i18n
-                    userRootId
-                    (config.toMsg << MemberDetailMsg)
-                    model.memberDetailModel
+            noOverlay <|
+                pageShell config.onNavigateHome (T.editEntryTitle config.i18n) <|
+                    Page.Group.NewEntry.view config.i18n
+                        (GroupState.activeMembers loaded.groupState)
+                        (config.toMsg << NewEntryMsg)
+                        model.newEntryModel
 
         AddVirtualMember ->
-            subPageShell config.onNavigateHome headerExtra (T.memberAddTitle config.i18n) <|
-                Page.Group.AddMember.view config.i18n
-                    (config.toMsg << AddMemberMsg)
-                    model.addMemberModel
+            noOverlay <|
+                pageShell config.onNavigateHome (T.memberAddTitle config.i18n) <|
+                    Page.Group.AddMember.view config.i18n
+                        (config.toMsg << AddMemberMsg)
+                        model.addMemberModel
 
         EditMemberMetadata _ ->
-            subPageShell config.onNavigateHome headerExtra (T.memberEditMetadataButton config.i18n) <|
-                Page.Group.EditMemberMetadata.view config.i18n
-                    (config.toMsg << EditMemberMetadataMsg)
-                    model.editMemberMetadataModel
+            noOverlay <|
+                pageShell config.onNavigateHome (T.memberEditMetadataButton config.i18n) <|
+                    Page.Group.EditMemberMetadata.view config.i18n
+                        (config.toMsg << EditMemberMetadataMsg)
+                        model.editMemberMetadataModel
 
         EditGroupMetadata ->
-            subPageShell config.onNavigateHome headerExtra (T.groupSettingsTitle config.i18n) <|
-                Page.Group.EditGroupMetadata.view config.i18n
-                    (config.toMsg << EditGroupMetadataMsg)
-                    model.editGroupMetadataModel
+            noOverlay <|
+                pageShell config.onNavigateHome (T.groupSettingsTitle config.i18n) <|
+                    Page.Group.EditGroupMetadata.view config.i18n
+                        (config.toMsg << EditGroupMetadataMsg)
+                        model.editGroupMetadataModel
 
 
-subPageShell : msg -> Ui.Element msg -> String -> Ui.Element msg -> Ui.Element msg
-subPageShell onTitleClick headerExtra title content =
-    UI.Shell.appShell { title = title, onTitleClick = onTitleClick, headerExtra = headerExtra, content = content }
+pageShell : msg -> String -> Ui.Element msg -> Ui.Element msg
+pageShell onBack title content =
+    UI.Shell.pageShell { title = title, onBack = onBack } content
 
 
-viewTabs : ViewConfig msg -> Ui.Element msg -> Member.Id -> LoadedGroup -> Model -> Ui.Element msg
-viewTabs config headerExtra userRootId loaded model =
-    UI.Shell.groupShell
-        { groupName = loaded.groupState.groupMeta.name
-        , onTitleClick = config.onNavigateHome
-        , headerExtra = headerExtra
-        , activeTab = model.activeTab
-        , onTabClick = \tab -> config.toMsg (RequestNavigation (Tab tab))
-        , content = tabContent config userRootId loaded model
-        , tabLabels =
-            { balance = T.tabBalance config.i18n
-            , entries = T.tabEntries config.i18n
-            , members = T.tabMembers config.i18n
-            , activity = T.tabActivity config.i18n
+viewTabs : ViewConfig msg -> Member.Id -> LoadedGroup -> Model -> ViewResult msg
+viewTabs config userRootId loaded model =
+    { content =
+        UI.Shell.tabbedShell
+            { title = loaded.groupState.groupMeta.name
+            , subtitle = ""
+            , onBack = config.onNavigateHome
+            , content = tabContent config userRootId loaded model
             }
-        }
+    , overlay =
+        Just <|
+            Ui.column [ Ui.spacing Theme.spacing.lg ]
+                [ -- FAB for new entry
+                  UI.Components.fab { label = "+", onPress = config.toMsg (RequestNavigation NewEntry) }
+
+                -- Tab bar
+                , UI.Shell.tabBar
+                    { balance = T.tabBalance config.i18n
+                    , entries = T.tabEntries config.i18n
+                    , members = T.tabMembers config.i18n
+                    , activity = T.tabActivity config.i18n
+                    }
+                    model.activeTab
+                    (\tab -> config.toMsg (RequestNavigation (Tab tab)))
+                ]
+    }
 
 
 tabContent : ViewConfig msg -> Member.Id -> LoadedGroup -> Model -> Ui.Element msg
@@ -1300,6 +1265,7 @@ tabContent config userRootId loaded model =
                 { onSettle = \tx -> config.toMsg (SettleTransaction tx)
                 , onPayMember = \payData -> config.toMsg (PayMember payData)
                 , onSavePreferences = \prefData -> config.toMsg (SaveSettlementPreferences prefData)
+                , onNewTransfer = config.toMsg (RequestNavigation NewEntry)
                 , toMsg = config.toMsg << BalanceTabMsg
                 }
                 userRootId
@@ -1309,7 +1275,6 @@ tabContent config userRootId loaded model =
         EntriesTab ->
             Page.Group.EntriesTab.view config.i18n
                 { onNewEntry = config.toMsg (RequestNavigation NewEntry)
-                , onEntryClick = \entryId -> config.toMsg (RequestNavigation (EntryDetail entryId))
                 , toMsg = config.toMsg << EntriesTabMsg
                 }
                 config.today
@@ -1318,8 +1283,7 @@ tabContent config userRootId loaded model =
 
         MembersTab ->
             Page.Group.MembersTab.view config.i18n
-                { onMemberClick = \memberId -> config.toMsg (RequestNavigation (MemberDetail memberId))
-                , onAddMember = config.toMsg (RequestNavigation AddVirtualMember)
+                { onAddMember = config.toMsg (RequestNavigation AddVirtualMember)
                 , onEditGroupMetadata = config.toMsg (RequestNavigation EditGroupMetadata)
                 , inviteLink = config.origin ++ Route.toPath (GroupRoute config.groupId (Join (Symmetric.exportKey loaded.groupKey)))
                 , isSynced = loaded.syncCursor /= Nothing
@@ -1343,8 +1307,6 @@ tabContent config userRootId loaded model =
             Page.Group.ActivityTab.view config.i18n
                 { resolveName = GroupState.resolveMemberName loaded.groupState
                 , currentUserRootId = userRootId
-                , onEntryClick = \entryId -> config.toMsg (RequestNavigation (EntryDetail entryId))
-                , entryDetailPath = \entryId -> Route.toPath (GroupRoute config.groupId (EntryDetail entryId))
                 , groupDefaultCurrency = loaded.summary.defaultCurrency
                 , toMsg = config.toMsg << ActivityTabMsg
                 , allMembers = allMembers

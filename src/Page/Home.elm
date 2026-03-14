@@ -1,16 +1,20 @@
 module Page.Home exposing (Context, Model, Msg, Output(..), init, update, view)
 
+import Domain.Currency as Currency
 import Domain.Group as Group
+import FeatherIcons
 import File
 import File.Select
+import Format
 import GroupExport
 import Json.Decode
 import Pwa
 import Route exposing (Route)
 import Set exposing (Set)
-import Storage exposing (GroupSummary)
 import Task
+import Time
 import Translations as T exposing (I18n)
+import UI.Components
 import UI.Theme as Theme
 import Ui
 import Ui.Events
@@ -108,216 +112,322 @@ update i18n existingGroupIds msg (Model data) =
                 )
 
 
-view : I18n -> Context msg -> (Msg -> msg) -> Model -> List GroupSummary -> Ui.Element msg
+view : I18n -> Context msg -> (Msg -> msg) -> Model -> List Group.Summary -> Ui.Element msg
 view i18n ctx toMsg (Model data) groups =
-    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
-        (List.concat
-            [ [ Ui.el [ Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text (T.homeYourGroups i18n)) ]
-            , notificationBanner i18n ctx
-            , case data.importError of
-                Just error ->
-                    [ Ui.el
-                        [ Ui.Font.size Theme.fontSize.sm
-                        , Ui.Font.color Theme.danger
-                        , Ui.padding Theme.spacing.sm
-                        ]
-                        (Ui.text error)
+    let
+        groupActions : List (Ui.Attribute msg) -> Ui.Element msg
+        groupActions attrs =
+            Ui.column (Ui.spacing Theme.spacing.lg :: attrs)
+                [ Ui.row [ Ui.spacing Theme.spacing.md ]
+                    [ UI.Components.btnOutline []
+                        { label = T.homeImportGroup i18n
+                        , icon = Just (UI.Components.featherIcon 16 FeatherIcons.download)
+                        , onPress = toMsg StartImport
+                        }
+                    , UI.Components.btnOutline []
+                        { label = T.shellJoinGroup i18n
+                        , icon = Just (UI.Components.featherIcon 16 FeatherIcons.userPlus)
+                        , onPress = toMsg ShowJoinInput
+                        }
                     ]
+                , joinInput i18n toMsg data
+                , UI.Components.btnPrimary []
+                    { label = T.homeNewGroup i18n
+                    , onPress = ctx.onNavigate Route.NewGroup
+                    }
+                ]
+    in
+    Ui.column
+        [ Ui.spacing Theme.spacing.lg
+        , Ui.width Ui.fill
+        , Ui.height Ui.fill
+        ]
+        [ homeHeader i18n
 
-                Nothing ->
-                    []
-            , if List.isEmpty groups then
-                [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
+        -- Notifications
+        , notifSection ctx
+
+        -- Import error
+        , case data.importError of
+            Just error ->
+                importError error
+
+            Nothing ->
+                Ui.none
+
+        -- Groups
+        , if List.isEmpty groups then
+            Ui.column [ Ui.spacing Theme.spacing.lg ]
+                [ Ui.el
+                    [ Ui.Font.size Theme.font.md
+                    , Ui.Font.color Theme.base.text
+                    , Ui.centerX
+                    ]
                     (Ui.text (T.homeNoGroups i18n))
+                , groupActions []
                 ]
 
-              else
-                List.map (groupCard i18n ctx) groups
-            , [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-                    [ newGroupButton i18n ctx.onNavigate
-                    , importButton i18n toMsg
-                    , joinButton i18n toMsg
-                    ]
-              ]
-            , joinInput i18n toMsg data
-            , [ aboutLink i18n ctx.onNavigate ]
-            ]
-        )
+          else
+            Ui.column []
+                [ UI.Components.sectionLabel (T.homeYourGroups i18n ++ " (" ++ String.fromInt (List.length groups) ++ ")")
+                , Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+                    (List.map (groupCard i18n ctx) groups)
+                , groupActions [ Ui.paddingTop Theme.spacing.lg ]
+                ]
+
+        -- Footer
+        , footer i18n ctx.onNavigate
+        ]
 
 
-notificationBanner : I18n -> Context msg -> List (Ui.Element msg)
-notificationBanner i18n ctx =
+
+-- HOME HEADER
+
+
+homeHeader : I18n -> Ui.Element msg
+homeHeader i18n =
+    Ui.el
+        [ Ui.paddingWith { top = Theme.spacing.xl, bottom = Theme.spacing.md, left = 0, right = 0 }
+        , Ui.Font.size Theme.font.xxxl
+        , Ui.Font.weight Theme.fontWeight.bold
+        , Ui.Font.letterSpacing Theme.letterSpacing.tight
+        ]
+        (Ui.text (T.shellPartage i18n))
+
+
+
+-- NOTIFICATION SECTION
+
+
+notifSection : Context msg -> Ui.Element msg
+notifSection ctx =
     case ctx.notificationPermission of
-        Just Pwa.Unsupported ->
-            []
+        Just Pwa.Granted ->
+            Ui.none
 
         Just Pwa.Denied ->
-            [ Ui.el
-                [ Ui.Font.size Theme.fontSize.sm
-                , Ui.Font.color Theme.neutral500
-                , Ui.padding Theme.spacing.sm
-                ]
-                (Ui.text (T.notificationsDenied i18n))
-            ]
+            Ui.none
 
-        Just Pwa.Granted ->
-            if ctx.pushActive then
-                [ Ui.el
-                    [ Ui.Font.size Theme.fontSize.sm
-                    , Ui.Font.color Theme.success
-                    , Ui.padding Theme.spacing.sm
-                    ]
-                    (Ui.text (T.notificationsEnabled i18n))
-                ]
-
-            else
-                []
+        Just Pwa.Unsupported ->
+            Ui.none
 
         _ ->
-            [ Ui.el
-                [ Ui.paddingXY Theme.spacing.md Theme.spacing.sm
-                , Ui.rounded Theme.rounding.sm
-                , Ui.background Theme.primaryLight
-                , Ui.Font.color Theme.primary
-                , Ui.Font.size Theme.fontSize.sm
-                , Ui.Font.bold
-                , Ui.pointer
-                , Ui.Events.onClick ctx.onEnableNotifications
+            Ui.column []
+                [ UI.Components.sectionLabel "NOTIFICATIONS"
+                , Ui.row [ Ui.spacing Theme.spacing.md ]
+                    [ Ui.el
+                        [ Ui.Font.size Theme.font.sm
+                        , Ui.Font.color Theme.base.textSubtle
+                        , Ui.width Ui.fill
+                        ]
+                        (Ui.text "This is a global setting to activate notifications in the app. Per-group Push notifications are configured inside each group.")
+                    , Ui.el
+                        [ Ui.Input.button ctx.onEnableNotifications
+                        , Ui.width (Ui.px Theme.sizing.lg)
+                        , Ui.height (Ui.px Theme.sizing.lg)
+                        , Ui.rounded Theme.radius.md
+                        , Ui.background Theme.primary.tint
+                        , Ui.contentCenterX
+                        , Ui.contentCenterY
+                        , Ui.pointer
+                        ]
+                        (UI.Components.featherIcon (toFloat Theme.sizing.sm) FeatherIcons.bell)
+                    ]
                 ]
-                (Ui.text (T.notificationsEnable i18n))
-            ]
 
 
-groupCard : I18n -> Context msg -> GroupSummary -> Ui.Element msg
+
+-- GROUP CARD
+
+
+groupCard : I18n -> Context msg -> Group.Summary -> Ui.Element msg
 groupCard i18n ctx summary =
     let
         groupRoute : Route
         groupRoute =
             Route.GroupRoute summary.id (Route.Tab Route.BalanceTab)
+
+        metaLine : String
+        metaLine =
+            String.join " · "
+                [ String.fromInt summary.memberCount ++ " " ++ T.homeMembers i18n
+                , T.homeCreated i18n ++ " " ++ formatYear summary.createdAt
+                , Currency.currencyCode summary.defaultCurrency
+                ]
+
+        balanceView : Ui.Element msg
+        balanceView =
+            let
+                cents : Int
+                cents =
+                    summary.myBalanceCents
+
+                balancePrefix : Ui.Element msg
+                balancePrefix =
+                    Ui.el
+                        [ Ui.Font.size Theme.font.sm
+                        , Ui.Font.color Theme.base.textSubtle
+                        ]
+                        (Ui.text "Your balance: ")
+            in
+            if cents > 0 then
+                Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.shrink ]
+                    [ balancePrefix
+                    , Ui.el
+                        [ Ui.Font.size Theme.font.sm
+                        , Ui.Font.weight Theme.fontWeight.medium
+                        , Ui.Font.color Theme.success.text
+                        ]
+                        (Ui.text ("+€" ++ Format.formatCents cents))
+                    ]
+
+            else if cents < 0 then
+                Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.shrink ]
+                    [ balancePrefix
+                    , Ui.el
+                        [ Ui.Font.size Theme.font.sm
+                        , Ui.Font.weight Theme.fontWeight.medium
+                        , Ui.Font.color Theme.danger.text
+                        ]
+                        (Ui.text ("-€" ++ Format.formatCents (abs cents)))
+                    ]
+
+            else
+                Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.shrink ]
+                    [ balancePrefix
+                    , Ui.el
+                        [ Ui.Font.size Theme.font.sm
+                        , Ui.Font.color Theme.base.textSubtle
+                        ]
+                        (Ui.text (T.homeSettled i18n))
+                    ]
     in
-    Ui.row
-        [ Ui.width Ui.fill
-        , Ui.padding Theme.spacing.md
-        , Ui.rounded Theme.rounding.md
-        , Ui.border Theme.borderWidth.sm
-        , Ui.borderColor Theme.neutral200
-        , Ui.spacing Theme.spacing.sm
+    UI.Components.card
+        [ Ui.padding Theme.spacing.lg
+        , Ui.pointer
+        , Ui.link (Route.toPath groupRoute)
+        , Ui.Events.preventDefaultOn "click"
+            (Json.Decode.succeed ( ctx.onNavigate groupRoute, True ))
         ]
         [ Ui.el
-            [ Ui.Font.bold
-            , Ui.Font.size Theme.fontSize.lg
-            , Ui.width Ui.fill
-            , Ui.pointer
-            , Ui.link (Route.toPath groupRoute)
-            , Ui.Events.preventDefaultOn "click"
-                (Json.Decode.succeed ( ctx.onNavigate groupRoute, True ))
+            [ Ui.Font.size Theme.font.lg
+            , Ui.Font.weight Theme.fontWeight.semibold
+            , Ui.Font.letterSpacing Theme.letterSpacing.tight
             ]
             (Ui.text summary.name)
-        , Ui.el
-            [ Ui.Font.size Theme.fontSize.sm
-            , Ui.Font.color Theme.primary
-            , Ui.pointer
-            , Ui.Events.onClick (ctx.onExport summary.id)
+        , Ui.row
+            [ Ui.spacing Theme.spacing.lg
+            , Ui.paddingTop Theme.spacing.xs
+            , Ui.Font.size Theme.font.sm
+            , Ui.Font.color Theme.base.textSubtle
             ]
-            (Ui.text (T.homeExportGroup i18n))
+            [ Ui.text metaLine ]
+        , Ui.el [ Ui.paddingXY 0 Theme.spacing.sm, Ui.width Ui.fill ]
+            UI.Components.horizontalSeparator
+        , Ui.row
+            [ Ui.width Ui.fill
+            , Ui.spacing Theme.spacing.sm
+            ]
+            [ balanceView
+            , Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.primary.text
+                , Ui.pointer
+                , Ui.alignRight
+                , Ui.Events.custom "click"
+                    (Json.Decode.succeed
+                        { message = ctx.onExport summary.id
+                        , stopPropagation = True
+                        , preventDefault = True
+                        }
+                    )
+                ]
+                (Ui.text (T.homeExportGroup i18n))
+            ]
         ]
 
 
-newGroupButton : I18n -> (Route -> msg) -> Ui.Element msg
-newGroupButton i18n onNavigate =
+{-| Extract the year from a timestamp in milliseconds.
+-}
+formatYear : Time.Posix -> String
+formatYear posix =
     let
-        route : Route
-        route =
-            Route.NewGroup
+        -- Approximate: ms / (365.25 * 24 * 60 * 60 * 1000) + 1970
+        year : Int
+        year =
+            Time.posixToMillis posix // 31557600000 + 1970
     in
+    String.fromInt year
+
+
+
+-- IMPORT ERROR
+
+
+importError : String -> Ui.Element msg
+importError error =
     Ui.el
         [ Ui.width Ui.fill
-        , Ui.padding Theme.spacing.md
-        , Ui.rounded Theme.rounding.md
-        , Ui.background Theme.primary
-        , Ui.Font.color Theme.white
-        , Ui.Font.center
-        , Ui.Font.bold
-        , Ui.pointer
-        , Ui.link (Route.toPath route)
-        , Ui.Events.preventDefaultOn "click"
-            (Json.Decode.succeed ( onNavigate route, True ))
+        , Ui.paddingTop Theme.spacing.sm
         ]
-        (Ui.text (T.homeNewGroup i18n))
+        (Ui.el
+            [ Ui.Font.size Theme.font.sm
+            , Ui.Font.color Theme.danger.text
+            , Ui.background Theme.danger.tint
+            , Ui.paddingXY Theme.spacing.lg Theme.spacing.md
+            , Ui.rounded Theme.radius.md
+            , Ui.border Theme.border
+            , Ui.borderColor Theme.danger.accent
+            , Ui.width Ui.fill
+            ]
+            (Ui.text error)
+        )
 
 
-importButton : I18n -> (Msg -> msg) -> Ui.Element msg
-importButton i18n toMsg =
-    Ui.el
-        [ Ui.width Ui.fill
-        , Ui.padding Theme.spacing.md
-        , Ui.rounded Theme.rounding.md
-        , Ui.border Theme.borderWidth.sm
-        , Ui.borderColor Theme.primary
-        , Ui.Font.color Theme.primary
-        , Ui.Font.center
-        , Ui.Font.bold
-        , Ui.pointer
-        , Ui.Events.onClick (toMsg StartImport)
-        ]
-        (Ui.text (T.homeImportGroup i18n))
+
+-- JOIN INPUT
 
 
-joinButton : I18n -> (Msg -> msg) -> Ui.Element msg
-joinButton i18n toMsg =
-    Ui.el
-        [ Ui.width Ui.fill
-        , Ui.padding Theme.spacing.md
-        , Ui.rounded Theme.rounding.md
-        , Ui.border Theme.borderWidth.sm
-        , Ui.borderColor Theme.primary
-        , Ui.Font.color Theme.primary
-        , Ui.Font.center
-        , Ui.Font.bold
-        , Ui.pointer
-        , Ui.Events.onClick (toMsg ShowJoinInput)
-        ]
-        (Ui.text (T.shellJoinGroup i18n))
-
-
-aboutLink : I18n -> (Route -> msg) -> Ui.Element msg
-aboutLink i18n onNavigate =
-    Ui.el
-        [ Ui.width Ui.fill
-        , Ui.Font.center
-        , Ui.Font.size Theme.fontSize.sm
-        , Ui.Font.color Theme.neutral500
-        , Ui.pointer
-        , Ui.paddingXY 0 Theme.spacing.md
-        , Ui.link (Route.toPath Route.About)
-        , Ui.Events.preventDefaultOn "click"
-            (Json.Decode.succeed ( onNavigate Route.About, True ))
-        ]
-        (Ui.text (T.aboutTitle i18n))
-
-
-joinInput : I18n -> (Msg -> msg) -> { a | showJoinInput : Bool, joinLink : String } -> List (Ui.Element msg)
+joinInput : I18n -> (Msg -> msg) -> { a | showJoinInput : Bool, joinLink : String } -> Ui.Element msg
 joinInput i18n toMsg data =
     if not data.showJoinInput then
-        []
+        Ui.none
 
     else
-        [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+        Ui.row [ Ui.spacing Theme.spacing.sm ]
             [ Ui.Input.text [ Ui.width Ui.fill ]
                 { onChange = toMsg << JoinLinkChanged
                 , text = data.joinLink
                 , placeholder = Just (T.homeJoinLinkPlaceholder i18n)
                 , label = Ui.Input.labelHidden (T.shellJoinGroup i18n)
                 }
-            , Ui.el
-                [ Ui.Input.button (toMsg SubmitJoinLink)
-                , Ui.padding Theme.spacing.md
-                , Ui.rounded Theme.rounding.md
-                , Ui.background Theme.primary
-                , Ui.Font.color Theme.white
-                , Ui.Font.bold
-                , Ui.pointer
-                ]
-                (Ui.text "Go")
+            , UI.Components.btnDark [ Ui.width Ui.shrink ]
+                { label = "Go", onPress = toMsg SubmitJoinLink }
             ]
+
+
+
+-- FOOTER
+
+
+footer : I18n -> (Route -> msg) -> Ui.Element msg
+footer i18n onNavigate =
+    Ui.column
+        [ Ui.width Ui.fill
+        , Ui.paddingTop Theme.spacing.xxxl
+        , Ui.alignBottom
+        ]
+        [ UI.Components.horizontalSeparator
+        , Ui.el
+            [ Ui.paddingXY 0 Theme.spacing.lg
+            , Ui.centerX
+            , Ui.Font.size Theme.font.sm
+            , Ui.Font.weight Theme.fontWeight.medium
+            , Ui.Font.color Theme.base.textSubtle
+            , Ui.pointer
+            , Ui.link (Route.toPath Route.About)
+            , Ui.Events.preventDefaultOn "click"
+                (Json.Decode.succeed ( onNavigate Route.About, True ))
+            ]
+            (Ui.text (T.aboutTitle i18n))
         ]

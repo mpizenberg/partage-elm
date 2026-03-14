@@ -9,8 +9,10 @@ import Domain.Event as Event
 import Domain.GroupState exposing (GroupState)
 import Domain.Member as Member
 import Translations as T exposing (I18n)
+import UI.Components
 import UI.Theme as Theme
 import Ui
+import Ui.Anim as Anim
 import Ui.Font
 import Ui.Input
 
@@ -122,18 +124,35 @@ update msg model =
 
 view : I18n -> Model -> Ui.Element Msg
 view i18n model =
-    Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill, Ui.paddingXY Theme.spacing.md Theme.spacing.xl ]
+    Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.xl ]
         (case model of
             FetchingGroup ->
-                [ Ui.el [ Ui.centerX, Ui.Font.size Theme.fontSize.md, Ui.Font.color Theme.neutral500 ]
+                [ Ui.el
+                    [ Ui.centerX
+                    , Ui.Font.size Theme.font.md
+                    , Ui.Font.color Theme.base.textSubtle
+                    ]
                     (Ui.text (T.joinGroupFetching i18n))
                 ]
 
             Error errorMsg ->
-                [ Ui.el [ Ui.centerX, Ui.Font.size Theme.fontSize.md, Ui.Font.color Theme.danger ]
-                    (Ui.text (T.joinGroupError i18n))
-                , Ui.el [ Ui.centerX, Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
-                    (Ui.text errorMsg)
+                [ UI.Components.card [ Ui.padding Theme.spacing.lg ]
+                    [ Ui.column [ Ui.spacing Theme.spacing.sm ]
+                        [ Ui.el
+                            [ Ui.centerX
+                            , Ui.Font.size Theme.font.md
+                            , Ui.Font.color Theme.danger.text
+                            , Ui.Font.weight Theme.fontWeight.semibold
+                            ]
+                            (Ui.text (T.joinGroupError i18n))
+                        , Ui.el
+                            [ Ui.centerX
+                            , Ui.Font.size Theme.font.sm
+                            , Ui.Font.color Theme.base.textSubtle
+                            ]
+                            (Ui.text errorMsg)
+                        ]
+                    ]
                 ]
 
             ShowingPreview preview ->
@@ -174,55 +193,72 @@ viewPreview i18n preview =
                 JoinAsNewMember ->
                     not (String.isEmpty (String.trim preview.newMemberName))
     in
-    [ Ui.el [ Ui.centerX, Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ]
+    [ Ui.el
+        [ Ui.centerX
+        , Ui.Font.size Theme.font.lg
+        , Ui.Font.weight Theme.fontWeight.semibold
+        , Ui.Font.color Theme.base.textSubtle
+        ]
         (Ui.text (T.joinGroupTitle i18n))
-    , Ui.el [ Ui.centerX, Ui.Font.size Theme.fontSize.hero, Ui.Font.bold ]
+    , Ui.el
+        [ Ui.centerX
+        , Ui.Font.size Theme.font.xxl
+        , Ui.Font.weight Theme.fontWeight.bold
+        , Ui.Font.letterSpacing Theme.letterSpacing.tight
+        ]
         (Ui.text preview.groupName)
     , if not (List.isEmpty virtualMembers) then
-        Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-            [ Ui.el [ Ui.Font.size Theme.fontSize.md, Ui.Font.bold ]
-                (Ui.text (T.joinGroupClaimMember i18n))
-            , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+            [ UI.Components.sectionLabel (T.joinGroupClaimMember i18n)
+            , UI.Components.card []
                 (List.map (viewMemberOption preview.selectedAction) virtualMembers)
             ]
 
       else
         Ui.none
     , if not (List.isEmpty realMembers) then
-        Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-            [ Ui.el [ Ui.Font.size Theme.fontSize.md, Ui.Font.bold ]
-                (Ui.text (T.joinGroupRecoverMember i18n))
-            , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+            [ UI.Components.sectionLabel (T.joinGroupRecoverMember i18n)
+            , UI.Components.card []
                 (List.map (viewMemberOption preview.selectedAction) realMembers)
             ]
 
       else
         Ui.none
-    , Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-        [ radioOption isJoinAsNew (T.joinGroupJoinAsNew i18n) SelectJoinAsNew
-        , if isJoinAsNew then
-            Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill, Ui.paddingXY Theme.spacing.lg 0 ]
-                [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
-                    (Ui.text (T.joinGroupNameLabel i18n))
-                , Ui.Input.text
-                    [ Ui.width Ui.fill
-                    , Ui.padding Theme.spacing.sm
-                    , Ui.rounded Theme.rounding.sm
-                    , Ui.border Theme.borderWidth.sm
-                    , Ui.borderColor Theme.neutral300
+    , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        [ UI.Components.sectionLabel (T.joinGroupJoinAsNew i18n)
+        , UI.Components.card [ Ui.padding Theme.spacing.lg ]
+            [ radioOption isJoinAsNew (T.joinGroupJoinAsNew i18n) SelectJoinAsNew
+            , if isJoinAsNew then
+                Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill, Ui.paddingWith { top = Theme.spacing.md, bottom = 0, left = 0, right = 0 } ]
+                    [ Ui.el
+                        [ Ui.Font.size Theme.font.sm
+                        , Ui.Font.weight Theme.fontWeight.semibold
+                        ]
+                        (Ui.text (T.joinGroupNameLabel i18n))
+                    , Ui.Input.text
+                        [ Ui.width Ui.fill
+                        , Ui.padding Theme.spacing.sm
+                        , Ui.rounded Theme.radius.sm
+                        , Ui.border Theme.border
+                        , Ui.borderColor Theme.base.accent
+                        ]
+                        { onChange = InputNewMemberName
+                        , text = preview.newMemberName
+                        , placeholder = Just (T.joinGroupNamePlaceholder i18n)
+                        , label = Ui.Input.labelHidden (T.joinGroupNameLabel i18n)
+                        }
                     ]
-                    { onChange = InputNewMemberName
-                    , text = preview.newMemberName
-                    , placeholder = Just (T.joinGroupNamePlaceholder i18n)
-                    , label = Ui.Input.labelHidden (T.joinGroupNameLabel i18n)
-                    }
-                ]
 
-          else
-            Ui.none
+              else
+                Ui.none
+            ]
         ]
     , if canConfirm then
-        actionButton (T.joinGroupConfirm i18n) ConfirmJoin
+        UI.Components.btnPrimary []
+            { label = T.joinGroupConfirm i18n
+            , onPress = ConfirmJoin
+            }
 
       else
         Ui.none
@@ -246,67 +282,49 @@ viewMemberOption selectedAction member =
 
 radioOption : Bool -> String -> msg -> Ui.Element msg
 radioOption isSelected label onClick =
-    Ui.el
+    Ui.row
         [ Ui.Input.button onClick
         , Ui.width Ui.fill
-        , Ui.padding Theme.spacing.sm
-        , Ui.rounded Theme.rounding.sm
+        , Ui.spacing Theme.spacing.md
+        , Ui.paddingXY Theme.spacing.lg Theme.spacing.md
         , Ui.pointer
+        , Ui.Font.size Theme.font.md
+        , Ui.Font.weight Theme.fontWeight.medium
+        , Ui.contentCenterY
         , if isSelected then
-            Ui.background Theme.primaryLight
+            Ui.background Theme.primary.tint
 
           else
-            Ui.background Theme.neutral200
-        , if isSelected then
-            Ui.border Theme.borderWidth.md
-
-          else
-            Ui.border Theme.borderWidth.sm
-        , if isSelected then
-            Ui.borderColor Theme.primary
-
-          else
-            Ui.borderColor Theme.neutral300
+            Ui.noAttr
         ]
-        (Ui.row [ Ui.spacing Theme.spacing.sm ]
-            [ Ui.el
-                [ Ui.width (Ui.px 18)
-                , Ui.height (Ui.px 18)
-                , Ui.rounded Theme.rounding.md
-                , Ui.border Theme.borderWidth.md
-                , Ui.borderColor
+        [ Ui.el
+            [ Ui.width (Ui.px 20)
+            , Ui.height (Ui.px 20)
+            , Ui.rounded Theme.radius.xxxl
+            , Ui.border Theme.border
+            , Ui.contentCenterX
+            , Ui.contentCenterY
+            , Anim.transition (Anim.ms 200)
+                [ Anim.borderColor
                     (if isSelected then
-                        Theme.primary
+                        Theme.primary.solid
 
                      else
-                        Theme.neutral500
-                    )
-                , Ui.background
-                    (if isSelected then
-                        Theme.primary
-
-                     else
-                        Theme.white
+                        Theme.base.accent
                     )
                 ]
-                Ui.none
-            , Ui.el [ Ui.Font.size Theme.fontSize.md ] (Ui.text label)
             ]
-        )
+            (if isSelected then
+                Ui.el
+                    [ Ui.width (Ui.px 10)
+                    , Ui.height (Ui.px 10)
+                    , Ui.rounded Theme.radius.xxxl
+                    , Ui.background Theme.primary.solid
+                    ]
+                    Ui.none
 
-
-actionButton : String -> msg -> Ui.Element msg
-actionButton label onClick =
-    Ui.el
-        [ Ui.Input.button onClick
-        , Ui.centerX
-        , Ui.paddingXY Theme.spacing.xl Theme.spacing.sm
-        , Ui.rounded Theme.rounding.md
-        , Ui.background Theme.primary
-        , Ui.Font.color Theme.white
-        , Ui.Font.size Theme.fontSize.md
-        , Ui.Font.bold
-        , Ui.Font.center
-        , Ui.pointer
+             else
+                Ui.none
+            )
+        , Ui.text label
         ]
-        (Ui.text label)

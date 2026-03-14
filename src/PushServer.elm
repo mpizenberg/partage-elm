@@ -11,13 +11,14 @@ import ConcurrentTask.Http as Http
 import Dict exposing (Dict)
 import Domain.Entry as Entry exposing (Kind(..))
 import Domain.Event as Event exposing (Payload(..))
+import Domain.Group as Group
 import Domain.GroupState exposing (EntryState)
 import Domain.Member as Member
 import IndexedDb as Idb
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Set
-import Storage exposing (GroupSummary)
+import Storage
 import Translations exposing (Language(..))
 
 
@@ -47,7 +48,7 @@ Returns the new isSubscribed value (True if subscribed, False if unsubscribed).
 -}
 toggleGroupNotification :
     { db : Idb.Db
-    , summary : GroupSummary
+    , summary : Group.Summary
     , subscription : Encode.Value
     , memberRootId : Member.Id
     }
@@ -358,7 +359,7 @@ unregisterEndpoint subscription =
         |> Result.withDefault ""
 
 
-saveSummary : Idb.Db -> GroupSummary -> ConcurrentTask Error ()
+saveSummary : Idb.Db -> Group.Summary -> ConcurrentTask Error ()
 saveSummary db summary =
     Storage.saveGroupSummary db summary
         |> ConcurrentTask.map (\_ -> ())

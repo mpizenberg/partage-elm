@@ -14,7 +14,7 @@ module Form.NewGroup exposing
 import Domain.Currency as Currency exposing (Currency)
 import Field exposing (Field, Validation)
 import Form exposing (Accessor)
-import Form.List exposing (Forms, Id)
+import Form.List exposing (Forms)
 import Validation as V
 
 
@@ -41,9 +41,9 @@ type alias Accessors =
     , creatorName : Accessor State (Field String)
     , currency : Accessor State (Field Currency)
     , virtualMembers : Accessor State (Forms VirtualMemberForm)
-    , virtualMemberName : Id -> Accessor State (Field String)
+    , virtualMemberName : Form.List.Id -> Accessor State (Field String)
     , addVirtualMember : State -> State
-    , removeVirtualMember : Id -> State -> State
+    , removeVirtualMember : Form.List.Id -> State -> State
     }
 
 
@@ -154,7 +154,7 @@ init =
     { name = Field.empty Field.nonBlankString
     , creatorName = Field.empty Field.nonBlankString
     , currency = Field.fromString currencyType "eur"
-    , virtualMembers = Form.List.empty
+    , virtualMembers = Form.List.fromList [ virtualMemberForm ]
     }
 
 
@@ -208,4 +208,36 @@ validate state =
         (Field.validate identity (Field.mapError (\_ -> NameError) state.name))
         (Field.validate identity (Field.mapError (\_ -> CreatorNameError) state.creatorName))
         (Field.validate identity (Field.mapError (\_ -> CurrencyError) state.currency))
-        (Form.List.validate (\_ _ -> VirtualMemberError) state.virtualMembers)
+        (validateVirtualMembers state.virtualMembers)
+
+
+{-| Validate virtual members, skipping entries with blank names.
+-}
+validateVirtualMembers : Forms VirtualMemberForm -> Validation Error (List String)
+validateVirtualMembers forms =
+    let
+        entries : List ( Form.List.Id, VirtualMemberForm )
+        entries =
+            Form.List.toList forms
+
+        nonBlankEntries : List ( Form.List.Id, VirtualMemberForm )
+        nonBlankEntries =
+            List.filter
+                (\( _, f ) ->
+                    let
+                        raw : String
+                        raw =
+                            Form.get .name f |> Field.toRawString |> String.trim
+                    in
+                    not (String.isEmpty raw)
+                )
+                entries
+    in
+    List.foldr
+        (\( _, f ) acc ->
+            V.map2 (::)
+                (Form.validate f |> V.mapError (\_ -> VirtualMemberError))
+                acc
+        )
+        (V.succeed [])
+        nonBlankEntries

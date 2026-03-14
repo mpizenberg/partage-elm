@@ -4,6 +4,7 @@ module Page.Group.AddMember exposing (Model, Msg, Output, init, update, view)
 -}
 
 import Translations as T exposing (I18n)
+import UI.Components
 import UI.Theme as Theme
 import Ui
 import Ui.Font
@@ -64,34 +65,34 @@ update msg (Model data) =
 view : I18n -> (Msg -> msg) -> Model -> Ui.Element msg
 view i18n toMsg (Model data) =
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.xl, Ui.Font.bold ] (Ui.text (T.memberAddTitle i18n))
-        , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-            [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.bold ]
+        [ Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+            [ Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.weight Theme.fontWeight.semibold
+                ]
                 (Ui.text (T.memberAddNameLabel i18n))
-            , Ui.Input.text [ Ui.width Ui.fill ]
+            , Ui.Input.text
+                [ Ui.width Ui.fill
+                , Ui.padding Theme.spacing.sm
+                , Ui.rounded Theme.radius.sm
+                , Ui.border Theme.border
+                , Ui.borderColor Theme.base.accent
+                ]
                 { onChange = InputName
                 , text = data.name
                 , placeholder = Just (T.memberAddNamePlaceholder i18n)
                 , label = Ui.Input.labelHidden (T.memberAddNameLabel i18n)
                 }
             , if data.submitted && String.isEmpty (String.trim data.name) then
-                Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.danger ]
+                Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
                     (Ui.text (T.fieldRequired i18n))
 
               else
                 Ui.none
             ]
-        , Ui.el
-            [ Ui.Input.button Submit
-            , Ui.width Ui.fill
-            , Ui.padding Theme.spacing.md
-            , Ui.rounded Theme.rounding.md
-            , Ui.background Theme.primary
-            , Ui.Font.color Theme.white
-            , Ui.Font.center
-            , Ui.Font.bold
-            , Ui.pointer
-            ]
-            (Ui.text (T.memberAddSubmit i18n))
+        , UI.Components.btnPrimary []
+            { label = T.memberAddSubmit i18n
+            , onPress = Submit
+            }
         ]
         |> Ui.map toMsg

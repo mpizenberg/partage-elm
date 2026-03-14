@@ -9,10 +9,12 @@ import Domain.Date as Date
 import Domain.Event as Event
 import Domain.Group as Group
 import Domain.GroupState as GroupState
+import Domain.Member as Member
 import Form.NewGroup
 import GroupExport
 import GroupOps
 import Html exposing (Html)
+import Html.Attributes
 import Identity exposing (Identity)
 import IndexedDb as Idb
 import Json.Decode
@@ -20,7 +22,6 @@ import Json.Encode
 import Maybe.Extra
 import Navigation
 import Page.About
-import Page.DesignSystem
 import Page.Group
 import Page.Home
 import Page.InitError
@@ -37,15 +38,17 @@ import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import Server
 import Set exposing (Set)
-import Storage exposing (GroupSummary)
+import Storage
 import Task
 import Time
 import Translations as T exposing (I18n, Language(..))
 import UI.Components
 import UI.Shell
+import UI.Theme as Theme
 import UI.Toast as Toast
 import UUID
 import Ui
+import Ui.Font
 import Update
 import Url
 import UsageStats exposing (UsageStats)
@@ -93,7 +96,6 @@ type alias Model =
     , appState : AppState
     , generatingIdentity : Bool
     , i18n : I18n
-    , language : Language
     , runner : TaskRunner Msg
     , uuidState : UUID.V7State
     , randomSeed : Random.Seed
@@ -102,7 +104,6 @@ type alias Model =
     , groupModel : Page.Group.Model
     , homeModel : Page.Home.Model
     , aboutModel : Page.About.Model
-    , designSystemModel : Page.DesignSystem.Model
     , toastModel : Toast.Model
     , joinGroupModel : Page.JoinGroup.Model
     , pendingJoinAction : Maybe { groupId : Group.Id, action : Page.JoinGroup.JoinAction, newMemberName : String }
@@ -141,20 +142,19 @@ type Msg
     | JoinGroupMsg Page.JoinGroup.Msg
       -- Join flow
     | OnJoinGroupFetched (ConcurrentTask.Response Server.Error Server.SyncResult)
-    | OnJoinGroupSaved Group.Id (ConcurrentTask.Response Idb.Error ())
+    | OnJoinGroupSaved Group.Id Member.Id (ConcurrentTask.Response Idb.Error ())
       -- Form submission responses
-    | OnGroupCreated (ConcurrentTask.Response Idb.Error GroupSummary)
+    | OnGroupCreated (ConcurrentTask.Response Idb.Error Group.Summary)
       -- Import / Export
     | HomeMsg Page.Home.Msg
     | ExportGroup Group.Id
     | OnExportDataLoaded Group.Id (ConcurrentTask.Response Idb.Error ( List Event.Envelope, Maybe String ))
-    | OnGroupImported Storage.GroupSummary (ConcurrentTask.Response Idb.Error ())
+    | OnGroupImported Group.Summary (ConcurrentTask.Response Idb.Error ())
       -- Server sync
     | OnPbClientInitialized (ConcurrentTask.Response PocketBase.Error PocketBase.Client)
     | OnServerGroupCreated Group.Id (ConcurrentTask.Response Server.Error ())
       -- About / Usage stats
     | AboutMsg Page.About.Msg
-    | DesignSystemMsg Page.DesignSystem.Msg
     | OnStorageCheckComplete (ConcurrentTask.Response Never ( Maybe UsageStats, UsageStats.StorageEstimate ))
     | OnAboutStatsReset (ConcurrentTask.Response Idb.Error ())
     | ScheduleStorageCheck
@@ -261,7 +261,6 @@ init flags =
       , appState = Loading
       , generatingIdentity = False
       , i18n = T.init language
-      , language = language
       , runner = runner
       , uuidState = uuidState
       , randomSeed = mainSeed
@@ -277,7 +276,6 @@ init flags =
                 }
       , homeModel = Page.Home.init
       , aboutModel = Page.About.init
-      , designSystemModel = Page.DesignSystem.init
       , joinGroupModel = Page.JoinGroup.init
       , pendingJoinAction = Nothing
       , toastModel = Toast.init
@@ -447,17 +445,23 @@ update msg model =
             ( model, Navigation.pushUrl navCmd (Route.toAppUrl route) )
 
         SwitchLanguage lang ->
+            let
+                updatedModel : Model
+                updatedModel =
+                    { model | i18n = T.load lang model.i18n }
+            in
             case model.appState of
+                -- Save the current language notifications translations to IndexedDB
                 Ready readyData ->
                     ( model.runner, Cmd.none )
                         |> Runner.andRun (\_ -> NoOp)
                             (Storage.saveNotificationTranslations readyData.db
                                 (PushServer.notificationTranslations lang)
                             )
-                        |> Tuple.mapFirst (\r -> { model | language = lang, i18n = T.init lang, runner = r })
+                        |> Tuple.mapFirst (\r -> { updatedModel | runner = r })
 
                 _ ->
-                    ( { model | language = lang, i18n = T.init lang }, Cmd.none )
+                    ( updatedModel, Cmd.none )
 
         GenerateIdentity ->
             ( model.runner, Cmd.none )
@@ -570,7 +574,7 @@ update msg model =
         -- Page form messages
         NewGroupMsg subMsg ->
             let
-                ( newGroupModel, maybeOutput ) =
+                ( newGroupModel, pageCmd, maybeOutput ) =
                     Page.NewGroup.update subMsg model.newGroupModel
 
                 modelWithForm : Model
@@ -582,7 +586,7 @@ update msg model =
                     submitNewGroup modelWithForm readyData output
 
                 _ ->
-                    ( modelWithForm, Cmd.none )
+                    ( modelWithForm, Cmd.map NewGroupMsg pageCmd )
 
         OnGroupCreated (ConcurrentTask.Success summary) ->
             case model.appState of
@@ -661,13 +665,19 @@ update msg model =
                                 groupKey =
                                     Symmetric.importKey key
 
-                                summary : GroupSummary
+                                memberId : Member.Id
+                                memberId =
+                                    case joinData.selectedAction of
+                                        Page.JoinGroup.ClaimMember mId ->
+                                            mId
+
+                                        Page.JoinGroup.JoinAsNewMember ->
+                                            Maybe.map .publicKeyHash readyData.identity
+                                                |> Maybe.withDefault ""
+
+                                summary : Group.Summary
                                 summary =
-                                    { id = groupId
-                                    , name = preview.groupName
-                                    , defaultCurrency = preview.groupState.groupMeta.defaultCurrency
-                                    , isSubscribed = False
-                                    }
+                                    GroupState.summarize memberId groupId preview.groupState
 
                                 updatedModel : Model
                                 updatedModel =
@@ -682,8 +692,8 @@ update msg model =
                                     }
                             in
                             ( model.runner, Cmd.none )
-                                |> Runner.andRun (OnJoinGroupSaved groupId)
-                                    (Storage.importGroup readyData.db summary (Just (Symmetric.exportKey groupKey)) preview.events (Just preview.syncCursor))
+                                |> Runner.andRun (OnJoinGroupSaved groupId memberId)
+                                    (Storage.saveGroup readyData.db summary (Just (Symmetric.exportKey groupKey)) preview.events (Just preview.syncCursor))
                                 |> Tuple.mapFirst (\r -> { updatedModel | runner = r })
 
                         _ ->
@@ -726,20 +736,16 @@ update msg model =
             , Cmd.none
             )
 
-        OnJoinGroupSaved groupId (ConcurrentTask.Success _) ->
+        OnJoinGroupSaved groupId memberId (ConcurrentTask.Success _) ->
             case ( model.appState, Page.JoinGroup.getPreview model.joinGroupModel ) of
                 ( Ready readyData, Just preview ) ->
                     let
-                        summary : GroupSummary
+                        summary : Group.Summary
                         summary =
-                            { id = groupId
-                            , name = preview.groupName
-                            , defaultCurrency = preview.groupState.groupMeta.defaultCurrency
-                            , isSubscribed = False
-                            }
+                            GroupState.summarize memberId groupId preview.groupState
 
-                        newRoute : Route
-                        newRoute =
+                        balanceTabRoute : Route
+                        balanceTabRoute =
                             GroupRoute groupId (Tab BalanceTab)
                     in
                     addToast Toast.Success
@@ -748,12 +754,12 @@ update msg model =
                             | appState = Ready { readyData | groups = Dict.insert groupId summary readyData.groups }
                             , groupModel = Page.Group.resetLoadedGroup model.groupModel
                         }
-                        |> Update.addCmd (Navigation.pushUrl navCmd (Route.toAppUrl newRoute))
+                        |> Update.addCmd (Navigation.pushUrl navCmd (Route.toAppUrl balanceTabRoute))
 
                 _ ->
                     ( model, Cmd.none )
 
-        OnJoinGroupSaved _ _ ->
+        OnJoinGroupSaved _ _ _ ->
             addToast Toast.Error (T.toastJoinError model.i18n) model
 
         -- Import / Export
@@ -805,7 +811,7 @@ update msg model =
                         Just (Page.Home.ImportReady exportData) ->
                             ( updatedModel.runner, cmd )
                                 |> Runner.andRun (OnGroupImported exportData.group)
-                                    (Storage.importGroup readyData.db exportData.group exportData.groupKey exportData.events Nothing)
+                                    (Storage.saveGroup readyData.db exportData.group exportData.groupKey exportData.events Nothing)
                                 |> Tuple.mapFirst (\r -> { updatedModel | runner = r })
 
                         Just (Page.Home.JoinLink url) ->
@@ -925,9 +931,6 @@ update msg model =
             ( { model | toastModel = Toast.dismiss toastId model.toastModel }
             , Cmd.none
             )
-
-        DesignSystemMsg dsMsg ->
-            ( { model | designSystemModel = Page.DesignSystem.update dsMsg model.designSystemModel }, Cmd.none )
 
         -- About / Usage stats
         AboutMsg aboutMsg ->
@@ -1327,7 +1330,7 @@ updatePwa pwaMsg model =
                     case Dict.get groupId readyData.groups of
                         Just summary ->
                             let
-                                updatedSummary : GroupSummary
+                                updatedSummary : Group.Summary
                                 updatedSummary =
                                     { summary | isSubscribed = isSubscribed }
                             in
@@ -1348,7 +1351,66 @@ updatePwa pwaMsg model =
             addToast Toast.Error (T.toastPushError model.i18n) model
 
 
-viewPwaBanners : Model -> List (Ui.Element Msg)
+
+-- VIEW
+
+
+view : Model -> Html Msg
+view model =
+    let
+        pageResult : Page.Group.ViewResult Msg
+        pageResult =
+            viewPage model
+
+        overlayAttr : Ui.Attribute Msg
+        overlayAttr =
+            case pageResult.overlay of
+                Just overlay ->
+                    Ui.inFront
+                        (Ui.el
+                            [ Ui.widthMax Theme.contentMaxWidth
+                            , Ui.centerX
+                            , Ui.width Ui.fill
+                            , Ui.alignBottom
+                            , Ui.paddingWith
+                                { top = 0
+                                , bottom = 0
+                                , left = Theme.spacing.xl
+                                , right = Theme.spacing.xl
+                                }
+                            ]
+                            overlay
+                        )
+
+                Nothing ->
+                    Ui.noAttr
+    in
+    Ui.layout Ui.default
+        [ Ui.background Theme.base.bg
+        , Ui.inFront (Toast.view model.toastModel)
+        , Theme.fontFamily
+        , Ui.Font.color Theme.base.text
+        , Ui.Font.size Theme.font.md
+        , overlayAttr
+        ]
+        (Ui.el [ Ui.background Theme.base.bg ]
+            (Ui.column
+                [ Ui.widthMax Theme.contentMaxWidth
+                , Ui.centerX
+                , Ui.htmlAttribute (Html.Attributes.style "min-height" "100vh")
+                , Ui.paddingWith
+                    { top = Theme.spacing.md
+                    , bottom = 0
+                    , left = Theme.spacing.xl
+                    , right = Theme.spacing.xl
+                    }
+                ]
+                [ viewPwaBanners model, pageResult.content ]
+            )
+        )
+
+
+viewPwaBanners : Model -> Ui.Element Msg
 viewPwaBanners model =
     UI.Components.pwaBanners model.i18n
         { isOnline = model.isOnline
@@ -1360,62 +1422,46 @@ viewPwaBanners model =
         }
 
 
-
--- VIEW
-
-
-view : Model -> Html Msg
-view model =
-    Ui.layout Ui.default
-        [ Ui.height Ui.fill
-        , Ui.inFront (Toast.view model.toastModel)
-        ]
-        (Ui.column [ Ui.width Ui.fill, Ui.height Ui.fill ]
-            (viewPwaBanners model ++ [ viewPage model ])
-        )
-
-
-viewPage : Model -> Ui.Element Msg
+viewPage : Model -> Page.Group.ViewResult Msg
 viewPage model =
+    let
+        noOverlay : Ui.Element Msg -> Page.Group.ViewResult Msg
+        noOverlay content =
+            { content = content, overlay = Nothing }
+    in
     case model.appState of
         Loading ->
-            Page.Loading.view model.i18n
+            noOverlay (Page.Loading.view model.i18n)
 
         InitError errorMsg ->
-            UI.Shell.appShell
-                { title = T.shellPartage model.i18n
-                , onTitleClick = NavigateTo Home
-                , headerExtra = Ui.none
-                , content = Page.InitError.view errorMsg
-                }
+            noOverlay <|
+                UI.Shell.pageShell { title = T.shellPartage model.i18n, onBack = NavigateTo Home }
+                    (Page.InitError.view errorMsg)
 
         Ready readyData ->
             viewReady model readyData
 
 
-viewReady : Model -> Storage.InitData -> Ui.Element Msg
+viewReady : Model -> Storage.InitData -> Page.Group.ViewResult Msg
 viewReady model readyData =
     let
         i18n : I18n
         i18n =
             model.i18n
 
-        langSelector : Ui.Element Msg
-        langSelector =
-            UI.Components.languageSelector SwitchLanguage model.language
-
-        shell : String -> Ui.Element Msg -> Ui.Element Msg
-        shell title content =
-            UI.Shell.appShell { title = title, onTitleClick = NavigateTo Home, headerExtra = langSelector, content = content }
+        noOverlay : Ui.Element Msg -> Page.Group.ViewResult Msg
+        noOverlay content =
+            { content = content, overlay = Nothing }
     in
     case model.route of
         Setup ->
-            shell (T.shellPartage i18n)
-                (Page.Setup.view i18n { onGenerate = GenerateIdentity, isGenerating = model.generatingIdentity })
+            noOverlay <|
+                UI.Shell.pageShell { title = T.shellPartage i18n, onBack = NavigateTo Home }
+                    (Page.Setup.view i18n { onGenerate = GenerateIdentity, isGenerating = model.generatingIdentity })
 
         Home ->
-            shell (T.shellPartage i18n)
-                (Page.Home.view i18n
+            noOverlay <|
+                Page.Home.view i18n
                     { onNavigate = NavigateTo
                     , onExport = ExportGroup
                     , notificationPermission = model.notificationPermission
@@ -1425,15 +1471,16 @@ viewReady model readyData =
                     HomeMsg
                     model.homeModel
                     (Dict.values readyData.groups)
-                )
 
         NewGroup ->
-            shell (T.shellNewGroup i18n)
-                (Page.NewGroup.view i18n NewGroupMsg model.newGroupModel)
+            noOverlay <|
+                UI.Shell.pageShell { title = T.shellNewGroup i18n, onBack = NavigateTo Home }
+                    (Page.NewGroup.view i18n NewGroupMsg model.newGroupModel)
 
         GroupRoute _ (Join _) ->
-            shell (T.shellJoinGroup i18n)
-                (Ui.map JoinGroupMsg (Page.JoinGroup.view i18n model.joinGroupModel))
+            noOverlay <|
+                UI.Shell.pageShell { title = T.shellJoinGroup i18n, onBack = NavigateTo Home }
+                    (Ui.map JoinGroupMsg (Page.JoinGroup.view i18n model.joinGroupModel))
 
         GroupRoute groupId groupView ->
             Page.Group.view
@@ -1445,18 +1492,23 @@ viewReady model readyData =
                 , origin = model.origin
                 , pushActive = pushIsActive model
                 }
-                langSelector
                 groupView
                 model.groupModel
 
         About ->
-            shell (T.shellPartage i18n) (Ui.map AboutMsg (Page.About.view i18n model.aboutModel))
-
-        DesignSystem ->
-            shell "Design System" (Ui.map DesignSystemMsg (Page.DesignSystem.view model.designSystemModel))
+            noOverlay <|
+                UI.Shell.pageShell { title = T.shellPartage i18n, onBack = NavigateTo Home }
+                    (Page.About.view i18n
+                        { onSwitchLanguage = SwitchLanguage
+                        , toMsg = AboutMsg
+                        }
+                        model.aboutModel
+                    )
 
         NotFound ->
-            shell (T.shellPartage i18n) (Page.NotFound.view i18n)
+            noOverlay <|
+                UI.Shell.pageShell { title = T.shellPartage i18n, onBack = NavigateTo Home }
+                    (Page.NotFound.view i18n)
 
 
 pushIsActive : Model -> Bool

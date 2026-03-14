@@ -18,7 +18,6 @@ type Route
     | NewGroup
     | GroupRoute Group.Id GroupView
     | About
-    | DesignSystem
     | NotFound
 
 
@@ -28,9 +27,7 @@ type GroupView
     = Join String
     | Tab GroupTab
     | NewEntry
-    | EntryDetail Entry.Id
     | EditEntry Entry.Id
-    | MemberDetail Member.Id
     | AddVirtualMember
     | EditMemberMetadata Member.Id
     | EditGroupMetadata
@@ -77,17 +74,11 @@ fromAppUrl appUrl =
         [ "groups", groupId, "new-entry" ] ->
             GroupRoute groupId NewEntry
 
-        [ "groups", groupId, "entries", entryId ] ->
-            GroupRoute groupId (EntryDetail entryId)
-
         [ "groups", groupId, "entries", entryId, "edit" ] ->
             GroupRoute groupId (EditEntry entryId)
 
         [ "groups", groupId, "members", "new" ] ->
             GroupRoute groupId AddVirtualMember
-
-        [ "groups", groupId, "members", memberId ] ->
-            GroupRoute groupId (MemberDetail memberId)
 
         [ "groups", groupId, "members", memberId, "edit" ] ->
             GroupRoute groupId (EditMemberMetadata memberId)
@@ -97,9 +88,6 @@ fromAppUrl appUrl =
 
         [ "about" ] ->
             About
-
-        [ "design-system" ] ->
-            DesignSystem
 
         _ ->
             NotFound
@@ -152,17 +140,11 @@ toPathSegments route =
         GroupRoute groupId NewEntry ->
             [ "groups", groupId, "new-entry" ]
 
-        GroupRoute groupId (EntryDetail entryId) ->
-            [ "groups", groupId, "entries", entryId ]
-
         GroupRoute groupId (EditEntry entryId) ->
             [ "groups", groupId, "entries", entryId, "edit" ]
 
         GroupRoute groupId AddVirtualMember ->
             [ "groups", groupId, "members", "new" ]
-
-        GroupRoute groupId (MemberDetail memberId) ->
-            [ "groups", groupId, "members", memberId ]
 
         GroupRoute groupId (EditMemberMetadata memberId) ->
             [ "groups", groupId, "members", memberId, "edit" ]
@@ -172,9 +154,6 @@ toPathSegments route =
 
         About ->
             [ "about" ]
-
-        DesignSystem ->
-            [ "design-system" ]
 
         NotFound ->
             []
@@ -212,17 +191,11 @@ toPath route =
         GroupRoute groupId NewEntry ->
             "/groups/" ++ groupId ++ "/new-entry"
 
-        GroupRoute groupId (EntryDetail entryId) ->
-            "/groups/" ++ groupId ++ "/entries/" ++ entryId
-
         GroupRoute groupId (EditEntry entryId) ->
             "/groups/" ++ groupId ++ "/entries/" ++ entryId ++ "/edit"
 
         GroupRoute groupId AddVirtualMember ->
             "/groups/" ++ groupId ++ "/members/new"
-
-        GroupRoute groupId (MemberDetail memberId) ->
-            "/groups/" ++ groupId ++ "/members/" ++ memberId
 
         GroupRoute groupId (EditMemberMetadata memberId) ->
             "/groups/" ++ groupId ++ "/members/" ++ memberId ++ "/edit"
@@ -232,9 +205,6 @@ toPath route =
 
         About ->
             "/about"
-
-        DesignSystem ->
-            "/design-system"
 
         NotFound ->
             "/"

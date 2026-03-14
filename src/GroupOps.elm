@@ -36,7 +36,7 @@ import PocketBase
 import Random
 import Server
 import Set exposing (Set)
-import Storage exposing (GroupSummary)
+import Storage
 import Time
 import UUID
 import WebCrypto.Symmetric as Symmetric
@@ -69,7 +69,7 @@ type alias State msg =
 type alias LoadedGroup =
     { events : List Event.Envelope
     , groupState : GroupState.GroupState
-    , summary : GroupSummary
+    , summary : Group.Summary
     , groupKey : Symmetric.Key
     , syncCursor : Maybe String
     , unpushedIds : Set String
@@ -95,7 +95,7 @@ addUnpushedId eventId loaded =
 
 {-| Build a LoadedGroup from raw events, a summary, and the group key, applying all events to compute state.
 -}
-initLoadedGroup : List Event.Envelope -> GroupSummary -> Symmetric.Key -> Maybe String -> Set String -> LoadedGroup
+initLoadedGroup : List Event.Envelope -> Group.Summary -> Symmetric.Key -> Maybe String -> Set String -> LoadedGroup
 initLoadedGroup events summary key cursor unpushed =
     -- We store the events in reverse order for efficient prepending of new events
     { events = List.reverse events
@@ -139,7 +139,7 @@ attempt ctx makeEnvelope groupId =
 
 {-| Submit a new group creation with its initial members and events.
 -}
-newGroup : Context msg -> (ConcurrentTask.Response Idb.Error GroupSummary -> msg) -> Form.NewGroup.Output -> ( State msg, Cmd msg )
+newGroup : Context msg -> (ConcurrentTask.Response Idb.Error Group.Summary -> msg) -> Form.NewGroup.Output -> ( State msg, Cmd msg )
 newGroup ctx onComplete output =
     let
         ( groupId, seed1 ) =
@@ -160,12 +160,15 @@ newGroup ctx onComplete output =
                 , virtualMembers = List.map2 Tuple.pair virtualMemberIds output.virtualMembers
                 }
 
-        summary : GroupSummary
+        summary : Group.Summary
         summary =
             { id = groupId
             , name = output.name
             , defaultCurrency = output.currency
             , isSubscribed = False
+            , createdAt = ctx.currentTime
+            , memberCount = 1 + List.length output.virtualMembers
+            , myBalanceCents = 0
             }
 
         generateEnvelopes : ConcurrentTask x (List Event.Envelope)
@@ -178,7 +181,7 @@ newGroup ctx onComplete output =
                             payloads
                     )
 
-        allTasks : List Event.Envelope -> ConcurrentTask Idb.Error GroupSummary
+        allTasks : List Event.Envelope -> ConcurrentTask Idb.Error Group.Summary
         allTasks allEvents =
             let
                 allEventIds : List String

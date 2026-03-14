@@ -1,4 +1,4 @@
-module Domain.Currency exposing (Currency(..), allCurrencies, currencyCode, currencyDecoder, encodeCurrency, precision)
+module Domain.Currency exposing (Currency(..), allCurrencies, currencyCode, currencyDecoder, currencyFromCode, encodeCurrency, precision)
 
 {-| Supported currencies and their precision.
 -}
@@ -63,6 +63,45 @@ currencyCode currency =
 
         ARS ->
             "ARS"
+
+
+{-| Parse a currency code string (case-insensitive) into a Currency.
+-}
+currencyFromCode : String -> Maybe Currency
+currencyFromCode s =
+    case String.toLower s of
+        "usd" ->
+            Just USD
+
+        "eur" ->
+            Just EUR
+
+        "gbp" ->
+            Just GBP
+
+        "chf" ->
+            Just CHF
+
+        "jpy" ->
+            Just JPY
+
+        "aud" ->
+            Just AUD
+
+        "cad" ->
+            Just CAD
+
+        "nzd" ->
+            Just NZD
+
+        "brl" ->
+            Just BRL
+
+        "ars" ->
+            Just ARS
+
+        _ ->
+            Nothing
 
 
 {-| Number of decimal digits for a currency (e.g. 2 for cents).

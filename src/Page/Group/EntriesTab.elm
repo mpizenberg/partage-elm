@@ -1,22 +1,26 @@
-module Page.Group.EntriesTab exposing (Config, Model, Msg, init, update, view)
+module Page.Group.EntriesTab exposing (Config, Model, Msg, Output(..), init, update, view)
 
-{-| Entries tab showing expense and transfer cards with filtering.
+{-| Entries tab showing expense and transfer cards with filtering
+and inline expandable entry details.
 -}
 
 import Dict
 import Domain.Currency as Currency
-import Domain.Date exposing (Date)
+import Domain.Date as Date exposing (Date)
 import Domain.Entry as Entry
 import Domain.Filter as Filter exposing (CategoryFilter(..), DateRange(..), EntryFilters)
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
+import FeatherIcons
+import Format
+import List.Extra
 import Set exposing (Set)
 import Time
 import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
 import Ui
-import Ui.Events
+import Ui.Anim as Anim
 import Ui.Font
 import Ui.Input
 
@@ -26,7 +30,15 @@ type Model
         { filters : EntryFilters
         , showFilters : Bool
         , showDeleted : Bool
+        , searchQuery : String
+        , expandedEntries : Set Entry.Id
+        , confirmingAction : Maybe ( Entry.Id, ConfirmAction )
         }
+
+
+type ConfirmAction
+    = ConfirmDelete
+    | ConfirmRestore
 
 
 type Msg
@@ -37,13 +49,25 @@ type Msg
     | ToggleCurrency String
     | ToggleDateRange DateRange
     | ClearAllFilters
+    | InputSearch String
+    | ToggleEntry Entry.Id
+    | ClickEdit Entry.Id
+    | ClickDelete Entry.Id
+    | ClickRestore Entry.Id
+    | Confirm
+    | CancelConfirm
+
+
+type Output
+    = EditOutput Entry.Id
+    | DeleteOutput Entry.Id
+    | RestoreOutput Entry.Id
 
 
 {-| Callback messages for entry interactions on this tab.
 -}
 type alias Config msg =
     { onNewEntry : msg
-    , onEntryClick : Entry.Id -> msg
     , toMsg : Msg -> msg
     }
 
@@ -54,29 +78,32 @@ init =
         { filters = Filter.emptyEntryFilters
         , showFilters = False
         , showDeleted = False
+        , searchQuery = ""
+        , expandedEntries = Set.empty
+        , confirmingAction = Nothing
         }
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Maybe Output )
 update msg (Model data) =
     case msg of
         ToggleShowDeleted ->
-            Model { data | showDeleted = not data.showDeleted }
+            ( Model { data | showDeleted = not data.showDeleted }, Nothing )
 
         ToggleFilters ->
-            Model { data | showFilters = not data.showFilters }
+            ( Model { data | showFilters = not data.showFilters }, Nothing )
 
         TogglePerson memberId ->
-            Model (updateFilters (\f -> { f | persons = toggleSet memberId f.persons }) data)
+            ( Model (updateFilters (\f -> { f | persons = toggleSet memberId f.persons }) data), Nothing )
 
         ToggleCategory catStr ->
-            Model (updateFilters (\f -> { f | categories = toggleSet catStr f.categories }) data)
+            ( Model (updateFilters (\f -> { f | categories = toggleSet catStr f.categories }) data), Nothing )
 
         ToggleCurrency currStr ->
-            Model (updateFilters (\f -> { f | currencies = toggleSet currStr f.currencies }) data)
+            ( Model (updateFilters (\f -> { f | currencies = toggleSet currStr f.currencies }) data), Nothing )
 
         ToggleDateRange range ->
-            Model
+            ( Model
                 (updateFilters
                     (\f ->
                         if List.member range f.dateRanges then
@@ -87,9 +114,62 @@ update msg (Model data) =
                     )
                     data
                 )
+            , Nothing
+            )
 
         ClearAllFilters ->
-            Model { data | filters = Filter.emptyEntryFilters }
+            ( Model { data | filters = Filter.emptyEntryFilters, showDeleted = False }, Nothing )
+
+        InputSearch query ->
+            ( Model { data | searchQuery = query }, Nothing )
+
+        ToggleEntry entryId ->
+            ( Model
+                { data
+                    | expandedEntries =
+                        if Set.member entryId data.expandedEntries then
+                            Set.remove entryId data.expandedEntries
+
+                        else
+                            Set.insert entryId data.expandedEntries
+                    , confirmingAction =
+                        -- Clear confirm when collapsing
+                        case data.confirmingAction of
+                            Just ( id, _ ) ->
+                                if id == entryId then
+                                    Nothing
+
+                                else
+                                    data.confirmingAction
+
+                            Nothing ->
+                                Nothing
+                }
+            , Nothing
+            )
+
+        ClickEdit entryId ->
+            ( Model data, Just (EditOutput entryId) )
+
+        ClickDelete entryId ->
+            ( Model { data | confirmingAction = Just ( entryId, ConfirmDelete ) }, Nothing )
+
+        ClickRestore entryId ->
+            ( Model { data | confirmingAction = Just ( entryId, ConfirmRestore ) }, Nothing )
+
+        Confirm ->
+            case data.confirmingAction of
+                Just ( entryId, ConfirmDelete ) ->
+                    ( Model { data | confirmingAction = Nothing }, Just (DeleteOutput entryId) )
+
+                Just ( entryId, ConfirmRestore ) ->
+                    ( Model { data | confirmingAction = Nothing }, Just (RestoreOutput entryId) )
+
+                Nothing ->
+                    ( Model data, Nothing )
+
+        CancelConfirm ->
+            ( Model { data | confirmingAction = Nothing }, Nothing )
 
 
 updateFilters : (EntryFilters -> EntryFilters) -> { a | filters : EntryFilters } -> { a | filters : EntryFilters }
@@ -106,45 +186,66 @@ toggleSet item set =
         Set.insert item set
 
 
-{-| Render the entries tab with filtering, expense/transfer cards, and a new entry button.
+{-| Render the entries tab with filtering, entry cards grouped by date, and a FAB.
 -}
 view : I18n -> Config msg -> Date -> Model -> GroupState -> Ui.Element msg
 view i18n config today (Model data) state =
     let
-        deletedCount : Int
-        deletedCount =
-            Dict.values state.entries
-                |> List.filter .isDeleted
-                |> List.length
-
-        visibleEntries : List { entry : Entry.Entry, isDeleted : Bool }
-        visibleEntries =
-            (if data.showDeleted then
+        allEntries : List { entry : Entry.Entry, isDeleted : Bool }
+        allEntries =
+            if data.showDeleted then
                 Dict.values state.entries
                     |> List.map (\es -> { entry = es.currentVersion, isDeleted = es.isDeleted })
 
-             else
+            else
                 GroupState.activeEntries state
                     |> List.map (\e -> { entry = e, isDeleted = False })
-            )
+
+        visibleEntries : List { entry : Entry.Entry, isDeleted : Bool }
+        visibleEntries =
+            allEntries
                 |> List.filter (\{ entry } -> Filter.matchesEntryFilters today data.filters entry)
                 |> List.sortBy (\{ entry } -> entrySortKey entry)
+
+        totalAmount : Int
+        totalAmount =
+            visibleEntries
+                |> List.map
+                    (\{ entry } ->
+                        case entry.kind of
+                            Entry.Expense d ->
+                                d.amount
+
+                            Entry.Transfer d ->
+                                d.amount
+                    )
+                |> List.sum
+
+        toMsg : Msg -> msg
+        toMsg =
+            config.toMsg
     in
-    Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.lg, Ui.Font.bold ] (Ui.text (T.entriesTabTitle i18n))
-        , if deletedCount > 0 then
-            deletedToggle i18n data.showDeleted deletedCount (config.toMsg ToggleShowDeleted)
+    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+        [ -- Summary row
+          summaryRow (List.length visibleEntries) totalAmount
 
-          else
-            Ui.none
-        , filterToggle i18n config.toMsg data.showFilters data.filters
+        -- New Entry button
+        , Ui.el [ Ui.paddingXY 0 Theme.spacing.lg ] <|
+            UI.Components.btnPrimary [] { label = T.newEntryTitle i18n, onPress = config.onNewEntry }
+
+        -- Search bar + filter button
+        , searchFilterRow data.showFilters data.searchQuery |> Ui.map toMsg
+
+        -- Filter panel
         , if data.showFilters then
-            filterBar i18n config.toMsg data.filters state
+            filterPanel i18n data.filters data.showDeleted state |> Ui.map toMsg
 
           else
             Ui.none
+
+        -- Entry list grouped by date
         , if List.isEmpty visibleEntries then
-            Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ]
+            Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
                 (Ui.text (T.entriesNone i18n))
 
           else
@@ -153,76 +254,148 @@ view i18n config today (Model data) state =
                 resolveName =
                     GroupState.resolveMemberName state
             in
-            Ui.column [ Ui.width Ui.fill ]
-                (List.map (entryRow i18n resolveName config.onEntryClick) visibleEntries)
-        , newEntryButton i18n config.onNewEntry
+            Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
+                (groupedByDate i18n resolveName data.expandedEntries data.confirmingAction visibleEntries)
+                |> Ui.map toMsg
         ]
 
 
-filterToggle : I18n -> (Msg -> msg) -> Bool -> EntryFilters -> Ui.Element msg
-filterToggle i18n toMsg showFilters filters =
+
+-- SEARCH BAR
+-- SUMMARY ROW
+
+
+summaryRow : Int -> Int -> Ui.Element msg
+summaryRow entryCount totalAmount =
+    Ui.el
+        [ Ui.Font.size Theme.font.sm
+        , Ui.Font.color Theme.base.textSubtle
+        ]
+        (Ui.text (String.fromInt entryCount ++ " entries · " ++ Format.formatCents totalAmount ++ " total"))
+
+
+
+-- SEARCH BAR + FILTER BUTTON
+
+
+searchFilterRow : Bool -> String -> Ui.Element Msg
+searchFilterRow showFilters query =
+    Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
+        [ Ui.row
+            [ Ui.width Ui.fill
+            , Ui.paddingXY Theme.spacing.md Theme.spacing.sm
+            , Ui.spacing Theme.spacing.sm
+            , Ui.border Theme.border
+            , Ui.borderColor Theme.base.accent
+            , Ui.rounded Theme.radius.md
+            , Ui.background (Ui.rgb 255 255 255)
+            , Ui.contentCenterY
+            ]
+            [ Ui.el [ Ui.Font.color Theme.base.textSubtle, Ui.width Ui.shrink ]
+                (UI.Components.featherIcon 18 FeatherIcons.search)
+            , Ui.Input.text
+                [ Ui.width Ui.fill
+                , Ui.padding 0
+                , Ui.border 0
+                , Ui.Font.size Theme.font.md
+                ]
+                { onChange = InputSearch
+                , text = query
+                , placeholder = Just "Search entries..."
+                , label = Ui.Input.labelHidden "Search entries"
+                }
+            ]
+        , filterButton showFilters
+        ]
+
+
+filterButton : Bool -> Ui.Element Msg
+filterButton active =
     let
-        label : String
-        label =
-            if showFilters then
-                T.filterToggleHide i18n
+        ( bg, border, fontColor ) =
+            if active then
+                ( Theme.primary.solid, Theme.primary.solid, Theme.primary.solidText )
 
             else
-                T.filterToggleShow i18n
-
-        activeCount : Int
-        activeCount =
-            Filter.countActiveEntryFilters filters
+                ( Theme.base.bgSubtle, Theme.base.accent, Theme.base.textSubtle )
     in
-    Ui.row [ Ui.spacing Theme.spacing.sm ]
-        [ Ui.el
-            [ Ui.pointer
-            , Ui.Events.onClick (toMsg ToggleFilters)
-            , Ui.Font.size Theme.fontSize.sm
-            , Ui.Font.color Theme.primary
+    Ui.el
+        [ Ui.Input.button ToggleFilters
+        , Ui.alignRight
+        , Ui.width (Ui.px Theme.sizing.lg)
+        , Ui.height (Ui.px Theme.sizing.lg)
+        , Ui.rounded Theme.radius.md
+        , Ui.border Theme.border
+        , Ui.contentCenterX
+        , Ui.contentCenterY
+        , Ui.pointer
+        , Anim.transition (Anim.ms 200)
+            [ Anim.backgroundColor bg
+            , Anim.borderColor border
+            , Anim.fontColor fontColor
             ]
-            (Ui.text label)
-        , if not showFilters && activeCount > 0 then
-            Ui.el
-                [ Ui.Font.size Theme.fontSize.sm
-                , Ui.Font.color Theme.neutral500
+        ]
+        (UI.Components.featherIcon 18 FeatherIcons.filter)
+
+
+
+-- FILTER PANEL
+
+
+filterPanel : I18n -> EntryFilters -> Bool -> GroupState -> Ui.Element Msg
+filterPanel i18n filters showDeleted state =
+    let
+        deletedCount : Int
+        deletedCount =
+            Dict.size <| Dict.filter (\_ entry -> entry.isDeleted) state.entries
+    in
+    UI.Components.card [ Ui.padding Theme.spacing.lg ]
+        [ personFilterSection i18n filters.persons state
+        , categoryFilterSection i18n filters.categories
+        , currencyFilterSection i18n filters.currencies state
+        , dateFilterSection i18n filters.dateRanges
+
+        -- Deleted entries toggle
+        , Ui.row
+            [ Ui.width Ui.fill
+            , Ui.contentCenterY
+            , Ui.paddingTop Theme.spacing.sm
+            ]
+            [ Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.base.textSubtle
                 ]
-                (Ui.text (T.filterActiveCount (String.fromInt activeCount) i18n))
+                (Ui.text (T.entriesShowDeleted (String.fromInt deletedCount) i18n))
+            , UI.Components.toggle { isOn = showDeleted, onPress = ToggleShowDeleted }
+            ]
 
-          else
-            Ui.none
-        ]
-
-
-filterBar : I18n -> (Msg -> msg) -> EntryFilters -> GroupState -> Ui.Element msg
-filterBar i18n toMsg filters state =
-    Ui.column
-        [ Ui.spacing Theme.spacing.sm
-        , Ui.width Ui.fill
-        , Ui.padding Theme.spacing.sm
-        , Ui.rounded Theme.rounding.sm
-        , Ui.background Theme.neutral200
-        ]
-        [ personFilterSection i18n toMsg filters.persons state
-        , categoryFilterSection i18n toMsg filters.categories
-        , currencyFilterSection i18n toMsg filters.currencies state
-        , dateFilterSection i18n toMsg filters.dateRanges
+        -- Clear all
         , if Filter.isEntryFilterActive filters then
             Ui.el
-                [ Ui.pointer
-                , Ui.Events.onClick (toMsg ClearAllFilters)
-                , Ui.Font.size Theme.fontSize.sm
-                , Ui.Font.color Theme.danger
+                [ Ui.Input.button ClearAllFilters
+                , Ui.width Ui.fill
+                , Ui.paddingTop Theme.spacing.md
+                , Ui.pointer
                 ]
-                (Ui.text (T.filterClearAll i18n))
+                (Ui.el
+                    [ Ui.padding Theme.spacing.sm
+                    , Ui.Font.size Theme.font.sm
+                    , Ui.Font.weight Theme.fontWeight.medium
+                    , Ui.Font.color Theme.danger.text
+                    , Ui.Font.center
+                    , Ui.width Ui.fill
+                    , Ui.rounded Theme.radius.sm
+                    ]
+                    (Ui.text (T.filterClearAll i18n))
+                )
 
           else
             Ui.none
         ]
 
 
-personFilterSection : I18n -> (Msg -> msg) -> Set Member.Id -> GroupState -> Ui.Element msg
-personFilterSection i18n toMsg selected state =
+personFilterSection : I18n -> Set Member.Id -> GroupState -> Ui.Element Msg
+personFilterSection i18n selected state =
     let
         members : List ( Member.Id, String )
         members =
@@ -233,40 +406,40 @@ personFilterSection i18n toMsg selected state =
     filterSection (T.filterPersonLabel i18n)
         (List.map
             (\( id, name ) ->
-                filterChip toMsg (TogglePerson id) name (Set.member id selected)
+                UI.Components.chip { label = name, selected = Set.member id selected, onPress = TogglePerson id }
             )
             members
         )
 
 
-categoryFilterSection : I18n -> (Msg -> msg) -> Set String -> Ui.Element msg
-categoryFilterSection i18n toMsg selected =
+categoryFilterSection : I18n -> Set String -> Ui.Element Msg
+categoryFilterSection i18n selected =
     let
         allCategories : List ( String, String )
         allCategories =
-            [ ( Filter.categoryFilterToString TransferCategory, T.filterCategoryTransfer i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Food), T.categoryFood i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Transport), T.categoryTransport i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Accommodation), T.categoryAccommodation i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Entertainment), T.categoryEntertainment i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Shopping), T.categoryShopping i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Groceries), T.categoryGroceries i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Utilities), T.categoryUtilities i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Healthcare), T.categoryHealthcare i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Other), T.categoryOther i18n )
+            [ ( Filter.categoryFilterToString TransferCategory, "💸 " ++ T.filterCategoryTransfer i18n )
+            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Food), "🍽️ " ++ T.categoryFood i18n )
+            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Transport), "🚗 " ++ T.categoryTransport i18n )
+            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Accommodation), "🏠 " ++ T.categoryAccommodation i18n )
+            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Entertainment), "🎭 " ++ T.categoryEntertainment i18n )
+            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Shopping), "🛍️ " ++ T.categoryShopping i18n )
+            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Groceries), "🛒 " ++ T.categoryGroceries i18n )
+            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Utilities), "⚡ " ++ T.categoryUtilities i18n )
+            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Healthcare), "💊 " ++ T.categoryHealthcare i18n )
+            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Other), "📦 " ++ T.categoryOther i18n )
             ]
     in
     filterSection (T.filterCategoryLabel i18n)
         (List.map
             (\( key, label ) ->
-                filterChip toMsg (ToggleCategory key) label (Set.member key selected)
+                UI.Components.chip { label = label, selected = Set.member key selected, onPress = ToggleCategory key }
             )
             allCategories
         )
 
 
-currencyFilterSection : I18n -> (Msg -> msg) -> Set String -> GroupState -> Ui.Element msg
-currencyFilterSection i18n toMsg selected state =
+currencyFilterSection : I18n -> Set String -> GroupState -> Ui.Element Msg
+currencyFilterSection i18n selected state =
     let
         usedCurrencies : List String
         usedCurrencies =
@@ -286,14 +459,14 @@ currencyFilterSection i18n toMsg selected state =
     filterSection (T.filterCurrencyLabel i18n)
         (List.map
             (\code ->
-                filterChip toMsg (ToggleCurrency code) code (Set.member code selected)
+                UI.Components.chip { label = code, selected = Set.member code selected, onPress = ToggleCurrency code }
             )
             usedCurrencies
         )
 
 
-dateFilterSection : I18n -> (Msg -> msg) -> List DateRange -> Ui.Element msg
-dateFilterSection i18n toMsg activeRanges =
+dateFilterSection : I18n -> List DateRange -> Ui.Element Msg
+dateFilterSection i18n activeRanges =
     let
         presets : List ( DateRange, String )
         presets =
@@ -308,7 +481,7 @@ dateFilterSection i18n toMsg activeRanges =
     filterSection (T.filterDateLabel i18n)
         (List.map
             (\( range, label ) ->
-                filterChip toMsg (ToggleDateRange range) label (List.member range activeRanges)
+                UI.Components.chip { label = label, selected = List.member range activeRanges, onPress = ToggleDateRange range }
             )
             presets
         )
@@ -316,100 +489,610 @@ dateFilterSection i18n toMsg activeRanges =
 
 filterSection : String -> List (Ui.Element msg) -> Ui.Element msg
 filterSection label chips =
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.sm, Ui.Font.color Theme.neutral500 ] (Ui.text label)
+    Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.paddingBottom Theme.spacing.md ]
+        [ Ui.el
+            [ Ui.Font.size Theme.font.xs
+            , Ui.Font.weight Theme.fontWeight.semibold
+            , Ui.Font.letterSpacing Theme.letterSpacing.wide
+            , Ui.Font.color Theme.base.textSubtle
+            ]
+            (Ui.text (String.toUpper label))
         , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.xs ] chips
         ]
 
 
-filterChip : (Msg -> msg) -> Msg -> String -> Bool -> Ui.Element msg
-filterChip toMsg msg label isActive =
+
+-- DATE GROUPING
+
+
+groupedByDate : I18n -> (Member.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> List { entry : Entry.Entry, isDeleted : Bool } -> List (Ui.Element Msg)
+groupedByDate i18n resolveName expandedEntries confirmingAction entries =
     let
-        bgColor : Ui.Attribute msg
-        bgColor =
-            if isActive then
-                Ui.background Theme.primaryLight
+        getDate : Entry.Entry -> Date
+        getDate entry =
+            case entry.kind of
+                Entry.Expense data ->
+                    data.date
 
-            else
-                Ui.background Theme.white
+                Entry.Transfer data ->
+                    data.date
 
-        borderColor : Ui.Attribute msg
-        borderColor =
-            if isActive then
-                Ui.borderColor Theme.primary
-
-            else
-                Ui.borderColor Theme.neutral300
+        groupEntries : List { entry : Entry.Entry, isDeleted : Bool } -> List ( Date, List { entry : Entry.Entry, isDeleted : Bool } )
+        groupEntries items =
+            List.Extra.groupWhile (\e1 e2 -> getDate e1.entry == getDate e2.entry) items
+                |> List.map (\( e1, es ) -> ( getDate e1.entry, e1 :: es ))
     in
+    groupEntries entries
+        |> List.concatMap
+            (\( date, group ) ->
+                dateSeparator date
+                    :: List.map (entryCardView i18n resolveName expandedEntries confirmingAction) group
+            )
+
+
+dateSeparator : Date -> Ui.Element msg
+dateSeparator date =
     Ui.el
-        [ Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
-        , Ui.rounded Theme.rounding.sm
-        , Ui.border Theme.borderWidth.sm
-        , bgColor
-        , borderColor
-        , Ui.pointer
-        , Ui.Font.size Theme.fontSize.sm
-        , Ui.Events.onClick (toMsg msg)
+        [ Ui.paddingTop Theme.spacing.md
+        , Ui.Font.size Theme.font.xs
+        , Ui.Font.weight Theme.fontWeight.semibold
+        , Ui.Font.letterSpacing Theme.letterSpacing.wide
+        , Ui.Font.color Theme.base.textSubtle
+        ]
+        (Ui.text (String.toUpper (formatDate date)))
+
+
+
+-- ENTRY CARD
+
+
+entryCardView : I18n -> (Member.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> { entry : Entry.Entry, isDeleted : Bool } -> Ui.Element Msg
+entryCardView i18n resolveName expandedEntries confirmingAction { entry, isDeleted } =
+    let
+        entryId : Entry.Id
+        entryId =
+            entry.meta.rootId
+
+        isExpanded : Bool
+        isExpanded =
+            Set.member entryId expandedEntries
+
+        headerEl : Ui.Element Msg
+        headerEl =
+            case entry.kind of
+                Entry.Expense data ->
+                    expenseCardHeader i18n resolveName data
+
+                Entry.Transfer data ->
+                    transferCardHeader i18n resolveName data
+
+        cardEl : Ui.Element Msg
+        cardEl =
+            UI.Components.card [ Ui.paddingXY Theme.spacing.lg Theme.spacing.md ]
+                [ Ui.el [ Ui.Input.button (ToggleEntry entryId), Ui.pointer ]
+                    headerEl
+                , if isExpanded then
+                    entryDetail i18n resolveName entryId entry isDeleted confirmingAction
+
+                  else
+                    Ui.none
+                ]
+    in
+    if isDeleted then
+        Ui.el [ Ui.opacity 0.5 ] cardEl
+
+    else
+        cardEl
+
+
+expenseCardHeader : I18n -> (Member.Id -> String) -> Entry.ExpenseData -> Ui.Element msg
+expenseCardHeader i18n resolveName data =
+    Ui.column [ Ui.width Ui.fill ]
+        [ -- Top row: description + amount
+          Ui.row [ Ui.width Ui.fill ]
+            [ Ui.el
+                [ Ui.Font.weight Theme.fontWeight.semibold
+                , Ui.Font.size Theme.font.md
+                ]
+                (Ui.text data.description)
+            , Ui.el
+                [ Ui.alignRight
+                , Ui.Font.weight Theme.fontWeight.bold
+                , Ui.Font.size Theme.font.md
+                , Ui.Font.letterSpacing Theme.letterSpacing.tight
+                ]
+                (Ui.text (Format.formatCentsWithCurrency data.amount data.currency))
+            ]
+
+        -- Meta row: date + category tag
+        , Ui.row
+            [ Ui.spacing Theme.spacing.xs
+            , Ui.paddingTop Theme.spacing.xs
+            , Ui.contentCenterY
+            , Ui.Font.size Theme.font.sm
+            , Ui.Font.color Theme.base.textSubtle
+            ]
+            [ Ui.el [ Ui.width Ui.shrink ] (Ui.text (formatShortDate data.date))
+            , case data.category of
+                Just cat ->
+                    entryTag (categoryLabel i18n cat)
+
+                Nothing ->
+                    Ui.none
+
+            -- Flow: payer → recipients
+            , Ui.row
+                [ Ui.spacing Theme.spacing.xs
+                , Ui.width Ui.shrink
+                , Ui.contentCenterY
+                , Ui.alignRight
+                ]
+                [ Ui.text (payerText resolveName data.payers)
+                , Ui.el [ Ui.Font.color Theme.base.textSubtle ] (Ui.text "→")
+                , Ui.text (recipientText resolveName data.beneficiaries)
+                ]
+            ]
+        ]
+
+
+transferCardHeader : I18n -> (Member.Id -> String) -> Entry.TransferData -> Ui.Element msg
+transferCardHeader i18n resolveName data =
+    Ui.column [ Ui.width Ui.fill ]
+        [ -- Top row: "Transfer" + amount
+          Ui.row [ Ui.width Ui.fill ]
+            [ Ui.el
+                [ Ui.Font.weight Theme.fontWeight.semibold
+                , Ui.Font.size Theme.font.md
+                ]
+                (Ui.text (T.entryTransfer i18n))
+            , Ui.el
+                [ Ui.alignRight
+                , Ui.Font.weight Theme.fontWeight.bold
+                , Ui.Font.size Theme.font.md
+                , Ui.Font.letterSpacing Theme.letterSpacing.tight
+                ]
+                (Ui.text (Format.formatCentsWithCurrency data.amount data.currency))
+            ]
+
+        -- Meta row: date + transfer tag + flow from->to
+        , Ui.row
+            [ Ui.spacing Theme.spacing.xs
+            , Ui.paddingTop Theme.spacing.xs
+            , Ui.Font.color Theme.base.textSubtle
+            , Ui.Font.size Theme.font.sm
+            , Ui.contentCenterY
+            ]
+            [ Ui.el [ Ui.width Ui.shrink ] (Ui.text (formatShortDate data.date))
+            , entryTag ("💸 " ++ T.filterCategoryTransfer i18n)
+
+            -- Flow: from → to
+            , Ui.row
+                [ Ui.spacing Theme.spacing.xs
+                , Ui.width Ui.shrink
+                , Ui.contentCenterY
+                , Ui.alignRight
+                ]
+                [ Ui.text (resolveName data.from)
+                , Ui.el [ Ui.Font.color Theme.base.textSubtle ] (Ui.text "→")
+                , Ui.text (resolveName data.to)
+                ]
+            ]
+        ]
+
+
+entryTag : String -> Ui.Element msg
+entryTag label =
+    Ui.el
+        [ Ui.Font.size Theme.font.xs
+        , Ui.Font.weight Theme.fontWeight.semibold
+        , Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
+        , Ui.rounded Theme.radius.md
+        , Ui.background Theme.base.tint
+        , Ui.Font.color Theme.base.textSubtle
+        , Ui.width Ui.shrink
         ]
         (Ui.text label)
 
 
-entryRow : I18n -> (Entry.Id -> String) -> (Entry.Id -> msg) -> { entry : Entry.Entry, isDeleted : Bool } -> Ui.Element msg
-entryRow i18n resolveName onEntryClick { entry, isDeleted } =
-    let
-        card : Ui.Element msg
-        card =
-            UI.Components.entryCard i18n resolveName (onEntryClick entry.meta.rootId) entry
-    in
-    if isDeleted then
-        Ui.el [ Ui.opacity 0.5 ]
-            (Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
-                [ card
-                , Ui.el
-                    [ Ui.Font.size Theme.fontSize.sm
-                    , Ui.Font.color Theme.danger
-                    , Ui.Font.bold
-                    ]
-                    (Ui.text (T.entryDeletedBadge i18n))
-                ]
-            )
+categoryLabel : I18n -> Entry.Category -> String
+categoryLabel i18n cat =
+    case cat of
+        Entry.Food ->
+            "🍽️ " ++ T.categoryFood i18n
 
-    else
-        card
+        Entry.Transport ->
+            "🚗 " ++ T.categoryTransport i18n
+
+        Entry.Accommodation ->
+            "🏠 " ++ T.categoryAccommodation i18n
+
+        Entry.Entertainment ->
+            "🎭 " ++ T.categoryEntertainment i18n
+
+        Entry.Shopping ->
+            "🛍️ " ++ T.categoryShopping i18n
+
+        Entry.Groceries ->
+            "🛒 " ++ T.categoryGroceries i18n
+
+        Entry.Utilities ->
+            "⚡ " ++ T.categoryUtilities i18n
+
+        Entry.Healthcare ->
+            "💊 " ++ T.categoryHealthcare i18n
+
+        Entry.Other ->
+            "📦 " ++ T.categoryOther i18n
 
 
-deletedToggle : I18n -> Bool -> Int -> msg -> Ui.Element msg
-deletedToggle i18n showDeleted count onToggle =
-    Ui.el
-        [ Ui.pointer
-        , Ui.Events.onClick onToggle
-        , Ui.Font.size Theme.fontSize.sm
-        , Ui.Font.color Theme.primary
+payerText : (Member.Id -> String) -> List Entry.Payer -> String
+payerText resolveName payers =
+    case payers of
+        [] ->
+            ""
+
+        [ single ] ->
+            resolveName single.memberId
+
+        multiple ->
+            String.join ", " (List.map (.memberId >> resolveName) multiple)
+
+
+recipientText : (Member.Id -> String) -> List Entry.Beneficiary -> String
+recipientText resolveName beneficiaries =
+    case beneficiaries of
+        [] ->
+            ""
+
+        [ single ] ->
+            case single of
+                Entry.ShareBeneficiary { memberId } ->
+                    resolveName memberId
+
+                Entry.ExactBeneficiary { memberId } ->
+                    resolveName memberId
+
+        _ ->
+            let
+                names : List String
+                names =
+                    List.map
+                        (\b ->
+                            case b of
+                                Entry.ShareBeneficiary { memberId } ->
+                                    resolveName memberId
+
+                                Entry.ExactBeneficiary { memberId } ->
+                                    resolveName memberId
+                        )
+                        beneficiaries
+            in
+            case names of
+                first :: rest ->
+                    first ++ " +" ++ String.fromInt (List.length rest)
+
+                [] ->
+                    ""
+
+
+
+-- ENTRY DETAIL (expanded)
+
+
+entryDetail : I18n -> (Member.Id -> String) -> Entry.Id -> Entry.Entry -> Bool -> Maybe ( Entry.Id, ConfirmAction ) -> Ui.Element Msg
+entryDetail i18n resolveName entryId entry isDeleted confirmingAction =
+    Ui.column
+        [ Ui.paddingTop Theme.spacing.md
+        , Ui.spacing Theme.spacing.md
         ]
-        (Ui.text
-            (if showDeleted then
-                T.entriesHideDeleted i18n
+        [ entryContent i18n resolveName entry
 
-             else
-                T.entriesShowDeleted (String.fromInt count) i18n
+        -- , metadataFooter i18n resolveName entry
+        , actionButtons i18n
+            entryId
+            isDeleted
+            (case confirmingAction of
+                Just ( id, action ) ->
+                    if id == entryId then
+                        Just action
+
+                    else
+                        Nothing
+
+                Nothing ->
+                    Nothing
             )
+        ]
+
+
+entryContent : I18n -> (Member.Id -> String) -> Entry.Entry -> Ui.Element msg
+entryContent i18n resolveName entry =
+    case entry.kind of
+        Entry.Expense data ->
+            expenseContent i18n resolveName data
+
+        Entry.Transfer data ->
+            transferContent i18n resolveName data
+
+
+expenseContent : I18n -> (Member.Id -> String) -> Entry.ExpenseData -> Ui.Element msg
+expenseContent i18n resolveName data =
+    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+        (List.concat
+            [ [ detailRow (T.newEntryDescriptionLabel i18n) data.description
+              , detailRow (T.entryDetailDate i18n) (Date.toString data.date)
+              , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency data.amount data.currency)
+              ]
+            , defaultCurrencyAmountRow data.defaultCurrencyAmount
+            , [ detailRow (T.entryDetailPaidBy i18n) (payerNames resolveName data.payers)
+              , beneficiariesSection i18n resolveName data.beneficiaries
+              ]
+            , detailCategoryRow i18n data.category
+            , optionalRow (T.entryDetailNotes i18n) data.notes
+            ]
         )
 
 
-newEntryButton : I18n -> msg -> Ui.Element msg
-newEntryButton i18n onNewEntry =
-    Ui.el
-        [ Ui.Input.button onNewEntry
-        , Ui.width Ui.fill
-        , Ui.padding Theme.spacing.md
-        , Ui.rounded Theme.rounding.md
-        , Ui.background Theme.primary
-        , Ui.Font.color Theme.white
-        , Ui.Font.center
-        , Ui.Font.bold
-        , Ui.pointer
+transferContent : I18n -> (Member.Id -> String) -> Entry.TransferData -> Ui.Element msg
+transferContent i18n resolveName data =
+    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+        (List.concat
+            [ [ detailRow (T.entryDetailDate i18n) (Date.toString data.date)
+              , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency data.amount data.currency)
+              ]
+            , defaultCurrencyAmountRow data.defaultCurrencyAmount
+            , [ detailRow (T.entryDetailFrom i18n) (resolveName data.from)
+              , detailRow (T.entryDetailTo i18n) (resolveName data.to)
+              ]
+            , optionalRow (T.entryDetailNotes i18n) data.notes
+            ]
+        )
+
+
+defaultCurrencyAmountRow : Maybe Int -> List (Ui.Element msg)
+defaultCurrencyAmountRow maybeAmount =
+    case maybeAmount of
+        Just amount ->
+            [ Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.base.textSubtle
+                ]
+                (Ui.text ("≈ " ++ Format.formatCents amount))
+            ]
+
+        Nothing ->
+            []
+
+
+detailRow : String -> String -> Ui.Element msg
+detailRow label value =
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        [ Ui.el
+            [ Ui.Font.size Theme.font.sm
+            , Ui.Font.color Theme.base.textSubtle
+            ]
+            (Ui.text label)
+        , Ui.el
+            [ Ui.Font.size Theme.font.md
+            , Ui.Font.weight Theme.fontWeight.medium
+            ]
+            (Ui.text value)
         ]
-        (Ui.text (T.shellNewEntry i18n))
+
+
+optionalRow : String -> Maybe String -> List (Ui.Element msg)
+optionalRow label maybeValue =
+    case maybeValue of
+        Just value ->
+            [ detailRow label value ]
+
+        Nothing ->
+            []
+
+
+payerNames : (Member.Id -> String) -> List Entry.Payer -> String
+payerNames resolveName payers =
+    payers
+        |> List.map (\p -> resolveName p.memberId)
+        |> String.join ", "
+
+
+beneficiariesSection : I18n -> (Member.Id -> String) -> List Entry.Beneficiary -> Ui.Element msg
+beneficiariesSection i18n resolveName beneficiaries =
+    Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+        [ Ui.el
+            [ Ui.Font.size Theme.font.sm
+            , Ui.Font.color Theme.base.textSubtle
+            ]
+            (Ui.text (T.entryDetailSplitAmong i18n))
+        , Ui.row [ Ui.spacing Theme.spacing.sm, Ui.wrap ]
+            (List.map (beneficiaryItem resolveName) beneficiaries
+                |> List.intersperse (Ui.text "·")
+            )
+        ]
+
+
+beneficiaryItem : (Member.Id -> String) -> Entry.Beneficiary -> Ui.Element msg
+beneficiaryItem resolveName beneficiary =
+    case beneficiary of
+        Entry.ShareBeneficiary data ->
+            Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.shrink ]
+                [ Ui.el [ Ui.Font.size Theme.font.md ] (Ui.text (resolveName data.memberId))
+                , if data.shares > 1 then
+                    Ui.el
+                        [ Ui.Font.size Theme.font.sm
+                        , Ui.Font.color Theme.base.textSubtle
+                        ]
+                        (Ui.text ("×" ++ String.fromInt data.shares))
+
+                  else
+                    Ui.none
+                ]
+
+        Entry.ExactBeneficiary data ->
+            Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.shrink ]
+                [ Ui.el [ Ui.Font.size Theme.font.md ] (Ui.text (resolveName data.memberId))
+                , Ui.el
+                    [ Ui.Font.size Theme.font.sm
+                    , Ui.Font.color Theme.base.textSubtle
+                    , Ui.alignBottom
+                    ]
+                    (Ui.text (Format.formatCents data.amount))
+                ]
+
+
+detailCategoryRow : I18n -> Maybe Entry.Category -> List (Ui.Element msg)
+detailCategoryRow i18n maybeCategory =
+    case maybeCategory of
+        Just category ->
+            [ detailRow (T.entryDetailCategory i18n) (detailCategoryLabel i18n category) ]
+
+        Nothing ->
+            []
+
+
+detailCategoryLabel : I18n -> Entry.Category -> String
+detailCategoryLabel i18n category =
+    case category of
+        Entry.Food ->
+            T.categoryFood i18n
+
+        Entry.Transport ->
+            T.categoryTransport i18n
+
+        Entry.Accommodation ->
+            T.categoryAccommodation i18n
+
+        Entry.Entertainment ->
+            T.categoryEntertainment i18n
+
+        Entry.Shopping ->
+            T.categoryShopping i18n
+
+        Entry.Groceries ->
+            T.categoryGroceries i18n
+
+        Entry.Utilities ->
+            T.categoryUtilities i18n
+
+        Entry.Healthcare ->
+            T.categoryHealthcare i18n
+
+        Entry.Other ->
+            T.categoryOther i18n
+
+
+actionButtons : I18n -> Entry.Id -> Bool -> Maybe ConfirmAction -> Ui.Element Msg
+actionButtons i18n entryId isDeleted confirmAction =
+    case confirmAction of
+        Just ConfirmDelete ->
+            confirmSection i18n
+                { warning = T.entryDeleteWarning i18n
+                , confirmLabel = T.entryDeleteConfirm i18n
+                , confirmIcon = FeatherIcons.trash2
+                , bgColor = Theme.danger.solid
+                , textColor = Theme.danger.solidText
+                }
+
+        Just ConfirmRestore ->
+            confirmSection i18n
+                { warning = T.entryRestoreWarning i18n
+                , confirmLabel = T.entryRestoreConfirm i18n
+                , confirmIcon = FeatherIcons.rotateCcw
+                , bgColor = Theme.success.solid
+                , textColor = Theme.success.solidText
+                }
+
+        Nothing ->
+            defaultButtons i18n entryId isDeleted
+
+
+confirmSection : I18n -> { warning : String, confirmLabel : String, confirmIcon : FeatherIcons.Icon, bgColor : Ui.Color, textColor : Ui.Color } -> Ui.Element Msg
+confirmSection i18n config =
+    Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+        [ Ui.el
+            [ Ui.width Ui.fill
+            , Ui.padding Theme.spacing.md
+            , Ui.rounded Theme.radius.md
+            , Ui.background Theme.danger.tint
+            , Ui.Font.color Theme.danger.text
+            , Ui.Font.size Theme.font.sm
+            ]
+            (Ui.text config.warning)
+        , Ui.row [ Ui.spacing Theme.spacing.sm ]
+            [ Ui.row
+                [ Ui.Input.button Confirm
+                , Ui.width Ui.fill
+                , Ui.spacing Theme.spacing.sm
+                , Ui.contentCenterX
+                , Ui.contentCenterY
+                , Ui.padding Theme.spacing.md
+                , Ui.rounded Theme.radius.md
+                , Ui.background config.bgColor
+                , Ui.Font.color config.textColor
+                , Ui.Font.weight Theme.fontWeight.semibold
+                , Ui.pointer
+                ]
+                [ UI.Components.featherIcon 16 config.confirmIcon
+                , Ui.text config.confirmLabel
+                ]
+            , UI.Components.btnOutline []
+                { label = T.memberRenameCancel i18n
+                , icon = Nothing
+                , onPress = CancelConfirm
+                }
+            ]
+        ]
+
+
+defaultButtons : I18n -> Entry.Id -> Bool -> Ui.Element Msg
+defaultButtons i18n entryId isDeleted =
+    Ui.row [ Ui.spacing Theme.spacing.sm ]
+        [ UI.Components.btnOutline []
+            { label = T.entryDetailEditButton i18n
+            , icon = Just (UI.Components.featherIcon 16 FeatherIcons.edit)
+            , onPress = ClickEdit entryId
+            }
+        , if isDeleted then
+            Ui.row
+                [ Ui.Input.button (ClickRestore entryId)
+                , Ui.width Ui.fill
+                , Ui.spacing Theme.spacing.sm
+                , Ui.contentCenterX
+                , Ui.contentCenterY
+                , Ui.padding Theme.spacing.md
+                , Ui.rounded Theme.radius.md
+                , Ui.background Theme.success.solid
+                , Ui.Font.color Theme.success.solidText
+                , Ui.Font.weight Theme.fontWeight.semibold
+                , Ui.pointer
+                ]
+                [ UI.Components.featherIcon 16 FeatherIcons.rotateCcw
+                , Ui.text (T.entryDetailRestoreButton i18n)
+                ]
+
+          else
+            Ui.row
+                [ Ui.Input.button (ClickDelete entryId)
+                , Ui.width Ui.fill
+                , Ui.spacing Theme.spacing.sm
+                , Ui.contentCenterX
+                , Ui.contentCenterY
+                , Ui.padding Theme.spacing.md
+                , Ui.rounded Theme.radius.md
+                , Ui.background Theme.danger.solid
+                , Ui.Font.color Theme.danger.solidText
+                , Ui.Font.weight Theme.fontWeight.semibold
+                , Ui.pointer
+                ]
+                [ UI.Components.featherIcon 16 FeatherIcons.trash2
+                , Ui.text (T.entryDetailDeleteButton i18n)
+                ]
+        ]
+
+
+
+-- SORT KEY
 
 
 entrySortKey : Entry.Entry -> ( Int, Int, String )
@@ -428,3 +1111,65 @@ entrySortKey entry =
     , -(Time.posixToMillis entry.meta.createdAt)
     , entry.meta.id
     )
+
+
+
+-- DATE FORMATTING HELPERS
+
+
+monthName : Int -> String
+monthName m =
+    case m of
+        1 ->
+            "January"
+
+        2 ->
+            "February"
+
+        3 ->
+            "March"
+
+        4 ->
+            "April"
+
+        5 ->
+            "May"
+
+        6 ->
+            "June"
+
+        7 ->
+            "July"
+
+        8 ->
+            "August"
+
+        9 ->
+            "September"
+
+        10 ->
+            "October"
+
+        11 ->
+            "November"
+
+        12 ->
+            "December"
+
+        _ ->
+            ""
+
+
+shortMonthName : Int -> String
+shortMonthName m =
+    String.left 3 (monthName m)
+
+
+formatDate : Date -> String
+formatDate date =
+    monthName date.month ++ " " ++ String.fromInt date.day ++ ", " ++ String.fromInt date.year
+
+
+formatShortDate : Date -> String
+formatShortDate date =
+    shortMonthName date.month ++ " " ++ String.fromInt date.day

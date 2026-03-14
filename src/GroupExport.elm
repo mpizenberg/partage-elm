@@ -9,14 +9,13 @@ import File.Download
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Set exposing (Set)
-import Storage exposing (GroupSummary)
 import Time
 
 
 {-| All data needed to export or import a group.
 -}
 type alias ExportData =
-    { group : GroupSummary
+    { group : Group.Summary
     , groupKey : Maybe String
     , events : List Event.Envelope
     }
@@ -29,7 +28,7 @@ encode now data =
     Encode.object
         [ ( "format", Encode.string "partage-group-v1" )
         , ( "exportedAt", Encode.int (Time.posixToMillis now) )
-        , ( "group", Storage.encodeGroupSummary data.group )
+        , ( "group", Group.encodeSummary data.group )
         , ( "groupKey", maybeEncode Encode.string data.groupKey )
         , ( "events", Encode.list Event.encodeEnvelope data.events )
         ]
@@ -45,7 +44,7 @@ decoder =
             (\format ->
                 if format == "partage-group-v1" then
                     Decode.map3 ExportData
-                        (Decode.field "group" Storage.groupSummaryDecoder)
+                        (Decode.field "group" Group.summaryDecoder)
                         (Decode.field "groupKey" (Decode.nullable Decode.string))
                         (Decode.field "events" (Decode.list Event.envelopeDecoder))
 
@@ -56,7 +55,7 @@ decoder =
 
 {-| Download a group export as a JSON file.
 -}
-downloadGroup : Time.Posix -> GroupSummary -> List Event.Envelope -> Maybe String -> Cmd msg
+downloadGroup : Time.Posix -> Group.Summary -> List Event.Envelope -> Maybe String -> Cmd msg
 downloadGroup now summary events maybeKey =
     let
         json : String

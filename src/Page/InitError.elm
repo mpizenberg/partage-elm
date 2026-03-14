@@ -1,5 +1,6 @@
 module Page.InitError exposing (view)
 
+import UI.Components
 import UI.Theme as Theme
 import Ui
 import Ui.Font
@@ -9,9 +10,19 @@ import Ui.Font
 -}
 view : String -> Ui.Element msg
 view errorMsg =
-    Ui.column [ Ui.spacing Theme.spacing.md, Ui.centerX, Ui.paddingXY 0 Theme.spacing.xl ]
-        [ Ui.el [ Ui.Font.size Theme.fontSize.xl, Ui.Font.bold, Ui.Font.color Theme.danger ]
+    Ui.column [ Ui.spacing Theme.spacing.lg, Ui.centerX, Ui.paddingXY 0 Theme.spacing.xxl ]
+        [ Ui.el
+            [ Ui.Font.size Theme.font.xxl
+            , Ui.Font.weight Theme.fontWeight.bold
+            , Ui.Font.color Theme.danger.text
+            , Ui.centerX
+            ]
             (Ui.text "Error")
-        , Ui.el [ Ui.Font.size Theme.fontSize.md, Ui.Font.color Theme.neutral700 ]
-            (Ui.text errorMsg)
+        , UI.Components.card [ Ui.padding Theme.spacing.lg ]
+            [ Ui.el
+                [ Ui.Font.size Theme.font.md
+                , Ui.Font.color Theme.base.text
+                ]
+                (Ui.text errorMsg)
+            ]
         ]

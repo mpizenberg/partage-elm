@@ -1,182 +1,362 @@
 module UI.Theme exposing
-    ( balanceColor
-    , borderWidth
+    ( ColorScale, Scale
+    , base, primary, success, warning, danger
+    , font, spacing, radius, sizing
+    , fontFamily, fontWeight
+    , letterSpacing
+    , border
+    , shadow, shadowXl, shadowAccent, shadowKnob
     , contentMaxWidth
-    , danger
-    , dangerLight
-    , fontSize
-    , neutral200
-    , neutral300
-    , neutral500
-    , neutral700
-    , primary
-    , primaryLight
-    , rounding
-    , spacing
-    , success
-    , successLight
-    , warning
-    , warningLight
-    , white
     )
 
-{-| Design tokens: colors, spacing, and layout constants.
+{-| Design tokens for the warm minimal theme.
+
+
+# Color Palette
+
+6 colors, each with a 15-step scale.
+
+@docs ColorScale, Scale
+@docs base, primary, success, warning, danger
+
+
+# Size Scales
+
+4 scales with 7 levels each: xs, sm, md, lg, xl, xxl, xxxl.
+
+@docs font, spacing, radius, sizing
+
+
+# Typography
+
+@docs fontFamily, fontWeight
+@docs letterSpacing
+
+
+# Borders
+
+@docs border
+
+
+# Shadows
+
+@docs shadow, shadowXl, shadowAccent, shadowKnob
+
+
+# Layout
+
+@docs contentMaxWidth
+
 -}
 
-import Domain.Balance as Balance
 import Ui
+import Ui.Font
+import Ui.Shadow
 
 
-{-| Maximum width for the main content area.
+
+-- COLOR SCALE TYPE
+
+
+{-| A color scale with 15 steps, covering backgrounds, tints, accents,
+solids, text, and shadow.
 -}
-contentMaxWidth : Int
-contentMaxWidth =
-    768
+type alias ColorScale =
+    { bg : Ui.Color
+    , bgSubtle : Ui.Color
+    , tint : Ui.Color
+    , tintSubtle : Ui.Color
+    , tintStrong : Ui.Color
+    , accent : Ui.Color
+    , accentSubtle : Ui.Color
+    , accentStrong : Ui.Color
+    , solid : Ui.Color
+    , solidSubtle : Ui.Color
+    , solidStrong : Ui.Color
+    , solidText : Ui.Color
+    , text : Ui.Color
+    , textSubtle : Ui.Color
+    , shadow : Ui.Color
+    }
 
 
-{-| Standard spacing scale.
+
+-- COLOR PALETTE
+
+
+{-| Base color — warm neutrals for backgrounds, text, and general content.
 -}
-spacing : { xs : Int, sm : Int, md : Int, lg : Int, xl : Int }
+base : ColorScale
+base =
+    { bg = Ui.rgb 255 248 240
+    , bgSubtle = Ui.rgb 247 240 232
+    , tint = Ui.rgba 176 168 159 0.1
+    , tintSubtle = Ui.rgba 176 168 159 0.06
+    , tintStrong = Ui.rgba 176 168 159 0.16
+    , accent = Ui.rgb 237 232 225
+    , accentSubtle = Ui.rgb 243 238 231
+    , accentStrong = Ui.rgb 224 218 210
+    , solid = Ui.rgb 122 117 112
+    , solidSubtle = Ui.rgb 107 102 97
+    , solidStrong = Ui.rgb 137 132 127
+    , solidText = Ui.rgb 255 255 255
+    , text = Ui.rgb 45 45 45
+    , textSubtle = Ui.rgb 122 117 112
+    , shadow = Ui.rgb 45 45 45
+    }
+
+
+{-| Primary color — warm coral for highlights, CTAs, accent elements.
+-}
+primary : ColorScale
+primary =
+    { bg = Ui.rgb 255 246 244
+    , bgSubtle = Ui.rgb 253 237 233
+    , tint = Ui.rgba 232 114 92 0.1
+    , tintSubtle = Ui.rgba 232 114 92 0.06
+    , tintStrong = Ui.rgba 232 114 92 0.16
+    , accent = Ui.rgb 232 114 92
+    , accentSubtle = Ui.rgb 240 150 133
+    , accentStrong = Ui.rgb 212 98 78
+    , solid = Ui.rgb 232 114 92
+    , solidSubtle = Ui.rgb 212 98 78
+    , solidStrong = Ui.rgb 245 130 110
+    , solidText = Ui.rgb 255 255 255
+    , text = Ui.rgb 196 80 60
+    , textSubtle = Ui.rgb 218 105 85
+    , shadow = Ui.rgb 232 114 92
+    }
+
+
+{-| Success color — sage green for positive feedback and confirmations.
+-}
+success : ColorScale
+success =
+    { bg = Ui.rgb 244 250 247
+    , bgSubtle = Ui.rgb 232 244 238
+    , tint = Ui.rgba 107 144 128 0.1
+    , tintSubtle = Ui.rgba 107 144 128 0.06
+    , tintStrong = Ui.rgba 107 144 128 0.16
+    , accent = Ui.rgb 107 144 128
+    , accentSubtle = Ui.rgb 140 170 157
+    , accentStrong = Ui.rgb 82 122 106
+    , solid = Ui.rgb 82 122 106
+    , solidSubtle = Ui.rgb 65 105 89
+    , solidStrong = Ui.rgb 99 139 123
+    , solidText = Ui.rgb 255 255 255
+    , text = Ui.rgb 45 90 74
+    , textSubtle = Ui.rgb 82 122 106
+    , shadow = Ui.rgb 45 90 74
+    }
+
+
+{-| Warning color — warm amber for cautionary content.
+-}
+warning : ColorScale
+warning =
+    { bg = Ui.rgb 255 250 240
+    , bgSubtle = Ui.rgb 254 243 220
+    , tint = Ui.rgba 217 160 6 0.1
+    , tintSubtle = Ui.rgba 217 160 6 0.06
+    , tintStrong = Ui.rgba 217 160 6 0.16
+    , accent = Ui.rgb 217 160 6
+    , accentSubtle = Ui.rgb 230 180 50
+    , accentStrong = Ui.rgb 196 140 0
+    , solid = Ui.rgb 196 140 0
+    , solidSubtle = Ui.rgb 176 124 0
+    , solidStrong = Ui.rgb 216 156 10
+    , solidText = Ui.rgb 255 255 255
+    , text = Ui.rgb 140 100 0
+    , textSubtle = Ui.rgb 176 124 0
+    , shadow = Ui.rgb 140 100 0
+    }
+
+
+{-| Danger color — muted red for errors and destructive actions.
+-}
+danger : ColorScale
+danger =
+    { bg = Ui.rgb 254 246 244
+    , bgSubtle = Ui.rgb 252 234 230
+    , tint = Ui.rgba 196 101 90 0.1
+    , tintSubtle = Ui.rgba 196 101 90 0.06
+    , tintStrong = Ui.rgba 196 101 90 0.16
+    , accent = Ui.rgb 196 101 90
+    , accentSubtle = Ui.rgb 216 135 125
+    , accentStrong = Ui.rgb 176 85 74
+    , solid = Ui.rgb 196 101 90
+    , solidSubtle = Ui.rgb 176 85 74
+    , solidStrong = Ui.rgb 216 117 106
+    , solidText = Ui.rgb 255 255 255
+    , text = Ui.rgb 160 60 48
+    , textSubtle = Ui.rgb 196 101 90
+    , shadow = Ui.rgb 160 60 48
+    }
+
+
+
+-- SIZE SCALES
+
+
+type alias Scale =
+    { xs : Int, sm : Int, md : Int, lg : Int, xl : Int, xxl : Int, xxxl : Int }
+
+
+{-| Font size scale. `md` (15px) is the default body text size.
+-}
+font : Scale
+font =
+    { xs = 10
+    , sm = 12
+    , md = 15
+    , lg = 17
+    , xl = 22
+    , xxl = 28
+    , xxxl = 32
+    }
+
+
+{-| Spacing scale for padding, gaps, and margins.
+-}
+spacing : Scale
 spacing =
     { xs = 4
     , sm = 8
-    , md = 16
-    , lg = 24
-    , xl = 32
+    , md = 12
+    , lg = 16
+    , xl = 24
+    , xxl = 32
+    , xxxl = 48
     }
 
 
-{-| Border radius scale.
+{-| Border radius scale. Roughly 50% of the corresponding sizing.
 -}
-rounding : { sm : Int, md : Int }
-rounding =
-    { sm = 6, md = 8 }
+radius : Scale
+radius =
+    { xs = 4
+    , sm = 6
+    , md = 10
+    , lg = 14
+    , xl = 20
+    , xxl = 28
+    , xxxl = 999
+    }
 
 
-{-| Border width scale.
+{-| Sizing scale for fixed dimensions (buttons, avatars, icons, etc.).
 -}
-borderWidth : { sm : Int, md : Int }
-borderWidth =
-    { sm = 1, md = 2 }
-
-
-{-| Font size scale.
--}
-fontSize : { sm : Int, md : Int, lg : Int, xl : Int, hero : Int }
-fontSize =
-    { sm = 14
-    , md = 16
-    , lg = 18
-    , xl = 22
-    , hero = 28
+sizing : Scale
+sizing =
+    { xs = 16
+    , sm = 24
+    , md = 32
+    , lg = 40
+    , xl = 48
+    , xxl = 56
+    , xxxl = 72
     }
 
 
 
--- COLORS
+-- TYPOGRAPHY
 
 
-{-| Primary brand color (blue).
+{-| Font family: Inter with system fallbacks.
 -}
-primary : Ui.Color
-primary =
-    Ui.rgb 37 99 235
+fontFamily : Ui.Attribute msg
+fontFamily =
+    Ui.Font.family
+        [ Ui.Font.typeface "Inter"
+        , Ui.Font.typeface "-apple-system"
+        , Ui.Font.typeface "BlinkMacSystemFont"
+        , Ui.Font.typeface "Segoe UI"
+        , Ui.Font.typeface "system-ui"
+        , Ui.Font.sansSerif
+        ]
 
 
-{-| Light variant of the primary color.
+{-| Font weight tokens.
 -}
-primaryLight : Ui.Color
-primaryLight =
-    Ui.rgb 219 234 254
+fontWeight : { regular : Int, medium : Int, semibold : Int, bold : Int }
+fontWeight =
+    { regular = 400
+    , medium = 500
+    , semibold = 600
+    , bold = 700
+    }
 
 
-{-| Success color (green).
+{-| Letter spacing tokens.
 -}
-success : Ui.Color
-success =
-    Ui.rgb 22 163 74
+letterSpacing : { tight : Float, normal : Float, wide : Float }
+letterSpacing =
+    { tight = -0.02
+    , normal = 0
+    , wide = 0.06
+    }
 
 
-{-| Light variant of the success color.
+
+-- BORDERS
+
+
+{-| Default border width (1px).
 -}
-successLight : Ui.Color
-successLight =
-    Ui.rgb 220 252 231
+border : Int
+border =
+    1
 
 
-{-| Danger color (red).
+
+-- SHADOWS
+
+
+{-| Standard card shadow.
 -}
-danger : Ui.Color
-danger =
-    Ui.rgb 220 38 38
+shadow : Ui.Attribute msg
+shadow =
+    Ui.Shadow.shadows
+        [ { x = 0, y = 2, size = 0, blur = 12, color = Ui.rgba 45 45 45 0.06 }
+        , { x = 0, y = 1, size = 0, blur = 3, color = Ui.rgba 45 45 45 0.04 }
+        ]
 
 
-{-| Light variant of the danger color.
+{-| Large shadow for prominent cards.
 -}
-dangerLight : Ui.Color
-dangerLight =
-    Ui.rgb 254 226 226
+shadowXl : Ui.Attribute msg
+shadowXl =
+    Ui.Shadow.shadows
+        [ { x = 0, y = 8, size = 0, blur = 32, color = Ui.rgba 45 45 45 0.18 }
+        , { x = 0, y = 2, size = 0, blur = 8, color = Ui.rgba 45 45 45 0.18 }
+        ]
 
 
-{-| Warning color (amber).
+{-| Colored shadow for accent/primary elements (e.g. FAB).
 -}
-warning : Ui.Color
-warning =
-    Ui.rgb 217 119 6
+shadowAccent : Ui.Attribute msg
+shadowAccent =
+    Ui.Shadow.shadows
+        [ { x = 0, y = 4, size = 0, blur = 20, color = Ui.rgba 232 114 92 0.35 }
+        , { x = 0, y = 2, size = 0, blur = 8, color = Ui.rgba 232 114 92 0.2 }
+        ]
 
 
-{-| Light variant of the warning color.
+{-| Subtle shadow for interactive knobs (e.g. toggle switch).
 -}
-warningLight : Ui.Color
-warningLight =
-    Ui.rgb 254 243 199
+shadowKnob : Ui.Attribute msg
+shadowKnob =
+    Ui.Shadow.shadows
+        [ { x = 0, y = 1, size = 0, blur = 3, color = Ui.rgba 0 0 0 0.15 }
+        ]
 
 
-{-| White color.
+
+-- LAYOUT
+
+
+{-| Maximum width for the main content area (mobile-focused).
 -}
-white : Ui.Color
-white =
-    Ui.rgb 255 255 255
-
-
-{-| Neutral gray 200.
--}
-neutral200 : Ui.Color
-neutral200 =
-    Ui.rgb 229 231 235
-
-
-{-| Neutral gray 300.
--}
-neutral300 : Ui.Color
-neutral300 =
-    Ui.rgb 209 213 219
-
-
-{-| Neutral gray 500.
--}
-neutral500 : Ui.Color
-neutral500 =
-    Ui.rgb 107 114 128
-
-
-{-| Neutral gray 700.
--}
-neutral700 : Ui.Color
-neutral700 =
-    Ui.rgb 55 65 81
-
-
-{-| Map a balance status to its display color.
--}
-balanceColor : Balance.Status -> Ui.Color
-balanceColor status =
-    case status of
-        Balance.Creditor ->
-            success
-
-        Balance.Debtor ->
-            danger
-
-        Balance.Settled ->
-            neutral500
+contentMaxWidth : Int
+contentMaxWidth =
+    430

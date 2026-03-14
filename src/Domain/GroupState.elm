@@ -9,6 +9,7 @@ module Domain.GroupState exposing
     , empty
     , resolveMemberName
     , resolveMemberRootId
+    , summarize
     )
 
 {-| Event replay engine that builds group state from a list of events.
@@ -74,6 +75,7 @@ type alias GroupMetadata =
     , description : Maybe String
     , links : List Group.Link
     , defaultCurrency : Currency
+    , createdAt : Time.Posix
     }
 
 
@@ -90,11 +92,34 @@ empty =
         , description = Nothing
         , links = []
         , defaultCurrency = EUR
+        , createdAt = Time.millisToPosix 0
         }
     , activities = []
     , pendingActivities = []
     , rejectedEntries = []
     , settlementPreferences = []
+    }
+
+
+
+-- TODO: add argument of current id to extract user balance
+
+
+summarize : Member.Id -> Group.Id -> GroupState -> Group.Summary
+summarize memberId groupId state =
+    { id = groupId
+    , name = state.groupMeta.name
+    , defaultCurrency = state.groupMeta.defaultCurrency
+    , isSubscribed = False
+    , createdAt = state.groupMeta.createdAt
+    , memberCount =
+        -- TODO: maybe a more efficient way than recreate a dict would be better ^^
+        Dict.filter (\_ m -> not m.isRetired) state.members
+            |> Dict.size
+    , myBalanceCents =
+        Dict.get (resolveMemberRootId state memberId) state.balances
+            |> Maybe.map .netBalance
+            |> Maybe.withDefault 0
     }
 
 
@@ -138,16 +163,16 @@ applyEvent envelope state =
 
         newState : GroupState
         newState =
-            applyPayload envelope.payload state
+            applyPayload envelope.clientTimestamp envelope.payload state
     in
     { newState | pendingActivities = activity :: newState.pendingActivities }
 
 
-applyPayload : Payload -> GroupState -> GroupState
-applyPayload payload state =
+applyPayload : Time.Posix -> Payload -> GroupState -> GroupState
+applyPayload timestamp payload state =
     case payload of
         MemberCreated data ->
-            applyMemberCreated data state
+            applyMemberCreated timestamp data state
 
         MemberRenamed data ->
             applyMemberRenamed data state
@@ -177,7 +202,7 @@ applyPayload payload state =
             applyEntryUndeleted data state
 
         GroupCreated data ->
-            applyGroupCreated data state
+            applyGroupCreated timestamp data state
 
         GroupMetadataUpdated change ->
             applyGroupMetadataUpdated change state
@@ -190,8 +215,8 @@ applyPayload payload state =
 -- MEMBER HANDLERS
 
 
-applyMemberCreated : { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id } -> GroupState -> GroupState
-applyMemberCreated data state =
+applyMemberCreated : Time.Posix -> { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id } -> GroupState -> GroupState
+applyMemberCreated timestamp data state =
     if Dict.member data.memberId state.members then
         -- Chain with this rootId already exists, ignore
         state
@@ -211,6 +236,7 @@ applyMemberCreated data state =
                 { rootId = data.memberId
                 , name = data.name
                 , isRetired = False
+                , joinedAt = timestamp
                 , metadata = Member.emptyMetadata
                 , currentMember = memberInfo
                 , allMembers = Dict.singleton data.memberId memberInfo
@@ -484,8 +510,8 @@ applyEntryUndeleted data state =
 -- GROUP METADATA
 
 
-applyGroupCreated : { name : String, defaultCurrency : Currency } -> GroupState -> GroupState
-applyGroupCreated data state =
+applyGroupCreated : Time.Posix -> { name : String, defaultCurrency : Currency } -> GroupState -> GroupState
+applyGroupCreated timestamp data state =
     { state
         | groupMeta =
             { name = data.name
@@ -493,6 +519,7 @@ applyGroupCreated data state =
             , description = Nothing
             , links = []
             , defaultCurrency = data.defaultCurrency
+            , createdAt = timestamp
             }
     }
 
