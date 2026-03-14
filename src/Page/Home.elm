@@ -131,7 +131,11 @@ view i18n ctx toMsg (Model data) groups =
                         }
                     ]
                 , joinInput i18n toMsg data
-                , UI.Components.btnPrimary []
+                , UI.Components.btnPrimary
+                    [ Ui.link (Route.toPath Route.NewGroup)
+                    , Ui.Events.preventDefaultOn "click"
+                        (Json.Decode.succeed ( ctx.onNavigate Route.NewGroup, True ))
+                    ]
                     { label = T.homeNewGroup i18n
                     , onPress = ctx.onNavigate Route.NewGroup
                     }

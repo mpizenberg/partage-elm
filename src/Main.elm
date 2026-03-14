@@ -1435,7 +1435,7 @@ viewPage model =
 
         InitError errorMsg ->
             noOverlay <|
-                UI.Shell.pageShell { title = T.shellPartage model.i18n, onBack = NavigateTo Home }
+                UI.Shell.pageShell { title = T.shellPartage model.i18n, backHref = Route.toPath Home, onBack = NavigateTo Home }
                     (Page.InitError.view model.i18n errorMsg)
 
         Ready readyData ->
@@ -1456,7 +1456,7 @@ viewReady model readyData =
     case model.route of
         Setup ->
             noOverlay <|
-                UI.Shell.pageShell { title = T.shellPartage i18n, onBack = NavigateTo Home }
+                UI.Shell.pageShell { title = T.shellPartage i18n, backHref = Route.toPath Home, onBack = NavigateTo Home }
                     (Page.Setup.view i18n { onGenerate = GenerateIdentity, isGenerating = model.generatingIdentity })
 
         Home ->
@@ -1474,12 +1474,12 @@ viewReady model readyData =
 
         NewGroup ->
             noOverlay <|
-                UI.Shell.pageShell { title = T.shellNewGroup i18n, onBack = NavigateTo Home }
+                UI.Shell.pageShell { title = T.shellNewGroup i18n, backHref = Route.toPath Home, onBack = NavigateTo Home }
                     (Page.NewGroup.view i18n NewGroupMsg model.newGroupModel)
 
         GroupRoute _ (Join _) ->
             noOverlay <|
-                UI.Shell.pageShell { title = T.shellJoinGroup i18n, onBack = NavigateTo Home }
+                UI.Shell.pageShell { title = T.shellJoinGroup i18n, backHref = Route.toPath Home, onBack = NavigateTo Home }
                     (Ui.map JoinGroupMsg (Page.JoinGroup.view i18n model.joinGroupModel))
 
         GroupRoute groupId groupView ->
@@ -1497,7 +1497,7 @@ viewReady model readyData =
 
         About ->
             noOverlay <|
-                UI.Shell.pageShell { title = T.shellPartage i18n, onBack = NavigateTo Home }
+                UI.Shell.pageShell { title = T.shellPartage i18n, backHref = Route.toPath Home, onBack = NavigateTo Home }
                     (Page.About.view i18n
                         { onSwitchLanguage = SwitchLanguage
                         , toMsg = AboutMsg
@@ -1507,7 +1507,7 @@ viewReady model readyData =
 
         NotFound ->
             noOverlay <|
-                UI.Shell.pageShell { title = T.shellPartage i18n, onBack = NavigateTo Home }
+                UI.Shell.pageShell { title = T.shellPartage i18n, backHref = Route.toPath Home, onBack = NavigateTo Home }
                     (Page.NotFound.view i18n)
 
 

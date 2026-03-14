@@ -12,11 +12,13 @@ import FeatherIcons
 import Format
 import Html
 import Html.Attributes
+import Json.Decode
 import List.Extra
 import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
 import Ui
+import Ui.Events
 import Ui.Font
 import Ui.Input
 
@@ -70,6 +72,7 @@ type alias Config msg =
     { onRecordTransfer : Settlement.Transaction -> msg
     , onSavePreferences : { memberRootId : Member.Id, preferredRecipients : List Member.Id } -> msg
     , onNewTransfer : msg
+    , newTransferHref : String
     , toMsg : Msg -> msg
     }
 
@@ -313,17 +316,19 @@ memberBalanceCard i18n config resolveName expandedMember b =
                 )
             ]
         , if isExpanded then
-            transferActionBtn i18n config.onNewTransfer
+            transferActionBtn i18n config.newTransferHref config.onNewTransfer
 
           else
             Ui.none
         ]
 
 
-transferActionBtn : I18n -> msg -> Ui.Element msg
-transferActionBtn i18n onPress =
+transferActionBtn : I18n -> String -> msg -> Ui.Element msg
+transferActionBtn i18n href onPress =
     Ui.row
-        [ Ui.Input.button onPress
+        [ Ui.link href
+        , Ui.Events.preventDefaultOn "click"
+            (Json.Decode.succeed ( onPress, True ))
         , Ui.width Ui.fill
         , Ui.spacing Theme.spacing.xs
         , Ui.contentCenterX

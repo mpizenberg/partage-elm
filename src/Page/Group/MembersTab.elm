@@ -9,6 +9,7 @@ import Domain.Member as Member
 import FeatherIcons
 import Html
 import Html.Attributes
+import Json.Decode
 import QRCode
 import Set exposing (Set)
 import Time
@@ -16,6 +17,7 @@ import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
 import Ui
+import Ui.Events
 import Ui.Font
 import Ui.Input
 
@@ -87,7 +89,9 @@ update msg model =
 -}
 type alias Config msg =
     { onAddMember : msg
+    , addMemberHref : String
     , onEditGroupMetadata : msg
+    , editGroupMetadataHref : String
     , inviteLink : String
     , isSynced : Bool
     , onToggleNotification : msg
@@ -126,7 +130,7 @@ view i18n config toMsg model currentUserRootId state =
             Ui.none
 
         -- Group Info
-        , groupInfoSection i18n config.onEditGroupMetadata state
+        , groupInfoSection i18n config.editGroupMetadataHref config.onEditGroupMetadata state
 
         -- Invite
         , if config.isSynced then
@@ -162,7 +166,12 @@ view i18n config toMsg model currentUserRootId state =
             Ui.none
 
         -- Add Member
-        , UI.Components.btnPrimary [] { label = T.memberAddButton i18n, onPress = config.onAddMember }
+        , UI.Components.btnPrimary
+            [ Ui.link config.addMemberHref
+            , Ui.Events.preventDefaultOn "click"
+                (Json.Decode.succeed ( config.onAddMember, True ))
+            ]
+            { label = T.memberAddButton i18n, onPress = config.onAddMember }
         ]
 
 
@@ -224,8 +233,8 @@ notifIcon =
 -- GROUP INFO CARD
 
 
-groupInfoSection : I18n -> msg -> GroupState -> Ui.Element msg
-groupInfoSection i18n onEditGroupMetadata state =
+groupInfoSection : I18n -> String -> msg -> GroupState -> Ui.Element msg
+groupInfoSection i18n editHref onEditGroupMetadata state =
     let
         meta : GroupMetadata
         meta =
@@ -266,7 +275,12 @@ groupInfoSection i18n onEditGroupMetadata state =
         , Maybe.map viewDescription meta.description
             |> Maybe.withDefault Ui.none
         , viewLinks
-        , UI.Components.btnOutline [ Ui.paddingXY Theme.spacing.md Theme.spacing.sm ]
+        , UI.Components.btnOutline
+            [ Ui.paddingXY Theme.spacing.md Theme.spacing.sm
+            , Ui.link editHref
+            , Ui.Events.preventDefaultOn "click"
+                (Json.Decode.succeed ( onEditGroupMetadata, True ))
+            ]
             { label = editLabel
             , icon = Just (UI.Components.featherIcon 14 FeatherIcons.edit)
             , onPress = onEditGroupMetadata

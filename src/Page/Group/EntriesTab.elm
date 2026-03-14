@@ -13,6 +13,7 @@ import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
 import FeatherIcons
 import Format
+import Json.Decode
 import List.Extra
 import Set exposing (Set)
 import Time
@@ -21,6 +22,7 @@ import UI.Components
 import UI.Theme as Theme
 import Ui
 import Ui.Anim as Anim
+import Ui.Events
 import Ui.Font
 import Ui.Input
 
@@ -68,6 +70,7 @@ type Output
 -}
 type alias Config msg =
     { onNewEntry : msg
+    , newEntryHref : String
     , toMsg : Msg -> msg
     }
 
@@ -231,7 +234,12 @@ view i18n config today (Model data) state =
 
         -- New Entry button
         , Ui.el [ Ui.paddingXY 0 Theme.spacing.lg ] <|
-            UI.Components.btnPrimary [] { label = T.newEntryTitle i18n, onPress = config.onNewEntry }
+            UI.Components.btnPrimary
+                [ Ui.link config.newEntryHref
+                , Ui.Events.preventDefaultOn "click"
+                    (Json.Decode.succeed ( config.onNewEntry, True ))
+                ]
+                { label = T.newEntryTitle i18n, onPress = config.onNewEntry }
 
         -- Search bar + filter button
         , searchFilterRow i18n data.showFilters (Filter.isEntryFilterActive data.filters || data.showDeleted) data.searchQuery |> Ui.map toMsg

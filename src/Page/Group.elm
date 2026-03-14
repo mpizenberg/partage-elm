@@ -1147,7 +1147,7 @@ view config groupView model =
 
 viewLoadingShell : ViewConfig msg -> Ui.Element msg
 viewLoadingShell config =
-    UI.Shell.pageShell { title = T.shellPartage config.i18n, onBack = config.onNavigateHome } <|
+    UI.Shell.pageShell { title = T.shellPartage config.i18n, backHref = Route.toPath Home, onBack = config.onNavigateHome } <|
         Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
             (Ui.text (T.loadingGroup config.i18n))
 
@@ -1174,7 +1174,7 @@ viewGroupPage config groupView loaded model =
 
         NewEntry ->
             noOverlay <|
-                pageShell config.onNavigateHome (T.shellNewEntry config.i18n) <|
+                pageShell config (T.shellNewEntry config.i18n) <|
                     Page.Group.NewEntry.view config.i18n
                         (GroupState.activeMembers loaded.groupState)
                         (config.toMsg << NewEntryMsg)
@@ -1182,7 +1182,7 @@ viewGroupPage config groupView loaded model =
 
         EditEntry _ ->
             noOverlay <|
-                pageShell config.onNavigateHome (T.editEntryTitle config.i18n) <|
+                pageShell config (T.editEntryTitle config.i18n) <|
                     Page.Group.NewEntry.view config.i18n
                         (GroupState.activeMembers loaded.groupState)
                         (config.toMsg << NewEntryMsg)
@@ -1190,37 +1190,43 @@ viewGroupPage config groupView loaded model =
 
         AddVirtualMember ->
             noOverlay <|
-                pageShell config.onNavigateHome (T.memberAddTitle config.i18n) <|
+                pageShell config (T.memberAddTitle config.i18n) <|
                     Page.Group.AddMember.view config.i18n
                         (config.toMsg << AddMemberMsg)
                         model.addMemberModel
 
         EditMemberMetadata _ ->
             noOverlay <|
-                pageShell config.onNavigateHome (T.memberEditMetadataButton config.i18n) <|
+                pageShell config (T.memberEditMetadataButton config.i18n) <|
                     Page.Group.EditMemberMetadata.view config.i18n
                         (config.toMsg << EditMemberMetadataMsg)
                         model.editMemberMetadataModel
 
         EditGroupMetadata ->
             noOverlay <|
-                pageShell config.onNavigateHome (T.groupSettingsTitle config.i18n) <|
+                pageShell config (T.groupSettingsTitle config.i18n) <|
                     Page.Group.EditGroupMetadata.view config.i18n
                         (config.toMsg << EditGroupMetadataMsg)
                         model.editGroupMetadataModel
 
 
-pageShell : msg -> String -> Ui.Element msg -> Ui.Element msg
-pageShell onBack title content =
-    UI.Shell.pageShell { title = title, onBack = onBack } content
+pageShell : ViewConfig msg -> String -> Ui.Element msg -> Ui.Element msg
+pageShell config title content =
+    UI.Shell.pageShell { title = title, backHref = Route.toPath (GroupRoute config.groupId (Tab BalanceTab)), onBack = config.onNavigateHome } content
 
 
 viewTabs : ViewConfig msg -> Member.Id -> LoadedGroup -> Model -> ViewResult msg
 viewTabs config userRootId loaded model =
+    let
+        tabHref : GroupTab -> String
+        tabHref tab =
+            Route.toPath (GroupRoute config.groupId (Tab tab))
+    in
     { content =
         UI.Shell.tabbedShell
             { title = loaded.groupState.groupMeta.name
             , subtitle = ""
+            , backHref = Route.toPath Home
             , onBack = config.onNavigateHome
             , content = tabContent config userRootId loaded model
             }
@@ -1228,7 +1234,11 @@ viewTabs config userRootId loaded model =
         Just <|
             Ui.column [ Ui.spacing Theme.spacing.lg ]
                 [ -- FAB for new entry
-                  UI.Components.fab { label = "+", onPress = config.toMsg (RequestNavigation NewEntry) }
+                  UI.Components.fab
+                    { label = "+"
+                    , href = Route.toPath (GroupRoute config.groupId NewEntry)
+                    , onPress = config.toMsg (RequestNavigation NewEntry)
+                    }
 
                 -- Tab bar
                 , UI.Shell.tabBar
@@ -1237,6 +1247,7 @@ viewTabs config userRootId loaded model =
                     , members = T.tabMembers config.i18n
                     , activity = T.tabActivity config.i18n
                     }
+                    tabHref
                     model.activeTab
                     (\tab -> config.toMsg (RequestNavigation (Tab tab)))
                 ]
@@ -1251,6 +1262,7 @@ tabContent config userRootId loaded model =
                 { onRecordTransfer = \tx -> config.toMsg (SettleTransaction tx)
                 , onSavePreferences = \prefData -> config.toMsg (SaveSettlementPreferences prefData)
                 , onNewTransfer = config.toMsg (RequestNavigation NewEntry)
+                , newTransferHref = Route.toPath (GroupRoute config.groupId NewEntry)
                 , toMsg = config.toMsg << BalanceTabMsg
                 }
                 userRootId
@@ -1260,6 +1272,7 @@ tabContent config userRootId loaded model =
         EntriesTab ->
             Page.Group.EntriesTab.view config.i18n
                 { onNewEntry = config.toMsg (RequestNavigation NewEntry)
+                , newEntryHref = Route.toPath (GroupRoute config.groupId NewEntry)
                 , toMsg = config.toMsg << EntriesTabMsg
                 }
                 config.today
@@ -1269,7 +1282,9 @@ tabContent config userRootId loaded model =
         MembersTab ->
             Page.Group.MembersTab.view config.i18n
                 { onAddMember = config.toMsg (RequestNavigation AddVirtualMember)
+                , addMemberHref = Route.toPath (GroupRoute config.groupId AddVirtualMember)
                 , onEditGroupMetadata = config.toMsg (RequestNavigation EditGroupMetadata)
+                , editGroupMetadataHref = Route.toPath (GroupRoute config.groupId EditGroupMetadata)
                 , inviteLink = config.origin ++ Route.toPath (GroupRoute config.groupId (Join (Symmetric.exportKey loaded.groupKey)))
                 , isSynced = loaded.syncCursor /= Nothing
                 , onToggleNotification = config.toMsg ToggleNotification

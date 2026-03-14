@@ -50,6 +50,7 @@ module UI.Components exposing
 -}
 
 import FeatherIcons
+import Json.Decode
 import Svg.Attributes
 import Translations as T exposing (I18n, Language(..))
 import UI.Theme as Theme
@@ -413,10 +414,12 @@ toggleMemberBtn config =
 
 {-| Floating action button (circular, accent color, positioned bottom-right).
 -}
-fab : { label : String, onPress : msg } -> Ui.Element msg
+fab : { label : String, href : String, onPress : msg } -> Ui.Element msg
 fab config =
     Ui.el
-        [ Ui.Input.button config.onPress
+        [ Ui.link config.href
+        , Ui.Events.preventDefaultOn "click"
+            (Json.Decode.succeed ( config.onPress, True ))
         , Ui.width (Ui.px Theme.sizing.xl)
         , Ui.height (Ui.px Theme.sizing.xl)
         , Ui.rounded Theme.radius.lg
