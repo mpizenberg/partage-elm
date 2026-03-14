@@ -671,21 +671,23 @@ modeToggle i18n current =
         , Ui.borderColor Theme.base.accent
         , Ui.padding Theme.spacing.xs
         ]
-        [ modeBtn { label = T.newEntryKindExpense i18n, active = current == ExpenseKind, onPress = SelectEntryKind ExpenseKind }
-        , modeBtn { label = T.newEntryKindTransfer i18n, active = current == TransferKind, onPress = SelectEntryKind TransferKind }
+        [ modeBtn { label = T.newEntryKindExpense i18n, icon = FeatherIcons.shoppingCart, active = current == ExpenseKind, onPress = SelectEntryKind ExpenseKind }
+        , modeBtn { label = T.newEntryKindTransfer i18n, icon = FeatherIcons.send, active = current == TransferKind, onPress = SelectEntryKind TransferKind }
         ]
 
 
-modeBtn : { label : String, active : Bool, onPress : msg } -> Ui.Element msg
+modeBtn : { label : String, icon : FeatherIcons.Icon, active : Bool, onPress : msg } -> Ui.Element msg
 modeBtn config =
-    Ui.el
+    Ui.row
         [ Ui.Input.button config.onPress
         , Ui.width Ui.fill
+        , Ui.spacing Theme.spacing.sm
         , Ui.paddingXY 0 Theme.spacing.sm
         , Ui.rounded Theme.radius.sm
         , Ui.Font.size Theme.font.md
         , Ui.Font.weight Theme.fontWeight.semibold
-        , Ui.Font.center
+        , Ui.contentCenterX
+        , Ui.contentCenterY
         , Ui.pointer
         , Anim.transition (Anim.ms 200)
             [ Anim.backgroundColor
@@ -704,7 +706,9 @@ modeBtn config =
                 )
             ]
         ]
-        (Ui.text config.label)
+        [ UI.Components.featherIcon 16 config.icon
+        , Ui.text config.label
+        ]
 
 
 expenseFields : I18n -> List Member.ChainState -> ModelData -> List (Ui.Element Msg)
