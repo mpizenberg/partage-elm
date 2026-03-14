@@ -222,7 +222,7 @@
   "entryRestoreWarning": "This will restore the deleted entry.",
   "entryRestoreConfirm": "Confirm Restore",
   "toastCopied": "Copied to clipboard.",
-  "filterActiveCount": "{count} filters active",
+  "filterSectionTitle": "Filters",
   "filterClearAll": "Clear filters",
   "filterPersonLabel": "Person",
   "filterCategoryLabel": "Category",

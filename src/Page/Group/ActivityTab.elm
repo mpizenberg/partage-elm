@@ -115,9 +115,12 @@ view i18n config (Model data) activities =
             List.filter (Filter.matchesActivityFilters data.filters) activities
     in
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
-        [ filterToggleRow i18n config.toMsg data.showFilters data.filters
+        [ filterToggleRow config.toMsg data.showFilters data.filters
         , if data.showFilters then
             filterPanel i18n config data.filters
+
+          else if Filter.isActivityFilterActive data.filters then
+            activeFilterSummary i18n config data.filters
 
           else
             Ui.none
@@ -135,15 +138,11 @@ view i18n config (Model data) activities =
         ]
 
 
-filterToggleRow : I18n -> (Msg -> msg) -> Bool -> ActivityFilters -> Ui.Element msg
-filterToggleRow i18n toMsg showFilters filters =
+filterToggleRow : (Msg -> msg) -> Bool -> ActivityFilters -> Ui.Element msg
+filterToggleRow toMsg showFilters filters =
     let
-        activeCount : Int
-        activeCount =
-            Filter.countActiveActivityFilters filters
-
         ( bg, border, fontColor ) =
-            if showFilters then
+            if showFilters || Filter.isActivityFilterActive filters then
                 ( Theme.primary.solid, Theme.primary.solid, Theme.primary.solidText )
 
             else
@@ -167,16 +166,68 @@ filterToggleRow i18n toMsg showFilters filters =
                 ]
             ]
             (UI.Components.featherIcon 18 FeatherIcons.filter)
-        , if not showFilters && activeCount > 0 then
-            Ui.el
-                [ Ui.Font.size Theme.font.sm
-                , Ui.Font.color Theme.primary.text
-                , Ui.Font.weight Theme.fontWeight.medium
-                ]
-                (Ui.text (T.filterActiveCount (String.fromInt activeCount) i18n))
+        ]
 
-          else
-            Ui.none
+
+activeFilterSummary : I18n -> Config msg -> ActivityFilters -> Ui.Element msg
+activeFilterSummary i18n config filters =
+    let
+        activityTypeLabels : List ( String, String )
+        activityTypeLabels =
+            [ ( Filter.activityTypeToString EntryActivity, T.filterActivityEntry i18n )
+            , ( Filter.activityTypeToString MemberActivity, T.filterActivityMember i18n )
+            , ( Filter.activityTypeToString GroupActivity, T.filterActivityGroup i18n )
+            ]
+
+        typeCategory : String
+        typeCategory =
+            T.filterActivityTypeLabel i18n
+
+        typeChips : List (Ui.Element msg)
+        typeChips =
+            activityTypeLabels
+                |> List.filterMap
+                    (\( key, label ) ->
+                        if Set.member key filters.activityTypes then
+                            Just (filterChip typeCategory label)
+
+                        else
+                            Nothing
+                    )
+
+        actorChips : List (Ui.Element msg)
+        actorChips =
+            Set.toList filters.actors
+                |> List.map (\id -> filterChip (T.filterActorLabel i18n) (config.resolveName id))
+
+        involvedChips : List (Ui.Element msg)
+        involvedChips =
+            Set.toList filters.involvedMembers
+                |> List.map (\id -> filterChip (T.filterInvolvedLabel i18n) (config.resolveName id))
+    in
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        [ UI.Components.sectionLabel (T.filterSectionTitle i18n)
+        , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.xs ]
+            (List.concat [ typeChips, actorChips, involvedChips ])
+        ]
+
+
+filterChip : String -> String -> Ui.Element msg
+filterChip category label =
+    Ui.row
+        [ Ui.Font.size Theme.font.xs
+        , Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
+        , Ui.rounded Theme.radius.md
+        , Ui.background Theme.primary.tint
+        , Ui.width Ui.shrink
+        , Ui.spacing Theme.spacing.xs
+        ]
+        [ Ui.el [ Ui.Font.color Theme.base.textSubtle ] (Ui.text (category ++ ":"))
+        , Ui.el
+            [ Ui.Font.color Theme.primary.text
+            , Ui.Font.weight Theme.fontWeight.medium
+            ]
+            (Ui.text label)
         ]
 
 

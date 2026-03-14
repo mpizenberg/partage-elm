@@ -222,7 +222,7 @@
   "entryRestoreWarning": "Cette écriture sera restaurée.",
   "entryRestoreConfirm": "Confirmer la restauration",
   "toastCopied": "Copié dans le presse-papiers.",
-  "filterActiveCount": "{count} filtres actifs",
+  "filterSectionTitle": "Filtres",
   "filterClearAll": "Effacer les filtres",
   "filterPersonLabel": "Personne",
   "filterCategoryLabel": "Catégorie",

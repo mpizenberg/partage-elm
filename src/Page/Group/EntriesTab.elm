@@ -234,11 +234,14 @@ view i18n config today (Model data) state =
             UI.Components.btnPrimary [] { label = T.newEntryTitle i18n, onPress = config.onNewEntry }
 
         -- Search bar + filter button
-        , searchFilterRow data.showFilters data.searchQuery |> Ui.map toMsg
+        , searchFilterRow data.showFilters (Filter.isEntryFilterActive data.filters || data.showDeleted) data.searchQuery |> Ui.map toMsg
 
-        -- Filter panel
+        -- Filter panel or active filter summary
         , if data.showFilters then
             filterPanel i18n data.filters data.showDeleted state |> Ui.map toMsg
+
+          else if Filter.isEntryFilterActive data.filters || data.showDeleted then
+            activeFilterSummary i18n data.filters data.showDeleted state
 
           else
             Ui.none
@@ -278,8 +281,8 @@ summaryRow entryCount totalAmount =
 -- SEARCH BAR + FILTER BUTTON
 
 
-searchFilterRow : Bool -> String -> Ui.Element Msg
-searchFilterRow showFilters query =
+searchFilterRow : Bool -> Bool -> String -> Ui.Element Msg
+searchFilterRow showFilters hasActiveFilters query =
     Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
         [ Ui.row
             [ Ui.width Ui.fill
@@ -305,15 +308,15 @@ searchFilterRow showFilters query =
                 , label = Ui.Input.labelHidden "Search entries"
                 }
             ]
-        , filterButton showFilters
+        , filterButton showFilters hasActiveFilters
         ]
 
 
-filterButton : Bool -> Ui.Element Msg
-filterButton active =
+filterButton : Bool -> Bool -> Ui.Element Msg
+filterButton showFilters hasActiveFilters =
     let
         ( bg, border, fontColor ) =
-            if active then
+            if showFilters || hasActiveFilters then
                 ( Theme.primary.solid, Theme.primary.solid, Theme.primary.solidText )
 
             else
@@ -336,6 +339,92 @@ filterButton active =
             ]
         ]
         (UI.Components.featherIcon 18 FeatherIcons.filter)
+
+
+
+-- ACTIVE FILTER SUMMARY
+
+
+activeFilterSummary : I18n -> EntryFilters -> Bool -> GroupState -> Ui.Element msg
+activeFilterSummary i18n filters showDeleted state =
+    let
+        resolveName : Member.Id -> String
+        resolveName =
+            GroupState.resolveMemberName state
+
+        personChips : List (Ui.Element msg)
+        personChips =
+            Set.toList filters.persons
+                |> List.map (\id -> filterChip (T.filterPersonLabel i18n) (resolveName id))
+
+        categoryChips : List (Ui.Element msg)
+        categoryChips =
+            Set.toList filters.categories
+                |> List.map (filterChip (T.filterCategoryLabel i18n))
+
+        currencyChips : List (Ui.Element msg)
+        currencyChips =
+            Set.toList filters.currencies
+                |> List.map (filterChip (T.filterCurrencyLabel i18n))
+
+        dateChips : List (Ui.Element msg)
+        dateChips =
+            List.map (\r -> filterChip (T.filterDateLabel i18n) (dateRangeLabel i18n r)) filters.dateRanges
+
+        deletedChip : List (Ui.Element msg)
+        deletedChip =
+            if showDeleted then
+                [ filterChip (T.filterSectionTitle i18n) (T.entriesShowDeleted "" i18n) ]
+
+            else
+                []
+    in
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        [ UI.Components.sectionLabel (T.filterSectionTitle i18n)
+        , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.xs ]
+            (List.concat [ personChips, categoryChips, currencyChips, dateChips, deletedChip ])
+        ]
+
+
+dateRangeLabel : I18n -> DateRange -> String
+dateRangeLabel i18n range =
+    case range of
+        Today ->
+            T.filterDateToday i18n
+
+        Yesterday ->
+            T.filterDateYesterday i18n
+
+        Last7Days ->
+            T.filterDateLast7 i18n
+
+        Last30Days ->
+            T.filterDateLast30 i18n
+
+        ThisMonth ->
+            T.filterDateThisMonth i18n
+
+        LastMonth ->
+            T.filterDateLastMonth i18n
+
+
+filterChip : String -> String -> Ui.Element msg
+filterChip category label =
+    Ui.row
+        [ Ui.Font.size Theme.font.xs
+        , Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
+        , Ui.rounded Theme.radius.md
+        , Ui.background Theme.primary.tint
+        , Ui.width Ui.shrink
+        , Ui.spacing Theme.spacing.xs
+        ]
+        [ Ui.el [ Ui.Font.color Theme.base.textSubtle ] (Ui.text (category ++ ":"))
+        , Ui.el
+            [ Ui.Font.color Theme.primary.text
+            , Ui.Font.weight Theme.fontWeight.medium
+            ]
+            (Ui.text label)
+        ]
 
 
 
