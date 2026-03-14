@@ -1366,36 +1366,42 @@ view model =
         pageResult =
             viewPage model
 
+        innerAppArea : List (Ui.Attribute Msg)
+        innerAppArea =
+            [ Ui.centerX
+            , Ui.widthMax Theme.contentMaxWidth
+            , Ui.width Ui.fill
+            , Ui.paddingWith
+                { top = 0
+                , bottom = 0
+                , left = Theme.spacing.xl
+                , right = Theme.spacing.xl
+                }
+            ]
+
         overlayAttr : Ui.Attribute Msg
         overlayAttr =
             case pageResult.overlay of
                 Just overlay ->
-                    Ui.inFront
-                        (Ui.el
-                            [ Ui.widthMax Theme.contentMaxWidth
-                            , Ui.centerX
-                            , Ui.width Ui.fill
-                            , Ui.alignBottom
-                            , Ui.paddingWith
-                                { top = 0
-                                , bottom = 0
-                                , left = Theme.spacing.xl
-                                , right = Theme.spacing.xl
-                                }
-                            ]
-                            overlay
-                        )
+                    Ui.inFront <|
+                        Ui.el (Ui.alignBottom :: innerAppArea) overlay
 
                 Nothing ->
                     Ui.noAttr
+
+        toasts : Ui.Attribute Msg
+        toasts =
+            Ui.inFront <|
+                Ui.el (Ui.alignBottom :: innerAppArea)
+                    (Toast.view model.toastModel)
     in
     Ui.layout Ui.default
         [ Ui.background Theme.base.bg
-        , Ui.inFront (Toast.view model.toastModel)
         , Theme.fontFamily
         , Ui.Font.color Theme.base.text
         , Ui.Font.size Theme.font.md
         , overlayAttr
+        , toasts
         ]
         (Ui.el [ Ui.background Theme.base.bg ]
             (Ui.column

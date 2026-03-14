@@ -114,15 +114,23 @@ view model =
 
     else
         Ui.column
-            [ Ui.centerX
-            , Ui.paddingXY Theme.spacing.md Theme.spacing.sm
-            , Ui.spacing Theme.spacing.sm
-            , Ui.width Ui.fill
-            , Ui.widthMax 400
+            [ Ui.spacing Theme.spacing.lg
             , Ui.htmlAttribute (Html.Attributes.style "pointer-events" "none")
-            , Ui.htmlAttribute (Html.Attributes.style "z-index" "9999")
             ]
-            (keyframesStyle :: List.map viewToast model.toasts)
+        <|
+            [ Ui.column
+                [ Ui.centerX
+                , Ui.spacing Theme.spacing.sm
+                , Ui.width Ui.shrink
+                ]
+                (keyframesStyle :: List.map viewToast model.toasts)
+            , tabBarSpacer
+            ]
+
+
+tabBarSpacer : Ui.Element msg
+tabBarSpacer =
+    Ui.el [ Ui.height (Ui.px Theme.sizing.xxl) ] Ui.none
 
 
 keyframesStyle : Ui.Element msg
@@ -130,7 +138,7 @@ keyframesStyle =
     Ui.html
         (Html.node "style"
             []
-            [ Html.text "@keyframes toast-slide-in { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }" ]
+            [ Html.text "@keyframes toast-slide-in { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }" ]
         )
 
 
@@ -140,10 +148,10 @@ viewToast toast =
         ( bgColor, fgColor ) =
             case toast.level of
                 Success ->
-                    ( Theme.success.tint, Theme.success.text )
+                    ( Theme.success.bgSubtle, Theme.success.text )
 
                 Error ->
-                    ( Theme.danger.tint, Theme.danger.text )
+                    ( Theme.danger.bgSubtle, Theme.danger.text )
     in
     Ui.el
         [ Ui.width Ui.fill
