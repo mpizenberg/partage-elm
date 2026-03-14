@@ -71,7 +71,7 @@ update msg (Model data) =
 type alias Config msg =
     { onRecordTransfer : Settlement.Transaction -> msg
     , onSavePreferences : { memberRootId : Member.Id, preferredRecipients : List Member.Id } -> msg
-    , onNewTransfer : msg
+    , onNewTransfer : { toMemberId : Member.Id, amountCents : Int } -> msg
     , newTransferHref : String
     , toMsg : Msg -> msg
     }
@@ -316,7 +316,9 @@ memberBalanceCard i18n config resolveName expandedMember b =
                 )
             ]
         , if isExpanded then
-            transferActionBtn i18n config.newTransferHref config.onNewTransfer
+            transferActionBtn i18n
+                config.newTransferHref
+                (config.onNewTransfer { toMemberId = b.memberRootId, amountCents = abs b.netBalance })
 
           else
             Ui.none

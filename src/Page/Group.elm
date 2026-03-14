@@ -166,6 +166,7 @@ type
     = OnTaskProgress ( TaskRunner Msg, Cmd Msg )
       -- Navigation
     | RequestNavigation GroupView
+    | RequestTransfer { toMemberId : Member.Id, amountCents : Int }
       -- Tabs
     | EntriesTabMsg Page.Group.EntriesTab.Msg
     | BalanceTabMsg Page.Group.BalanceTab.Msg
@@ -372,6 +373,14 @@ update config msg model =
             case config.route of
                 GroupRoute groupId _ ->
                     ( model, Cmd.none, [ NavigateTo (GroupRoute groupId groupView) ] )
+
+                _ ->
+                    ( model, Cmd.none, [] )
+
+        RequestTransfer payData ->
+            case config.route of
+                GroupRoute groupId _ ->
+                    ( { model | pendingTransfer = Just payData }, Cmd.none, [ NavigateTo (GroupRoute groupId NewEntry) ] )
 
                 _ ->
                     ( model, Cmd.none, [] )
@@ -1261,7 +1270,7 @@ tabContent config userRootId loaded model =
             Page.Group.BalanceTab.view config.i18n
                 { onRecordTransfer = \tx -> config.toMsg (SettleTransaction tx)
                 , onSavePreferences = \prefData -> config.toMsg (SaveSettlementPreferences prefData)
-                , onNewTransfer = config.toMsg (RequestNavigation NewEntry)
+                , onNewTransfer = \payData -> config.toMsg (RequestTransfer payData)
                 , newTransferHref = Route.toPath (GroupRoute config.groupId NewEntry)
                 , toMsg = config.toMsg << BalanceTabMsg
                 }
