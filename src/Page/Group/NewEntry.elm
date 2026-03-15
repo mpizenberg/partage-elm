@@ -1,4 +1,4 @@
-module Page.Group.NewEntry exposing (Model, init, initFromEntry, initTransfer, outputToKind, update, view)
+module Page.Group.NewEntry exposing (Model, init, initDuplicate, initFromEntry, outputToKind, update, view)
 
 import Dict exposing (Dict)
 import Domain.Date exposing (Date)
@@ -59,144 +59,147 @@ init config =
         }
 
 
-{-| Initialize as a transfer to a specific member with a pre-filled amount.
-Used by the "Pay Them" button on balance cards.
--}
-initTransfer : Shared.Config -> { toMemberId : Member.Id, amountCents : Int } -> Model
-initTransfer config { toMemberId, amountCents } =
-    let
-        (Model data) =
-            init config
-    in
-    Model
-        { data
-            | kind = TransferKind
-            , kindLocked = True
-            , fromMemberId = Just config.currentUserRootId
-            , toMemberId = Just toMemberId
-            , form = data.form |> NewEntry.initAmount amountCents
-        }
-
-
 {-| Initialize from an existing entry for editing.
 -}
 initFromEntry : Shared.Config -> Entry.Entry -> Model
 initFromEntry config entry =
     case entry.kind of
         Entry.Expense data ->
-            let
-                isExactSplit : Bool
-                isExactSplit =
-                    List.any
-                        (\b ->
-                            case b of
-                                Entry.ExactBeneficiary _ ->
-                                    True
-
-                                _ ->
-                                    False
-                        )
-                        data.beneficiaries
-
-                beneficiaryDict : Dict Member.Id Int
-                beneficiaryDict =
-                    List.map
-                        (\b ->
-                            case b of
-                                Entry.ShareBeneficiary s ->
-                                    ( s.memberId, s.shares )
-
-                                Entry.ExactBeneficiary e ->
-                                    ( e.memberId, 1 )
-                        )
-                        data.beneficiaries
-                        |> Dict.fromList
-
-                exactAmountsDict : Dict Member.Id String
-                exactAmountsDict =
-                    if isExactSplit then
-                        List.filterMap
-                            (\b ->
-                                case b of
-                                    Entry.ExactBeneficiary e ->
-                                        Just ( e.memberId, Shared.centsToDecimalString e.amount )
-
-                                    _ ->
-                                        Nothing
-                            )
-                            data.beneficiaries
-                            |> Dict.fromList
-
-                    else
-                        Dict.empty
-
-                payerAmountsDict : Dict Member.Id String
-                payerAmountsDict =
-                    List.map (\p -> ( p.memberId, Shared.centsToDecimalString p.amount )) data.payers
-                        |> Dict.fromList
-            in
-            Model
-                { form =
-                    NewEntry.form
-                        |> NewEntry.initDescription data.description
-                        |> NewEntry.initAmount data.amount
-                        |> NewEntry.initDate data.date
-                , submitted = False
-                , isEditing = True
-                , kind = ExpenseKind
-                , kindLocked = True
-                , payerAmounts = payerAmountsDict
-                , beneficiaries = beneficiaryDict
-                , splitMode =
-                    if isExactSplit then
-                        ExactSplit
-
-                    else
-                        ShareSplit
-                , exactAmounts = exactAmountsDict
-                , fromMemberId = Nothing
-                , toMemberId = Nothing
-                , category = data.category
-                , notes = Maybe.withDefault "" data.notes
-                , currency = data.currency
-                , groupDefaultCurrency = config.defaultCurrency
-                , defaultCurrencyAmount =
-                    case data.defaultCurrencyAmount of
-                        Just amt ->
-                            Shared.centsToDecimalString amt
-
-                        Nothing ->
-                            ""
-                }
+            initFromExpenseData config True data
 
         Entry.Transfer data ->
-            Model
-                { form =
-                    NewEntry.form
-                        |> NewEntry.initAmount data.amount
-                        |> NewEntry.initDate data.date
-                , submitted = False
-                , isEditing = True
-                , kind = TransferKind
-                , kindLocked = True
-                , payerAmounts = Dict.singleton config.currentUserRootId ""
-                , beneficiaries = Dict.fromList (List.map (\mid -> ( mid, 1 )) config.activeMembersRootIds)
-                , splitMode = ShareSplit
-                , exactAmounts = Dict.empty
-                , fromMemberId = Just data.from
-                , toMemberId = Just data.to
-                , category = Nothing
-                , notes = Maybe.withDefault "" data.notes
-                , currency = data.currency
-                , groupDefaultCurrency = config.defaultCurrency
-                , defaultCurrencyAmount =
-                    case data.defaultCurrencyAmount of
-                        Just amt ->
-                            Shared.centsToDecimalString amt
+            initFromTransferData config True data
 
-                        Nothing ->
-                            ""
-                }
+
+{-| Initialize from an existing entry for duplication (creates a new entry).
+-}
+initDuplicate : Shared.Config -> Entry.Kind -> Model
+initDuplicate config kind =
+    case kind of
+        Entry.Expense data ->
+            initFromExpenseData config False data
+
+        Entry.Transfer data ->
+            initFromTransferData config False data
+
+
+initFromExpenseData : Shared.Config -> Bool -> Entry.ExpenseData -> Model
+initFromExpenseData config editing data =
+    let
+        isExactSplit : Bool
+        isExactSplit =
+            List.any
+                (\b ->
+                    case b of
+                        Entry.ExactBeneficiary _ ->
+                            True
+
+                        _ ->
+                            False
+                )
+                data.beneficiaries
+
+        beneficiaryDict : Dict Member.Id Int
+        beneficiaryDict =
+            List.map
+                (\b ->
+                    case b of
+                        Entry.ShareBeneficiary s ->
+                            ( s.memberId, s.shares )
+
+                        Entry.ExactBeneficiary e ->
+                            ( e.memberId, 1 )
+                )
+                data.beneficiaries
+                |> Dict.fromList
+
+        exactAmountsDict : Dict Member.Id String
+        exactAmountsDict =
+            if isExactSplit then
+                List.filterMap
+                    (\b ->
+                        case b of
+                            Entry.ExactBeneficiary e ->
+                                Just ( e.memberId, Shared.centsToDecimalString e.amount )
+
+                            _ ->
+                                Nothing
+                    )
+                    data.beneficiaries
+                    |> Dict.fromList
+
+            else
+                Dict.empty
+
+        payerAmountsDict : Dict Member.Id String
+        payerAmountsDict =
+            List.map (\p -> ( p.memberId, Shared.centsToDecimalString p.amount )) data.payers
+                |> Dict.fromList
+    in
+    Model
+        { form =
+            NewEntry.form
+                |> NewEntry.initDescription data.description
+                |> NewEntry.initAmount data.amount
+                |> NewEntry.initDate data.date
+        , submitted = False
+        , isEditing = editing
+        , kind = ExpenseKind
+        , kindLocked = editing
+        , payerAmounts = payerAmountsDict
+        , beneficiaries = beneficiaryDict
+        , splitMode =
+            if isExactSplit then
+                ExactSplit
+
+            else
+                ShareSplit
+        , exactAmounts = exactAmountsDict
+        , fromMemberId = Nothing
+        , toMemberId = Nothing
+        , category = data.category
+        , notes = Maybe.withDefault "" data.notes
+        , currency = data.currency
+        , groupDefaultCurrency = config.defaultCurrency
+        , defaultCurrencyAmount =
+            case data.defaultCurrencyAmount of
+                Just amt ->
+                    Shared.centsToDecimalString amt
+
+                Nothing ->
+                    ""
+        }
+
+
+initFromTransferData : Shared.Config -> Bool -> Entry.TransferData -> Model
+initFromTransferData config editing data =
+    Model
+        { form =
+            NewEntry.form
+                |> NewEntry.initAmount data.amount
+                |> NewEntry.initDate data.date
+        , submitted = False
+        , isEditing = editing
+        , kind = TransferKind
+        , kindLocked = editing
+        , payerAmounts = Dict.singleton config.currentUserRootId ""
+        , beneficiaries = Dict.fromList (List.map (\mid -> ( mid, 1 )) config.activeMembersRootIds)
+        , splitMode = ShareSplit
+        , exactAmounts = Dict.empty
+        , fromMemberId = Just data.from
+        , toMemberId = Just data.to
+        , category = Nothing
+        , notes = Maybe.withDefault "" data.notes
+        , currency = data.currency
+        , groupDefaultCurrency = config.defaultCurrency
+        , defaultCurrencyAmount =
+            case data.defaultCurrencyAmount of
+                Just amt ->
+                    Shared.centsToDecimalString amt
+
+                Nothing ->
+                    ""
+        }
 
 
 {-| Handle form input and submission for expense or transfer entries.

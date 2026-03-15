@@ -141,6 +141,7 @@
   "newEntrySameFromTo": "Sender and receiver must be different.",
   "loadingGroup": "Loading group...",
   "entryDetailCopyLink": "Copy link",
+  "entryDetailDuplicateButton": "Duplicate",
   "entryDetailEditButton": "Edit",
   "entryDetailDeleteButton": "Delete",
   "entryDetailRestoreButton": "Restore",

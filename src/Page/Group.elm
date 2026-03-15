@@ -3,6 +3,7 @@ module Page.Group exposing
     , Model
     , Msg
     , Output(..)
+    , PendingEntry
     , UpdateConfig
     , ViewConfig
     , ViewResult
@@ -144,11 +145,16 @@ type alias Model =
 
     -- Entry pages
     , newEntryModel : Page.Group.NewEntry.Model
-    , pendingTransfer : Maybe { toMemberId : Member.Id, amountCents : Int }
+    , pendingEntry : Maybe PendingEntry
 
     -- Group pages
     , editGroupMetadataModel : Page.Group.EditGroupMetadata.Model
     }
+
+
+type PendingEntry
+    = PendingTransfer Entry.TransferData
+    | PendingExpense Entry.ExpenseData
 
 
 
@@ -243,7 +249,7 @@ init config =
     , addMemberModel = Page.Group.AddMember.init
     , editMemberMetadataModel = Page.Group.EditMemberMetadata.init "" "" Member.emptyMetadata
     , newEntryModel = Page.Group.NewEntry.init { currentUserRootId = "", activeMembersRootIds = [], today = { year = 2000, month = 1, day = 1 }, defaultCurrency = EUR }
-    , pendingTransfer = Nothing
+    , pendingEntry = Nothing
     , editGroupMetadataModel = Page.Group.EditGroupMetadata.init GroupState.empty.groupMeta
     }
 
@@ -392,9 +398,21 @@ update config msg model =
                     ( model, Cmd.none, [] )
 
         RequestTransfer payData ->
-            case config.route of
-                GroupRoute groupId _ ->
-                    ( { model | pendingTransfer = Just payData }, Cmd.none, [ NavigateTo (GroupRoute groupId NewEntry) ] )
+            case ( config.route, model.loadedGroup ) of
+                ( GroupRoute groupId _, Just loaded ) ->
+                    let
+                        transferData : Entry.TransferData
+                        transferData =
+                            { amount = payData.amountCents
+                            , currency = loaded.summary.defaultCurrency
+                            , defaultCurrencyAmount = Nothing
+                            , date = Date.posixToDate config.currentTime
+                            , from = currentUserRootId model loaded |> Maybe.withDefault ""
+                            , to = payData.toMemberId
+                            , notes = Nothing
+                            }
+                    in
+                    ( { model | pendingEntry = Just (PendingTransfer transferData) }, Cmd.none, [ NavigateTo (GroupRoute groupId NewEntry) ] )
 
                 _ ->
                     ( model, Cmd.none, [] )
@@ -912,6 +930,32 @@ handleEntriesTabOutput config model output =
                 _ ->
                     ( model, Cmd.none, [] )
 
+        Page.Group.EntriesTab.DuplicateOutput entryId ->
+            case ( config.route, model.loadedGroup ) of
+                ( GroupRoute groupId _, Just loaded ) ->
+                    case Dict.get entryId loaded.groupState.entries of
+                        Just entryState ->
+                            let
+                                pending : PendingEntry
+                                pending =
+                                    case entryState.currentVersion.kind of
+                                        Entry.Expense data ->
+                                            PendingExpense data
+
+                                        Entry.Transfer data ->
+                                            PendingTransfer data
+                            in
+                            ( { model | pendingEntry = Just pending }
+                            , Cmd.none
+                            , [ NavigateTo (GroupRoute groupId NewEntry) ]
+                            )
+
+                        Nothing ->
+                            ( model, Cmd.none, [] )
+
+                _ ->
+                    ( model, Cmd.none, [] )
+
 
 handleMembersTabOutput : UpdateConfig -> Model -> Page.Group.MembersTab.Output -> ( Model, Cmd Msg, List Output )
 handleMembersTabOutput config model output =
@@ -1156,9 +1200,12 @@ initPagesIfNeeded config groupView model =
                         entryFormConfig =
                             memberEntryFormConfig config userRootId loaded
                     in
-                    case model.pendingTransfer of
-                        Just payData ->
-                            ( { model | newEntryModel = Page.Group.NewEntry.initTransfer entryFormConfig payData, pendingTransfer = Nothing }, Cmd.none )
+                    case model.pendingEntry of
+                        Just (PendingExpense data) ->
+                            ( { model | newEntryModel = Page.Group.NewEntry.initDuplicate entryFormConfig (Entry.Expense data), pendingEntry = Nothing }, Cmd.none )
+
+                        Just (PendingTransfer data) ->
+                            ( { model | newEntryModel = Page.Group.NewEntry.initDuplicate entryFormConfig (Entry.Transfer data), pendingEntry = Nothing }, Cmd.none )
 
                         Nothing ->
                             ( { model | newEntryModel = Page.Group.NewEntry.init entryFormConfig }, Cmd.none )

@@ -141,6 +141,7 @@
   "newEntrySameFromTo": "L'expéditeur et le destinataire doivent être différents.",
   "loadingGroup": "Chargement du groupe...",
   "entryDetailCopyLink": "Copier le lien",
+  "entryDetailDuplicateButton": "Dupliquer",
   "entryDetailEditButton": "Modifier",
   "entryDetailDeleteButton": "Supprimer",
   "entryDetailRestoreButton": "Restaurer",

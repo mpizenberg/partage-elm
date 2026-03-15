@@ -53,6 +53,7 @@ type Msg
     | InputSearch String
     | ToggleEntry Entry.Id
     | ClickEdit Entry.Id
+    | ClickDuplicate Entry.Id
     | ClickDelete Entry.Id
     | ClickRestore Entry.Id
     | Confirm
@@ -61,6 +62,7 @@ type Msg
 
 type Output
     = EditOutput Entry.Id
+    | DuplicateOutput Entry.Id
     | DeleteOutput Entry.Id
     | RestoreOutput Entry.Id
 
@@ -168,6 +170,9 @@ update msg (Model data) =
 
         ClickEdit entryId ->
             ( Model data, Just (EditOutput entryId) )
+
+        ClickDuplicate entryId ->
+            ( Model data, Just (DuplicateOutput entryId) )
 
         ClickDelete entryId ->
             ( Model { data | confirmingAction = Just ( entryId, ConfirmDelete ) }, Nothing )
@@ -835,7 +840,18 @@ entryDetail i18n isMember resolveName linkHref entryId entry isDeleted confirmin
         , Ui.spacing Theme.spacing.md
         ]
         [ entryContent i18n resolveName entry
-        , Ui.row [] [ copyLinkBtn linkHref (T.entryDetailCopyLink i18n) ]
+        , if isMember then
+            Ui.row [ Ui.spacing Theme.spacing.sm ]
+                [ copyLinkBtn linkHref (T.entryDetailCopyLink i18n)
+                , UI.Components.btnOutline [ Ui.width Ui.shrink ]
+                    { label = T.entryDetailDuplicateButton i18n
+                    , icon = Just (UI.Components.featherIcon 16 FeatherIcons.copy)
+                    , onPress = ClickDuplicate entryId
+                    }
+                ]
+
+          else
+            Ui.none
         , if isMember then
             actionButtons i18n
                 entryId
