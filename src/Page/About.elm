@@ -1,12 +1,12 @@
 module Page.About exposing (Model, Msg, Output(..), init, statsLoaded, update, view)
 
 import FeatherIcons
+import Infra.UsageStats as UsageStats exposing (CostBreakdown)
 import Translations as T exposing (I18n, Language)
 import UI.Components
 import UI.Theme as Theme
 import Ui
 import Ui.Font
-import UsageStats exposing (CostBreakdown)
 
 
 type Model

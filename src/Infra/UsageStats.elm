@@ -1,4 +1,4 @@
-module UsageStats exposing
+module Infra.UsageStats exposing
     ( CostBreakdown
     , StorageEstimate
     , UsageStats

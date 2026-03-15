@@ -11,16 +11,16 @@ when Page.Home outputs ImportFileLoaded).
 
 -}
 
-import Compression
 import ConcurrentTask
-import ConcurrentTaskExtra as Runner exposing (TaskRunner)
 import Dict exposing (Dict)
 import Domain.Event as Event
 import Domain.Group as Group
 import GroupExport
 import IndexedDb as Idb
+import Infra.Compression as Compression
+import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
+import Infra.Storage as Storage
 import Set
-import Storage
 import Time
 import Translations as T exposing (I18n)
 import UI.Toast as Toast

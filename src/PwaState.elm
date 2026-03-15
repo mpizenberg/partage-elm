@@ -12,10 +12,10 @@ construction happens internally through `subscription`, `initTask`,
 -}
 
 import ConcurrentTask
-import ConcurrentTaskExtra as Runner exposing (TaskRunner)
+import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
+import Infra.PushServer as PushServer
 import Json.Decode
 import Json.Encode
-import PushServer
 import Pwa
 import Translations exposing (I18n)
 import UI.Components

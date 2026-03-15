@@ -1,4 +1,4 @@
-module Server exposing
+module Infra.Server exposing
     ( Error(..)
     , PullResult
     , ServerContext
@@ -18,11 +18,12 @@ All operations are ConcurrentTasks that compose with the existing task pool.
 
 -}
 
-import Compression
 import ConcurrentTask exposing (ConcurrentTask)
-import Crypto
 import Domain.Event as Event
 import Domain.Group as Group
+import Infra.Compression as Compression
+import Infra.Crypto as Crypto
+import Infra.PushServer as PushServer
 import Json.Decode as Decode
 import Json.Encode as Encode
 import PocketBase
@@ -30,7 +31,6 @@ import PocketBase.Auth
 import PocketBase.Collection
 import PocketBase.Custom
 import PocketBase.Realtime
-import PushServer
 import WebCrypto
 import WebCrypto.ProofOfWork as PoW
 import WebCrypto.Symmetric as Symmetric

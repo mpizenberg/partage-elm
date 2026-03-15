@@ -1,4 +1,4 @@
-module IdGen exposing (pbId, v4, v4batch, v7, v7batch)
+module Infra.IdGen exposing (pbId, v4, v4batch, v7, v7batch)
 
 {-| ID generation helpers wrapping elm-uuid, plus PocketBase-compatible IDs.
 -}

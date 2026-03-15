@@ -3,7 +3,6 @@ port module Main exposing (AppState, Flags, Model, Msg, main)
 import AppUrl
 import Browser
 import ConcurrentTask exposing (ConcurrentTask)
-import ConcurrentTaskExtra as Runner exposing (TaskRunner)
 import Dict
 import Domain.Date as Date
 import Domain.Event as Event
@@ -14,9 +13,14 @@ import Form.NewGroup
 import GroupOps
 import Html exposing (Html)
 import Html.Attributes
-import Identity exposing (Identity)
 import ImportExport
 import IndexedDb as Idb
+import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
+import Infra.Identity as Identity exposing (Identity)
+import Infra.PushServer as PushServer
+import Infra.Server as Server
+import Infra.Storage as Storage
+import Infra.UsageStats as UsageStats exposing (UsageStats)
 import Json.Decode
 import Json.Encode
 import Maybe.Extra
@@ -32,13 +36,10 @@ import Page.NotFound
 import Page.Setup
 import PocketBase
 import Process
-import PushServer
 import PwaState
 import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
-import Server
 import Set exposing (Set)
-import Storage
 import Task
 import Time
 import Translations as T exposing (I18n, Language(..))
@@ -50,7 +51,6 @@ import Ui
 import Ui.Font
 import Update
 import Url
-import UsageStats exposing (UsageStats)
 import WebCrypto
 import WebCrypto.Symmetric as Symmetric
 

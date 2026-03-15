@@ -1,4 +1,4 @@
-module Crypto exposing (derivePassword, generateGroupKey)
+module Infra.Crypto exposing (derivePassword, generateGroupKey)
 
 {-| Cryptographic helpers for group key management.
 -}

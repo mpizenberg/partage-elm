@@ -27,7 +27,6 @@ Owns its own ConcurrentTask.Pool and handles all group business logic
 -}
 
 import ConcurrentTask
-import ConcurrentTaskExtra as Runner exposing (TaskRunner)
 import Dict exposing (Dict)
 import Domain.Currency exposing (Currency(..))
 import Domain.Date as Date exposing (Date)
@@ -37,8 +36,12 @@ import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Domain.Settlement as Settlement
 import GroupOps exposing (LoadedGroup)
-import Identity exposing (Identity)
 import IndexedDb as Idb
+import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
+import Infra.Identity exposing (Identity)
+import Infra.PushServer as PushServer
+import Infra.Server as Server
+import Infra.Storage as Storage
 import Json.Decode
 import Json.Encode
 import Page.Group.ActivityTab
@@ -52,12 +55,9 @@ import Page.Group.NewEntry
 import Page.JoinGroup
 import PocketBase
 import PocketBase.Realtime
-import PushServer
 import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
-import Server
 import Set exposing (Set)
-import Storage
 import Time
 import Translations as T exposing (I18n)
 import UI.Components

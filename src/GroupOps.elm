@@ -19,8 +19,6 @@ module GroupOps exposing
 
 import ConcurrentTask exposing (ConcurrentTask)
 import ConcurrentTask.Time
-import ConcurrentTaskExtra as Runner exposing (TaskRunner)
-import Crypto
 import Dict
 import Domain.Entry as Entry
 import Domain.Event as Event
@@ -28,15 +26,17 @@ import Domain.Group as Group
 import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Form.NewGroup
-import IdGen
-import Identity exposing (Identity)
 import IndexedDb as Idb
+import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
+import Infra.Crypto as Crypto
+import Infra.IdGen as IdGen
+import Infra.Identity exposing (Identity)
+import Infra.Server as Server
+import Infra.Storage as Storage
 import Page.Group.NewEntry
 import PocketBase
 import Random
-import Server
 import Set exposing (Set)
-import Storage
 import Time
 import UUID
 import WebCrypto.Symmetric as Symmetric

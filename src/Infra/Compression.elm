@@ -1,4 +1,4 @@
-module Compression exposing (EncryptedBatch, compressAndDownload, decompress, decryptJson, encodeEventData, encryptJson)
+module Infra.Compression exposing (EncryptedBatch, compressAndDownload, decompress, decryptJson, encodeEventData, encryptJson)
 
 {-| Conditional gzip compression combined with AES-256-GCM encryption.
 

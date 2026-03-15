@@ -1,15 +1,13 @@
-module Storage exposing
+module Infra.Storage exposing
     ( InitData
     , addUnpushedIds
     , deleteGroup
     , errorToString
     , init
-    , loadAllGroups
     , loadGroup
     , loadGroupEvents
     , loadGroupKey
     , loadGroupKeyRequired
-    , loadIdentity
     , loadUsageStats
     , open
     , resetUsageStats
@@ -29,13 +27,13 @@ import ConcurrentTask exposing (ConcurrentTask)
 import Dict exposing (Dict)
 import Domain.Event as Event
 import Domain.Group as Group
-import Identity exposing (Identity)
 import IndexedDb as Idb
+import Infra.Identity as Identity exposing (Identity)
+import Infra.UsageStats as UsageStats exposing (UsageStats)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Set exposing (Set)
 import Time
-import UsageStats exposing (UsageStats)
 import WebCrypto.Symmetric as Symmetric
 
 

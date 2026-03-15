@@ -1,4 +1,4 @@
-module Identity exposing (Identity, decoder, encode, generate)
+module Infra.Identity exposing (Identity, decoder, encode, generate)
 
 import ConcurrentTask exposing (ConcurrentTask)
 import Json.Decode as Decode

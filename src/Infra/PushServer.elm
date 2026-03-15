@@ -1,4 +1,4 @@
-module PushServer exposing (Error, NotifyContext, fetchVapidKey, notificationTranslations, notifyAffectedMembers, toggleGroupNotification, unsubscribeFromGroup)
+module Infra.PushServer exposing (Error, NotifyContext, fetchVapidKey, notificationTranslations, notifyAffectedMembers, toggleGroupNotification, unsubscribeFromGroup)
 
 {-| HTTP wrappers for push notification server communication.
 
@@ -15,10 +15,10 @@ import Domain.Group as Group
 import Domain.GroupState exposing (EntryState)
 import Domain.Member as Member
 import IndexedDb as Idb
+import Infra.Storage as Storage
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Set
-import Storage
 import Translations exposing (Language(..))
 
 

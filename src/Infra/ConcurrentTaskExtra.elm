@@ -1,4 +1,4 @@
-module ConcurrentTaskExtra exposing
+module Infra.ConcurrentTaskExtra exposing
     ( AttemptBatch, initAttemptBatch, andAttempt, batchAttempt
     , TaskRunner, TaskRunnerConfig, initTaskRunner, andRun, subscription
     )
