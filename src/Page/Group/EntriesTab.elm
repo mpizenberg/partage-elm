@@ -20,7 +20,6 @@ import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
 import Ui
-import Ui.Anim as Anim
 import Ui.Font
 import Ui.Input
 
@@ -315,30 +314,12 @@ searchFilterRow i18n showFilters hasActiveFilters query =
                 , label = Ui.Input.labelHidden (T.entriesSearchLabel i18n)
                 }
             ]
-        , filterButton showFilters hasActiveFilters
+        , UI.Components.filterToggleButton
+            { showFilters = showFilters
+            , hasActiveFilters = hasActiveFilters
+            , onPress = ToggleFilters
+            }
         ]
-
-
-filterButton : Bool -> Bool -> Ui.Element Msg
-filterButton showFilters hasActiveFilters =
-    let
-        ( bg, border, fontColor ) =
-            if showFilters || hasActiveFilters then
-                ( Theme.primary.solid, Theme.primary.solid, Theme.primary.solidText )
-
-            else
-                ( Theme.base.bgSubtle, Theme.base.accent, Theme.base.textSubtle )
-    in
-    UI.Components.iconButton
-        [ Ui.alignRight
-        , Ui.border Theme.border
-        , Anim.transition (Anim.ms 200)
-            [ Anim.backgroundColor bg
-            , Anim.borderColor border
-            , Anim.fontColor fontColor
-            ]
-        ]
-        { onPress = ToggleFilters, size = 18, icon = FeatherIcons.filter }
 
 
 
@@ -355,26 +336,26 @@ activeFilterSummary i18n filters showDeleted state =
         personChips : List (Ui.Element msg)
         personChips =
             Set.toList filters.persons
-                |> List.map (\id -> filterChip (T.filterPersonLabel i18n) (resolveName id))
+                |> List.map (\id -> UI.Components.filterSummaryChip (T.filterPersonLabel i18n) (resolveName id))
 
         categoryChips : List (Ui.Element msg)
         categoryChips =
             Set.toList filters.categories
-                |> List.map (filterChip (T.filterCategoryLabel i18n))
+                |> List.map (UI.Components.filterSummaryChip (T.filterCategoryLabel i18n))
 
         currencyChips : List (Ui.Element msg)
         currencyChips =
             Set.toList filters.currencies
-                |> List.map (filterChip (T.filterCurrencyLabel i18n))
+                |> List.map (UI.Components.filterSummaryChip (T.filterCurrencyLabel i18n))
 
         dateChips : List (Ui.Element msg)
         dateChips =
-            List.map (\r -> filterChip (T.filterDateLabel i18n) (dateRangeLabel i18n r)) filters.dateRanges
+            List.map (\r -> UI.Components.filterSummaryChip (T.filterDateLabel i18n) (dateRangeLabel i18n r)) filters.dateRanges
 
         deletedChip : List (Ui.Element msg)
         deletedChip =
             if showDeleted then
-                [ filterChip (T.filterSectionTitle i18n) (T.entriesShowDeleted "" i18n) ]
+                [ UI.Components.filterSummaryChip (T.filterSectionTitle i18n) (T.entriesShowDeleted "" i18n) ]
 
             else
                 []
@@ -406,25 +387,6 @@ dateRangeLabel i18n range =
 
         LastMonth ->
             T.filterDateLastMonth i18n
-
-
-filterChip : String -> String -> Ui.Element msg
-filterChip category label =
-    Ui.row
-        [ Ui.Font.size Theme.font.xs
-        , Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
-        , Ui.rounded Theme.radius.md
-        , Ui.background Theme.primary.tint
-        , Ui.width Ui.shrink
-        , Ui.spacing Theme.spacing.xs
-        ]
-        [ Ui.el [ Ui.Font.color Theme.base.textSubtle ] (Ui.text (category ++ ":"))
-        , Ui.el
-            [ Ui.Font.color Theme.primary.text
-            , Ui.Font.weight Theme.fontWeight.medium
-            ]
-            (Ui.text label)
-        ]
 
 
 
@@ -460,23 +422,7 @@ filterPanel i18n filters showDeleted state =
 
         -- Clear all
         , if Filter.isEntryFilterActive filters then
-            Ui.el
-                [ Ui.Input.button ClearAllFilters
-                , Ui.width Ui.fill
-                , Ui.paddingTop Theme.spacing.md
-                , Ui.pointer
-                ]
-                (Ui.el
-                    [ Ui.padding Theme.spacing.sm
-                    , Ui.Font.size Theme.font.sm
-                    , Ui.Font.weight Theme.fontWeight.medium
-                    , Ui.Font.color Theme.danger.text
-                    , Ui.Font.center
-                    , Ui.width Ui.fill
-                    , Ui.rounded Theme.radius.sm
-                    ]
-                    (Ui.text (T.filterClearAll i18n))
-                )
+            UI.Components.clearAllFiltersButton i18n ClearAllFilters
 
           else
             Ui.none
@@ -492,7 +438,7 @@ personFilterSection i18n selected state =
                 |> List.map (\m -> ( m.rootId, m.name ))
                 |> List.sortBy Tuple.second
     in
-    filterSection (T.filterPersonLabel i18n)
+    UI.Components.filterSection (T.filterPersonLabel i18n)
         (List.map
             (\( id, name ) ->
                 UI.Components.chip { label = name, selected = Set.member id selected, onPress = TogglePerson id }
@@ -518,7 +464,7 @@ categoryFilterSection i18n selected =
             , ( Filter.categoryFilterToString (ExpenseCategory Entry.Other), "📦 " ++ T.categoryOther i18n )
             ]
     in
-    filterSection (T.filterCategoryLabel i18n)
+    UI.Components.filterSection (T.filterCategoryLabel i18n)
         (List.map
             (\( key, label ) ->
                 UI.Components.chip { label = label, selected = Set.member key selected, onPress = ToggleCategory key }
@@ -545,7 +491,7 @@ currencyFilterSection i18n selected state =
                 |> Set.fromList
                 |> Set.toList
     in
-    filterSection (T.filterCurrencyLabel i18n)
+    UI.Components.filterSection (T.filterCurrencyLabel i18n)
         (List.map
             (\code ->
                 UI.Components.chip { label = code, selected = Set.member code selected, onPress = ToggleCurrency code }
@@ -567,27 +513,13 @@ dateFilterSection i18n activeRanges =
             , ( LastMonth, T.filterDateLastMonth i18n )
             ]
     in
-    filterSection (T.filterDateLabel i18n)
+    UI.Components.filterSection (T.filterDateLabel i18n)
         (List.map
             (\( range, label ) ->
                 UI.Components.chip { label = label, selected = List.member range activeRanges, onPress = ToggleDateRange range }
             )
             presets
         )
-
-
-filterSection : String -> List (Ui.Element msg) -> Ui.Element msg
-filterSection label chips =
-    Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.paddingBottom Theme.spacing.md ]
-        [ Ui.el
-            [ Ui.Font.size Theme.font.xs
-            , Ui.Font.weight Theme.fontWeight.semibold
-            , Ui.Font.letterSpacing Theme.letterSpacing.wide
-            , Ui.Font.color Theme.base.textSubtle
-            ]
-            (Ui.text (String.toUpper label))
-        , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.xs ] chips
-        ]
 
 
 

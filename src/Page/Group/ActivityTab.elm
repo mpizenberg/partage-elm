@@ -20,8 +20,6 @@ import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
 import Ui
-import Ui.Anim as Anim
-import Ui.Events
 import Ui.Font
 import Ui.Input
 
@@ -140,25 +138,12 @@ view i18n config (Model data) activities =
 
 filterToggleRow : (Msg -> msg) -> Bool -> ActivityFilters -> Ui.Element msg
 filterToggleRow toMsg showFilters filters =
-    let
-        ( bg, border, fontColor ) =
-            if showFilters || Filter.isActivityFilterActive filters then
-                ( Theme.primary.solid, Theme.primary.solid, Theme.primary.solidText )
-
-            else
-                ( Theme.base.bgSubtle, Theme.base.accent, Theme.base.textSubtle )
-    in
     Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY, Ui.width Ui.fill ]
-        [ UI.Components.iconButton
-            [ Ui.alignRight
-            , Ui.border Theme.border
-            , Anim.transition (Anim.ms 200)
-                [ Anim.backgroundColor bg
-                , Anim.borderColor border
-                , Anim.fontColor fontColor
-                ]
-            ]
-            { onPress = toMsg ToggleFilters, size = 18, icon = FeatherIcons.filter }
+        [ UI.Components.filterToggleButton
+            { showFilters = showFilters
+            , hasActiveFilters = Filter.isActivityFilterActive filters
+            , onPress = toMsg ToggleFilters
+            }
         ]
 
 
@@ -182,7 +167,7 @@ activeFilterSummary i18n config filters =
                 |> List.filterMap
                     (\( key, label ) ->
                         if Set.member key filters.activityTypes then
-                            Just (filterChip typeCategory label)
+                            Just (UI.Components.filterSummaryChip typeCategory label)
 
                         else
                             Nothing
@@ -191,36 +176,17 @@ activeFilterSummary i18n config filters =
         actorChips : List (Ui.Element msg)
         actorChips =
             Set.toList filters.actors
-                |> List.map (\id -> filterChip (T.filterActorLabel i18n) (config.resolveName id))
+                |> List.map (\id -> UI.Components.filterSummaryChip (T.filterActorLabel i18n) (config.resolveName id))
 
         involvedChips : List (Ui.Element msg)
         involvedChips =
             Set.toList filters.involvedMembers
-                |> List.map (\id -> filterChip (T.filterInvolvedLabel i18n) (config.resolveName id))
+                |> List.map (\id -> UI.Components.filterSummaryChip (T.filterInvolvedLabel i18n) (config.resolveName id))
     in
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
         [ UI.Components.sectionLabel (T.filterSectionTitle i18n)
         , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.xs ]
             (List.concat [ typeChips, actorChips, involvedChips ])
-        ]
-
-
-filterChip : String -> String -> Ui.Element msg
-filterChip category label =
-    Ui.row
-        [ Ui.Font.size Theme.font.xs
-        , Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
-        , Ui.rounded Theme.radius.md
-        , Ui.background Theme.primary.tint
-        , Ui.width Ui.shrink
-        , Ui.spacing Theme.spacing.xs
-        ]
-        [ Ui.el [ Ui.Font.color Theme.base.textSubtle ] (Ui.text (category ++ ":"))
-        , Ui.el
-            [ Ui.Font.color Theme.primary.text
-            , Ui.Font.weight Theme.fontWeight.medium
-            ]
-            (Ui.text label)
         ]
 
 
@@ -232,14 +198,7 @@ filterPanel i18n config filters =
             , actorFilterSection i18n config filters.actors
             , involvedFilterSection i18n config filters.involvedMembers
             , if Filter.isActivityFilterActive filters then
-                Ui.el
-                    [ Ui.pointer
-                    , Ui.Events.onClick (config.toMsg ClearAllFilters)
-                    , Ui.Font.size Theme.font.sm
-                    , Ui.Font.color Theme.danger.text
-                    , Ui.Font.weight Theme.fontWeight.medium
-                    ]
-                    (Ui.text (T.filterClearAll i18n))
+                UI.Components.clearAllFiltersButton i18n (config.toMsg ClearAllFilters)
 
               else
                 Ui.none
@@ -257,7 +216,7 @@ activityTypeFilterSection i18n toMsg selected =
             , ( Filter.activityTypeToString GroupActivity, T.filterActivityGroup i18n )
             ]
     in
-    filterSection (T.filterActivityTypeLabel i18n)
+    UI.Components.filterSection (T.filterActivityTypeLabel i18n)
         (List.map
             (\( key, label ) ->
                 UI.Components.chip
@@ -272,7 +231,7 @@ activityTypeFilterSection i18n toMsg selected =
 
 actorFilterSection : I18n -> Config msg -> Set Member.Id -> Ui.Element msg
 actorFilterSection i18n config selected =
-    filterSection (T.filterActorLabel i18n)
+    UI.Components.filterSection (T.filterActorLabel i18n)
         (List.map
             (\( id, name ) ->
                 UI.Components.chip
@@ -287,7 +246,7 @@ actorFilterSection i18n config selected =
 
 involvedFilterSection : I18n -> Config msg -> Set Member.Id -> Ui.Element msg
 involvedFilterSection i18n config selected =
-    filterSection (T.filterInvolvedLabel i18n)
+    UI.Components.filterSection (T.filterInvolvedLabel i18n)
         (List.map
             (\( id, name ) ->
                 UI.Components.chip
@@ -298,19 +257,6 @@ involvedFilterSection i18n config selected =
             )
             config.allMembers
         )
-
-
-filterSection : String -> List (Ui.Element msg) -> Ui.Element msg
-filterSection label chips =
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.el
-            [ Ui.Font.size Theme.font.sm
-            , Ui.Font.color Theme.base.textSubtle
-            , Ui.Font.weight Theme.fontWeight.medium
-            ]
-            (Ui.text label)
-        , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.xs ] chips
-        ]
 
 
 groupedByDate : I18n -> Config msg -> Set Event.Id -> List Activity -> List (Ui.Element msg)

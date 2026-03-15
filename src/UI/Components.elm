@@ -5,6 +5,7 @@ module UI.Components exposing
     , iconButton
     , spaLinkAttrs
     , chip, toggle, expandTrigger, toggleMemberBtn
+    , filterToggleButton, filterSection, filterSummaryChip, clearAllFiltersButton
     , avatar, AvatarColor(..)
     , fab
     , featherIcon
@@ -30,6 +31,7 @@ module UI.Components exposing
 # Interactive
 
 @docs chip, toggle, expandTrigger, toggleMemberBtn
+@docs filterToggleButton, filterSection, filterSummaryChip, clearAllFiltersButton
 
 
 # Avatar
@@ -484,6 +486,94 @@ toggleMemberBtn config =
         , Ui.el [ Ui.Font.weight Theme.fontWeight.medium ]
             (Ui.text config.name)
         ]
+
+
+
+-- FILTER HELPERS
+
+
+{-| Filter toggle button with active/inactive styling.
+-}
+filterToggleButton : { showFilters : Bool, hasActiveFilters : Bool, onPress : msg } -> Ui.Element msg
+filterToggleButton config =
+    let
+        ( bg, border, fontColor ) =
+            if config.showFilters || config.hasActiveFilters then
+                ( Theme.primary.solid, Theme.primary.solid, Theme.primary.solidText )
+
+            else
+                ( Theme.base.bgSubtle, Theme.base.accent, Theme.base.textSubtle )
+    in
+    iconButton
+        [ Ui.alignRight
+        , Ui.border Theme.border
+        , Anim.transition (Anim.ms 200)
+            [ Anim.backgroundColor bg
+            , Anim.borderColor border
+            , Anim.fontColor fontColor
+            ]
+        ]
+        { onPress = config.onPress, size = 18, icon = FeatherIcons.filter }
+
+
+{-| Filter section with uppercase label and wrapped row of chips.
+-}
+filterSection : String -> List (Ui.Element msg) -> Ui.Element msg
+filterSection label chips =
+    Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.paddingBottom Theme.spacing.md ]
+        [ Ui.el
+            [ Ui.Font.size Theme.font.xs
+            , Ui.Font.weight Theme.fontWeight.semibold
+            , Ui.Font.letterSpacing Theme.letterSpacing.wide
+            , Ui.Font.color Theme.base.textSubtle
+            ]
+            (Ui.text (String.toUpper label))
+        , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.xs ] chips
+        ]
+
+
+{-| Read-only filter summary chip showing category and label.
+-}
+filterSummaryChip : String -> String -> Ui.Element msg
+filterSummaryChip category label =
+    Ui.row
+        [ Ui.Font.size Theme.font.xs
+        , Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
+        , Ui.rounded Theme.radius.md
+        , Ui.background Theme.primary.tint
+        , Ui.width Ui.shrink
+        , Ui.spacing Theme.spacing.xs
+        ]
+        [ Ui.el [ Ui.Font.color Theme.base.textSubtle ] (Ui.text (category ++ ":"))
+        , Ui.el
+            [ Ui.Font.color Theme.primary.text
+            , Ui.Font.weight Theme.fontWeight.medium
+            ]
+            (Ui.text label)
+        ]
+
+
+{-| Clear all filters button.
+-}
+clearAllFiltersButton : I18n -> msg -> Ui.Element msg
+clearAllFiltersButton i18n onPress =
+    Ui.el
+        [ Ui.Input.button onPress
+        , Ui.width Ui.fill
+        , Ui.paddingTop Theme.spacing.md
+        , Ui.pointer
+        ]
+        (Ui.el
+            [ Ui.padding Theme.spacing.sm
+            , Ui.Font.size Theme.font.sm
+            , Ui.Font.weight Theme.fontWeight.medium
+            , Ui.Font.color Theme.danger.text
+            , Ui.Font.center
+            , Ui.width Ui.fill
+            , Ui.rounded Theme.radius.sm
+            ]
+            (Ui.text (T.filterClearAll i18n))
+        )
 
 
 
