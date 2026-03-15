@@ -26,10 +26,12 @@ Owns its own ConcurrentTask.Pool and handles all group business logic
 
 -}
 
+import Browser.Dom
 import ConcurrentTask exposing (ConcurrentTask)
 import Dict exposing (Dict)
 import Domain.Currency exposing (Currency(..))
 import Domain.Date as Date exposing (Date)
+import Domain.Entry as Entry
 import Domain.Event as Event
 import Domain.Group as Group
 import Domain.GroupState as GroupState
@@ -57,9 +59,11 @@ import Page.Group.NewEntry.Shared as NewEntryShared
 import Page.JoinGroup
 import PocketBase
 import PocketBase.Realtime
+import Process
 import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import Set exposing (Set)
+import Task
 import Time
 import Translations as T exposing (I18n)
 import UI.Components
@@ -69,7 +73,6 @@ import UI.Toast as Toast
 import UUID
 import Ui
 import Ui.Font
-import Update
 import WebCrypto.Symmetric as Symmetric
 
 
@@ -195,6 +198,7 @@ type
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
     | PostSyncTasksDone (ConcurrentTask.Response Idb.Error ())
     | OnPocketbaseEvent Json.Decode.Value
+    | ScrollToEntryResult (Result Browser.Dom.Error ())
 
 
 
@@ -252,8 +256,14 @@ init config =
 -}
 handleNavigation : UpdateConfig -> Group.Id -> GroupView -> Model -> ( Model, Cmd Msg )
 handleNavigation config groupId groupView model =
-    ensureGroupLoaded config groupId model
-        |> Update.mapModel (initPagesIfNeeded config groupView)
+    let
+        ( loadedModel, loadCmd ) =
+            ensureGroupLoaded config groupId model
+
+        ( initModel, initCmd ) =
+            initPagesIfNeeded config groupView loadedModel
+    in
+    ( initModel, Cmd.batch [ loadCmd, initCmd ] )
 
 
 ensureGroupLoaded : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
@@ -602,7 +612,11 @@ update config msg model =
                             ( syncModel, syncCmd, NavigateTo (GroupRoute gid (Tab MembersTab)) :: timeOutputs )
 
                         _ ->
-                            ( initPagesIfNeeded config (routeToGroupView config.route) syncModel, syncCmd, timeOutputs )
+                            let
+                                ( initModel, initCmd ) =
+                                    initPagesIfNeeded config (routeToGroupView config.route) syncModel
+                            in
+                            ( initModel, Cmd.batch [ syncCmd, initCmd ], timeOutputs )
 
                 Nothing ->
                     ( model, Cmd.none, [] )
@@ -662,11 +676,13 @@ update config msg model =
 
         OnGroupEventsLoaded groupId (ConcurrentTask.Success result) ->
             let
-                modelAfterLoad : Model
-                modelAfterLoad =
-                    applyLoadedGroup config groupId result.events result.groupKey result.syncCursor result.unpushedIds model
-                        |> Maybe.map (initPagesIfNeeded config (routeToGroupView config.route))
-                        |> Maybe.withDefault model
+                ( modelAfterLoad, initCmd ) =
+                    case applyLoadedGroup config groupId result.events result.groupKey result.syncCursor result.unpushedIds model of
+                        Just m ->
+                            initPagesIfNeeded config (routeToGroupView config.route) m
+
+                        Nothing ->
+                            ( model, Cmd.none )
 
                 -- Always try to sync. Works for both:
                 -- - Previously synced groups (has cursor, pulls new events)
@@ -676,7 +692,7 @@ update config msg model =
                 ( syncModel, syncCmd ) =
                     triggerSyncInternal config groupId modelAfterLoad
             in
-            ( syncModel, syncCmd, [] )
+            ( syncModel, Cmd.batch [ syncCmd, initCmd ], [] )
 
         OnGroupEventsLoaded _ _ ->
             ( model, Cmd.none, [] )
@@ -694,8 +710,7 @@ update config msg model =
                                 ( model.runner, Cmd.none )
                                     |> Runner.andRun PostSyncTasksDone (GroupOps.postSyncTasks config.db groupId config.pbClient result)
 
-                            modelAfterSync : Model
-                            modelAfterSync =
+                            ( modelAfterSync, initCmd ) =
                                 { model
                                     | loadedGroup = Just result.updatedGroup
                                     , runner = runner
@@ -708,14 +723,14 @@ update config msg model =
                         in
                         -- If new events were added during sync, trigger follow-up
                         if Set.isEmpty result.updatedGroup.unpushedIds then
-                            ( summaryModel, Cmd.batch [ taskCmds, summaryCmd ], summaryOutputs )
+                            ( summaryModel, Cmd.batch [ taskCmds, summaryCmd, initCmd ], summaryOutputs )
 
                         else
                             let
                                 ( followUpModel, followUpCmd ) =
                                     triggerSyncInternal config groupId summaryModel
                             in
-                            ( followUpModel, Cmd.batch [ taskCmds, summaryCmd, followUpCmd ], summaryOutputs )
+                            ( followUpModel, Cmd.batch [ taskCmds, summaryCmd, followUpCmd, initCmd ], summaryOutputs )
 
                     else
                         ( { model | syncInProgress = False }, Cmd.none, [] )
@@ -777,6 +792,9 @@ update config msg model =
 
                 Nothing ->
                     ( model, Cmd.none, [] )
+
+        ScrollToEntryResult _ ->
+            ( model, Cmd.none, [] )
 
 
 
@@ -1089,7 +1107,7 @@ applyLoadedGroup config groupId events groupKey syncCursor unpushedIds model =
 Mutation pages (NewEntry, EditEntry, AddVirtualMember, EditMemberMetadata, EditGroupMetadata)
 are only initialized when the user is a member.
 -}
-initPagesIfNeeded : UpdateConfig -> GroupView -> Model -> Model
+initPagesIfNeeded : UpdateConfig -> GroupView -> Model -> ( Model, Cmd Msg )
 initPagesIfNeeded config groupView model =
     case model.loadedGroup of
         Just loaded ->
@@ -1102,35 +1120,67 @@ initPagesIfNeeded config groupView model =
                     in
                     case model.pendingTransfer of
                         Just payData ->
-                            { model | newEntryModel = Page.Group.NewEntry.initTransfer entryFormConfig payData, pendingTransfer = Nothing }
+                            ( { model | newEntryModel = Page.Group.NewEntry.initTransfer entryFormConfig payData, pendingTransfer = Nothing }, Cmd.none )
 
                         Nothing ->
-                            { model | newEntryModel = Page.Group.NewEntry.init entryFormConfig }
+                            ( { model | newEntryModel = Page.Group.NewEntry.init entryFormConfig }, Cmd.none )
+
+                ( HighlightEntry entryId, _ ) ->
+                    let
+                        isDeleted : Bool
+                        isDeleted =
+                            Dict.get entryId loaded.groupState.entries
+                                |> Maybe.map .isDeleted
+                                |> Maybe.withDefault False
+                    in
+                    ( { model
+                        | activeTab = EntriesTab
+                        , entriesTabModel = Page.Group.EntriesTab.initWithHighlight entryId isDeleted
+                      }
+                    , scrollToEntryCmd entryId
+                    )
 
                 ( EditEntry entryId, Just userRootId ) ->
                     case Dict.get entryId loaded.groupState.entries of
                         Just entryState ->
-                            { model | newEntryModel = Page.Group.NewEntry.initFromEntry (memberEntryFormConfig config userRootId loaded) entryState.currentVersion }
+                            ( { model | newEntryModel = Page.Group.NewEntry.initFromEntry (memberEntryFormConfig config userRootId loaded) entryState.currentVersion }, Cmd.none )
 
                         Nothing ->
-                            model
+                            ( model, Cmd.none )
 
                 ( EditMemberMetadata memberId, Just _ ) ->
                     case Dict.get memberId loaded.groupState.members of
                         Just memberState ->
-                            { model | editMemberMetadataModel = Page.Group.EditMemberMetadata.init memberState.rootId memberState.name memberState.metadata }
+                            ( { model | editMemberMetadataModel = Page.Group.EditMemberMetadata.init memberState.rootId memberState.name memberState.metadata }, Cmd.none )
 
                         Nothing ->
-                            model
+                            ( model, Cmd.none )
 
                 ( EditGroupMetadata, Just _ ) ->
-                    { model | editGroupMetadataModel = Page.Group.EditGroupMetadata.init loaded.groupState.groupMeta }
+                    ( { model | editGroupMetadataModel = Page.Group.EditGroupMetadata.init loaded.groupState.groupMeta }, Cmd.none )
 
                 _ ->
-                    model
+                    ( model, Cmd.none )
 
         Nothing ->
-            model
+            ( model, Cmd.none )
+
+
+{-| DOM id for an entry card element.
+-}
+entryDomId : Entry.Id -> String
+entryDomId entryId =
+    "entry-" ++ entryId
+
+
+{-| Scroll to an entry card after a short delay to allow the DOM to render.
+-}
+scrollToEntryCmd : Entry.Id -> Cmd Msg
+scrollToEntryCmd entryId =
+    Process.sleep 50
+        |> Task.andThen (\_ -> Browser.Dom.getElement (entryDomId entryId))
+        |> Task.andThen (\el -> Browser.Dom.setViewport 0 el.element.y)
+        |> Task.attempt ScrollToEntryResult
 
 
 {-| Build entry form config for a confirmed member.
@@ -1225,6 +1275,9 @@ viewGroupPage config groupView loaded model =
     case ( groupView, maybeUserRootId ) of
         ( Tab tab, _ ) ->
             viewTabs config maybeUserRootId loaded { model | activeTab = tab }
+
+        ( HighlightEntry _, _ ) ->
+            viewTabs config maybeUserRootId loaded { model | activeTab = EntriesTab }
 
         ( Join _, _ ) ->
             -- Handled by Main.elm, should not reach here
@@ -1351,6 +1404,7 @@ tabContent config maybeUserRootId loaded model =
             Page.Group.EntriesTab.view config.i18n
                 { onNewEntry = config.toMsg (RequestNavigation NewEntry)
                 , newEntryHref = Route.toPath (GroupRoute config.groupId NewEntry)
+                , entryLinkHref = \entryId -> config.origin ++ Route.toPath (GroupRoute config.groupId (HighlightEntry entryId))
                 , toMsg = config.toMsg << EntriesTabMsg
                 }
                 maybeUserRootId
@@ -1387,6 +1441,8 @@ tabContent config maybeUserRootId loaded model =
                 { resolveName = GroupState.resolveMemberName loaded.groupState
                 , currentUserRootId = maybeUserRootId
                 , groupDefaultCurrency = loaded.summary.defaultCurrency
+                , entryLinkHref = \entryId -> Route.toPath (GroupRoute config.groupId (HighlightEntry entryId))
+                , onNavigateToEntry = \entryId -> config.toMsg (RequestNavigation (HighlightEntry entryId))
                 , toMsg = config.toMsg << ActivityTabMsg
                 , allMembers = allMembers
                 }

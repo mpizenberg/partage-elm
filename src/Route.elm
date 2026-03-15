@@ -26,6 +26,7 @@ type Route
 type GroupView
     = Join String
     | Tab GroupTab
+    | HighlightEntry Entry.Id
     | NewEntry
     | EditEntry Entry.Id
     | AddVirtualMember
@@ -63,7 +64,12 @@ fromAppUrl appUrl =
             GroupRoute groupId (Tab BalanceTab)
 
         [ "groups", groupId, "entries" ] ->
-            GroupRoute groupId (Tab EntriesTab)
+            case Dict.get "highlight" appUrl.queryParameters |> Maybe.andThen List.head of
+                Just entryId ->
+                    GroupRoute groupId (HighlightEntry entryId)
+
+                Nothing ->
+                    GroupRoute groupId (Tab EntriesTab)
 
         [ "groups", groupId, "members" ] ->
             GroupRoute groupId (Tab MembersTab)
@@ -104,6 +110,12 @@ toAppUrl route =
             , fragment = Just key
             }
 
+        GroupRoute groupId (HighlightEntry entryId) ->
+            { path = [ "groups", groupId, "entries" ]
+            , queryParameters = Dict.singleton "highlight" [ entryId ]
+            , fragment = Nothing
+            }
+
         _ ->
             AppUrl.fromPath (toPathSegments route)
 
@@ -129,6 +141,9 @@ toPathSegments route =
             [ "groups", groupId ]
 
         GroupRoute groupId (Tab EntriesTab) ->
+            [ "groups", groupId, "entries" ]
+
+        GroupRoute groupId (HighlightEntry _) ->
             [ "groups", groupId, "entries" ]
 
         GroupRoute groupId (Tab MembersTab) ->
@@ -181,6 +196,9 @@ toPath route =
 
         GroupRoute groupId (Tab EntriesTab) ->
             "/groups/" ++ groupId ++ "/entries"
+
+        GroupRoute groupId (HighlightEntry entryId) ->
+            "/groups/" ++ groupId ++ "/entries?highlight=" ++ entryId
 
         GroupRoute groupId (Tab MembersTab) ->
             "/groups/" ++ groupId ++ "/members"

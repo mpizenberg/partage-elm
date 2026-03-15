@@ -45,6 +45,8 @@ type alias Config msg =
     { resolveName : Member.Id -> String
     , currentUserRootId : Maybe Member.Id
     , groupDefaultCurrency : Currency
+    , entryLinkHref : Entry.Id -> String
+    , onNavigateToEntry : Entry.Id -> msg
     , toMsg : Msg -> msg
     , allMembers : List ( Member.Id, String )
     }
@@ -635,24 +637,33 @@ detailContent i18n config detail =
         resolveName : Member.Id -> String
         resolveName =
             config.resolveName
+
+        withEntryLink : Entry.Id -> List (Ui.Element msg) -> List (Ui.Element msg)
+        withEntryLink entryId rows =
+            rows ++ [ entryLinkRow i18n (config.entryLinkHref entryId) (config.onNavigateToEntry entryId) ]
     in
     case detail of
         EntryAddedDetail data ->
             entryDetailRows i18n config.groupDefaultCurrency resolveName data.entry
+                |> withEntryLink data.entry.meta.rootId
 
         EntryModifiedDetail data ->
             entryModifiedDiffRows i18n config.groupDefaultCurrency resolveName data.entry data.previousEntry
+                |> withEntryLink data.entry.meta.rootId
 
         TransferAddedDetail data ->
             entryDetailRows i18n config.groupDefaultCurrency resolveName data.entry
+                |> withEntryLink data.entry.meta.rootId
 
         TransferModifiedDetail data ->
             entryModifiedDiffRows i18n config.groupDefaultCurrency resolveName data.entry data.previousEntry
+                |> withEntryLink data.entry.meta.rootId
 
         EntryDeletedDetail data ->
             case data.entry of
                 Just entry ->
                     entryDetailRows i18n config.groupDefaultCurrency resolveName entry
+                        |> withEntryLink entry.meta.rootId
 
                 Nothing ->
                     [ detailRow (T.newEntryDescriptionLabel i18n) data.entryDescription ]
@@ -661,6 +672,7 @@ detailContent i18n config detail =
             case data.entry of
                 Just entry ->
                     entryDetailRows i18n config.groupDefaultCurrency resolveName entry
+                        |> withEntryLink entry.meta.rootId
 
                 Nothing ->
                     [ detailRow (T.newEntryDescriptionLabel i18n) data.entryDescription ]
@@ -1163,6 +1175,31 @@ linksToString links =
             links
                 |> List.map (\l -> l.label ++ " (" ++ l.url ++ ")")
                 |> String.join ", "
+
+
+
+-- ENTRY LINK
+
+
+{-| A row with a link to navigate to the current version of the entry.
+-}
+entryLinkRow : I18n -> String -> msg -> Ui.Element msg
+entryLinkRow i18n href onPress =
+    Ui.row
+        (Ui.spacing Theme.spacing.sm
+            :: Ui.contentCenterY
+            :: Ui.paddingTop Theme.spacing.xs
+            :: Ui.pointer
+            :: UI.Components.spaLinkAttrs href onPress
+        )
+        [ Ui.el [ Ui.Font.color Theme.primary.solid, Ui.width Ui.shrink ]
+            (UI.Components.featherIcon 14 FeatherIcons.externalLink)
+        , Ui.el
+            [ Ui.Font.size Theme.font.sm
+            , Ui.Font.color Theme.primary.solid
+            ]
+            (Ui.text (T.activityViewEntry i18n))
+        ]
 
 
 

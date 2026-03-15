@@ -1,4 +1,4 @@
-module Page.Group.EntriesTab exposing (Config, Model, Msg, Output(..), init, update, view)
+module Page.Group.EntriesTab exposing (Config, Model, Msg, Output(..), init, initWithHighlight, update, view)
 
 {-| Entries tab showing expense and transfer cards with filtering
 and inline expandable entry details.
@@ -13,6 +13,8 @@ import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
 import FeatherIcons
 import Format
+import Html
+import Html.Attributes
 import List.Extra
 import Set exposing (Set)
 import Time
@@ -68,6 +70,7 @@ type Output
 type alias Config msg =
     { onNewEntry : msg
     , newEntryHref : String
+    , entryLinkHref : Entry.Id -> String
     , toMsg : Msg -> msg
     }
 
@@ -80,6 +83,21 @@ init =
         , showDeleted = False
         , searchQuery = ""
         , expandedEntries = Set.empty
+        , confirmingAction = Nothing
+        }
+
+
+{-| Initialize with a specific entry highlighted (expanded), resetting filters.
+If the entry is deleted, showDeleted is turned on.
+-}
+initWithHighlight : Entry.Id -> Bool -> Model
+initWithHighlight entryId isDeleted =
+    Model
+        { filters = Filter.emptyEntryFilters
+        , showFilters = False
+        , showDeleted = isDeleted
+        , searchQuery = ""
+        , expandedEntries = Set.singleton entryId
         , confirmingAction = Nothing
         }
 
@@ -264,7 +282,7 @@ view i18n config maybeUserRootId today (Model data) state =
                     GroupState.resolveMemberName state
             in
             Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
-                (groupedByDate i18n (maybeUserRootId /= Nothing) resolveName data.expandedEntries data.confirmingAction visibleEntries)
+                (groupedByDate i18n (maybeUserRootId /= Nothing) resolveName config.entryLinkHref data.expandedEntries data.confirmingAction visibleEntries)
                 |> Ui.map toMsg
         ]
 
@@ -526,8 +544,8 @@ dateFilterSection i18n activeRanges =
 -- DATE GROUPING
 
 
-groupedByDate : I18n -> Bool -> (Member.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> List { entry : Entry.Entry, isDeleted : Bool } -> List (Ui.Element Msg)
-groupedByDate i18n isMember resolveName expandedEntries confirmingAction entries =
+groupedByDate : I18n -> Bool -> (Member.Id -> String) -> (Entry.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> List { entry : Entry.Entry, isDeleted : Bool } -> List (Ui.Element Msg)
+groupedByDate i18n isMember resolveName entryLinkHref expandedEntries confirmingAction entries =
     let
         getDate : Entry.Entry -> Date
         getDate entry =
@@ -547,7 +565,7 @@ groupedByDate i18n isMember resolveName expandedEntries confirmingAction entries
         |> List.concatMap
             (\( date, group ) ->
                 dateSeparator i18n date
-                    :: List.map (entryCardView i18n isMember resolveName expandedEntries confirmingAction) group
+                    :: List.map (entryCardView i18n isMember resolveName entryLinkHref expandedEntries confirmingAction) group
             )
 
 
@@ -567,8 +585,8 @@ dateSeparator i18n date =
 -- ENTRY CARD
 
 
-entryCardView : I18n -> Bool -> (Member.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> { entry : Entry.Entry, isDeleted : Bool } -> Ui.Element Msg
-entryCardView i18n isMember resolveName expandedEntries confirmingAction { entry, isDeleted } =
+entryCardView : I18n -> Bool -> (Member.Id -> String) -> (Entry.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> { entry : Entry.Entry, isDeleted : Bool } -> Ui.Element Msg
+entryCardView i18n isMember resolveName entryLinkHref expandedEntries confirmingAction { entry, isDeleted } =
     let
         entryId : Entry.Id
         entryId =
@@ -589,11 +607,14 @@ entryCardView i18n isMember resolveName expandedEntries confirmingAction { entry
 
         cardEl : Ui.Element Msg
         cardEl =
-            UI.Components.card [ Ui.paddingXY Theme.spacing.lg Theme.spacing.md ]
+            UI.Components.card
+                [ Ui.paddingXY Theme.spacing.lg Theme.spacing.md
+                , Ui.id (entryDomId entryId)
+                ]
                 [ Ui.el [ Ui.Input.button (ToggleEntry entryId), Ui.pointer ]
                     headerEl
                 , if isExpanded then
-                    entryDetail i18n isMember resolveName entryId entry isDeleted confirmingAction
+                    entryDetail i18n isMember resolveName (entryLinkHref entryId) entryId entry isDeleted confirmingAction
 
                   else
                     Ui.none
@@ -604,6 +625,13 @@ entryCardView i18n isMember resolveName expandedEntries confirmingAction { entry
 
     else
         cardEl
+
+
+{-| DOM id for an entry card element. Must match Page.Group.entryDomId.
+-}
+entryDomId : Entry.Id -> String
+entryDomId entryId =
+    "entry-" ++ entryId
 
 
 expenseCardHeader : I18n -> (Member.Id -> String) -> Entry.ExpenseData -> Ui.Element msg
@@ -800,13 +828,14 @@ recipientText resolveName beneficiaries =
 -- ENTRY DETAIL (expanded)
 
 
-entryDetail : I18n -> Bool -> (Member.Id -> String) -> Entry.Id -> Entry.Entry -> Bool -> Maybe ( Entry.Id, ConfirmAction ) -> Ui.Element Msg
-entryDetail i18n isMember resolveName entryId entry isDeleted confirmingAction =
+entryDetail : I18n -> Bool -> (Member.Id -> String) -> String -> Entry.Id -> Entry.Entry -> Bool -> Maybe ( Entry.Id, ConfirmAction ) -> Ui.Element Msg
+entryDetail i18n isMember resolveName linkHref entryId entry isDeleted confirmingAction =
     Ui.column
         [ Ui.paddingTop Theme.spacing.md
         , Ui.spacing Theme.spacing.md
         ]
         [ entryContent i18n resolveName entry
+        , Ui.row [] [ copyLinkBtn linkHref (T.entryDetailCopyLink i18n) ]
         , if isMember then
             actionButtons i18n
                 entryId
@@ -1085,6 +1114,35 @@ defaultButtons i18n entryId isDeleted =
                 , icon = FeatherIcons.trash2
                 , onPress = ClickDelete entryId
                 }
+        ]
+
+
+
+-- COPY LINK BUTTON
+
+
+{-| Copy-to-clipboard button using the copy-button web component.
+-}
+copyLinkBtn : String -> String -> Ui.Element msg
+copyLinkBtn copyText label =
+    Ui.row
+        (Ui.width Ui.shrink
+            :: Ui.inFront
+                (Ui.html
+                    (Html.node "copy-button"
+                        [ Html.Attributes.attribute "data-copy" copyText
+                        , Html.Attributes.style "display" "block"
+                        , Html.Attributes.style "width" "100%"
+                        , Html.Attributes.style "height" "100%"
+                        , Html.Attributes.style "cursor" "pointer"
+                        ]
+                        []
+                    )
+                )
+            :: UI.Components.btnOutlineAttrs
+        )
+        [ UI.Components.featherIcon 16 FeatherIcons.link
+        , Ui.text label
         ]
 
 

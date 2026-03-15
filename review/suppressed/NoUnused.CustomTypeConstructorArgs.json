@@ -3,7 +3,6 @@
   "automatically created by": "elm-review suppress",
   "learn more": "elm-review suppress --help",
   "suppressions": [
-    { "count": 3, "filePath": "src/Infra/ConcurrentTaskExtra.elm" },
-    { "count": 1, "filePath": "src/Update.elm" }
+    { "count": 1, "filePath": "src/Page/Group.elm" }
   ]
 }
