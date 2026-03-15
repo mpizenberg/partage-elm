@@ -1,5 +1,6 @@
 module TestHelpers exposing
-    ( defaultExpenseData
+    ( bootstrapMembers
+    , defaultExpenseData
     , defaultTransferData
     , makeEnvelope
     , makeExpenseEntry
@@ -8,9 +9,20 @@ module TestHelpers exposing
 
 import Domain.Currency exposing (Currency(..))
 import Domain.Entry as Entry exposing (Beneficiary(..), Entry, Kind(..))
-import Domain.Event exposing (Envelope, Payload)
+import Domain.Event exposing (Envelope, Payload(..))
 import Domain.Member as Member
 import Time
+
+
+{-| Bootstrap events creating admin, alice, and bob as members.
+Use this at the start of test event lists so that isAuthorized passes.
+-}
+bootstrapMembers : List Envelope
+bootstrapMembers =
+    [ makeEnvelope "boot-admin" 0 "admin" (MemberCreated { memberId = "admin", name = "Admin", memberType = Member.Real, addedBy = "admin" })
+    , makeEnvelope "boot-alice" 1 "admin" (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin" })
+    , makeEnvelope "boot-bob" 2 "admin" (MemberCreated { memberId = "bob", name = "Bob", memberType = Member.Real, addedBy = "admin" })
+    ]
 
 
 makeEnvelope : String -> Int -> Member.Id -> Payload -> Envelope

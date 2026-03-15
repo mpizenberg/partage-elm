@@ -45,7 +45,7 @@ type Msg
 
 type alias Config msg =
     { resolveName : Member.Id -> String
-    , currentUserRootId : Member.Id
+    , currentUserRootId : Maybe Member.Id
     , groupDefaultCurrency : Currency
     , toMsg : Msg -> msg
     , allMembers : List ( Member.Id, String )
@@ -408,7 +408,12 @@ activityItem i18n config expandedActivities activity =
 
         isInvolved : Bool
         isInvolved =
-            List.member config.currentUserRootId activity.involvedMembers
+            case config.currentUserRootId of
+                Just uid ->
+                    List.member uid activity.involvedMembers
+
+                Nothing ->
+                    False
 
         ( borderWidth, borderColor ) =
             if isInvolved then

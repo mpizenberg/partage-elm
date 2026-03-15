@@ -100,9 +100,13 @@ type alias Config msg =
 
 {-| Render the members tab with active and retired member lists.
 -}
-view : I18n -> Config msg -> (Msg -> msg) -> Model -> Member.Id -> GroupState -> Ui.Element msg
-view i18n config toMsg model currentUserRootId state =
+view : I18n -> Config msg -> (Msg -> msg) -> Model -> Maybe Member.Id -> GroupState -> Ui.Element msg
+view i18n config toMsg model maybeUserRootId state =
     let
+        isMember : Bool
+        isMember =
+            maybeUserRootId /= Nothing
+
         allMembers : List Member.ChainState
         allMembers =
             Dict.values state.members
@@ -111,7 +115,7 @@ view i18n config toMsg model currentUserRootId state =
         active =
             allMembers
                 |> List.filter (not << .isRetired)
-                |> List.sortBy (\m -> ( boolToInt (m.rootId /= currentUserRootId), String.toLower m.name ))
+                |> List.sortBy (\m -> ( boolToInt (Just m.rootId /= maybeUserRootId), String.toLower m.name ))
 
         retired : List Member.ChainState
         retired =
@@ -128,7 +132,7 @@ view i18n config toMsg model currentUserRootId state =
             Ui.none
 
         -- Group Info
-        , groupInfoSection i18n config.editGroupMetadataHref config.onEditGroupMetadata state
+        , groupInfoSection i18n isMember config.editGroupMetadataHref config.onEditGroupMetadata state
 
         -- Invite
         , if config.isSynced then
@@ -141,7 +145,7 @@ view i18n config toMsg model currentUserRootId state =
         , Ui.column []
             [ UI.Components.sectionLabel (T.membersTabTitle i18n ++ " (" ++ String.fromInt (List.length active) ++ ")")
             , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-                (List.map (memberCard i18n toMsg model.expandedMembers currentUserRootId) active)
+                (List.map (memberCard i18n toMsg model.expandedMembers maybeUserRootId) active)
             ]
 
         -- Retired Members
@@ -154,7 +158,7 @@ view i18n config toMsg model currentUserRootId state =
                     }
                 , if model.showRetired then
                     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill, Ui.opacity 0.6 ]
-                        (List.map (memberCard i18n toMsg model.expandedMembers currentUserRootId) retired)
+                        (List.map (memberCard i18n toMsg model.expandedMembers maybeUserRootId) retired)
 
                   else
                     Ui.none
@@ -163,10 +167,14 @@ view i18n config toMsg model currentUserRootId state =
           else
             Ui.none
 
-        -- Add Member
-        , UI.Components.btnPrimary
-            (UI.Components.spaLinkAttrs config.addMemberHref config.onAddMember)
-            { label = T.memberAddButton i18n, onPress = config.onAddMember }
+        -- Add Member (only for members)
+        , if isMember then
+            UI.Components.btnPrimary
+                (UI.Components.spaLinkAttrs config.addMemberHref config.onAddMember)
+                { label = T.memberAddButton i18n, onPress = config.onAddMember }
+
+          else
+            Ui.none
         ]
 
 
@@ -228,8 +236,8 @@ notifIcon =
 -- GROUP INFO CARD
 
 
-groupInfoSection : I18n -> String -> msg -> GroupState -> Ui.Element msg
-groupInfoSection i18n editHref onEditGroupMetadata state =
+groupInfoSection : I18n -> Bool -> String -> msg -> GroupState -> Ui.Element msg
+groupInfoSection i18n isMember editHref onEditGroupMetadata state =
     let
         meta : GroupMetadata
         meta =
@@ -246,39 +254,49 @@ groupInfoSection i18n editHref onEditGroupMetadata state =
         viewDescription : String -> Ui.Element msg
         viewDescription desc =
             Ui.el [ Ui.Font.color Theme.base.textSubtle ] (Ui.text desc)
-
-        viewLinks : Ui.Element msg
-        viewLinks =
-            if List.isEmpty meta.links then
-                Ui.none
-
-            else
-                Ui.column [ Ui.spacing Theme.spacing.sm ]
-                    (List.map (linkItem FeatherIcons.externalLink) meta.links)
-
-        editLabel : String
-        editLabel =
-            if hasInfo then
-                T.groupEditInfo i18n
-
-            else
-                T.groupEditInfoEmpty i18n
     in
-    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
-        [ Maybe.map viewSubtitle meta.subtitle
-            |> Maybe.withDefault Ui.none
-        , Maybe.map viewDescription meta.description
-            |> Maybe.withDefault Ui.none
-        , viewLinks
-        , UI.Components.btnOutline
-            (Ui.paddingXY Theme.spacing.md Theme.spacing.sm
-                :: UI.Components.spaLinkAttrs editHref onEditGroupMetadata
-            )
-            { label = editLabel
-            , icon = Just (UI.Components.featherIcon 14 FeatherIcons.edit)
-            , onPress = onEditGroupMetadata
-            }
-        ]
+    if not isMember && not hasInfo then
+        Ui.none
+
+    else
+        let
+            viewLinks : Ui.Element msg
+            viewLinks =
+                if List.isEmpty meta.links then
+                    Ui.none
+
+                else
+                    Ui.column [ Ui.spacing Theme.spacing.sm ]
+                        (List.map (linkItem FeatherIcons.externalLink) meta.links)
+        in
+        Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+            [ Maybe.map viewSubtitle meta.subtitle
+                |> Maybe.withDefault Ui.none
+            , Maybe.map viewDescription meta.description
+                |> Maybe.withDefault Ui.none
+            , viewLinks
+            , if isMember then
+                let
+                    editLabel : String
+                    editLabel =
+                        if hasInfo then
+                            T.groupEditInfo i18n
+
+                        else
+                            T.groupEditInfoEmpty i18n
+                in
+                UI.Components.btnOutline
+                    (Ui.paddingXY Theme.spacing.md Theme.spacing.sm
+                        :: UI.Components.spaLinkAttrs editHref onEditGroupMetadata
+                    )
+                    { label = editLabel
+                    , icon = Just (UI.Components.featherIcon 14 FeatherIcons.edit)
+                    , onPress = onEditGroupMetadata
+                    }
+
+              else
+                Ui.none
+            ]
 
 
 linkItem : FeatherIcons.Icon -> { label : String, url : String } -> Ui.Element msg
@@ -452,12 +470,12 @@ qrCodeView link =
 -- MEMBER CARD
 
 
-memberCard : I18n -> (Msg -> msg) -> Set Member.Id -> Member.Id -> Member.ChainState -> Ui.Element msg
-memberCard i18n toMsg expandedMembers currentUserRootId member =
+memberCard : I18n -> (Msg -> msg) -> Set Member.Id -> Maybe Member.Id -> Member.ChainState -> Ui.Element msg
+memberCard i18n toMsg expandedMembers maybeUserRootId member =
     let
         isCurrentUser : Bool
         isCurrentUser =
-            member.rootId == currentUserRootId
+            Just member.rootId == maybeUserRootId
 
         isExpanded : Bool
         isExpanded =
@@ -555,7 +573,7 @@ memberCard i18n toMsg expandedMembers currentUserRootId member =
 
         -- Expanded detail content
         , if isExpanded then
-            memberDetail i18n toMsg currentUserRootId member
+            memberDetail i18n toMsg maybeUserRootId member
 
           else
             Ui.none
@@ -624,19 +642,26 @@ virtualTag i18n =
         (Ui.text (T.memberVirtualLabel i18n))
 
 
-memberDetail : I18n -> (Msg -> msg) -> Member.Id -> Member.ChainState -> Ui.Element msg
-memberDetail i18n toMsg currentUserRootId member =
+memberDetail : I18n -> (Msg -> msg) -> Maybe Member.Id -> Member.ChainState -> Ui.Element msg
+memberDetail i18n toMsg maybeUserRootId member =
     let
+        isMember : Bool
+        isMember =
+            maybeUserRootId /= Nothing
+
         retireButton : Ui.Element msg
         retireButton =
-            if member.isRetired then
+            if not isMember then
+                Ui.none
+
+            else if member.isRetired then
                 UI.Components.btnSuccess []
                     { label = T.memberUnretireButton i18n
                     , icon = FeatherIcons.userPlus
                     , onPress = toMsg (Unretire member.rootId)
                     }
 
-            else if member.rootId /= currentUserRootId then
+            else if Just member.rootId /= maybeUserRootId then
                 UI.Components.btnDanger []
                     { label = T.memberRetireButton i18n
                     , icon = FeatherIcons.trash2
@@ -729,12 +754,16 @@ memberDetail i18n toMsg currentUserRootId member =
         [ -- Metadata sections
           metadataSections
 
-        -- Action buttons
-        , UI.Components.btnOutline []
-            { label = T.memberEditMetadataButton i18n
-            , icon = Just (UI.Components.featherIcon 16 FeatherIcons.edit)
-            , onPress = toMsg (EditMetadata member.rootId)
-            }
+        -- Action buttons (only for members)
+        , if isMember then
+            UI.Components.btnOutline []
+                { label = T.memberEditMetadataButton i18n
+                , icon = Just (UI.Components.featherIcon 16 FeatherIcons.edit)
+                , onPress = toMsg (EditMetadata member.rootId)
+                }
+
+          else
+            Ui.none
         , retireButton
         ]
 

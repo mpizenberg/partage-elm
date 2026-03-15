@@ -8,7 +8,7 @@ module UI.Components exposing
     , avatar, AvatarColor(..)
     , fab
     , featherIcon
-    , languageSelector, pwaBanners
+    , languageSelector, pwaBanners, readOnlyBanner
     )
 
 {-| Reusable UI components.
@@ -49,7 +49,7 @@ module UI.Components exposing
 
 # Domain components
 
-@docs languageSelector, pwaBanners
+@docs languageSelector, pwaBanners, readOnlyBanner
 
 -}
 
@@ -674,3 +674,15 @@ pwaBanner message { bgColor, textColor, action, dismiss } =
             Nothing ->
                 Ui.none
         ]
+
+
+{-| Read-only banner displayed when the user is not a member of the group.
+-}
+readOnlyBanner : I18n -> Ui.Element msg
+readOnlyBanner i18n =
+    pwaBanner (T.readOnlyBanner i18n)
+        { bgColor = Theme.warning.tint
+        , textColor = Theme.warning.text
+        , action = Nothing
+        , dismiss = Nothing
+        }

@@ -23,9 +23,17 @@ suite =
         ]
 
 
+{-| Bootstrap event: admin self-registers as a member so subsequent events by admin pass authorization.
+-}
+adminBootstrap : Envelope
+adminBootstrap =
+    makeEnvelope "e0" 0 "admin" (MemberCreated { memberId = "admin", name = "Admin", memberType = Member.Real, addedBy = "admin" })
+
+
 createAliceEvents : List Envelope
 createAliceEvents =
-    [ makeEnvelope "e1"
+    [ adminBootstrap
+    , makeEnvelope "e1"
         1000
         "admin"
         (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin" })
@@ -120,7 +128,8 @@ memberCreationTests =
                     state =
                         GroupState.applyEvents events GroupState.empty
                 in
-                Expect.equal 2 (Dict.size state.members)
+                -- admin + alice + bob = 3
+                Expect.equal 3 (Dict.size state.members)
         ]
 
 
@@ -189,9 +198,10 @@ memberRetireTests =
                     state =
                         GroupState.applyEvents retireAliceEvents GroupState.empty
                 in
+                -- admin is still active, alice is retired
                 GroupState.activeMembers state
                     |> List.length
-                    |> Expect.equal 0
+                    |> Expect.equal 1
         , test "ignores retire for already retired member" <|
             \_ ->
                 let
@@ -253,9 +263,10 @@ memberUnretireTests =
                     state =
                         GroupState.applyEvents unretireAliceEvents GroupState.empty
                 in
+                -- admin + alice both active
                 GroupState.activeMembers state
                     |> List.length
-                    |> Expect.equal 1
+                    |> Expect.equal 2
         , test "ignores unretire for non-retired member" <|
             \_ ->
                 let
@@ -476,7 +487,7 @@ memberReplacementTests =
                         GroupState.applyEvents replaceAliceEvents GroupState.empty
                 in
                 GroupState.resolveMemberRootId state "bob-device"
-                    |> Expect.equal "alice"
+                    |> Expect.equal (Just "alice")
         ]
 
 
@@ -487,7 +498,8 @@ groupMetadataTests =
             \_ ->
                 let
                     events =
-                        [ makeEnvelope "e1"
+                        [ adminBootstrap
+                        , makeEnvelope "e1"
                             1000
                             "admin"
                             (GroupMetadataUpdated
@@ -522,7 +534,8 @@ groupMetadataTests =
 
 partialUpdateEvents : List Envelope
 partialUpdateEvents =
-    [ makeEnvelope "e1"
+    [ adminBootstrap
+    , makeEnvelope "e1"
         1000
         "admin"
         (GroupMetadataUpdated
@@ -557,6 +570,7 @@ eventOrderingTests =
                             2000
                             "alice"
                             (MemberRenamed { rootId = "alice", oldName = "Alice", newName = "Alicia" })
+                        , adminBootstrap
                         , makeEnvelope "e1"
                             1000
                             "admin"
@@ -573,7 +587,8 @@ eventOrderingTests =
             \_ ->
                 let
                     events =
-                        [ makeEnvelope "e1"
+                        [ adminBootstrap
+                        , makeEnvelope "e1"
                             1000
                             "admin"
                             (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin" })
@@ -598,8 +613,9 @@ eventOrderingTests =
             \randomInts ->
                 let
                     baseEvents =
-                        [ makeEnvelope "e0"
-                            0
+                        [ adminBootstrap
+                        , makeEnvelope "e0b"
+                            1
                             "admin"
                             (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin" })
                         ]

@@ -6,7 +6,7 @@ import Domain.Event exposing (Payload(..))
 import Domain.GroupState as GroupState exposing (RejectionReason(..))
 import Expect
 import Test exposing (Test, describe, test)
-import TestHelpers exposing (defaultExpenseData, makeEnvelope, makeExpenseEntry)
+import TestHelpers exposing (bootstrapMembers, defaultExpenseData, makeEnvelope, makeExpenseEntry)
 
 
 suite : Test
@@ -30,7 +30,7 @@ singleVersionTests =
 
                 state =
                     GroupState.applyEvents
-                        [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry) ]
+                        (bootstrapMembers ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry) ])
                         GroupState.empty
             in
             [ test "current version id matches" <|
@@ -70,9 +70,11 @@ modificationTests =
                 let
                     state =
                         GroupState.applyEvents
-                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
+                            (bootstrapMembers
+                                ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
                             , makeEnvelope "e2" 2000 "admin" (EntryModified modifiedEntry)
-                            ]
+                               ]
+                            )
                             GroupState.empty
                 in
                 Dict.get "entry1" state.entries
@@ -83,9 +85,11 @@ modificationTests =
                 let
                     state =
                         GroupState.applyEvents
-                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
+                            (bootstrapMembers
+                                ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
                             , makeEnvelope "e2" 2000 "admin" (EntryModified modifiedEntry)
-                            ]
+                               ]
+                            )
                             GroupState.empty
                 in
                 Dict.get "entry1" state.entries
@@ -106,7 +110,9 @@ modificationTests =
 
                     state =
                         GroupState.applyEvents
-                            [ makeEnvelope "e1" 2000 "admin" (EntryModified orphanEntry) ]
+                            (bootstrapMembers
+                                ++ [ makeEnvelope "e1" 2000 "admin" (EntryModified orphanEntry) ]
+                            )
                             GroupState.empty
                 in
                 Expect.equal 0 (Dict.size state.entries)
@@ -124,9 +130,11 @@ deletionTests =
 
                     state =
                         GroupState.applyEvents
-                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
+                            (bootstrapMembers
+                                ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
                             , makeEnvelope "e2" 2000 "admin" (EntryDeleted { rootId = "entry1" })
-                            ]
+                               ]
+                            )
                             GroupState.empty
                 in
                 Dict.get "entry1" state.entries
@@ -140,10 +148,12 @@ deletionTests =
 
                     state =
                         GroupState.applyEvents
-                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
+                            (bootstrapMembers
+                                ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
                             , makeEnvelope "e2" 2000 "admin" (EntryDeleted { rootId = "entry1" })
                             , makeEnvelope "e3" 3000 "admin" (EntryUndeleted { rootId = "entry1" })
-                            ]
+                               ]
+                            )
                             GroupState.empty
                 in
                 Dict.get "entry1" state.entries
@@ -160,10 +170,12 @@ deletionTests =
 
                     state =
                         GroupState.applyEvents
-                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry1)
+                            (bootstrapMembers
+                                ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry1)
                             , makeEnvelope "e2" 1001 "admin" (EntryAdded entry2)
                             , makeEnvelope "e3" 2000 "admin" (EntryDeleted { rootId = "entry1" })
-                            ]
+                               ]
+                            )
                             GroupState.empty
                 in
                 Expect.equal 1 (List.length (GroupState.activeEntries state))
@@ -172,7 +184,9 @@ deletionTests =
                 let
                     state =
                         GroupState.applyEvents
-                            [ makeEnvelope "e1" 1000 "admin" (EntryDeleted { rootId = "ghost" }) ]
+                            (bootstrapMembers
+                                ++ [ makeEnvelope "e1" 1000 "admin" (EntryDeleted { rootId = "ghost" }) ]
+                            )
                             GroupState.empty
                 in
                 Expect.equal 0 (Dict.size state.entries)
@@ -198,10 +212,12 @@ concurrentModificationTests =
 
                     state =
                         GroupState.applyEvents
-                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
+                            (bootstrapMembers
+                                ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
                             , makeEnvelope "e2" 2000 "alice" (EntryModified mod1)
                             , makeEnvelope "e3" 3000 "bob" (EntryModified mod2)
-                            ]
+                               ]
+                            )
                             GroupState.empty
                 in
                 Dict.get "entry1" state.entries
@@ -222,10 +238,12 @@ concurrentModificationTests =
 
                     state =
                         GroupState.applyEvents
-                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
+                            (bootstrapMembers
+                                ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
                             , makeEnvelope "e2" 2000 "alice" (EntryModified mod1)
                             , makeEnvelope "e3" 2000 "bob" (EntryModified mod2)
-                            ]
+                               ]
+                            )
                             GroupState.empty
                 in
                 -- "v-zzz" > "v-aaa" lexicographically, so v-zzz wins
@@ -246,9 +264,11 @@ rejectionTests =
 
                     state =
                         GroupState.applyEvents
-                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
+                            (bootstrapMembers
+                                ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
                             , makeEnvelope "e2" 2000 "admin" (EntryAdded entry)
-                            ]
+                               ]
+                            )
                             GroupState.empty
                 in
                 state.rejectedEntries
@@ -269,7 +289,9 @@ rejectionTests =
 
                     state =
                         GroupState.applyEvents
-                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry) ]
+                            (bootstrapMembers
+                                ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry) ]
+                            )
                             GroupState.empty
                 in
                 state.rejectedEntries
@@ -290,7 +312,9 @@ rejectionTests =
 
                     state =
                         GroupState.applyEvents
-                            [ makeEnvelope "e1" 2000 "admin" (EntryModified orphanEntry) ]
+                            (bootstrapMembers
+                                ++ [ makeEnvelope "e1" 2000 "admin" (EntryModified orphanEntry) ]
+                            )
                             GroupState.empty
                 in
                 state.rejectedEntries
@@ -307,9 +331,11 @@ rejectionTests =
 
                     state =
                         GroupState.applyEvents
-                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
+                            (bootstrapMembers
+                                ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
                             , makeEnvelope "e2" 2000 "admin" (EntryModified modified)
-                            ]
+                               ]
+                            )
                             GroupState.empty
                 in
                 Expect.equal [] state.rejectedEntries
@@ -341,10 +367,12 @@ rejectionTests =
 
                     state =
                         GroupState.applyEvents
-                            [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
+                            (bootstrapMembers
+                                ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
                             , makeEnvelope "e2" 2000 "admin" (EntryModified orphan1)
                             , makeEnvelope "e3" 3000 "admin" (EntryModified orphan2)
-                            ]
+                               ]
+                            )
                             GroupState.empty
                 in
                 Expect.equal 2 (List.length state.rejectedEntries)

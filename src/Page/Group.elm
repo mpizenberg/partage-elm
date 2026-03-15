@@ -541,7 +541,12 @@ update config msg model =
         ToggleNotification ->
             case model.loadedGroup of
                 Just loaded ->
-                    ( model, Cmd.none, [ ToggleGroupNotification loaded.summary.id (currentUserRootId model loaded) ] )
+                    case currentUserRootId model loaded of
+                        Just userRootId ->
+                            ( model, Cmd.none, [ ToggleGroupNotification loaded.summary.id userRootId ] )
+
+                        Nothing ->
+                            ( model, Cmd.none, [] )
 
                 Nothing ->
                     ( model, Cmd.none, [] )
@@ -631,7 +636,7 @@ update config msg model =
                 memberRootId : Member.Id
                 memberRootId =
                     model.loadedGroup
-                        |> Maybe.map (currentUserRootId model)
+                        |> Maybe.andThen (currentUserRootId model)
                         |> Maybe.withDefault ""
             in
             ( { model | loadedGroup = Nothing }
@@ -959,23 +964,19 @@ triggerSyncInternal config groupId model =
 
                         notifyContext : Maybe PushServer.NotifyContext
                         notifyContext =
-                            if List.isEmpty unpushedEvents then
-                                Nothing
+                            case ( List.isEmpty unpushedEvents, currentUserRootId model loaded ) of
+                                ( False, Just actorId ) ->
+                                    Just
+                                        { groupId = groupId
+                                        , groupName = loaded.groupState.groupMeta.name
+                                        , actorRootId = actorId
+                                        , actorName = GroupState.resolveMemberName loaded.groupState actorId
+                                        , entries = loaded.groupState.entries
+                                        , url = Route.toPath (GroupRoute groupId (Tab ActivityTab))
+                                        }
 
-                            else
-                                let
-                                    actorId : Member.Id
-                                    actorId =
-                                        currentUserRootId model loaded
-                                in
-                                Just
-                                    { groupId = groupId
-                                    , groupName = loaded.groupState.groupMeta.name
-                                    , actorRootId = actorId
-                                    , actorName = GroupState.resolveMemberName loaded.groupState actorId
-                                    , entries = loaded.groupState.entries
-                                    , url = Route.toPath (GroupRoute groupId (Tab ActivityTab))
-                                    }
+                                _ ->
+                                    Nothing
                     in
                     ( model.runner, Cmd.none )
                         |> Runner.andRun (OnGroupSynced groupId loaded.unpushedIds)
@@ -1003,10 +1004,6 @@ syncGroupSummaryName config groupId model =
     case model.loadedGroup of
         Just loaded ->
             let
-                userRootId : Member.Id
-                userRootId =
-                    currentUserRootId model loaded
-
                 updatedSummary : Group.Summary
                 updatedSummary =
                     { id = groupId
@@ -1015,7 +1012,11 @@ syncGroupSummaryName config groupId model =
                     , isSubscribed = loaded.summary.isSubscribed
                     , createdAt = loaded.groupState.groupMeta.createdAt
                     , memberCount = Dict.size loaded.groupState.members
-                    , myBalanceCents = Dict.get userRootId loaded.groupState.balances |> Maybe.map .netBalance |> Maybe.withDefault 0
+                    , myBalanceCents =
+                        currentUserRootId model loaded
+                            |> Maybe.andThen (\rid -> Dict.get rid loaded.groupState.balances)
+                            |> Maybe.map .netBalance
+                            |> Maybe.withDefault 0
                     }
 
                 updatedModel : Model
@@ -1047,22 +1048,20 @@ applyLoadedGroup config groupId events groupKey syncCursor unpushedIds model =
 
 
 {-| Initialize the sub-page model for a given group view, if the needed data is available.
+Mutation pages (NewEntry, EditEntry, AddVirtualMember, EditMemberMetadata, EditGroupMetadata)
+are only initialized when the user is a member.
 -}
 initPagesIfNeeded : UpdateConfig -> GroupView -> Model -> Model
 initPagesIfNeeded config groupView model =
     case model.loadedGroup of
         Just loaded ->
-            let
-                entryFormConfig : Page.Group.NewEntry.Config
-                entryFormConfig =
-                    { currentUserRootId = currentUserRootId model loaded
-                    , activeMembersRootIds = List.map .rootId (GroupState.activeMembers loaded.groupState)
-                    , today = Date.posixToDate config.currentTime
-                    , defaultCurrency = loaded.summary.defaultCurrency
-                    }
-            in
-            case groupView of
-                NewEntry ->
+            case ( groupView, currentUserRootId model loaded ) of
+                ( NewEntry, Just userRootId ) ->
+                    let
+                        entryFormConfig : Page.Group.NewEntry.Config
+                        entryFormConfig =
+                            memberEntryFormConfig config userRootId loaded
+                    in
                     case model.pendingTransfer of
                         Just payData ->
                             { model | newEntryModel = Page.Group.NewEntry.initTransfer entryFormConfig payData, pendingTransfer = Nothing }
@@ -1070,15 +1069,15 @@ initPagesIfNeeded config groupView model =
                         Nothing ->
                             { model | newEntryModel = Page.Group.NewEntry.init entryFormConfig }
 
-                EditEntry entryId ->
+                ( EditEntry entryId, Just userRootId ) ->
                     case Dict.get entryId loaded.groupState.entries of
                         Just entryState ->
-                            { model | newEntryModel = Page.Group.NewEntry.initFromEntry entryFormConfig entryState.currentVersion }
+                            { model | newEntryModel = Page.Group.NewEntry.initFromEntry (memberEntryFormConfig config userRootId loaded) entryState.currentVersion }
 
                         Nothing ->
                             model
 
-                EditMemberMetadata memberId ->
+                ( EditMemberMetadata memberId, Just _ ) ->
                     case Dict.get memberId loaded.groupState.members of
                         Just memberState ->
                             { model | editMemberMetadataModel = Page.Group.EditMemberMetadata.init memberState.rootId memberState.name memberState.metadata }
@@ -1086,7 +1085,7 @@ initPagesIfNeeded config groupView model =
                         Nothing ->
                             model
 
-                EditGroupMetadata ->
+                ( EditGroupMetadata, Just _ ) ->
                     { model | editGroupMetadataModel = Page.Group.EditGroupMetadata.init loaded.groupState.groupMeta }
 
                 _ ->
@@ -1096,9 +1095,21 @@ initPagesIfNeeded config groupView model =
             model
 
 
-{-| Resolve the current user's member root ID within a loaded group.
+{-| Build entry form config for a confirmed member.
 -}
-currentUserRootId : Model -> LoadedGroup -> Member.Id
+memberEntryFormConfig : UpdateConfig -> Member.Id -> LoadedGroup -> Page.Group.NewEntry.Config
+memberEntryFormConfig config userRootId loaded =
+    { currentUserRootId = userRootId
+    , activeMembersRootIds = List.map .rootId (GroupState.activeMembers loaded.groupState)
+    , today = Date.posixToDate config.currentTime
+    , defaultCurrency = loaded.summary.defaultCurrency
+    }
+
+
+{-| Resolve the current user's member root ID within a loaded group.
+Returns Nothing if the user is not a member of this group.
+-}
+currentUserRootId : Model -> LoadedGroup -> Maybe Member.Id
 currentUserRootId model loaded =
     GroupState.resolveMemberRootId loaded.groupState model.identityHash
 
@@ -1168,21 +1179,20 @@ viewGroupPage config groupView loaded model =
         noOverlay : Ui.Element msg -> ViewResult msg
         noOverlay content =
             { content = content, overlay = Nothing }
-    in
-    case groupView of
-        Tab tab ->
-            let
-                userRootId : Member.Id
-                userRootId =
-                    currentUserRootId model loaded
-            in
-            viewTabs config userRootId loaded { model | activeTab = tab }
 
-        Join _ ->
+        maybeUserRootId : Maybe Member.Id
+        maybeUserRootId =
+            currentUserRootId model loaded
+    in
+    case ( groupView, maybeUserRootId ) of
+        ( Tab tab, _ ) ->
+            viewTabs config maybeUserRootId loaded { model | activeTab = tab }
+
+        ( Join _, _ ) ->
             -- Handled by Main.elm, should not reach here
             noOverlay Ui.none
 
-        NewEntry ->
+        ( NewEntry, Just _ ) ->
             noOverlay <|
                 pageShell config (T.shellNewEntry config.i18n) <|
                     Page.Group.NewEntry.view config.i18n
@@ -1190,7 +1200,7 @@ viewGroupPage config groupView loaded model =
                         (config.toMsg << NewEntryMsg)
                         model.newEntryModel
 
-        EditEntry _ ->
+        ( EditEntry _, Just _ ) ->
             noOverlay <|
                 pageShell config (T.editEntryTitle config.i18n) <|
                     Page.Group.NewEntry.view config.i18n
@@ -1198,26 +1208,30 @@ viewGroupPage config groupView loaded model =
                         (config.toMsg << NewEntryMsg)
                         model.newEntryModel
 
-        AddVirtualMember ->
+        ( AddVirtualMember, Just _ ) ->
             noOverlay <|
                 pageShell config (T.memberAddTitle config.i18n) <|
                     Page.Group.AddMember.view config.i18n
                         (config.toMsg << AddMemberMsg)
                         model.addMemberModel
 
-        EditMemberMetadata _ ->
+        ( EditMemberMetadata _, Just _ ) ->
             noOverlay <|
                 pageShell config (T.memberEditMetadataButton config.i18n) <|
                     Page.Group.EditMemberMetadata.view config.i18n
                         (config.toMsg << EditMemberMetadataMsg)
                         model.editMemberMetadataModel
 
-        EditGroupMetadata ->
+        ( EditGroupMetadata, Just _ ) ->
             noOverlay <|
                 pageShell config (T.groupSettingsTitle config.i18n) <|
                     Page.Group.EditGroupMetadata.view config.i18n
                         (config.toMsg << EditGroupMetadataMsg)
                         model.editGroupMetadataModel
+
+        -- Non-member trying to access a mutation page: fallback to balance tab
+        ( _, Nothing ) ->
+            viewTabs config Nothing loaded { model | activeTab = BalanceTab }
 
 
 pageShell : ViewConfig msg -> String -> Ui.Element msg -> Ui.Element msg
@@ -1225,29 +1239,46 @@ pageShell config title content =
     UI.Shell.pageShell { title = title, onBack = config.onGoBack } content
 
 
-viewTabs : ViewConfig msg -> Member.Id -> LoadedGroup -> Model -> ViewResult msg
-viewTabs config userRootId loaded model =
+viewTabs : ViewConfig msg -> Maybe Member.Id -> LoadedGroup -> Model -> ViewResult msg
+viewTabs config maybeUserRootId loaded model =
     let
         tabHref : GroupTab -> String
         tabHref tab =
             Route.toPath (GroupRoute config.groupId (Tab tab))
+
+        fab : Ui.Element msg
+        fab =
+            case maybeUserRootId of
+                Just _ ->
+                    UI.Components.fab
+                        { label = "+"
+                        , href = Route.toPath (GroupRoute config.groupId NewEntry)
+                        , onPress = config.toMsg (RequestNavigation NewEntry)
+                        }
+
+                Nothing ->
+                    Ui.none
     in
     { content =
         UI.Shell.tabbedShell
             { title = loaded.groupState.groupMeta.name
             , subtitle = ""
             , onBack = config.onNavigateHome
-            , content = tabContent config userRootId loaded model
+            , content =
+                case maybeUserRootId of
+                    Just _ ->
+                        tabContent config maybeUserRootId loaded model
+
+                    Nothing ->
+                        Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+                            [ UI.Components.readOnlyBanner config.i18n
+                            , tabContent config maybeUserRootId loaded model
+                            ]
             }
     , overlay =
         Just <|
             Ui.column [ Ui.spacing Theme.spacing.lg ]
-                [ -- FAB for new entry
-                  UI.Components.fab
-                    { label = "+"
-                    , href = Route.toPath (GroupRoute config.groupId NewEntry)
-                    , onPress = config.toMsg (RequestNavigation NewEntry)
-                    }
+                [ fab
 
                 -- Tab bar
                 , UI.Shell.tabBar
@@ -1263,8 +1294,8 @@ viewTabs config userRootId loaded model =
     }
 
 
-tabContent : ViewConfig msg -> Member.Id -> LoadedGroup -> Model -> Ui.Element msg
-tabContent config userRootId loaded model =
+tabContent : ViewConfig msg -> Maybe Member.Id -> LoadedGroup -> Model -> Ui.Element msg
+tabContent config maybeUserRootId loaded model =
     case model.activeTab of
         BalanceTab ->
             Page.Group.BalanceTab.view config.i18n
@@ -1274,7 +1305,7 @@ tabContent config userRootId loaded model =
                 , newTransferHref = Route.toPath (GroupRoute config.groupId NewEntry)
                 , toMsg = config.toMsg << BalanceTabMsg
                 }
-                userRootId
+                maybeUserRootId
                 model.balanceTabModel
                 loaded.groupState
 
@@ -1284,6 +1315,7 @@ tabContent config userRootId loaded model =
                 , newEntryHref = Route.toPath (GroupRoute config.groupId NewEntry)
                 , toMsg = config.toMsg << EntriesTabMsg
                 }
+                maybeUserRootId
                 config.today
                 model.entriesTabModel
                 loaded.groupState
@@ -1302,7 +1334,7 @@ tabContent config userRootId loaded model =
                 }
                 (config.toMsg << MembersTabMsg)
                 model.membersTabModel
-                userRootId
+                maybeUserRootId
                 loaded.groupState
 
         ActivityTab ->
@@ -1315,7 +1347,7 @@ tabContent config userRootId loaded model =
             in
             Page.Group.ActivityTab.view config.i18n
                 { resolveName = GroupState.resolveMemberName loaded.groupState
-                , currentUserRootId = userRootId
+                , currentUserRootId = maybeUserRootId
                 , groupDefaultCurrency = loaded.summary.defaultCurrency
                 , toMsg = config.toMsg << ActivityTabMsg
                 , allMembers = allMembers

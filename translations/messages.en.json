@@ -246,6 +246,7 @@
   "pwaInstallPrompt": "Install Partage for a better experience",
   "pwaInstallButton": "Install",
   "pwaOffline": "You are offline",
+  "readOnlyBanner": "Read-only mode — you are not a member of this group",
   "toastPushError": "Failed to update notification settings",
   "aboutUsageTitle": "Usage Statistics",
   "aboutUsageLoading": "Loading usage data...",

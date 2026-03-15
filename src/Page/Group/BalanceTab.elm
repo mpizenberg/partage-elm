@@ -77,8 +77,8 @@ type alias Config msg =
 
 {-| Render the balance tab with per-member balances and a settlement plan.
 -}
-view : I18n -> Config msg -> Member.Id -> Model -> GroupState -> Ui.Element msg
-view i18n config currentUserRootId (Model data) state =
+view : I18n -> Config msg -> Maybe Member.Id -> Model -> GroupState -> Ui.Element msg
+view i18n config maybeUserRootId (Model data) state =
     if Dict.isEmpty state.entries then
         Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
             [ Ui.el [ Ui.Font.size Theme.font.lg, Ui.Font.weight Theme.fontWeight.bold ] (Ui.text (T.balanceTabTitle i18n))
@@ -88,11 +88,13 @@ view i18n config currentUserRootId (Model data) state =
 
     else
         Ui.column [ Ui.spacing Theme.spacing.lg ]
-            [ yourBalanceCard i18n currentUserRootId state
-            , otherMembersSection i18n config data.expandedMember currentUserRootId state
-            , settlementSection i18n config currentUserRootId data.selectedSettlement state
-            , preferencesSection i18n config currentUserRootId state
-            ]
+            (List.filterMap identity
+                [ Maybe.map (\uid -> yourBalanceCard i18n uid state) maybeUserRootId
+                , Just (otherMembersSection i18n config data.expandedMember maybeUserRootId state)
+                , Just (settlementSection i18n config maybeUserRootId data.selectedSettlement state)
+                , Maybe.map (\uid -> preferencesSection i18n config uid state) maybeUserRootId
+                ]
+            )
 
 
 
@@ -186,12 +188,18 @@ yourBalanceCard i18n currentUserRootId state =
 -- OTHER MEMBERS SECTION
 
 
-otherMembersSection : I18n -> Config msg -> Maybe Member.Id -> Member.Id -> GroupState -> Ui.Element msg
-otherMembersSection i18n config expandedMember currentUserRootId state =
+otherMembersSection : I18n -> Config msg -> Maybe Member.Id -> Maybe Member.Id -> GroupState -> Ui.Element msg
+otherMembersSection i18n config expandedMember maybeUserRootId state =
     let
-        otherBalances : List MemberBalance
-        otherBalances =
-            Dict.remove currentUserRootId state.balances
+        balances : List MemberBalance
+        balances =
+            (case maybeUserRootId of
+                Just uid ->
+                    Dict.remove uid state.balances
+
+                Nothing ->
+                    state.balances
+            )
                 |> Dict.values
                 |> List.sortBy (\b -> resolveName b.memberRootId)
 
@@ -199,24 +207,19 @@ otherMembersSection i18n config expandedMember currentUserRootId state =
         resolveName =
             GroupState.resolveMemberName state
     in
-    if List.isEmpty otherBalances then
+    if List.isEmpty balances then
         Ui.none
 
     else
-        let
-            otherMemberCard : MemberBalance -> Ui.Element msg
-            otherMemberCard balance =
-                memberBalanceCard i18n config resolveName expandedMember balance
-        in
         Ui.column []
             [ UI.Components.sectionLabel (T.membersTabTitle i18n)
             , Ui.column [ Ui.spacing Theme.spacing.xs ]
-                (List.map otherMemberCard otherBalances)
+                (List.map (memberBalanceCard i18n config (maybeUserRootId /= Nothing) resolveName expandedMember) balances)
             ]
 
 
-memberBalanceCard : I18n -> Config msg -> (Member.Id -> String) -> Maybe Member.Id -> MemberBalance -> Ui.Element msg
-memberBalanceCard i18n config resolveName expandedMember b =
+memberBalanceCard : I18n -> Config msg -> Bool -> (Member.Id -> String) -> Maybe Member.Id -> MemberBalance -> Ui.Element msg
+memberBalanceCard i18n config isMember resolveName expandedMember b =
     let
         name : String
         name =
@@ -313,7 +316,7 @@ memberBalanceCard i18n config resolveName expandedMember b =
                     )
                 )
             ]
-        , if isExpanded then
+        , if isExpanded && isMember then
             transferActionBtn i18n
                 config.newTransferHref
                 (config.onNewTransfer { toMemberId = b.memberRootId, amountCents = abs b.netBalance })
@@ -348,8 +351,8 @@ transferActionBtn i18n href onPress =
 -- SETTLEMENT SECTION
 
 
-settlementSection : I18n -> Config msg -> Member.Id -> Maybe Int -> GroupState -> Ui.Element msg
-settlementSection i18n config currentUserRootId selectedSettlement state =
+settlementSection : I18n -> Config msg -> Maybe Member.Id -> Maybe Int -> GroupState -> Ui.Element msg
+settlementSection i18n config maybeUserRootId selectedSettlement state =
     let
         transactions : List Settlement.Transaction
         transactions =
@@ -371,7 +374,7 @@ settlementSection i18n config currentUserRootId selectedSettlement state =
                     isSelected =
                         selectedSettlement == Just idx
                 in
-                settlementItem i18n config resolveName currentUserRootId (idx > 0) isSelected idx tx state
+                settlementItem i18n config resolveName maybeUserRootId (idx > 0) isSelected idx tx state
         in
         Ui.column []
             [ UI.Components.sectionLabel (T.balanceSettlementPlan i18n)
@@ -380,12 +383,17 @@ settlementSection i18n config currentUserRootId selectedSettlement state =
             ]
 
 
-settlementItem : I18n -> Config msg -> (Member.Id -> String) -> Member.Id -> Bool -> Bool -> Int -> Settlement.Transaction -> GroupState -> List (Ui.Element msg)
-settlementItem i18n config resolveName currentUserRootId showTopBorder isSelected idx t state =
+settlementItem : I18n -> Config msg -> (Member.Id -> String) -> Maybe Member.Id -> Bool -> Bool -> Int -> Settlement.Transaction -> GroupState -> List (Ui.Element msg)
+settlementItem i18n config resolveName maybeUserRootId showTopBorder isSelected idx t state =
     let
         isCurrentUser : Bool
         isCurrentUser =
-            t.from == currentUserRootId || t.to == currentUserRootId
+            case maybeUserRootId of
+                Just uid ->
+                    t.from == uid || t.to == uid
+
+                Nothing ->
+                    False
 
         ( bgColor, textColor, amountColor ) =
             if isCurrentUser then
@@ -433,15 +441,15 @@ settlementItem i18n config resolveName currentUserRootId showTopBorder isSelecte
     in
     if isSelected then
         [ headerRow
-        , settlementDetail i18n config resolveName t state
+        , settlementDetail i18n config (maybeUserRootId /= Nothing) resolveName t state
         ]
 
     else
         [ headerRow ]
 
 
-settlementDetail : I18n -> Config msg -> (Member.Id -> String) -> Settlement.Transaction -> GroupState -> Ui.Element msg
-settlementDetail i18n config resolveName t state =
+settlementDetail : I18n -> Config msg -> Bool -> (Member.Id -> String) -> Settlement.Transaction -> GroupState -> Ui.Element msg
+settlementDetail i18n config isMember resolveName t state =
     let
         recipientMetadata : Maybe Member.Metadata
         recipientMetadata =
@@ -483,10 +491,14 @@ settlementDetail i18n config resolveName t state =
 
           else
             Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ] paymentMethodRows
-        , UI.Components.btnPrimary []
-            { label = T.settlementRecordTransfer i18n
-            , onPress = config.onRecordTransfer t
-            }
+        , if isMember then
+            UI.Components.btnPrimary []
+                { label = T.settlementRecordTransfer i18n
+                , onPress = config.onRecordTransfer t
+                }
+
+          else
+            Ui.none
         ]
 
 

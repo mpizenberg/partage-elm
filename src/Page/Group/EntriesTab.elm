@@ -189,8 +189,8 @@ toggleSet item set =
 
 {-| Render the entries tab with filtering, entry cards grouped by date, and a FAB.
 -}
-view : I18n -> Config msg -> Date -> Model -> GroupState -> Ui.Element msg
-view i18n config today (Model data) state =
+view : I18n -> Config msg -> Maybe Member.Id -> Date -> Model -> GroupState -> Ui.Element msg
+view i18n config maybeUserRootId today (Model data) state =
     let
         allEntries : List { entry : Entry.Entry, isDeleted : Bool }
         allEntries =
@@ -230,11 +230,15 @@ view i18n config today (Model data) state =
         [ -- Summary row
           summaryRow (List.length visibleEntries) totalAmount
 
-        -- New Entry button
-        , Ui.el [ Ui.paddingXY 0 Theme.spacing.lg ] <|
-            UI.Components.btnPrimary
-                (UI.Components.spaLinkAttrs config.newEntryHref config.onNewEntry)
-                { label = T.newEntryTitle i18n, onPress = config.onNewEntry }
+        -- New Entry button (hidden in read-only mode)
+        , if maybeUserRootId /= Nothing then
+            Ui.el [ Ui.paddingXY 0 Theme.spacing.lg ] <|
+                UI.Components.btnPrimary
+                    (UI.Components.spaLinkAttrs config.newEntryHref config.onNewEntry)
+                    { label = T.newEntryTitle i18n, onPress = config.onNewEntry }
+
+          else
+            Ui.none
 
         -- Search bar + filter button
         , searchFilterRow i18n data.showFilters (Filter.isEntryFilterActive data.filters || data.showDeleted) data.searchQuery |> Ui.map toMsg
@@ -261,7 +265,7 @@ view i18n config today (Model data) state =
                     GroupState.resolveMemberName state
             in
             Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
-                (groupedByDate i18n resolveName data.expandedEntries data.confirmingAction visibleEntries)
+                (groupedByDate i18n (maybeUserRootId /= Nothing) resolveName data.expandedEntries data.confirmingAction visibleEntries)
                 |> Ui.map toMsg
         ]
 
@@ -590,8 +594,8 @@ filterSection label chips =
 -- DATE GROUPING
 
 
-groupedByDate : I18n -> (Member.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> List { entry : Entry.Entry, isDeleted : Bool } -> List (Ui.Element Msg)
-groupedByDate i18n resolveName expandedEntries confirmingAction entries =
+groupedByDate : I18n -> Bool -> (Member.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> List { entry : Entry.Entry, isDeleted : Bool } -> List (Ui.Element Msg)
+groupedByDate i18n isMember resolveName expandedEntries confirmingAction entries =
     let
         getDate : Entry.Entry -> Date
         getDate entry =
@@ -611,7 +615,7 @@ groupedByDate i18n resolveName expandedEntries confirmingAction entries =
         |> List.concatMap
             (\( date, group ) ->
                 dateSeparator i18n date
-                    :: List.map (entryCardView i18n resolveName expandedEntries confirmingAction) group
+                    :: List.map (entryCardView i18n isMember resolveName expandedEntries confirmingAction) group
             )
 
 
@@ -631,8 +635,8 @@ dateSeparator i18n date =
 -- ENTRY CARD
 
 
-entryCardView : I18n -> (Member.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> { entry : Entry.Entry, isDeleted : Bool } -> Ui.Element Msg
-entryCardView i18n resolveName expandedEntries confirmingAction { entry, isDeleted } =
+entryCardView : I18n -> Bool -> (Member.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> { entry : Entry.Entry, isDeleted : Bool } -> Ui.Element Msg
+entryCardView i18n isMember resolveName expandedEntries confirmingAction { entry, isDeleted } =
     let
         entryId : Entry.Id
         entryId =
@@ -657,7 +661,7 @@ entryCardView i18n resolveName expandedEntries confirmingAction { entry, isDelet
                 [ Ui.el [ Ui.Input.button (ToggleEntry entryId), Ui.pointer ]
                     headerEl
                 , if isExpanded then
-                    entryDetail i18n resolveName entryId entry isDeleted confirmingAction
+                    entryDetail i18n isMember resolveName entryId entry isDeleted confirmingAction
 
                   else
                     Ui.none
@@ -864,29 +868,31 @@ recipientText resolveName beneficiaries =
 -- ENTRY DETAIL (expanded)
 
 
-entryDetail : I18n -> (Member.Id -> String) -> Entry.Id -> Entry.Entry -> Bool -> Maybe ( Entry.Id, ConfirmAction ) -> Ui.Element Msg
-entryDetail i18n resolveName entryId entry isDeleted confirmingAction =
+entryDetail : I18n -> Bool -> (Member.Id -> String) -> Entry.Id -> Entry.Entry -> Bool -> Maybe ( Entry.Id, ConfirmAction ) -> Ui.Element Msg
+entryDetail i18n isMember resolveName entryId entry isDeleted confirmingAction =
     Ui.column
         [ Ui.paddingTop Theme.spacing.md
         , Ui.spacing Theme.spacing.md
         ]
         [ entryContent i18n resolveName entry
+        , if isMember then
+            actionButtons i18n
+                entryId
+                isDeleted
+                (case confirmingAction of
+                    Just ( id, action ) ->
+                        if id == entryId then
+                            Just action
 
-        -- , metadataFooter i18n resolveName entry
-        , actionButtons i18n
-            entryId
-            isDeleted
-            (case confirmingAction of
-                Just ( id, action ) ->
-                    if id == entryId then
-                        Just action
+                        else
+                            Nothing
 
-                    else
+                    Nothing ->
                         Nothing
+                )
 
-                Nothing ->
-                    Nothing
-            )
+          else
+            Ui.none
         ]
 
 

@@ -117,7 +117,8 @@ summarize memberId groupId state =
         Dict.filter (\_ m -> not m.isRetired) state.members
             |> Dict.size
     , myBalanceCents =
-        Dict.get (resolveMemberRootId state memberId) state.balances
+        resolveMemberRootId state memberId
+            |> Maybe.andThen (\rootId -> Dict.get rootId state.balances)
             |> Maybe.map .netBalance
             |> Maybe.withDefault 0
     }
@@ -156,16 +157,45 @@ Not exposed — use `applyEvents` which merges pending into activities after all
 -}
 applyEvent : Envelope -> GroupState -> GroupState
 applyEvent envelope state =
-    let
-        activity : Activity
-        activity =
-            Activity.fromEnvelope (activityContext state) envelope
+    if not (isAuthorized state envelope) then
+        state
 
-        newState : GroupState
-        newState =
-            applyPayload envelope.clientTimestamp envelope.payload state
-    in
-    { newState | pendingActivities = activity :: newState.pendingActivities }
+    else
+        let
+            activity : Activity
+            activity =
+                Activity.fromEnvelope (activityContext state) envelope
+
+            newState : GroupState
+            newState =
+                applyPayload envelope.clientTimestamp envelope.payload state
+        in
+        { newState | pendingActivities = activity :: newState.pendingActivities }
+
+
+{-| Check if an event's author is authorized to perform the action.
+-}
+isAuthorized : GroupState -> Envelope -> Bool
+isAuthorized state envelope =
+    case envelope.payload of
+        GroupCreated _ ->
+            True
+
+        MemberCreated data ->
+            data.memberId == envelope.triggeredBy || isMember state envelope.triggeredBy
+
+        MemberReplaced data ->
+            data.newId == envelope.triggeredBy
+
+        _ ->
+            isMember state envelope.triggeredBy
+
+
+{-| Check if an ID is a known member (root ID or device ID in any chain).
+-}
+isMember : GroupState -> Member.Id -> Bool
+isMember state memberId =
+    resolveMemberRootId state memberId /= Nothing
 
 
 applyPayload : Time.Posix -> Payload -> GroupState -> GroupState
@@ -639,11 +669,12 @@ lookupSettlementPreference state memberRootId =
 
 {-| Resolve a device member ID to its root ID.
 First checks if it's a root ID directly, then scans allMembers dicts.
+Returns Nothing if the ID is not found in any member chain.
 -}
-resolveMemberRootId : GroupState -> Member.Id -> Member.Id
+resolveMemberRootId : GroupState -> Member.Id -> Maybe Member.Id
 resolveMemberRootId state deviceId =
     if Dict.member deviceId state.members then
-        deviceId
+        Just deviceId
 
     else
         -- Scan allMembers dicts to find which chain contains this device ID
@@ -662,24 +693,16 @@ resolveMemberRootId state deviceId =
             )
             Nothing
             state.members
-            |> Maybe.withDefault deviceId
 
 
 {-| Resolve a member ID (root or device) to a display name. Falls back to the raw ID if not found.
 -}
 resolveMemberName : GroupState -> Member.Id -> String
 resolveMemberName state memberId =
-    let
-        rootId : Member.Id
-        rootId =
-            resolveMemberRootId state memberId
-    in
-    case Dict.get rootId state.members of
-        Just chain ->
-            chain.name
-
-        Nothing ->
-            memberId
+    resolveMemberRootId state memberId
+        |> Maybe.andThen (\rootId -> Dict.get rootId state.members)
+        |> Maybe.map .name
+        |> Maybe.withDefault memberId
 
 
 {-| Merge new activities into existing ones, maintaining newest-first order.
