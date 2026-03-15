@@ -76,7 +76,7 @@ var app = Elm.Main.init({
     language: navigator.language || "en",
     randomSeed: Array.from(crypto.getRandomValues(new Uint32Array(4))),
     currentTime: Date.now(),
-    serverUrl: "http://127.0.0.1:8090",
+    serverUrl: __PB_URL__,
     origin: location.origin,
     isOnline: navigator.onLine,
   },
