@@ -367,6 +367,7 @@ encodeEventForStorage groupId envelope =
         , ( "ts", Encode.int (Time.posixToMillis envelope.clientTimestamp) )
         , ( "by", Encode.string envelope.triggeredBy )
         , ( "p", Event.encodePayload envelope.payload )
+        , ( "sig", Encode.string envelope.signature )
         ]
 
 

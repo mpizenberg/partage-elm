@@ -205,10 +205,11 @@ groupMetadataChangeFuzzer =
 payloadFuzzer : Fuzzer Payload
 payloadFuzzer =
     Fuzz.oneOf
-        [ Fuzz.map4 (\mid name mt addedBy -> MemberCreated { memberId = mid, name = name, memberType = mt, addedBy = addedBy })
+        [ Fuzz.map5 (\mid name mt addedBy pk -> MemberCreated { memberId = mid, name = name, memberType = mt, addedBy = addedBy, publicKey = pk })
             Fuzz.string
             Fuzz.string
             memberTypeFuzzer
+            Fuzz.string
             Fuzz.string
         , Fuzz.map3 (\rid oldN newN -> MemberRenamed { rootId = rid, oldName = oldN, newName = newN })
             Fuzz.string
@@ -216,7 +217,7 @@ payloadFuzzer =
             Fuzz.string
         , Fuzz.map (\rid -> MemberRetired { rootId = rid }) Fuzz.string
         , Fuzz.map (\rid -> MemberUnretired { rootId = rid }) Fuzz.string
-        , Fuzz.map3 (\rid prev new -> MemberReplaced { rootId = rid, previousId = prev, newId = new }) Fuzz.string Fuzz.string Fuzz.string
+        , Fuzz.map4 (\rid prev new pk -> MemberReplaced { rootId = rid, previousId = prev, newId = new, publicKey = pk }) Fuzz.string Fuzz.string Fuzz.string Fuzz.string
         , Fuzz.map2 (\rid meta -> MemberMetadataUpdated { rootId = rid, metadata = meta }) Fuzz.string memberMetadataFuzzer
         , Fuzz.map EntryAdded entryFuzzer
         , Fuzz.map EntryModified entryFuzzer
@@ -231,11 +232,12 @@ payloadFuzzer =
 
 envelopeFuzzer : Fuzzer Event.Envelope
 envelopeFuzzer =
-    Fuzz.map4 Event.Envelope
+    Fuzz.map5 Event.Envelope
         Fuzz.string
         posixFuzzer
         Fuzz.string
         payloadFuzzer
+        Fuzz.string
 
 
 

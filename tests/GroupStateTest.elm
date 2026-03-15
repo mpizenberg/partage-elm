@@ -27,7 +27,7 @@ suite =
 -}
 adminBootstrap : Envelope
 adminBootstrap =
-    makeEnvelope "e0" 0 "admin" (MemberCreated { memberId = "admin", name = "Admin", memberType = Member.Real, addedBy = "admin" })
+    makeEnvelope "e0" 0 "admin" (MemberCreated { memberId = "admin", name = "Admin", memberType = Member.Real, addedBy = "admin", publicKey = "" })
 
 
 createAliceEvents : List Envelope
@@ -36,7 +36,7 @@ createAliceEvents =
     , makeEnvelope "e1"
         1000
         "admin"
-        (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin" })
+        (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin", publicKey = "" })
     ]
 
 
@@ -105,7 +105,7 @@ memberCreationTests =
                             ++ [ makeEnvelope "e2"
                                     2000
                                     "admin"
-                                    (MemberCreated { memberId = "alice", name = "Alice2", memberType = Member.Virtual, addedBy = "admin" })
+                                    (MemberCreated { memberId = "alice", name = "Alice2", memberType = Member.Virtual, addedBy = "admin", publicKey = "" })
                                ]
 
                     state =
@@ -122,7 +122,7 @@ memberCreationTests =
                             ++ [ makeEnvelope "e2"
                                     2000
                                     "admin"
-                                    (MemberCreated { memberId = "bob", name = "Bob", memberType = Member.Virtual, addedBy = "admin" })
+                                    (MemberCreated { memberId = "bob", name = "Bob", memberType = Member.Virtual, addedBy = "admin", publicKey = "" })
                                ]
 
                     state =
@@ -293,7 +293,7 @@ replaceAliceEvents =
         ++ [ makeEnvelope "e2"
                 2000
                 "bob-device"
-                (MemberReplaced { rootId = "alice", previousId = "alice", newId = "bob-device" })
+                (MemberReplaced { rootId = "alice", previousId = "alice", newId = "bob-device", publicKey = "" })
            ]
 
 
@@ -356,7 +356,7 @@ memberReplacementTests =
                             ++ [ makeEnvelope "e3"
                                     3000
                                     "carol-device"
-                                    (MemberReplaced { rootId = "alice", previousId = "bob-device", newId = "carol-device" })
+                                    (MemberReplaced { rootId = "alice", previousId = "bob-device", newId = "carol-device", publicKey = "" })
                                ]
 
                     state =
@@ -373,7 +373,7 @@ memberReplacementTests =
                             ++ [ makeEnvelope "e3"
                                     3000
                                     "carol-device"
-                                    (MemberReplaced { rootId = "alice", previousId = "bob-device", newId = "carol-device" })
+                                    (MemberReplaced { rootId = "alice", previousId = "bob-device", newId = "carol-device", publicKey = "" })
                                ]
 
                     state =
@@ -391,11 +391,11 @@ memberReplacementTests =
                             ++ [ makeEnvelope "e2"
                                     2000
                                     "device-aaa"
-                                    (MemberReplaced { rootId = "alice", previousId = "alice", newId = "device-aaa" })
+                                    (MemberReplaced { rootId = "alice", previousId = "alice", newId = "device-aaa", publicKey = "" })
                                , makeEnvelope "e3"
                                     2001
                                     "device-zzz"
-                                    (MemberReplaced { rootId = "alice", previousId = "alice", newId = "device-zzz" })
+                                    (MemberReplaced { rootId = "alice", previousId = "alice", newId = "device-zzz", publicKey = "" })
                                ]
 
                     state =
@@ -413,7 +413,7 @@ memberReplacementTests =
                             ++ [ makeEnvelope "e2"
                                     2000
                                     "alice"
-                                    (MemberReplaced { rootId = "alice", previousId = "alice", newId = "alice" })
+                                    (MemberReplaced { rootId = "alice", previousId = "alice", newId = "alice", publicKey = "" })
                                ]
 
                     state =
@@ -429,7 +429,7 @@ memberReplacementTests =
                         [ makeEnvelope "e1"
                             1000
                             "device"
-                            (MemberReplaced { rootId = "ghost", previousId = "ghost", newId = "device" })
+                            (MemberReplaced { rootId = "ghost", previousId = "ghost", newId = "device", publicKey = "" })
                         ]
 
                     state =
@@ -444,7 +444,7 @@ memberReplacementTests =
                             ++ [ makeEnvelope "e2"
                                     2000
                                     "device"
-                                    (MemberReplaced { rootId = "alice", previousId = "not-in-chain", newId = "device" })
+                                    (MemberReplaced { rootId = "alice", previousId = "not-in-chain", newId = "device", publicKey = "" })
                                ]
 
                     state =
@@ -461,7 +461,7 @@ memberReplacementTests =
                             ++ [ makeEnvelope "e3"
                                     3000
                                     "bob-device"
-                                    (MemberReplaced { rootId = "alice", previousId = "bob-device", newId = "bob-device" })
+                                    (MemberReplaced { rootId = "alice", previousId = "bob-device", newId = "bob-device", publicKey = "" })
                                ]
 
                     state =
@@ -574,7 +574,7 @@ eventOrderingTests =
                         , makeEnvelope "e1"
                             1000
                             "admin"
-                            (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin" })
+                            (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin", publicKey = "" })
                         ]
 
                     state =
@@ -591,7 +591,7 @@ eventOrderingTests =
                         , makeEnvelope "e1"
                             1000
                             "admin"
-                            (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin" })
+                            (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin", publicKey = "" })
                         , makeEnvelope "e3"
                             2000
                             "alice"
@@ -617,7 +617,7 @@ eventOrderingTests =
                         , makeEnvelope "e0b"
                             1
                             "admin"
-                            (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin" })
+                            (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin", publicKey = "" })
                         ]
 
                     renameEvents =

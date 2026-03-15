@@ -26,7 +26,7 @@ Owns its own ConcurrentTask.Pool and handles all group business logic
 
 -}
 
-import ConcurrentTask
+import ConcurrentTask exposing (ConcurrentTask)
 import Dict exposing (Dict)
 import Domain.Currency exposing (Currency(..))
 import Domain.Date as Date exposing (Date)
@@ -38,6 +38,7 @@ import Domain.Settlement as Settlement
 import GroupOps exposing (LoadedGroup)
 import IndexedDb as Idb
 import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
+import Infra.EventVerification as EventVerification
 import Infra.Identity exposing (Identity)
 import Infra.PushServer as PushServer
 import Infra.Server as Server
@@ -320,7 +321,7 @@ submitJoinEvent : UpdateConfig -> { action : Page.JoinGroup.JoinAction, newMembe
 submitJoinEvent config joinData model =
     case model.loadedGroup of
         Just loaded ->
-            case joinPayload config.identity.publicKeyHash joinData loaded of
+            case joinPayload config.identity.publicKeyHash config.identity.signingKeyPair.publicKey joinData loaded of
                 Just payload ->
                     let
                         ( newModel, cmd, _ ) =
@@ -335,8 +336,8 @@ submitJoinEvent config joinData model =
             ( model, Cmd.none )
 
 
-joinPayload : Member.Id -> { action : Page.JoinGroup.JoinAction, newMemberName : String } -> LoadedGroup -> Maybe Event.Payload
-joinPayload selfId joinData loaded =
+joinPayload : Member.Id -> String -> { action : Page.JoinGroup.JoinAction, newMemberName : String } -> LoadedGroup -> Maybe Event.Payload
+joinPayload selfId publicKey joinData loaded =
     case joinData.action of
         Page.JoinGroup.ClaimMember rootId ->
             Dict.get rootId loaded.groupState.members
@@ -346,6 +347,7 @@ joinPayload selfId joinData loaded =
                             { rootId = rootId
                             , previousId = chain.currentMember.id
                             , newId = selfId
+                            , publicKey = publicKey
                             }
                     )
 
@@ -356,6 +358,7 @@ joinPayload selfId joinData loaded =
                     , name = joinData.newMemberName
                     , memberType = Member.Real
                     , addedBy = selfId
+                    , publicKey = publicKey
                     }
                 )
 
@@ -997,6 +1000,20 @@ triggerSyncInternal config groupId model =
 
                                 _ ->
                                     Nothing
+
+                        verifySignatures : Server.SyncResult -> ConcurrentTask x Server.SyncResult
+                        verifySignatures syncResult =
+                            EventVerification.filterVerifiedEvents loaded.groupState syncResult.pullResult.events
+                                |> ConcurrentTask.mapError never
+                                |> ConcurrentTask.map
+                                    (\verifiedEvents ->
+                                        { syncResult
+                                            | pullResult =
+                                                { events = verifiedEvents
+                                                , cursor = syncResult.pullResult.cursor
+                                                }
+                                        }
+                                    )
                     in
                     ( model.runner, Cmd.none )
                         |> Runner.andRun (OnGroupSynced groupId loaded.unpushedIds)
@@ -1007,6 +1024,7 @@ triggerSyncInternal config groupId model =
                                 , pullCursor = loaded.syncCursor
                                 , notifyContext = notifyContext
                                 }
+                                |> ConcurrentTask.andThen verifySignatures
                             )
                         |> Tuple.mapFirst (\r -> { model | runner = r, syncInProgress = True })
 

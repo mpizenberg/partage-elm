@@ -44,6 +44,7 @@ type alias Info =
     , previousId : Maybe Id
     , depth : Int
     , memberType : Type
+    , publicKey : String
     }
 
 

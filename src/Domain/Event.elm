@@ -1,4 +1,4 @@
-module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), compareEnvelopes, createGroup, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents, wrap)
+module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), canonicalize, compareEnvelopes, createGroup, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents, wrap)
 
 {-| Event types and ordering for the event-sourced state machine.
 -}
@@ -25,17 +25,18 @@ type alias Envelope =
     , clientTimestamp : Time.Posix
     , triggeredBy : Member.Id
     , payload : Payload
+    , signature : String
     }
 
 
 {-| All possible event types in the system.
 -}
 type Payload
-    = MemberCreated { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id }
+    = MemberCreated { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id, publicKey : String }
     | MemberRenamed { rootId : Member.Id, oldName : String, newName : String }
     | MemberRetired { rootId : Member.Id }
     | MemberUnretired { rootId : Member.Id }
-    | MemberReplaced { rootId : Member.Id, previousId : Member.Id, newId : Member.Id }
+    | MemberReplaced { rootId : Member.Id, previousId : Member.Id, newId : Member.Id, publicKey : String }
     | MemberMetadataUpdated { rootId : Member.Id, metadata : Member.Metadata }
     | EntryAdded Entry
     | EntryModified Entry
@@ -87,33 +88,35 @@ compareEnvelopes a b =
 
 {-| Wrap a payload into an envelope.
 -}
-wrap : Id -> Time.Posix -> Member.Id -> Payload -> Envelope
-wrap eventId clientTimestamp triggeredBy payload =
+wrap : Id -> Time.Posix -> Member.Id -> Payload -> String -> Envelope
+wrap eventId clientTimestamp triggeredBy payload signature =
     { id = eventId
     , clientTimestamp = clientTimestamp
     , triggeredBy = triggeredBy
     , payload = payload
+    , signature = signature
     }
 
 
 {-| Build the list of payloads for creating a new group:
 GroupCreated + MemberCreated for the creator + MemberCreated for each virtual member.
 -}
-createGroup : { name : String, defaultCurrency : Currency, creator : ( Member.Id, String ), virtualMembers : List ( Member.Id, String ) } -> List Payload
-createGroup { name, defaultCurrency, creator, virtualMembers } =
+createGroup : { name : String, defaultCurrency : Currency, creator : ( Member.Id, String ), virtualMembers : List ( Member.Id, String ), publicKey : String } -> List Payload
+createGroup { name, defaultCurrency, creator, virtualMembers, publicKey } =
     let
-        memberPayload : Member.Type -> ( Member.Id, String ) -> Payload
-        memberPayload memberType ( memberId, memberName ) =
+        memberPayload : Member.Type -> String -> ( Member.Id, String ) -> Payload
+        memberPayload memberType pk ( memberId, memberName ) =
             MemberCreated
                 { memberId = memberId
                 , name = memberName
                 , memberType = memberType
                 , addedBy = Tuple.first creator
+                , publicKey = pk
                 }
     in
     GroupCreated { name = name, defaultCurrency = defaultCurrency }
-        :: memberPayload Member.Real creator
-        :: List.map (memberPayload Member.Virtual) virtualMembers
+        :: memberPayload Member.Real publicKey creator
+        :: List.map (memberPayload Member.Virtual "") virtualMembers
 
 
 {-| Encode an Envelope as a JSON object.
@@ -125,6 +128,7 @@ encodeEnvelope envelope =
         , ( "ts", Encode.int (Time.posixToMillis envelope.clientTimestamp) )
         , ( "by", Encode.string envelope.triggeredBy )
         , ( "p", encodePayload envelope.payload )
+        , ( "sig", Encode.string envelope.signature )
         ]
 
 
@@ -132,11 +136,12 @@ encodeEnvelope envelope =
 -}
 envelopeDecoder : Decode.Decoder Envelope
 envelopeDecoder =
-    Decode.map4 Envelope
+    Decode.map5 Envelope
         (Decode.field "id" Decode.string)
         (Decode.field "ts" (Decode.map Time.millisToPosix Decode.int))
         (Decode.field "by" Decode.string)
         (Decode.field "p" payloadDecoder)
+        (Decode.field "sig" Decode.string)
 
 
 {-| Encode a Payload as a tagged JSON object with a "type" discriminator.
@@ -151,6 +156,7 @@ encodePayload payload =
                 , ( "n", Encode.string data.name )
                 , ( "mt", Member.encodeType data.memberType )
                 , ( "ab", Encode.string data.addedBy )
+                , ( "pk", Encode.string data.publicKey )
                 ]
 
         MemberRenamed data ->
@@ -179,6 +185,7 @@ encodePayload payload =
                 , ( "r", Encode.string data.rootId )
                 , ( "pi", Encode.string data.previousId )
                 , ( "ni", Encode.string data.newId )
+                , ( "pk", Encode.string data.publicKey )
                 ]
 
         MemberMetadataUpdated data ->
@@ -242,19 +249,21 @@ payloadDecoder =
             (\t ->
                 case t of
                     "mc" ->
-                        Decode.map4
-                            (\mid name mt addedBy ->
+                        Decode.map5
+                            (\mid name mt addedBy pk ->
                                 MemberCreated
                                     { memberId = mid
                                     , name = name
                                     , memberType = mt
                                     , addedBy = addedBy
+                                    , publicKey = pk
                                     }
                             )
                             (Decode.field "m" Decode.string)
                             (Decode.field "n" Decode.string)
                             (Decode.field "mt" Member.typeDecoder)
                             (Decode.field "ab" Decode.string)
+                            (Decode.field "pk" Decode.string)
 
                     "mr" ->
                         Decode.map3
@@ -278,17 +287,19 @@ payloadDecoder =
                             (Decode.field "r" Decode.string)
 
                     "mrp" ->
-                        Decode.map3
-                            (\rid prevId newId ->
+                        Decode.map4
+                            (\rid prevId newId pk ->
                                 MemberReplaced
                                     { rootId = rid
                                     , previousId = prevId
                                     , newId = newId
+                                    , publicKey = pk
                                     }
                             )
                             (Decode.field "r" Decode.string)
                             (Decode.field "pi" Decode.string)
                             (Decode.field "ni" Decode.string)
+                            (Decode.field "pk" Decode.string)
 
                     "mmu" ->
                         Decode.map2
@@ -393,3 +404,17 @@ maybeFieldAsDoubleMaybe fieldName =
                 ]
             )
         )
+
+
+{-| Produce the canonical string representation of an envelope for signing.
+This is the JSON encoding of all fields except the signature.
+-}
+canonicalize : Envelope -> String
+canonicalize envelope =
+    Encode.object
+        [ ( "id", Encode.string envelope.id )
+        , ( "ts", Encode.int (Time.posixToMillis envelope.clientTimestamp) )
+        , ( "by", Encode.string envelope.triggeredBy )
+        , ( "p", encodePayload envelope.payload )
+        ]
+        |> Encode.encode 0

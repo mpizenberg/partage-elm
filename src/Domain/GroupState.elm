@@ -245,7 +245,7 @@ applyPayload timestamp payload state =
 -- MEMBER HANDLERS
 
 
-applyMemberCreated : Time.Posix -> { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id } -> GroupState -> GroupState
+applyMemberCreated : Time.Posix -> { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id, publicKey : String } -> GroupState -> GroupState
 applyMemberCreated timestamp data state =
     if Dict.member data.memberId state.members then
         -- Chain with this rootId already exists, ignore
@@ -259,6 +259,7 @@ applyMemberCreated timestamp data state =
                 , previousId = Nothing
                 , depth = 0
                 , memberType = data.memberType
+                , publicKey = data.publicKey
                 }
 
             chain : Member.ChainState
@@ -329,7 +330,7 @@ applyMemberUnretired data state =
                 state
 
 
-applyMemberReplaced : { rootId : Member.Id, previousId : Member.Id, newId : Member.Id } -> GroupState -> GroupState
+applyMemberReplaced : { rootId : Member.Id, previousId : Member.Id, newId : Member.Id, publicKey : String } -> GroupState -> GroupState
 applyMemberReplaced data state =
     if data.previousId == data.newId then
         -- Cannot replace self
@@ -360,6 +361,7 @@ applyMemberReplaced data state =
                                     , previousId = Just data.previousId
                                     , depth = prev.depth + 1
                                     , memberType = Member.Real
+                                    , publicKey = data.publicKey
                                     }
 
                                 updatedAllMembers : Dict Member.Id Member.Info

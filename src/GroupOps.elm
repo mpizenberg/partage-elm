@@ -40,6 +40,7 @@ import Random
 import Set exposing (Set)
 import Time
 import UUID
+import WebCrypto.Signature as Signature
 import WebCrypto.Symmetric as Symmetric
 
 
@@ -109,11 +110,16 @@ initLoadedGroup events summary key cursor unpushed =
 
 
 attempt : Context msg -> (Time.Posix -> Event.Envelope) -> Group.Id -> ( State msg, Cmd msg )
-attempt ctx makeEnvelope groupId =
+attempt ctx makeUnsignedEnvelope groupId =
     let
+        signingKeyPair : Signature.SigningKeyPair
+        signingKeyPair =
+            Signature.importSigningKeyPair ctx.identity.signingKeyPair
+
         task : ConcurrentTask Idb.Error Event.Envelope
         task =
-            ConcurrentTask.map makeEnvelope ConcurrentTask.Time.now
+            ConcurrentTask.map makeUnsignedEnvelope ConcurrentTask.Time.now
+                |> ConcurrentTask.andThen (signEnvelope signingKeyPair)
                 |> ConcurrentTask.andThen
                     (\envelope ->
                         ConcurrentTask.batch
@@ -132,6 +138,15 @@ attempt ctx makeEnvelope groupId =
                 , uuidState = ctx.uuidState
                 }
             )
+
+
+{-| Sign an envelope, producing a new envelope with the signature field set.
+-}
+signEnvelope : Signature.SigningKeyPair -> Event.Envelope -> ConcurrentTask Idb.Error Event.Envelope
+signEnvelope signingKeyPair envelope =
+    Signature.signText signingKeyPair (Event.canonicalize envelope)
+        |> ConcurrentTask.mapError (\_ -> Idb.DatabaseError "Signing failed")
+        |> ConcurrentTask.map (\sig -> { envelope | signature = sig })
 
 
 
@@ -159,6 +174,7 @@ newGroup ctx onComplete output =
                 , defaultCurrency = output.currency
                 , creator = ( ctx.identity.publicKeyHash, output.creatorName )
                 , virtualMembers = List.map2 Tuple.pair virtualMemberIds output.virtualMembers
+                , publicKey = ctx.identity.signingKeyPair.publicKey
                 }
 
         summary : Group.Summary
@@ -172,14 +188,23 @@ newGroup ctx onComplete output =
             , myBalanceCents = 0
             }
 
-        generateEnvelopes : ConcurrentTask x (List Event.Envelope)
+        signingKeyPair : Signature.SigningKeyPair
+        signingKeyPair =
+            Signature.importSigningKeyPair ctx.identity.signingKeyPair
+
+        generateEnvelopes : ConcurrentTask Idb.Error (List Event.Envelope)
         generateEnvelopes =
             ConcurrentTask.Time.now
                 |> ConcurrentTask.map
                     (\now ->
-                        List.map2 (\eventId -> Event.wrap eventId now ctx.identity.publicKeyHash)
+                        List.map2 (\eventId payload -> Event.wrap eventId now ctx.identity.publicKeyHash payload "")
                             eventIds
                             payloads
+                    )
+                |> ConcurrentTask.andThen
+                    (\unsignedEnvelopes ->
+                        List.map (signEnvelope signingKeyPair) unsignedEnvelopes
+                            |> ConcurrentTask.batch
                     )
 
         allTasks : List Event.Envelope -> ConcurrentTask Idb.Error Group.Summary
@@ -233,7 +258,7 @@ newEntry ctx loaded output =
                 }
     in
     attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter }
-        (\now -> Event.wrap eventId now ctx.identity.publicKeyHash (payload now))
+        (\now -> Event.wrap eventId now ctx.identity.publicKeyHash (payload now) "")
         loaded.summary.id
 
 
@@ -264,7 +289,7 @@ editEntry ctx loaded originalEntryId output =
             in
             Just
                 (attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter }
-                    (\now -> Event.wrap eventId now ctx.identity.publicKeyHash (Event.EntryModified entry))
+                    (\now -> Event.wrap eventId now ctx.identity.publicKeyHash (Event.EntryModified entry) "")
                     loaded.summary.id
                 )
 
@@ -294,7 +319,7 @@ simpleEvent ctx loaded payload =
             IdGen.v7 ctx.currentTime ctx.uuidState
     in
     attempt { ctx | uuidState = uuidStateAfter }
-        (\now -> Event.wrap eventId now ctx.identity.publicKeyHash payload)
+        (\now -> Event.wrap eventId now ctx.identity.publicKeyHash payload "")
         loaded.summary.id
 
 
@@ -331,10 +356,11 @@ addMember ctx loaded output =
                 , name = output.name
                 , memberType = Member.Virtual
                 , addedBy = ctx.identity.publicKeyHash
+                , publicKey = ""
                 }
     in
     attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter }
-        (\now -> Event.wrap eventId now ctx.identity.publicKeyHash payload)
+        (\now -> Event.wrap eventId now ctx.identity.publicKeyHash payload "")
         loaded.summary.id
 
 
