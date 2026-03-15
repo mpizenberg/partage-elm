@@ -215,13 +215,17 @@ view i18n ctx toMsg (Model data) groups =
 
 homeHeader : I18n -> Ui.Element msg
 homeHeader i18n =
-    Ui.el
+    Ui.row
         [ Ui.paddingWith { top = Theme.spacing.xl, bottom = Theme.spacing.md, left = 0, right = 0 }
         , Ui.Font.size Theme.font.xxxl
         , Ui.Font.weight Theme.fontWeight.bold
         , Ui.Font.letterSpacing Theme.letterSpacing.tight
+        , Ui.spacing Theme.spacing.sm
+        , Ui.contentCenterY
         ]
-        (Ui.text (T.shellPartage i18n))
+        [ UI.Components.appLogo 32
+        , Ui.text (T.shellPartage i18n)
+        ]
 
 
 
@@ -440,14 +444,18 @@ footer i18n onNavigate =
         , Ui.alignBottom
         ]
         [ UI.Components.horizontalSeparator
-        , Ui.el
+        , Ui.row
             (Ui.paddingXY 0 Theme.spacing.lg
                 :: Ui.centerX
                 :: Ui.Font.size Theme.font.sm
                 :: Ui.Font.weight Theme.fontWeight.medium
                 :: Ui.Font.color Theme.base.textSubtle
                 :: Ui.pointer
+                :: Ui.spacing Theme.spacing.xs
+                :: Ui.contentCenterY
                 :: UI.Components.spaLinkAttrs (Route.toPath Route.About) (onNavigate Route.About)
             )
-            (Ui.text (T.aboutTitle i18n))
+            [ UI.Components.appLogo 16
+            , Ui.text (T.aboutTitle i18n)
+            ]
         ]

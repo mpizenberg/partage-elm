@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <!-- Background circle -->
-  <circle cx="256" cy="256" r="240" fill="#2563eb"/>
+  <circle cx="256" cy="256" r="240" fill="#E8725C"/>
   <!-- Split line representing "partage" (sharing) -->
   <line x1="256" y1="96" x2="256" y2="416" stroke="white" stroke-width="32" stroke-linecap="round"/>
   <!-- Left and right dots representing people/portions -->

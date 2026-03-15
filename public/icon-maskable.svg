@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <!-- Full background for maskable (safe zone is inner 80%) -->
-  <rect width="512" height="512" fill="#2563eb"/>
+  <rect width="512" height="512" fill="#E8725C"/>
   <!-- Split line representing "partage" (sharing) - positioned in safe zone -->
   <line x1="256" y1="128" x2="256" y2="384" stroke="white" stroke-width="28" stroke-linecap="round"/>
   <!-- Left and right dots representing people/portions -->

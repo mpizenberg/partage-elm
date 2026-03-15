@@ -9,6 +9,7 @@ module UI.Components exposing
     , avatar, AvatarColor(..)
     , fab
     , featherIcon
+    , appLogo
     , languageSelector, pwaBanners, readOnlyBanner
     )
 
@@ -47,6 +48,7 @@ module UI.Components exposing
 # Icons
 
 @docs featherIcon
+@docs appLogo
 
 
 # Domain components
@@ -57,6 +59,7 @@ module UI.Components exposing
 
 import FeatherIcons
 import Json.Decode
+import Svg
 import Svg.Attributes
 import Translations as T exposing (I18n, Language(..))
 import UI.Theme as Theme
@@ -666,6 +669,29 @@ featherIconColored strokeColor size icon =
     icon
         |> FeatherIcons.withSize size
         |> FeatherIcons.toHtml [ Svg.Attributes.stroke strokeColor ]
+        |> Ui.html
+
+
+
+{-| App logo (the Partage sharing icon) rendered as inline SVG at the given size.
+-}
+appLogo : Float -> Ui.Element msg
+appLogo size =
+    let
+        s : String
+        s =
+            String.fromFloat size
+    in
+    Svg.svg
+        [ Svg.Attributes.viewBox "0 0 32 32"
+        , Svg.Attributes.width s
+        , Svg.Attributes.height s
+        ]
+        [ Svg.circle [ Svg.Attributes.cx "16", Svg.Attributes.cy "16", Svg.Attributes.r "15", Svg.Attributes.fill "#E8725C" ] []
+        , Svg.line [ Svg.Attributes.x1 "16", Svg.Attributes.y1 "6", Svg.Attributes.x2 "16", Svg.Attributes.y2 "26", Svg.Attributes.stroke "white", Svg.Attributes.strokeWidth "2", Svg.Attributes.strokeLinecap "round" ] []
+        , Svg.circle [ Svg.Attributes.cx "10", Svg.Attributes.cy "16", Svg.Attributes.r "3", Svg.Attributes.fill "white" ] []
+        , Svg.circle [ Svg.Attributes.cx "22", Svg.Attributes.cy "16", Svg.Attributes.r "3", Svg.Attributes.fill "white" ] []
+        ]
         |> Ui.html
 
 
