@@ -1374,7 +1374,7 @@ view model =
             (Ui.column
                 [ Ui.widthMax Theme.contentMaxWidth
                 , Ui.centerX
-                , Ui.htmlAttribute (Html.Attributes.style "min-height" "100vh")
+                , Ui.htmlAttribute (Html.Attributes.style "min-height" "100dvh")
                 , Ui.paddingWith
                     { top = Theme.spacing.md
                     , bottom = 0
