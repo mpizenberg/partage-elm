@@ -1,11 +1,10 @@
-module GroupExport exposing (ExportData, ImportError(..), downloadGroup, validateImport)
+module GroupExport exposing (ExportData, ImportError(..), encodeExport, exportFilename, validateImport)
 
 {-| Encode and decode group export payloads for backup and sharing.
 -}
 
 import Domain.Event as Event
 import Domain.Group as Group
-import File.Download
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Set exposing (Set)
@@ -53,24 +52,22 @@ decoder =
             )
 
 
-{-| Download a group export as a JSON file.
+{-| Encode export data to a JSON string.
 -}
-downloadGroup : Time.Posix -> Group.Summary -> List Event.Envelope -> Maybe String -> Cmd msg
-downloadGroup now summary events maybeKey =
-    let
-        json : String
-        json =
-            encode now
-                { group = summary
-                , groupKey = maybeKey
-                , events = events
-                }
+encodeExport : Time.Posix -> Group.Summary -> List Event.Envelope -> Maybe String -> String
+encodeExport now summary events maybeKey =
+    encode now
+        { group = summary
+        , groupKey = maybeKey
+        , events = events
+        }
 
-        filename : String
-        filename =
-            "partage-" ++ sanitizeFilename summary.name ++ ".json"
-    in
-    File.Download.string filename "application/json" json
+
+{-| Generate the export filename for a group.
+-}
+exportFilename : Group.Summary -> String
+exportFilename summary =
+    "partage-" ++ sanitizeFilename summary.name ++ ".partage"
 
 
 {-| Errors that can occur when importing a group.

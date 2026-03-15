@@ -203,27 +203,6 @@ viewPreview i18n preview =
 
                 JoinAsNewMember ->
                     not (String.isEmpty (String.trim preview.newMemberName))
-
-        confirmLabel : String
-        confirmLabel =
-            case preview.selectedAction of
-                ClaimMember memberId ->
-                    let
-                        member =
-                            Dict.get memberId preview.groupState.members
-                    in
-                    case Maybe.map (\m -> ( m.name, m.currentMember.memberType )) member of
-                        Just ( name, Member.Virtual ) ->
-                            T.joinGroupConfirmClaim name i18n
-
-                        Just ( name, _ ) ->
-                            T.joinGroupConfirmRecover name i18n
-
-                        Nothing ->
-                            T.joinGroupConfirm i18n
-
-                JoinAsNewMember ->
-                    T.joinGroupConfirmNew i18n
     in
     [ Ui.el
         [ Ui.centerX
@@ -278,6 +257,29 @@ viewPreview i18n preview =
             Ui.none
         ]
     , if canConfirm then
+        let
+            confirmLabel : String
+            confirmLabel =
+                case preview.selectedAction of
+                    ClaimMember memberId ->
+                        let
+                            member : Maybe Member.ChainState
+                            member =
+                                Dict.get memberId preview.groupState.members
+                        in
+                        case Maybe.map (\m -> ( m.name, m.currentMember.memberType )) member of
+                            Just ( name, Member.Virtual ) ->
+                                T.joinGroupConfirmClaim name i18n
+
+                            Just ( name, _ ) ->
+                                T.joinGroupConfirmRecover name i18n
+
+                            Nothing ->
+                                T.joinGroupConfirm i18n
+
+                    JoinAsNewMember ->
+                        T.joinGroupConfirmNew i18n
+        in
         UI.Components.btnPrimary []
             { label = confirmLabel
             , onPress = ConfirmJoin

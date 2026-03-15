@@ -1,4 +1,4 @@
-module Compression exposing (EncryptedBatch, decryptJson, encodeEventData, encryptJson)
+module Compression exposing (EncryptedBatch, compressAndDownload, decompress, decryptJson, encodeEventData, encryptJson)
 
 {-| Conditional gzip compression combined with AES-256-GCM encryption.
 
@@ -78,6 +78,38 @@ encryptedBatchDecoder =
         (Decode.field "ciphertext" Decode.string)
         (Decode.field "iv" Decode.string)
         (Decode.field "compressed" Decode.bool)
+
+
+{-| Compress a JSON string with gzip and trigger a file download.
+-}
+compressAndDownload : String -> String -> ConcurrentTask String ()
+compressAndDownload json filename =
+    ConcurrentTask.define
+        { function = "export:compressAndDownload"
+        , expect = ConcurrentTask.expectString
+        , errors = ConcurrentTask.expectErrors Decode.string
+        , args =
+            Encode.object
+                [ ( "json", Encode.string json )
+                , ( "filename", Encode.string filename )
+                ]
+        }
+        |> ConcurrentTask.map (\_ -> ())
+
+
+{-| Decompress a base64-encoded gzip payload to a string.
+-}
+decompress : String -> ConcurrentTask String String
+decompress base64 =
+    ConcurrentTask.define
+        { function = "export:decompress"
+        , expect = ConcurrentTask.expectString
+        , errors = ConcurrentTask.expectErrors Decode.string
+        , args =
+            Encode.object
+                [ ( "base64", Encode.string base64 )
+                ]
+        }
 
 
 {-| Encode just the ciphertext and IV for storage in the eventData field.

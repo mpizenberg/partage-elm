@@ -1,4 +1,4 @@
-module Page.Home exposing (Context, Model, Msg, Output(..), init, update, view)
+module Page.Home exposing (Context, Model, Msg, Output(..), init, setImportError, update, view)
 
 import Domain.Currency as Currency
 import Domain.Group as Group
@@ -6,11 +6,9 @@ import FeatherIcons
 import File
 import File.Select
 import Format
-import GroupExport
 import Json.Decode
 import Pwa
 import Route exposing (Route)
-import Set exposing (Set)
 import Task
 import Time
 import Translations as T exposing (I18n)
@@ -32,7 +30,7 @@ type alias Context msg =
 
 
 type Output
-    = ImportReady GroupExport.ExportData
+    = ImportFileLoaded String
     | JoinLink String
 
 
@@ -54,40 +52,41 @@ init =
     Model { importError = Nothing, showJoinInput = False, joinLink = "" }
 
 
-update : I18n -> Set Group.Id -> Msg -> Model -> ( Model, Cmd Msg, Maybe Output )
-update i18n existingGroupIds msg (Model data) =
+setImportError : String -> Model -> Model
+setImportError err (Model data) =
+    Model { data | importError = Just err }
+
+
+update : Msg -> Model -> ( Model, Cmd Msg, Maybe Output )
+update msg (Model data) =
     case msg of
         StartImport ->
             ( Model { data | importError = Nothing }
-            , File.Select.file [ "application/json" ] FileSelected
+            , File.Select.file [ "application/gzip", ".partage" ] FileSelected
             , Nothing
             )
 
         FileSelected file ->
             ( Model data
-            , Task.perform FileLoaded (File.toString file)
+            , Task.perform FileLoaded (File.toUrl file)
             , Nothing
             )
 
-        FileLoaded jsonString ->
-            case GroupExport.validateImport existingGroupIds jsonString of
-                Err GroupExport.InvalidFile ->
-                    ( Model { data | importError = Just (T.importErrorInvalidFile i18n) }
-                    , Cmd.none
-                    , Nothing
-                    )
+        FileLoaded dataUrl ->
+            let
+                base64 : String
+                base64 =
+                    case String.split "," dataUrl of
+                        _ :: rest ->
+                            String.join "," rest
 
-                Err GroupExport.AlreadyExists ->
-                    ( Model { data | importError = Just (T.importErrorAlreadyExists i18n) }
-                    , Cmd.none
-                    , Nothing
-                    )
-
-                Ok exportData ->
-                    ( Model { data | importError = Nothing }
-                    , Cmd.none
-                    , Just (ImportReady exportData)
-                    )
+                        _ ->
+                            dataUrl
+            in
+            ( Model { data | importError = Nothing }
+            , Cmd.none
+            , Just (ImportFileLoaded base64)
+            )
 
         ShowJoinInput ->
             ( Model { data | showJoinInput = not data.showJoinInput, joinLink = "" }

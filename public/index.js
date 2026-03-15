@@ -203,6 +203,64 @@ function createCompressionTasks() {
   };
 }
 
+function createExportTasks() {
+  function toBase64(uint8array) {
+    let binary = "";
+    for (let i = 0; i < uint8array.length; i++) {
+      binary += String.fromCharCode(uint8array[i]);
+    }
+    return btoa(binary);
+  }
+
+  function fromBase64(base64) {
+    return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  }
+
+  return {
+    // Compress JSON and trigger a file download.
+    "export:compressAndDownload": async ({ json, filename }) => {
+      try {
+        const encoder = new TextEncoder();
+        const bytes = encoder.encode(json);
+        const compressed = new Uint8Array(
+          await new Response(
+            new Blob([bytes])
+              .stream()
+              .pipeThrough(new CompressionStream("gzip")),
+          ).arrayBuffer(),
+        );
+        const blob = new Blob([compressed], { type: "application/gzip" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+        return "";
+      } catch (e) {
+        return { error: "COMPRESSION_FAILED:" + e.message };
+      }
+    },
+
+    // Decompress a base64-encoded gzip payload to a JSON string.
+    "export:decompress": async ({ base64 }) => {
+      try {
+        const compressed = fromBase64(base64);
+        const decompressed = new Uint8Array(
+          await new Response(
+            new Blob([compressed])
+              .stream()
+              .pipeThrough(new DecompressionStream("gzip")),
+          ).arrayBuffer(),
+        );
+        return new TextDecoder().decode(decompressed);
+      } catch (e) {
+        return { error: "DECOMPRESSION_FAILED:" + e.message };
+      }
+    },
+  };
+}
+
 ConcurrentTask.register({
   tasks: {
     ...createWebCryptoTasks(),
@@ -210,6 +268,7 @@ ConcurrentTask.register({
     ...pbTasks,
     ...createUsageStatsTasks(),
     ...createCompressionTasks(),
+    ...createExportTasks(),
   },
   ports: {
     send: app.ports.sendTask,
