@@ -295,6 +295,7 @@ buildGroupConfig model =
                         , route = model.route
                         , i18n = model.i18n
                         , groups = readyData.groups
+                        , pendingServerCreations = model.pendingServerCreations
                         }
                     )
 

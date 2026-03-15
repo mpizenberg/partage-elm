@@ -102,6 +102,7 @@ type alias UpdateConfig =
     , route : Route
     , i18n : I18n
     , groups : Dict Group.Id Group.Summary
+    , pendingServerCreations : Set Group.Id
     }
 
 
@@ -710,13 +711,14 @@ update config msg model =
                         Nothing ->
                             ( model, Cmd.none )
 
-                -- Always try to sync. Works for both:
-                -- - Previously synced groups (has cursor, pulls new events)
-                -- - Imported groups (no cursor, pulls everything from server)
-                -- If sync fails because group doesn't exist on server (newly created),
-                -- the error handler will request server group creation.
+                -- Sync unless server creation is still in progress (avoids race condition).
+                -- Works for both previously synced and imported groups.
                 ( syncModel, syncCmd ) =
-                    triggerSyncInternal config groupId modelAfterLoad
+                    if Set.member groupId config.pendingServerCreations then
+                        ( modelAfterLoad, Cmd.none )
+
+                    else
+                        triggerSyncInternal config groupId modelAfterLoad
             in
             ( syncModel, Cmd.batch [ syncCmd, initCmd ], [] )
 
