@@ -150,6 +150,9 @@ entryInvolvedMembers entry =
         Transfer data ->
             [ data.from, data.to ]
 
+        Income data ->
+            data.receivedBy :: List.map beneficiaryMemberId data.beneficiaries
+
 
 beneficiaryMemberId : Entry.Beneficiary -> Member.Id
 beneficiaryMemberId beneficiary =
@@ -257,6 +260,9 @@ entryAddedDetail entry =
         Transfer _ ->
             TransferAddedDetail { entry = entry }
 
+        Income _ ->
+            EntryAddedDetail { entry = entry }
+
 
 entryModifiedDetail : StateContext -> Entry.Entry -> Detail
 entryModifiedDetail ctx entry =
@@ -278,6 +284,13 @@ entryModifiedDetail ctx entry =
                 { entry = entry
                 , previousEntry = previousEntry
                 , changes = transferChanges previousEntry data
+                }
+
+        Income data ->
+            EntryModifiedDetail
+                { entry = entry
+                , previousEntry = previousEntry
+                , changes = incomeChanges previousEntry data
                 }
 
 
@@ -331,6 +344,9 @@ expenseChanges maybePrev newData =
                 Transfer _ ->
                     []
 
+                Income _ ->
+                    []
+
 
 transferChanges : Maybe Entry.Entry -> Entry.TransferData -> List String
 transferChanges maybePrev newData =
@@ -370,6 +386,55 @@ transferChanges maybePrev newData =
                         ]
 
                 Expense _ ->
+                    []
+
+                Income _ ->
+                    []
+
+
+incomeChanges : Maybe Entry.Entry -> Entry.IncomeData -> List String
+incomeChanges maybePrev newData =
+    case maybePrev of
+        Nothing ->
+            []
+
+        Just prev ->
+            case prev.kind of
+                Income oldData ->
+                    List.filterMap identity
+                        [ if oldData.description /= newData.description then
+                            Just "description"
+
+                          else
+                            Nothing
+                        , if oldData.amount /= newData.amount || oldData.currency /= newData.currency then
+                            Just "amount"
+
+                          else
+                            Nothing
+                        , if oldData.date /= newData.date then
+                            Just "date"
+
+                          else
+                            Nothing
+                        , if oldData.receivedBy /= newData.receivedBy then
+                            Just "receivedBy"
+
+                          else
+                            Nothing
+                        , if oldData.beneficiaries /= newData.beneficiaries then
+                            Just "beneficiaries"
+
+                          else
+                            Nothing
+                        , if oldData.notes /= newData.notes then
+                            Just "notes"
+
+                          else
+                            Nothing
+                        ]
+
+                _ ->
                     []
 
 

@@ -40,6 +40,7 @@ type alias EntryFilters =
 type CategoryFilter
     = ExpenseCategory Entry.Category
     | TransferCategory
+    | IncomeCategory
 
 
 {-| Predefined and custom date ranges.
@@ -148,6 +149,9 @@ entryInvolvedMembers entry =
         Entry.Transfer data ->
             Set.fromList [ data.from, data.to ]
 
+        Entry.Income data ->
+            Set.insert data.receivedBy (Set.fromList (List.map beneficiaryMemberId data.beneficiaries))
+
 
 beneficiaryMemberId : Entry.Beneficiary -> Member.Id
 beneficiaryMemberId b =
@@ -177,6 +181,9 @@ matchesCategoryFilter categories entry =
             Entry.Transfer _ ->
                 Set.member (categoryFilterToString TransferCategory) categories
 
+            Entry.Income _ ->
+                Set.member (categoryFilterToString IncomeCategory) categories
+
 
 matchesCurrencyFilter : Set String -> Entry.Entry -> Bool
 matchesCurrencyFilter currencies entry =
@@ -192,6 +199,9 @@ matchesCurrencyFilter currencies entry =
                         Currency.currencyCode data.currency
 
                     Entry.Transfer data ->
+                        Currency.currencyCode data.currency
+
+                    Entry.Income data ->
                         Currency.currencyCode data.currency
         in
         Set.member code currencies
@@ -211,6 +221,9 @@ matchesDateFilter today ranges entry =
                         data.date
 
                     Entry.Transfer data ->
+                        data.date
+
+                    Entry.Income data ->
                         data.date
         in
         List.any (\range -> dateInRange today range entryDate) ranges
@@ -359,6 +372,9 @@ categoryFilterToString cf =
 
         TransferCategory ->
             "transfer"
+
+        IncomeCategory ->
+            "income"
 
 
 categoryToString : Entry.Category -> String

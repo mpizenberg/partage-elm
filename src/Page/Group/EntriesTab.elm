@@ -254,6 +254,13 @@ matchesSearch i18n resolveName query entry =
                     || matchesMemberName data.from
                     || matchesMemberName data.to
 
+            Entry.Income data ->
+                contains data.description
+                    || contains (T.entryIncome i18n)
+                    || Maybe.withDefault False (Maybe.map contains data.notes)
+                    || matchesMemberName data.receivedBy
+                    || List.any (beneficiaryMatchesSearch matchesMemberName) data.beneficiaries
+
 
 beneficiaryMatchesSearch : (Member.Id -> Bool) -> Entry.Beneficiary -> Bool
 beneficiaryMatchesSearch matchesMemberName beneficiary =
@@ -301,6 +308,9 @@ view i18n config maybeUserRootId today (Model data) state =
                                 d.amount
 
                             Entry.Transfer d ->
+                                d.amount
+
+                            Entry.Income d ->
                                 d.amount
                     )
                 |> List.sum
@@ -532,6 +542,7 @@ categoryFilterSection i18n selected =
         allCategories : List ( String, String )
         allCategories =
             [ ( Filter.categoryFilterToString TransferCategory, "💸 " ++ T.filterCategoryTransfer i18n )
+            , ( Filter.categoryFilterToString IncomeCategory, "📥 " ++ T.filterCategoryIncome i18n )
             , ( Filter.categoryFilterToString (ExpenseCategory Entry.Food), "🍽️ " ++ T.categoryFood i18n )
             , ( Filter.categoryFilterToString (ExpenseCategory Entry.Transport), "🚗 " ++ T.categoryTransport i18n )
             , ( Filter.categoryFilterToString (ExpenseCategory Entry.Accommodation), "🏠 " ++ T.categoryAccommodation i18n )
@@ -565,6 +576,9 @@ currencyFilterSection i18n selected state =
                                 Currency.currencyCode data.currency
 
                             Entry.Transfer data ->
+                                Currency.currencyCode data.currency
+
+                            Entry.Income data ->
                                 Currency.currencyCode data.currency
                     )
                 |> Set.fromList
@@ -617,6 +631,9 @@ groupedByDate i18n isMember resolveName entryLinkHref expandedEntries confirming
                 Entry.Transfer data ->
                     data.date
 
+                Entry.Income data ->
+                    data.date
+
         groupEntries : List { entry : Entry.Entry, isDeleted : Bool } -> List ( Date, List { entry : Entry.Entry, isDeleted : Bool } )
         groupEntries items =
             List.Extra.groupWhile (\e1 e2 -> getDate e1.entry == getDate e2.entry) items
@@ -665,6 +682,9 @@ entryCardView i18n isMember resolveName entryLinkHref expandedEntries confirming
 
                 Entry.Transfer data ->
                     transferCardHeader i18n resolveName data
+
+                Entry.Income data ->
+                    incomeCardHeader i18n resolveName data
 
         cardEl : Ui.Element Msg
         cardEl =
@@ -785,6 +805,50 @@ transferCardHeader i18n resolveName data =
                 [ Ui.text (resolveName data.from)
                 , Ui.el [ Ui.Font.color Theme.base.textSubtle ] (Ui.text "→")
                 , Ui.text (resolveName data.to)
+                ]
+            ]
+        ]
+
+
+incomeCardHeader : I18n -> (Member.Id -> String) -> Entry.IncomeData -> Ui.Element msg
+incomeCardHeader i18n resolveName data =
+    Ui.column [ Ui.width Ui.fill ]
+        [ -- Top row: description + amount
+          Ui.row [ Ui.width Ui.fill ]
+            [ Ui.el
+                [ Ui.Font.weight Theme.fontWeight.semibold
+                , Ui.Font.size Theme.font.md
+                ]
+                (Ui.text data.description)
+            , Ui.el
+                [ Ui.alignRight
+                , Ui.Font.weight Theme.fontWeight.bold
+                , Ui.Font.size Theme.font.md
+                , Ui.Font.letterSpacing Theme.letterSpacing.tight
+                , Ui.Font.color Theme.success.text
+                ]
+                (Ui.text ("+" ++ Format.formatCentsWithCurrency data.amount data.currency))
+            ]
+
+        -- Meta row: date + income tag + receiver
+        , Ui.row
+            [ Ui.spacing Theme.spacing.xs
+            , Ui.paddingTop Theme.spacing.xs
+            , Ui.contentCenterY
+            , Ui.Font.size Theme.font.sm
+            , Ui.Font.color Theme.base.textSubtle
+            ]
+            [ Ui.el [ Ui.width Ui.shrink ] (Ui.text (formatShortDate i18n data.date))
+            , entryTag ("📥 " ++ T.entryIncome i18n)
+            , Ui.row
+                [ Ui.spacing Theme.spacing.xs
+                , Ui.width Ui.shrink
+                , Ui.contentCenterY
+                , Ui.alignRight
+                ]
+                [ Ui.text (recipientText resolveName data.beneficiaries)
+                , Ui.el [ Ui.Font.color Theme.base.textSubtle ] (Ui.text "→")
+                , Ui.text (resolveName data.receivedBy)
                 ]
             ]
         ]
@@ -938,6 +1002,9 @@ entryContent i18n resolveName entry =
         Entry.Transfer data ->
             transferContent i18n resolveName data
 
+        Entry.Income data ->
+            incomeContent i18n resolveName data
+
 
 expenseContent : I18n -> (Member.Id -> String) -> Entry.ExpenseData -> Ui.Element msg
 expenseContent i18n resolveName data =
@@ -967,6 +1034,23 @@ transferContent i18n resolveName data =
             , defaultCurrencyAmountRow data.defaultCurrencyAmount
             , [ detailRow (T.entryDetailFrom i18n) (resolveName data.from)
               , detailRow (T.entryDetailTo i18n) (resolveName data.to)
+              ]
+            , optionalRow (T.entryDetailNotes i18n) data.notes
+            ]
+        )
+
+
+incomeContent : I18n -> (Member.Id -> String) -> Entry.IncomeData -> Ui.Element msg
+incomeContent i18n resolveName data =
+    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+        (List.concat
+            [ [ detailRow (T.newEntryDescriptionLabel i18n) data.description
+              , detailRow (T.entryDetailDate i18n) (Date.toString data.date)
+              , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency data.amount data.currency)
+              ]
+            , defaultCurrencyAmountRow data.defaultCurrencyAmount
+            , [ detailRow (T.entryDetailReceivedBy i18n) (resolveName data.receivedBy)
+              , beneficiariesSection i18n resolveName data.beneficiaries
               ]
             , optionalRow (T.entryDetailNotes i18n) data.notes
             ]
@@ -1232,6 +1316,9 @@ entrySortKey entry =
                     data.date
 
                 Entry.Transfer data ->
+                    data.date
+
+                Entry.Income data ->
                     data.date
     in
     ( -(d.year * 10000 + d.month * 100 + d.day)

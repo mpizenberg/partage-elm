@@ -477,6 +477,12 @@ detailSummaryText i18n detail =
                 Transfer _ ->
                     T.activityTransferAdded i18n
 
+                Income incData ->
+                    T.activityIncomeAdded incData.description i18n
+                        ++ " ("
+                        ++ Format.formatCentsWithCurrency incData.amount incData.currency
+                        ++ ")"
+
         EntryModifiedDetail data ->
             case data.entry.kind of
                 Expense expData ->
@@ -489,6 +495,13 @@ detailSummaryText i18n detail =
                 Transfer _ ->
                     T.activityTransferModified i18n
 
+                Income incData ->
+                    T.activityIncomeModified incData.description i18n
+                        ++ " ("
+                        ++ Format.formatCentsWithCurrency incData.amount incData.currency
+                        ++ ")"
+                        ++ changesText i18n data.changes
+
         TransferAddedDetail data ->
             case data.entry.kind of
                 Transfer tData ->
@@ -498,6 +511,9 @@ detailSummaryText i18n detail =
                         ++ ")"
 
                 Expense _ ->
+                    T.activityTransferAdded i18n
+
+                Income _ ->
                     T.activityTransferAdded i18n
 
         TransferModifiedDetail data ->
@@ -510,6 +526,9 @@ detailSummaryText i18n detail =
                         ++ changesText i18n data.changes
 
                 Expense _ ->
+                    T.activityTransferModified i18n
+
+                Income _ ->
                     T.activityTransferModified i18n
 
         EntryDeletedDetail data ->
@@ -759,6 +778,19 @@ entryDetailRows i18n groupCurrency resolveName entry =
                 , optionalRow (T.entryDetailNotes i18n) data.notes
                 ]
 
+        Income data ->
+            List.concat
+                [ [ detailRow (T.newEntryDescriptionLabel i18n) data.description
+                  , detailRow (T.entryDetailDate i18n) (Date.toString data.date)
+                  , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency data.amount data.currency)
+                  ]
+                , defaultCurrencyAmountRow groupCurrency data.defaultCurrencyAmount
+                , [ detailRow (T.entryDetailReceivedBy i18n) (resolveName data.receivedBy)
+                  , detailRow (T.entryDetailSplitAmong i18n) (beneficiaryNames resolveName data.beneficiaries)
+                  ]
+                , optionalRow (T.entryDetailNotes i18n) data.notes
+                ]
+
 
 defaultCurrencyAmountRow : Currency -> Maybe Int -> List (Ui.Element msg)
 defaultCurrencyAmountRow groupCurrency maybeAmount =
@@ -788,6 +820,9 @@ entryModifiedDiffRows i18n groupCurrency resolveName newEntry maybePreviousEntry
 
                 ( Transfer new, Transfer old ) ->
                     transferDiffRows i18n groupCurrency resolveName old new
+
+                ( Income new, Income old ) ->
+                    incomeDiffRows i18n groupCurrency resolveName old new
 
                 _ ->
                     entryDetailRows i18n groupCurrency resolveName newEntry
@@ -819,6 +854,21 @@ transferDiffRows i18n groupCurrency resolveName old new =
             { newAmount = new.amount, newCurrency = new.currency, newDefaultCurrencyAmount = new.defaultCurrencyAmount }
         , [ maybeDiffOrDetailRow (T.entryDetailFrom i18n) (resolveName old.from) (resolveName new.from) ]
         , [ maybeDiffOrDetailRow (T.entryDetailTo i18n) (resolveName old.to) (resolveName new.to) ]
+        , notesDiffRow i18n old.notes new.notes
+        ]
+
+
+incomeDiffRows : I18n -> Currency -> (Member.Id -> String) -> Entry.IncomeData -> Entry.IncomeData -> List (Ui.Element msg)
+incomeDiffRows i18n groupCurrency resolveName old new =
+    List.concat
+        [ [ maybeDiffOrDetailRow (T.newEntryDescriptionLabel i18n) old.description new.description ]
+        , [ maybeDiffOrDetailRow (T.entryDetailDate i18n) (Date.toString old.date) (Date.toString new.date) ]
+        , amountCurrencyDiffRows i18n
+            groupCurrency
+            { oldAmount = old.amount, oldCurrency = old.currency, oldDefaultCurrencyAmount = old.defaultCurrencyAmount }
+            { newAmount = new.amount, newCurrency = new.currency, newDefaultCurrencyAmount = new.defaultCurrencyAmount }
+        , [ maybeDiffOrDetailRow (T.entryDetailReceivedBy i18n) (resolveName old.receivedBy) (resolveName new.receivedBy) ]
+        , [ beneficiaryDiffOrDetailRow i18n resolveName old.beneficiaries new.beneficiaries ]
         , notesDiffRow i18n old.notes new.notes
         ]
 

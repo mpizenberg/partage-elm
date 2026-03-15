@@ -653,6 +653,9 @@ lookupEntryDescription state rootId =
                 Transfer _ ->
                     "Transfer"
 
+                Income data ->
+                    data.description
+
         Nothing ->
             rootId
 

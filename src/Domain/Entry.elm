@@ -4,6 +4,7 @@ module Domain.Entry exposing
     , Entry
     , ExpenseData
     , Id
+    , IncomeData
     , Kind(..)
     , Metadata
     , Payer
@@ -96,6 +97,7 @@ newMetadata id memberId creationTime =
 type Kind
     = Expense ExpenseData
     | Transfer TransferData
+    | Income IncomeData
 
 
 {-| Data for a shared expense: who paid, how much, and how it is split.
@@ -124,6 +126,21 @@ type alias TransferData =
     , date : Date
     , from : Member.Id
     , to : Member.Id
+    , notes : Maybe String
+    }
+
+
+{-| Data for an income received on behalf of the group.
+The receiver collects money that is then split among beneficiaries.
+-}
+type alias IncomeData =
+    { description : String
+    , amount : Int
+    , currency : Currency
+    , defaultCurrencyAmount : Maybe Int
+    , date : Date
+    , receivedBy : Member.Id
+    , beneficiaries : List Beneficiary
     , notes : Maybe String
     }
 
@@ -409,6 +426,40 @@ transferDataDecoder =
         (Decode.maybe (Decode.field "nt" Decode.string))
 
 
+{-| Encode IncomeData as a JSON object, omitting Nothing fields.
+-}
+encodeIncomeData : IncomeData -> Encode.Value
+encodeIncomeData data =
+    Encode.object
+        ([ ( "desc", Encode.string data.description )
+         , ( "a", Encode.int data.amount )
+         , ( "cur", Currency.encodeCurrency data.currency )
+         , ( "dt", Date.encodeDate data.date )
+         , ( "rb", Encode.string data.receivedBy )
+         , ( "ben", Encode.list encodeBeneficiary data.beneficiaries )
+         ]
+            ++ List.filterMap identity
+                [ Maybe.map (\v -> ( "dca", Encode.int v )) data.defaultCurrencyAmount
+                , Maybe.map (\v -> ( "nt", Encode.string v )) data.notes
+                ]
+        )
+
+
+{-| Decode IncomeData from JSON using applicative-style decoding.
+-}
+incomeDataDecoder : Decode.Decoder IncomeData
+incomeDataDecoder =
+    Decode.succeed IncomeData
+        |> andMap (Decode.field "desc" Decode.string)
+        |> andMap (Decode.field "a" Decode.int)
+        |> andMap (Decode.field "cur" Currency.currencyDecoder)
+        |> andMap (Decode.maybe (Decode.field "dca" Decode.int))
+        |> andMap (Decode.field "dt" Date.dateDecoder)
+        |> andMap (Decode.field "rb" Decode.string)
+        |> andMap (Decode.field "ben" (Decode.list beneficiaryDecoder))
+        |> andMap (Decode.maybe (Decode.field "nt" Decode.string))
+
+
 {-| Encode a Kind as a tagged JSON object with "type" and "data" fields.
 -}
 encodeKind : Kind -> Encode.Value
@@ -426,6 +477,12 @@ encodeKind kind =
                 , ( "d", encodeTransferData data )
                 ]
 
+        Income data ->
+            Encode.object
+                [ ( "t", Encode.string "income" )
+                , ( "d", encodeIncomeData data )
+                ]
+
 
 {-| Decode a Kind from a tagged JSON object.
 -}
@@ -440,6 +497,9 @@ kindDecoder =
 
                     "transfer" ->
                         Decode.map Transfer (Decode.field "d" transferDataDecoder)
+
+                    "income" ->
+                        Decode.map Income (Decode.field "d" incomeDataDecoder)
 
                     _ ->
                         Decode.fail ("Unknown entry kind: " ++ t)

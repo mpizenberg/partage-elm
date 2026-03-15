@@ -9,6 +9,7 @@ import Field
 import Form
 import Form.NewEntry as NewEntry
 import Page.Group.NewEntry.ExpenseView as ExpenseView
+import Page.Group.NewEntry.IncomeView as IncomeView
 import Page.Group.NewEntry.Shared as Shared
     exposing
         ( EntryKind(..)
@@ -51,6 +52,7 @@ init config =
         , exactAmounts = Dict.empty
         , fromMemberId = Just config.currentUserRootId
         , toMemberId = Nothing
+        , receiverMemberId = Just config.currentUserRootId
         , category = Nothing
         , notes = ""
         , currency = config.defaultCurrency
@@ -70,6 +72,9 @@ initFromEntry config entry =
         Entry.Transfer data ->
             initFromTransferData config True data
 
+        Entry.Income data ->
+            initFromIncomeData config True data
+
 
 {-| Initialize from an existing entry for duplication (creates a new entry).
 -}
@@ -81,6 +86,9 @@ initDuplicate config kind =
 
         Entry.Transfer data ->
             initFromTransferData config False data
+
+        Entry.Income data ->
+            initFromIncomeData config False data
 
 
 initFromExpenseData : Shared.Config -> Bool -> Entry.ExpenseData -> Model
@@ -157,6 +165,7 @@ initFromExpenseData config editing data =
         , exactAmounts = exactAmountsDict
         , fromMemberId = Nothing
         , toMemberId = Nothing
+        , receiverMemberId = Nothing
         , category = data.category
         , notes = Maybe.withDefault "" data.notes
         , currency = data.currency
@@ -188,6 +197,91 @@ initFromTransferData config editing data =
         , exactAmounts = Dict.empty
         , fromMemberId = Just data.from
         , toMemberId = Just data.to
+        , receiverMemberId = Nothing
+        , category = Nothing
+        , notes = Maybe.withDefault "" data.notes
+        , currency = data.currency
+        , groupDefaultCurrency = config.defaultCurrency
+        , defaultCurrencyAmount =
+            case data.defaultCurrencyAmount of
+                Just amt ->
+                    Shared.centsToDecimalString amt
+
+                Nothing ->
+                    ""
+        }
+
+
+initFromIncomeData : Shared.Config -> Bool -> Entry.IncomeData -> Model
+initFromIncomeData config editing data =
+    let
+        isExactSplit : Bool
+        isExactSplit =
+            List.any
+                (\b ->
+                    case b of
+                        Entry.ExactBeneficiary _ ->
+                            True
+
+                        _ ->
+                            False
+                )
+                data.beneficiaries
+
+        beneficiaryDict : Dict Member.Id Int
+        beneficiaryDict =
+            List.map
+                (\b ->
+                    case b of
+                        Entry.ShareBeneficiary s ->
+                            ( s.memberId, s.shares )
+
+                        Entry.ExactBeneficiary e ->
+                            ( e.memberId, 1 )
+                )
+                data.beneficiaries
+                |> Dict.fromList
+
+        exactAmountsDict : Dict Member.Id String
+        exactAmountsDict =
+            if isExactSplit then
+                List.filterMap
+                    (\b ->
+                        case b of
+                            Entry.ExactBeneficiary e ->
+                                Just ( e.memberId, Shared.centsToDecimalString e.amount )
+
+                            _ ->
+                                Nothing
+                    )
+                    data.beneficiaries
+                    |> Dict.fromList
+
+            else
+                Dict.empty
+    in
+    Model
+        { form =
+            NewEntry.form
+                |> NewEntry.initDescription data.description
+                |> NewEntry.initAmount data.amount
+                |> NewEntry.initDate data.date
+        , submitted = False
+        , isEditing = editing
+        , kind = IncomeKind
+        , kindLocked = editing
+        , payerAmounts = Dict.singleton config.currentUserRootId ""
+        , beneficiaries = beneficiaryDict
+        , splitMode =
+            if isExactSplit then
+                ExactSplit
+
+            else
+                ShareSplit
+        , exactAmounts = exactAmountsDict
+        , fromMemberId = Nothing
+        , toMemberId = Nothing
+        , receiverMemberId = Just data.receivedBy
         , category = Nothing
         , notes = Maybe.withDefault "" data.notes
         , currency = data.currency
@@ -303,6 +397,9 @@ update msg (Model data) =
             else
                 ( Model data, Nothing )
 
+        SelectReceiver memberId ->
+            ( Model { data | receiverMemberId = Just memberId }, Nothing )
+
         InputCategory cat ->
             ( Model { data | category = cat }, Nothing )
 
@@ -322,6 +419,9 @@ update msg (Model data) =
 
                 TransferKind ->
                     submitTransfer data
+
+                IncomeKind ->
+                    submitIncome data
 
 
 submitExpense : ModelData -> ( Model, Maybe Shared.Output )
@@ -528,6 +628,103 @@ submitTransfer data =
             ( Model { data | submitted = True }, Nothing )
 
 
+submitIncome : ModelData -> ( Model, Maybe Shared.Output )
+submitIncome data =
+    case Form.validate data.form |> V.toResult of
+        Ok formOutput ->
+            if Dict.isEmpty data.beneficiaries then
+                ( Model { data | submitted = True }, Nothing )
+
+            else
+                let
+                    splitResult : Result () SplitData
+                    splitResult =
+                        case data.splitMode of
+                            ShareSplit ->
+                                Ok
+                                    (ShareSplitData
+                                        (Dict.toList data.beneficiaries
+                                            |> List.map (\( mid, shares ) -> { memberId = mid, shares = shares })
+                                        )
+                                    )
+
+                            ExactSplit ->
+                                let
+                                    selectedIds : List Member.Id
+                                    selectedIds =
+                                        Dict.keys data.beneficiaries
+
+                                    parsedAmounts : List { memberId : Member.Id, amount : Int }
+                                    parsedAmounts =
+                                        List.filterMap
+                                            (\mid ->
+                                                Dict.get mid data.exactAmounts
+                                                    |> Maybe.andThen Shared.parseAmountCents
+                                                    |> Maybe.map (\cents -> { memberId = mid, amount = cents })
+                                            )
+                                            selectedIds
+                                in
+                                if List.length parsedAmounts /= List.length selectedIds then
+                                    Err ()
+
+                                else
+                                    let
+                                        totalExact : Int
+                                        totalExact =
+                                            List.foldl (\b acc -> acc + b.amount) 0 parsedAmounts
+                                    in
+                                    if totalExact /= formOutput.amountCents then
+                                        Err ()
+
+                                    else
+                                        Ok (ExactSplitData parsedAmounts)
+
+                    defaultCurrencyAmountResult : Result () (Maybe Int)
+                    defaultCurrencyAmountResult =
+                        if data.currency /= data.groupDefaultCurrency then
+                            case Shared.parseAmountCents (String.trim data.defaultCurrencyAmount) of
+                                Just amt ->
+                                    Ok (Just amt)
+
+                                Nothing ->
+                                    Err ()
+
+                        else
+                            Ok Nothing
+                in
+                case ( splitResult, data.receiverMemberId, defaultCurrencyAmountResult ) of
+                    ( Ok splitData, Just receiverId, Ok defaultCurrencyAmount ) ->
+                        let
+                            notes : Maybe String
+                            notes =
+                                if String.isEmpty (String.trim data.notes) then
+                                    Nothing
+
+                                else
+                                    Just (String.trim data.notes)
+                        in
+                        ( Model { data | submitted = False }
+                        , Just
+                            (IncomeOutput
+                                { description = formOutput.description
+                                , amountCents = formOutput.amountCents
+                                , currency = data.currency
+                                , defaultCurrencyAmount = defaultCurrencyAmount
+                                , notes = notes
+                                , receivedBy = receiverId
+                                , split = splitData
+                                , date = formOutput.date
+                                }
+                            )
+                        )
+
+                    _ ->
+                        ( Model { data | submitted = True }, Nothing )
+
+        Err _ ->
+            ( Model { data | submitted = True }, Nothing )
+
+
 
 -- VIEW
 
@@ -547,6 +744,10 @@ view i18n activeMembers toMsg (Model data) =
                 TransferKind ->
                     Ui.column [ Ui.spacing Theme.spacing.lg ] <|
                         TransferView.transferFields i18n activeMembers data
+
+                IncomeKind ->
+                    Ui.column [ Ui.spacing Theme.spacing.lg ] <|
+                        IncomeView.incomeFields i18n activeMembers data
 
         ( entryKindTabs, confirmButton ) =
             if data.isEditing then
@@ -580,6 +781,7 @@ modeToggle i18n current =
         ]
         [ modeBtn { label = T.newEntryKindExpense i18n, icon = FeatherIcons.shoppingCart, active = current == ExpenseKind, onPress = SelectEntryKind ExpenseKind }
         , modeBtn { label = T.newEntryKindTransfer i18n, icon = FeatherIcons.send, active = current == TransferKind, onPress = SelectEntryKind TransferKind }
+        , modeBtn { label = T.newEntryKindIncome i18n, icon = FeatherIcons.download, active = current == IncomeKind, onPress = SelectEntryKind IncomeKind }
         ]
 
 
@@ -655,5 +857,27 @@ outputToKind output =
                 , date = data.date
                 , from = data.fromMemberId
                 , to = data.toMemberId
+                , notes = data.notes
+                }
+
+        IncomeOutput data ->
+            Entry.Income
+                { description = data.description
+                , amount = data.amountCents
+                , currency = data.currency
+                , defaultCurrencyAmount = data.defaultCurrencyAmount
+                , date = data.date
+                , receivedBy = data.receivedBy
+                , beneficiaries =
+                    case data.split of
+                        ShareSplitData items ->
+                            List.map
+                                (\b -> Entry.ShareBeneficiary { memberId = b.memberId, shares = b.shares })
+                                items
+
+                        ExactSplitData items ->
+                            List.map
+                                (\b -> Entry.ExactBeneficiary { memberId = b.memberId, amount = b.amount })
+                                items
                 , notes = data.notes
                 }

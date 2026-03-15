@@ -53,6 +53,7 @@ import Ui.Input
 type EntryKind
     = ExpenseKind
     | TransferKind
+    | IncomeKind
 
 
 type SplitMode
@@ -90,6 +91,16 @@ type Output
         , notes : Maybe String
         , date : Date
         }
+    | IncomeOutput
+        { description : String
+        , amountCents : Int
+        , currency : Currency
+        , defaultCurrencyAmount : Maybe Int
+        , notes : Maybe String
+        , receivedBy : Member.Id
+        , split : SplitData
+        , date : Date
+        }
 
 
 type alias ModelData =
@@ -104,6 +115,7 @@ type alias ModelData =
     , exactAmounts : Dict Member.Id String
     , fromMemberId : Maybe Member.Id
     , toMemberId : Maybe Member.Id
+    , receiverMemberId : Maybe Member.Id
     , category : Maybe Entry.Category
     , notes : String
     , currency : Currency
@@ -137,6 +149,7 @@ type Msg
     | InputSplitMode SplitMode
     | InputExactAmount Member.Id String
     | CycleTransferRole Member.Id
+    | SelectReceiver Member.Id
     | InputCategory (Maybe Entry.Category)
     | InputCurrency Currency
     | InputDefaultCurrencyAmount String

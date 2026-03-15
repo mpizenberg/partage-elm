@@ -141,6 +141,10 @@ computeEntryPaid entry =
         Transfer data ->
             [ ( data.from, totalAmount ) ]
 
+        Income data ->
+            -- Beneficiaries are "owed" their share (they gain credit)
+            computeBeneficiarySplit totalAmount data.beneficiaries
+
 
 {-| Compute what each member owes for an entry.
 -}
@@ -158,6 +162,10 @@ computeEntryOwed entry =
         Transfer data ->
             [ ( data.to, totalAmount ) ]
 
+        Income data ->
+            -- Receiver holds the money, so they "owe" the total
+            [ ( data.receivedBy, totalAmount ) ]
+
 
 {-| Get the amount in default currency for an entry.
 -}
@@ -168,6 +176,9 @@ entryDefaultCurrencyAmount entry =
             Maybe.withDefault data.amount data.defaultCurrencyAmount
 
         Transfer data ->
+            Maybe.withDefault data.amount data.defaultCurrencyAmount
+
+        Income data ->
             Maybe.withDefault data.amount data.defaultCurrencyAmount
 
 

@@ -185,6 +185,7 @@ notificationTranslations lang =
                 [ ( "new_activity", Encode.string "New activity" )
                 , ( "expense_added", Encode.string "{name} added an expense" )
                 , ( "transfer_added", Encode.string "{name} added a transfer" )
+                , ( "income_added", Encode.string "{name} added an income" )
                 , ( "member_joined", Encode.string "{name} joined the group" )
                 ]
 
@@ -193,6 +194,7 @@ notificationTranslations lang =
                 [ ( "new_activity", Encode.string "Nouvelle activité" )
                 , ( "expense_added", Encode.string "{name} a ajouté une dépense" )
                 , ( "transfer_added", Encode.string "{name} a ajouté un transfert" )
+                , ( "income_added", Encode.string "{name} a ajouté un revenu" )
                 , ( "member_joined", Encode.string "{name} a rejoint le groupe" )
                 ]
 
@@ -225,6 +227,9 @@ notificationBodyAndData actorName payloads =
 
                 Transfer _ ->
                     result "transfer_added" (actorName ++ " added a transfer")
+
+                Income _ ->
+                    result "income_added" (actorName ++ " added an income")
 
         [ MemberCreated data ] ->
             if data.memberType == Member.Real then
@@ -305,6 +310,9 @@ entryInvolvedMembers entry =
 
         Transfer data ->
             [ data.from, data.to ]
+
+        Income data ->
+            data.receivedBy :: List.map beneficiaryMemberId data.beneficiaries
 
 
 beneficiaryMemberId : Entry.Beneficiary -> Member.Id

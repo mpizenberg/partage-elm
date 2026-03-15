@@ -156,6 +156,7 @@ type alias Model =
 type PendingEntry
     = PendingTransfer Entry.TransferData
     | PendingExpense Entry.ExpenseData
+    | PendingIncome Entry.IncomeData
 
 
 
@@ -946,6 +947,9 @@ handleEntriesTabOutput config model output =
 
                                         Entry.Transfer data ->
                                             PendingTransfer data
+
+                                        Entry.Income data ->
+                                            PendingIncome data
                             in
                             ( { model | pendingEntry = Just pending }
                             , Cmd.none
@@ -1208,6 +1212,9 @@ initPagesIfNeeded config groupView model =
 
                         Just (PendingTransfer data) ->
                             ( { model | newEntryModel = Page.Group.NewEntry.initDuplicate entryFormConfig (Entry.Transfer data), pendingEntry = Nothing }, Cmd.none )
+
+                        Just (PendingIncome data) ->
+                            ( { model | newEntryModel = Page.Group.NewEntry.initDuplicate entryFormConfig (Entry.Income data), pendingEntry = Nothing }, Cmd.none )
 
                         Nothing ->
                             ( { model | newEntryModel = Page.Group.NewEntry.init entryFormConfig }, Cmd.none )
