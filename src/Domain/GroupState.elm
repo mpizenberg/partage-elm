@@ -111,6 +111,7 @@ summarize memberId groupId state =
     , name = state.groupMeta.name
     , defaultCurrency = state.groupMeta.defaultCurrency
     , isSubscribed = False
+    , isArchived = False
     , createdAt = state.groupMeta.createdAt
     , memberCount =
         -- TODO: maybe a more efficient way than recreate a dict would be better ^^

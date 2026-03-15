@@ -49,6 +49,7 @@ type alias Summary =
     , name : String
     , defaultCurrency : Currency
     , isSubscribed : Bool
+    , isArchived : Bool
     , createdAt : Time.Posix
     , memberCount : Int
     , myBalanceCents : Int
@@ -62,6 +63,7 @@ encodeSummary summary =
         , ( "n", Encode.string summary.name )
         , ( "dc", Currency.encodeCurrency summary.defaultCurrency )
         , ( "sub", Encode.bool summary.isSubscribed )
+        , ( "ar", Encode.bool summary.isArchived )
         , ( "ca", Encode.int <| Time.posixToMillis summary.createdAt )
         , ( "mc", Encode.int summary.memberCount )
         , ( "mb", Encode.int summary.myBalanceCents )
@@ -70,11 +72,12 @@ encodeSummary summary =
 
 summaryDecoder : Decode.Decoder Summary
 summaryDecoder =
-    Decode.succeed (\id name dc sub ca mc mb -> { id = id, name = name, defaultCurrency = dc, isSubscribed = sub, createdAt = ca, memberCount = mc, myBalanceCents = mb })
+    Decode.succeed (\id name dc sub ar ca mc mb -> { id = id, name = name, defaultCurrency = dc, isSubscribed = sub, isArchived = ar, createdAt = ca, memberCount = mc, myBalanceCents = mb })
         |> andMap (Decode.field "id" Decode.string)
         |> andMap (Decode.field "n" Decode.string)
         |> andMap (Decode.field "dc" Currency.currencyDecoder)
         |> andMap (Decode.field "sub" Decode.bool)
+        |> andMap (Decode.field "ar" Decode.bool)
         |> andMap (Decode.field "ca" Decode.int |> Decode.map Time.millisToPosix)
         |> andMap (Decode.field "mc" Decode.int)
         |> andMap (Decode.field "mb" Decode.int)

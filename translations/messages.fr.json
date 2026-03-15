@@ -306,5 +306,8 @@
   "monthShortSep": "Sep",
   "monthShortOct": "Oct",
   "monthShortNov": "Nov",
-  "monthShortDec": "Déc"
+  "monthShortDec": "Déc",
+  "groupArchiveButton": "Archiver le groupe",
+  "groupUnarchiveButton": "Désarchiver le groupe",
+  "homeArchivedGroups": "Archivés"
 }

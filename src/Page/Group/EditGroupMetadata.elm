@@ -44,6 +44,7 @@ type Msg
     | AddLink
     | RemoveLink Form.List.Id
     | Submit
+    | ToggleArchive
     | ToggleDeleteConfirm
     | ConfirmDelete
 
@@ -63,13 +64,14 @@ init meta =
 type alias UpdateResult =
     { model : Model
     , metadataOutput : Maybe Output
+    , archiveRequested : Bool
     , deleteRequested : Bool
     }
 
 
 noOutput : Model -> UpdateResult
 noOutput model =
-    { model = model, metadataOutput = Nothing, deleteRequested = False }
+    { model = model, metadataOutput = Nothing, archiveRequested = False, deleteRequested = False }
 
 
 {-| Handle form input, submission, and delete confirmation.
@@ -103,6 +105,7 @@ update msg (Model data) =
                 Just output ->
                     { model = Model data
                     , metadataOutput = Just (buildChange data.originalMeta output)
+                    , archiveRequested = False
                     , deleteRequested = False
                     }
 
@@ -112,8 +115,11 @@ update msg (Model data) =
         ToggleDeleteConfirm ->
             noOutput (Model { data | confirmingDelete = not data.confirmingDelete })
 
+        ToggleArchive ->
+            { model = Model data, metadataOutput = Nothing, archiveRequested = True, deleteRequested = False }
+
         ConfirmDelete ->
-            { model = Model data, metadataOutput = Nothing, deleteRequested = True }
+            { model = Model data, metadataOutput = Nothing, archiveRequested = False, deleteRequested = True }
 
 
 buildChange : GroupState.GroupMetadata -> MetaForm.Output -> Event.GroupMetadataChange
@@ -147,8 +153,8 @@ buildChange original output =
 
 {-| Render the group metadata editing form with save and delete options.
 -}
-view : I18n -> (Msg -> msg) -> Model -> Ui.Element msg
-view i18n toMsg (Model data) =
+view : I18n -> Bool -> (Msg -> msg) -> Model -> Ui.Element msg
+view i18n isArchived toMsg (Model data) =
     let
         nameError : Maybe String
         nameError =
@@ -196,6 +202,7 @@ view i18n toMsg (Model data) =
             { label = T.groupSettingsSave i18n
             , onPress = Submit
             }
+        , archiveSection i18n isArchived
         , deleteSection i18n data.confirmingDelete
         ]
         |> Ui.map toMsg
@@ -277,6 +284,23 @@ linkRow i18n submitted id formData =
 
           else
             Ui.none
+        ]
+
+
+archiveSection : I18n -> Bool -> Ui.Element Msg
+archiveSection i18n isArchived =
+    Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+        [ UI.Components.horizontalSeparator
+        , UI.Components.btnOutline []
+            { label =
+                if isArchived then
+                    T.groupUnarchiveButton i18n
+
+                else
+                    T.groupArchiveButton i18n
+            , icon = Just (UI.Components.featherIcon 16 FeatherIcons.archive)
+            , onPress = ToggleArchive
+            }
         ]
 
 

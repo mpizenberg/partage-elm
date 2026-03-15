@@ -470,16 +470,15 @@ avatar color initials =
 expandTrigger : { label : String, isOpen : Bool, onPress : msg } -> Ui.Element msg
 expandTrigger config =
     Ui.row
-        ([ Ui.Input.button config.onPress
-         , Ui.width Ui.fill
-         , Ui.pointer
-         ]
-            ++ sectionLabelAttrs
+        (Ui.Input.button config.onPress
+            :: Ui.pointer
+            :: Ui.width Ui.shrink
+            :: Ui.spacing Theme.spacing.md
+            :: sectionLabelAttrs
         )
-        [ Ui.text (String.toUpper config.label)
+        [ Ui.el [ Ui.width Ui.shrink ] <| Ui.text (String.toUpper config.label)
         , Ui.el
-            [ Ui.alignRight
-            , Anim.transition (Anim.ms 300)
+            [ Anim.transition (Anim.ms 300)
                 [ Anim.rotation
                     (if config.isOpen then
                         0.5

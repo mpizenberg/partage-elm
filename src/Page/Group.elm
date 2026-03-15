@@ -509,6 +509,14 @@ update config msg model =
                     _ ->
                         ( modelWithPage, Cmd.none, [] )
 
+            else if result.archiveRequested then
+                case model.loadedGroup of
+                    Just loaded ->
+                        toggleArchiveGroup config modelWithPage loaded
+
+                    Nothing ->
+                        ( modelWithPage, Cmd.none, [] )
+
             else
                 case ( result.metadataOutput, model.loadedGroup ) of
                     ( Just change, Just loaded ) ->
@@ -1066,6 +1074,7 @@ syncGroupSummaryName config groupId model =
                     , name = loaded.groupState.groupMeta.name
                     , defaultCurrency = loaded.summary.defaultCurrency
                     , isSubscribed = loaded.summary.isSubscribed
+                    , isArchived = loaded.summary.isArchived
                     , createdAt = loaded.groupState.groupMeta.createdAt
                     , memberCount = Dict.size loaded.groupState.members
                     , myBalanceCents =
@@ -1085,6 +1094,35 @@ syncGroupSummaryName config groupId model =
 
         Nothing ->
             ( model, Cmd.none, [] )
+
+
+toggleArchiveGroup : UpdateConfig -> Model -> LoadedGroup -> ( Model, Cmd Msg, List Output )
+toggleArchiveGroup config model loaded =
+    let
+        updatedSummary : Group.Summary
+        updatedSummary =
+            { id = loaded.summary.id
+            , name = loaded.summary.name
+            , defaultCurrency = loaded.summary.defaultCurrency
+            , isSubscribed = loaded.summary.isSubscribed
+            , isArchived = not loaded.summary.isArchived
+            , createdAt = loaded.summary.createdAt
+            , memberCount = loaded.summary.memberCount
+            , myBalanceCents = loaded.summary.myBalanceCents
+            }
+
+        updatedModel : Model
+        updatedModel =
+            { model | loadedGroup = Just { loaded | summary = updatedSummary } }
+    in
+    ( model.runner, Cmd.none )
+        |> Runner.andRun OnGroupSummarySaved (Storage.saveGroupSummary config.db updatedSummary)
+        |> (\( r, cmd ) ->
+                ( { updatedModel | runner = r }
+                , cmd
+                , [ UpdateGroupSummary updatedSummary, NavigateTo Home ]
+                )
+           )
 
 
 deleteGroup : UpdateConfig -> Model -> Group.Id -> ( Model, Cmd Msg, List Output )
@@ -1317,6 +1355,7 @@ viewGroupPage config groupView loaded model =
             noOverlay <|
                 pageShell config (T.groupSettingsTitle config.i18n) <|
                     Page.Group.EditGroupMetadata.view config.i18n
+                        loaded.summary.isArchived
                         (config.toMsg << EditGroupMetadataMsg)
                         model.editGroupMetadataModel
 

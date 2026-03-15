@@ -35,7 +35,7 @@ type Output
 
 
 type Model
-    = Model { importError : Maybe String, showJoinInput : Bool, joinLink : String }
+    = Model { importError : Maybe String, showJoinInput : Bool, joinLink : String, showArchived : Bool }
 
 
 type Msg
@@ -45,11 +45,12 @@ type Msg
     | ShowJoinInput
     | JoinLinkChanged String
     | SubmitJoinLink
+    | ToggleShowArchived
 
 
 init : Model
 init =
-    Model { importError = Nothing, showJoinInput = False, joinLink = "" }
+    Model { importError = Nothing, showJoinInput = False, joinLink = "", showArchived = False }
 
 
 setImportError : String -> Model -> Model
@@ -110,6 +111,9 @@ update msg (Model data) =
                 , Just (JoinLink (String.trim data.joinLink))
                 )
 
+        ToggleShowArchived ->
+            ( Model { data | showArchived = not data.showArchived }, Cmd.none, Nothing )
+
 
 view : I18n -> Context msg -> (Msg -> msg) -> Model -> List Group.Summary -> Ui.Element msg
 view i18n ctx toMsg (Model data) groups =
@@ -168,10 +172,35 @@ view i18n ctx toMsg (Model data) groups =
                 ]
 
           else
+            let
+                ( activeGroups, archivedGroups ) =
+                    List.partition (\g -> not g.isArchived) groups
+
+                archivedSection : Ui.Element msg
+                archivedSection =
+                    if List.isEmpty archivedGroups then
+                        Ui.none
+
+                    else
+                        Ui.column [ Ui.paddingTop Theme.spacing.lg, Ui.spacing Theme.spacing.xs ]
+                            [ UI.Components.expandTrigger
+                                { label = T.homeArchivedGroups i18n ++ " (" ++ String.fromInt (List.length archivedGroups) ++ ")"
+                                , isOpen = data.showArchived
+                                , onPress = toMsg ToggleShowArchived
+                                }
+                            , if data.showArchived then
+                                Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill, Ui.opacity 0.7 ]
+                                    (List.map (groupCard i18n ctx) archivedGroups)
+
+                              else
+                                Ui.none
+                            ]
+            in
             Ui.column []
-                [ UI.Components.sectionLabel (T.homeYourGroups i18n ++ " (" ++ String.fromInt (List.length groups) ++ ")")
+                [ UI.Components.sectionLabel (T.homeYourGroups i18n ++ " (" ++ String.fromInt (List.length activeGroups) ++ ")")
                 , Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-                    (List.map (groupCard i18n ctx) groups)
+                    (List.map (groupCard i18n ctx) activeGroups)
+                , archivedSection
                 , groupActions [ Ui.paddingTop Theme.spacing.lg ]
                 ]
 

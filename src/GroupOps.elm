@@ -183,6 +183,7 @@ newGroup ctx onComplete output =
             , name = output.name
             , defaultCurrency = output.currency
             , isSubscribed = False
+            , isArchived = False
             , createdAt = ctx.currentTime
             , memberCount = 1 + List.length output.virtualMembers
             , myBalanceCents = 0
