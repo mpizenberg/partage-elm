@@ -209,6 +209,62 @@ toggleSet item set =
         Set.insert item set
 
 
+{-| Check if an entry matches a search query. Searches description, notes,
+and involved member names. Empty query matches everything.
+-}
+matchesSearch : I18n -> (Member.Id -> String) -> String -> Entry.Entry -> Bool
+matchesSearch i18n resolveName query entry =
+    if String.isEmpty query then
+        True
+
+    else
+        let
+            q : String
+            q =
+                String.toLower query
+
+            contains : String -> Bool
+            contains text =
+                String.contains q (String.toLower text)
+
+            matchesMemberName : Member.Id -> Bool
+            matchesMemberName memberId =
+                contains (resolveName memberId)
+
+            matchesCategory : Maybe Entry.Category -> Bool
+            matchesCategory maybeCat =
+                case maybeCat of
+                    Just cat ->
+                        contains (detailCategoryLabel i18n cat)
+
+                    Nothing ->
+                        False
+        in
+        case entry.kind of
+            Entry.Expense data ->
+                contains data.description
+                    || Maybe.withDefault False (Maybe.map contains data.notes)
+                    || matchesCategory data.category
+                    || List.any (\p -> matchesMemberName p.memberId) data.payers
+                    || List.any (beneficiaryMatchesSearch matchesMemberName) data.beneficiaries
+
+            Entry.Transfer data ->
+                contains (T.entryTransfer i18n)
+                    || Maybe.withDefault False (Maybe.map contains data.notes)
+                    || matchesMemberName data.from
+                    || matchesMemberName data.to
+
+
+beneficiaryMatchesSearch : (Member.Id -> Bool) -> Entry.Beneficiary -> Bool
+beneficiaryMatchesSearch matchesMemberName beneficiary =
+    case beneficiary of
+        Entry.ShareBeneficiary r ->
+            matchesMemberName r.memberId
+
+        Entry.ExactBeneficiary r ->
+            matchesMemberName r.memberId
+
+
 {-| Render the entries tab with filtering, entry cards grouped by date, and a FAB.
 -}
 view : I18n -> Config msg -> Maybe Member.Id -> Date -> Model -> GroupState -> Ui.Element msg
@@ -224,10 +280,15 @@ view i18n config maybeUserRootId today (Model data) state =
                 GroupState.activeEntries state
                     |> List.map (\e -> { entry = e, isDeleted = False })
 
+        resolveName : Member.Id -> String
+        resolveName =
+            GroupState.resolveMemberName state
+
         visibleEntries : List { entry : Entry.Entry, isDeleted : Bool }
         visibleEntries =
             allEntries
                 |> List.filter (\{ entry } -> Filter.matchesEntryFilters today data.filters entry)
+                |> List.filter (\{ entry } -> matchesSearch i18n resolveName data.searchQuery entry)
                 |> List.sortBy (\{ entry } -> entrySortKey entry)
 
         totalAmount : Int
@@ -281,11 +342,6 @@ view i18n config maybeUserRootId today (Model data) state =
                 (Ui.text (T.entriesNone i18n))
 
           else
-            let
-                resolveName : Member.Id -> String
-                resolveName =
-                    GroupState.resolveMemberName state
-            in
             Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
                 (groupedByDate i18n (maybeUserRootId /= Nothing) resolveName config.entryLinkHref data.expandedEntries data.confirmingAction visibleEntries)
                 |> Ui.map toMsg
