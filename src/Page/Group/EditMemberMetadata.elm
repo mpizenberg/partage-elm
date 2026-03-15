@@ -12,8 +12,6 @@ import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
 import Ui
-import Ui.Font
-import Ui.Input
 
 
 {-| The validated output containing the member ID, new name, and updated metadata.
@@ -161,24 +159,79 @@ update msg (Model data) =
 -}
 view : I18n -> (Msg -> msg) -> Model -> Ui.Element msg
 view i18n toMsg (Model data) =
+    let
+        optionalField : FeatherIcons.Icon -> String -> Maybe String -> (String -> Msg) -> (MetadataForm.Accessors -> Form.Accessor MetadataForm.State (Field.Field (Maybe String))) -> Ui.Element Msg
+        optionalField icon label placeholder onChange accessor =
+            UI.Components.formTextField
+                { icon = Just icon
+                , label = label
+                , required = False
+                , placeholder = placeholder
+                , value = Form.get accessor data.form |> Field.toRawString
+                , onChange = onChange
+                , error = Nothing
+                }
+
+        nameError : Maybe String
+        nameError =
+            let
+                field : Field.Field String
+                field =
+                    Form.get .name data.form
+            in
+            if Field.isInvalid field && (data.submitted || Field.isDirty field) then
+                Just (T.fieldRequired i18n)
+
+            else
+                Nothing
+
+        emailError : Maybe String
+        emailError =
+            let
+                field : Field.Field (Maybe String)
+                field =
+                    Form.get .email data.form
+            in
+            if Field.isInvalid field && (data.submitted || Field.isDirty field) then
+                Just (T.fieldInvalidEmail i18n)
+
+            else
+                Nothing
+    in
     Ui.column [ Ui.spacing Theme.spacing.xl ]
         [ Ui.column [ Ui.spacing Theme.spacing.lg ]
-            [ nameField i18n data
-            , textField FeatherIcons.phone (T.memberMetadataPhone i18n) (Just "+33 6 12 34 56 78") InputPhone .phone data.form
-            , emailField i18n data
-            , textField FeatherIcons.fileText (T.memberMetadataNotes i18n) (Just (T.memberMetadataNotesPlaceholder i18n)) InputNotes .notes data.form
+            [ UI.Components.formTextField
+                { icon = Just FeatherIcons.user
+                , label = T.memberRenameLabel i18n
+                , required = True
+                , placeholder = Nothing
+                , value = Form.get .name data.form |> Field.toRawString
+                , onChange = InputName
+                , error = nameError
+                }
+            , optionalField FeatherIcons.phone (T.memberMetadataPhone i18n) (Just "+33 6 12 34 56 78") InputPhone .phone
+            , UI.Components.formTextField
+                { icon = Just FeatherIcons.atSign
+                , label = T.memberMetadataEmail i18n
+                , required = False
+                , placeholder = Nothing
+                , value = Form.get .email data.form |> Field.toRawString
+                , onChange = InputEmail
+                , error = emailError
+                }
+            , optionalField FeatherIcons.fileText (T.memberMetadataNotes i18n) (Just (T.memberMetadataNotesPlaceholder i18n)) InputNotes .notes
             ]
         , Ui.column []
             [ UI.Components.sectionLabel (T.memberMetadataPayment i18n)
             , Ui.column [ Ui.spacing Theme.spacing.lg ]
-                [ textField FeatherIcons.creditCard (T.memberMetadataIban i18n) (Just "FR76 1234 5678 9012 3456 7890 123") InputIban .iban data.form
-                , textField FeatherIcons.smartphone (T.memberMetadataWero i18n) (Just "+33 6 12 34 56 78") InputWero .wero data.form
-                , textField FeatherIcons.dollarSign (T.memberMetadataLydia i18n) (Just "antoniop6hcr") InputLydia .lydia data.form
-                , textField FeatherIcons.dollarSign (T.memberMetadataRevolut i18n) (Just "@username") InputRevolut .revolut data.form
-                , textField FeatherIcons.dollarSign (T.memberMetadataPaypal i18n) (Just "rogerfed") InputPaypal .paypal data.form
-                , textField FeatherIcons.dollarSign (T.memberMetadataVenmo i18n) (Just "@username") InputVenmo .venmo data.form
-                , textField FeatherIcons.key (T.memberMetadataBtc i18n) (Just "bc1q...") InputBtc .btcAddress data.form
-                , textField FeatherIcons.key (T.memberMetadataAda i18n) (Just "addr1...") InputAda .adaAddress data.form
+                [ optionalField FeatherIcons.creditCard (T.memberMetadataIban i18n) (Just "FR76 1234 5678 9012 3456 7890 123") InputIban .iban
+                , optionalField FeatherIcons.smartphone (T.memberMetadataWero i18n) (Just "+33 6 12 34 56 78") InputWero .wero
+                , optionalField FeatherIcons.dollarSign (T.memberMetadataLydia i18n) (Just "antoniop6hcr") InputLydia .lydia
+                , optionalField FeatherIcons.dollarSign (T.memberMetadataRevolut i18n) (Just "@username") InputRevolut .revolut
+                , optionalField FeatherIcons.dollarSign (T.memberMetadataPaypal i18n) (Just "rogerfed") InputPaypal .paypal
+                , optionalField FeatherIcons.dollarSign (T.memberMetadataVenmo i18n) (Just "@username") InputVenmo .venmo
+                , optionalField FeatherIcons.key (T.memberMetadataBtc i18n) (Just "bc1q...") InputBtc .btcAddress
+                , optionalField FeatherIcons.key (T.memberMetadataAda i18n) (Just "addr1...") InputAda .adaAddress
                 ]
             ]
         , UI.Components.btnPrimary []
@@ -187,91 +240,3 @@ view i18n toMsg (Model data) =
             }
         ]
         |> Ui.map toMsg
-
-
-textField : FeatherIcons.Icon -> String -> Maybe String -> (String -> Msg) -> (MetadataForm.Accessors -> Form.Accessor MetadataForm.State (Field.Field (Maybe String))) -> MetadataForm.Form -> Ui.Element Msg
-textField icon label placeholder onChange accessor formData =
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY, Ui.width Ui.shrink ]
-            [ Ui.el [ Ui.Font.color Theme.base.textSubtle ] (UI.Components.featherIcon 16 icon)
-            , UI.Components.formLabel label False
-            ]
-        , Ui.Input.text
-            [ Ui.width Ui.fill
-            , Ui.padding Theme.spacing.sm
-            , Ui.rounded Theme.radius.sm
-            , Ui.border Theme.border
-            , Ui.borderColor Theme.base.accent
-            ]
-            { onChange = onChange
-            , text = Form.get accessor formData |> Field.toRawString
-            , placeholder = placeholder
-            , label = Ui.Input.labelHidden label
-            }
-        ]
-
-
-nameField : I18n -> ModelData -> Ui.Element Msg
-nameField i18n data =
-    let
-        field : Field.Field String
-        field =
-            Form.get .name data.form
-    in
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY, Ui.width Ui.shrink ]
-            [ Ui.el [ Ui.Font.color Theme.base.textSubtle ] (UI.Components.featherIcon 16 FeatherIcons.user)
-            , UI.Components.formLabel (T.memberRenameLabel i18n) True
-            ]
-        , Ui.Input.text
-            [ Ui.width Ui.fill
-            , Ui.padding Theme.spacing.sm
-            , Ui.rounded Theme.radius.sm
-            , Ui.border Theme.border
-            , Ui.borderColor Theme.base.accent
-            ]
-            { onChange = InputName
-            , text = Field.toRawString field
-            , placeholder = Nothing
-            , label = Ui.Input.labelHidden (T.memberRenameLabel i18n)
-            }
-        , if Field.isInvalid field && (data.submitted || Field.isDirty field) then
-            Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
-                (Ui.text (T.fieldRequired i18n))
-
-          else
-            Ui.none
-        ]
-
-
-emailField : I18n -> ModelData -> Ui.Element Msg
-emailField i18n data =
-    let
-        field : Field.Field (Maybe String)
-        field =
-            Form.get .email data.form
-    in
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY, Ui.width Ui.shrink ]
-            [ Ui.el [ Ui.Font.color Theme.base.textSubtle ] (UI.Components.featherIcon 16 FeatherIcons.atSign)
-            , UI.Components.formLabel (T.memberMetadataEmail i18n) False
-            ]
-        , Ui.Input.text
-            [ Ui.width Ui.fill
-            , Ui.padding Theme.spacing.sm
-            , Ui.rounded Theme.radius.sm
-            , Ui.border Theme.border
-            , Ui.borderColor Theme.base.accent
-            ]
-            { onChange = InputEmail
-            , text = Field.toRawString field
-            , placeholder = Nothing
-            , label = Ui.Input.labelHidden (T.memberMetadataEmail i18n)
-            }
-        , if Field.isInvalid field && (data.submitted || Field.isDirty field) then
-            Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
-                (Ui.text (T.fieldInvalidEmail i18n))
-
-          else
-            Ui.none
-        ]

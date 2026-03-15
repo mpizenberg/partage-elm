@@ -149,10 +149,48 @@ buildChange original output =
 -}
 view : I18n -> (Msg -> msg) -> Model -> Ui.Element msg
 view i18n toMsg (Model data) =
+    let
+        nameError : Maybe String
+        nameError =
+            let
+                field : Field.Field String
+                field =
+                    Form.get .name data.form
+            in
+            if Field.isInvalid field && (data.submitted || Field.isDirty field) then
+                Just (T.fieldRequired i18n)
+
+            else
+                Nothing
+    in
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
-        [ nameField i18n data
-        , textField (T.groupSettingsSubtitle i18n) (Just (T.groupSettingsSubtitlePlaceholder i18n)) InputSubtitle .subtitle data.form
-        , textField (T.groupSettingsDescription i18n) (Just (T.groupSettingsDescriptionPlaceholder i18n)) InputDescription .description data.form
+        [ UI.Components.formTextField
+            { icon = Nothing
+            , label = T.groupSettingsName i18n
+            , required = True
+            , placeholder = Nothing
+            , value = Form.get .name data.form |> Field.toRawString
+            , onChange = InputName
+            , error = nameError
+            }
+        , UI.Components.formTextField
+            { icon = Nothing
+            , label = T.groupSettingsSubtitle i18n
+            , required = False
+            , placeholder = Just (T.groupSettingsSubtitlePlaceholder i18n)
+            , value = Form.get .subtitle data.form |> Field.toRawString
+            , onChange = InputSubtitle
+            , error = Nothing
+            }
+        , UI.Components.formTextField
+            { icon = Nothing
+            , label = T.groupSettingsDescription i18n
+            , required = False
+            , placeholder = Just (T.groupSettingsDescriptionPlaceholder i18n)
+            , value = Form.get .description data.form |> Field.toRawString
+            , onChange = InputDescription
+            , error = Nothing
+            }
         , linksSection i18n data.submitted data.form
         , UI.Components.btnPrimary []
             { label = T.groupSettingsSave i18n
@@ -161,55 +199,6 @@ view i18n toMsg (Model data) =
         , deleteSection i18n data.confirmingDelete
         ]
         |> Ui.map toMsg
-
-
-nameField : I18n -> ModelData -> Ui.Element Msg
-nameField i18n data =
-    let
-        field : Field.Field String
-        field =
-            Form.get .name data.form
-    in
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ UI.Components.formLabel (T.groupSettingsName i18n) True
-        , Ui.Input.text
-            [ Ui.width Ui.fill
-            , Ui.padding Theme.spacing.sm
-            , Ui.rounded Theme.radius.sm
-            , Ui.border Theme.border
-            , Ui.borderColor Theme.base.accent
-            ]
-            { onChange = InputName
-            , text = Field.toRawString field
-            , placeholder = Nothing
-            , label = Ui.Input.labelHidden (T.groupSettingsName i18n)
-            }
-        , if Field.isInvalid field && (data.submitted || Field.isDirty field) then
-            Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
-                (Ui.text (T.fieldRequired i18n))
-
-          else
-            Ui.none
-        ]
-
-
-textField : String -> Maybe String -> (String -> Msg) -> (MetaForm.Accessors -> Form.Accessor MetaForm.State (Field.Field (Maybe String))) -> MetaForm.Form -> Ui.Element Msg
-textField label placeholder onChange accessor formData =
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-        [ UI.Components.formLabel label False
-        , Ui.Input.text
-            [ Ui.width Ui.fill
-            , Ui.padding Theme.spacing.sm
-            , Ui.rounded Theme.radius.sm
-            , Ui.border Theme.border
-            , Ui.borderColor Theme.base.accent
-            ]
-            { onChange = onChange
-            , text = Form.get accessor formData |> Field.toRawString
-            , placeholder = placeholder
-            , label = Ui.Input.labelHidden label
-            }
-        ]
 
 
 linksSection : I18n -> Bool -> MetaForm.Form -> Ui.Element Msg

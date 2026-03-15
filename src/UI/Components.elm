@@ -1,5 +1,5 @@
 module UI.Components exposing
-    ( sectionLabel, formLabel
+    ( sectionLabel, formLabel, formTextField
     , card, horizontalSeparator
     , btnPrimary, btnOutline, btnOutlineAttrs, btnDark, btnDanger, btnSuccess
     , iconButton
@@ -17,7 +17,7 @@ module UI.Components exposing
 
 # Layout
 
-@docs sectionLabel, formLabel
+@docs sectionLabel, formLabel, formTextField
 @docs card, horizontalSeparator
 
 
@@ -107,6 +107,51 @@ formLabel label required =
 
           else
             Ui.none
+        ]
+
+
+{-| Form text field with optional icon, required indicator, and error display.
+-}
+formTextField :
+    { icon : Maybe FeatherIcons.Icon
+    , label : String
+    , required : Bool
+    , placeholder : Maybe String
+    , value : String
+    , onChange : String -> msg
+    , error : Maybe String
+    }
+    -> Ui.Element msg
+formTextField config =
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        [ case config.icon of
+            Just icon ->
+                Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY, Ui.width Ui.shrink ]
+                    [ Ui.el [ Ui.Font.color Theme.base.textSubtle ] (featherIcon 16 icon)
+                    , formLabel config.label config.required
+                    ]
+
+            Nothing ->
+                formLabel config.label config.required
+        , Ui.Input.text
+            [ Ui.width Ui.fill
+            , Ui.padding Theme.spacing.sm
+            , Ui.rounded Theme.radius.sm
+            , Ui.border Theme.border
+            , Ui.borderColor Theme.base.accent
+            ]
+            { onChange = config.onChange
+            , text = config.value
+            , placeholder = config.placeholder
+            , label = Ui.Input.labelHidden config.label
+            }
+        , case config.error of
+            Just errorMsg ->
+                Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
+                    (Ui.text errorMsg)
+
+            Nothing ->
+                Ui.none
         ]
 
 
