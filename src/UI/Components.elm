@@ -592,21 +592,21 @@ pwaBanners i18n config =
         banners : List (Ui.Element msg)
         banners =
             List.filterMap identity <|
-                [ showIf config.isOnline <|
+                [ showIf (not config.isOnline) <|
                     pwaBanner (T.pwaOffline i18n)
                         { bgColor = Theme.warning.tint
                         , textColor = Theme.warning.text
                         , action = Nothing
                         , dismiss = Nothing
                         }
-                , showIf (not config.updateAvailable) <|
+                , showIf config.updateAvailable <|
                     pwaBanner (T.pwaUpdateAvailable i18n)
                         { bgColor = Theme.warning.tint
                         , textColor = Theme.warning.text
                         , action = Just ( T.pwaUpdateButton i18n, config.onUpdate )
                         , dismiss = Nothing
                         }
-                , showIf (not config.installAvailable) <|
+                , showIf config.installAvailable <|
                     pwaBanner (T.pwaInstallPrompt i18n)
                         { bgColor = Theme.warning.tint
                         , textColor = Theme.warning.text
