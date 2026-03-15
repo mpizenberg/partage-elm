@@ -391,8 +391,8 @@ processGroupOutputs model groupCmd outputs =
                             in
                             ( toggledModel, toggleCmd :: cmds )
 
-                        Page.Group.RequestServerGroupCreation groupId ->
-                            attemptServerGroupCreation groupId m
+                        Page.Group.RequestServerGroupCreation groupId groupKey ->
+                            attemptServerGroupCreation groupId (Just groupKey) m
                                 |> Tuple.mapSecond (\attemptCmd -> attemptCmd :: cmds)
                 )
                 ( model, [] )
@@ -618,7 +618,7 @@ update msg model =
                             }
 
                         ( modelAfterAttempt, serverCmd ) =
-                            attemptServerGroupCreation summary.id modelWithGroup
+                            attemptServerGroupCreation summary.id Nothing modelWithGroup
 
                         newRoute : Route
                         newRoute =
@@ -951,7 +951,7 @@ update msg model =
                     case modelWithClient.groupModel.loadedGroup of
                         Just loaded ->
                             if loaded.syncCursor == Nothing then
-                                attemptServerGroupCreation loaded.summary.id modelWithClient
+                                attemptServerGroupCreation loaded.summary.id (Just loaded.groupKey) modelWithClient
 
                             else
                                 ( modelWithClient, Cmd.none )
@@ -987,9 +987,6 @@ update msg model =
                 cleanModel : Model
                 cleanModel =
                     { model | pendingServerCreations = Set.remove groupId model.pendingServerCreations }
-
-                _ =
-                    Debug.log "OnServerGroupCreated error" err
             in
             addToast Toast.Error ("Sync: " ++ Server.errorToString err) cleanModel
 
@@ -1265,7 +1262,7 @@ updatePwa pwaMsg model =
                         case model.groupModel.loadedGroup of
                             Just loaded ->
                                 if loaded.syncCursor == Nothing then
-                                    attemptServerGroupCreation loaded.summary.id modelWithOnline
+                                    attemptServerGroupCreation loaded.summary.id (Just loaded.groupKey) modelWithOnline
 
                                 else
                                     ( modelWithOnline, Cmd.none )
@@ -1591,10 +1588,12 @@ pushIsActive model =
     model.notificationPermission == Just Pwa.Granted && model.pushSubscription /= Nothing
 
 
-{-| Attempt to create a group on the server. No-op if pbClient is missing or creation already in progress.
+{-| Create a group on the server. Called after sync has already failed,
+indicating the group doesn't exist on the server yet.
+No-op if pbClient is missing or creation already in progress.
 -}
-attemptServerGroupCreation : Group.Id -> Model -> ( Model, Cmd Msg )
-attemptServerGroupCreation groupId model =
+attemptServerGroupCreation : Group.Id -> Maybe Symmetric.Key -> Model -> ( Model, Cmd Msg )
+attemptServerGroupCreation groupId maybeGroupKey model =
     case ( model.pbClient, model.appState ) of
         ( Just client, Ready readyData ) ->
             if Set.member groupId model.pendingServerCreations then
@@ -1602,23 +1601,33 @@ attemptServerGroupCreation groupId model =
 
             else
                 let
-                    createGroupOnServer : Symmetric.Key -> ConcurrentTask Server.Error ()
-                    createGroupOnServer key =
+                    loadKey : ConcurrentTask Server.Error Symmetric.Key
+                    loadKey =
+                        case maybeGroupKey of
+                            Just key ->
+                                ConcurrentTask.succeed key
+
+                            Nothing ->
+                                Storage.loadGroupKeyRequired readyData.db groupId
+                                    |> ConcurrentTask.mapError (\_ -> Server.PbError (PocketBase.ServerError "Failed to load group key in IndexedDB"))
+
+                    createGroup : Symmetric.Key -> ConcurrentTask Server.Error ()
+                    createGroup key =
                         Server.createGroupOnServer client
                             { groupId = groupId
                             , groupKey = key
-                            , createdBy =
-                                readyData.identity
-                                    |> Maybe.map .publicKeyHash
-                                    |> Maybe.withDefault ""
+                            , createdBy = actorId
                             }
+
+                    actorId : String
+                    actorId =
+                        readyData.identity
+                            |> Maybe.map .publicKeyHash
+                            |> Maybe.withDefault ""
                 in
                 ( model.runner, Cmd.none )
                     |> Runner.andRun (OnServerGroupCreated groupId)
-                        (Storage.loadGroupKeyRequired readyData.db groupId
-                            |> ConcurrentTask.mapError (\_ -> Server.PbError (PocketBase.ServerError "Failed to load group key in IndexedDB"))
-                            |> ConcurrentTask.andThen createGroupOnServer
-                        )
+                        (loadKey |> ConcurrentTask.andThen createGroup)
                     |> Tuple.mapFirst (\r -> { model | runner = r, pendingServerCreations = Set.insert groupId model.pendingServerCreations })
 
         _ ->

@@ -208,7 +208,7 @@ type Output
     | RemoveGroup Group.Id Member.Id
     | UpdateCurrentTime Time.Posix
     | ToggleGroupNotification Group.Id Member.Id
-    | RequestServerGroupCreation Group.Id
+    | RequestServerGroupCreation Group.Id Symmetric.Key
 
 
 
@@ -663,19 +663,16 @@ update config msg model =
                     applyLoadedGroup config groupId result.events result.groupKey result.syncCursor result.unpushedIds model
                         |> Maybe.map (initPagesIfNeeded config (routeToGroupView config.route))
                         |> Maybe.withDefault model
-            in
-            -- Only sync if group has been synced before (has a cursor).
-            -- Freshly created groups sync via OnServerGroupCreated instead.
-            case result.syncCursor of
-                Just _ ->
-                    let
-                        ( syncModel, syncCmd ) =
-                            triggerSyncInternal config groupId modelAfterLoad
-                    in
-                    ( syncModel, syncCmd, [] )
 
-                Nothing ->
-                    ( modelAfterLoad, Cmd.none, [ RequestServerGroupCreation groupId ] )
+                -- Always try to sync. Works for both:
+                -- - Previously synced groups (has cursor, pulls new events)
+                -- - Imported groups (no cursor, pulls everything from server)
+                -- If sync fails because group doesn't exist on server (newly created),
+                -- the error handler will request server group creation.
+                ( syncModel, syncCmd ) =
+                    triggerSyncInternal config groupId modelAfterLoad
+            in
+            ( syncModel, syncCmd, [] )
 
         OnGroupEventsLoaded _ _ ->
             ( model, Cmd.none, [] )
@@ -723,11 +720,33 @@ update config msg model =
                     ( { model | syncInProgress = False }, Cmd.none, [] )
 
         OnGroupSynced _ _ (ConcurrentTask.Error err) ->
-            -- Sync failed — unpushedIds preserved, will retry on next sync
-            ( { model | syncInProgress = False }
-            , Cmd.none
-            , [ ShowToast Toast.Error ("Sync: " ++ Server.errorToString err) ]
-            )
+            -- Sync failed — check if group needs to be created on server first
+            case ( err, model.loadedGroup ) of
+                ( Server.PbError PocketBase.NotFound, Just loaded ) ->
+                    ( { model | syncInProgress = False }
+                    , Cmd.none
+                    , [ RequestServerGroupCreation loaded.summary.id loaded.groupKey ]
+                    )
+
+                ( Server.PbError PocketBase.Unauthorized, Just loaded ) ->
+                    if loaded.syncCursor == Nothing then
+                        -- Never synced + auth failed → group likely doesn't exist on server
+                        ( { model | syncInProgress = False }
+                        , Cmd.none
+                        , [ RequestServerGroupCreation loaded.summary.id loaded.groupKey ]
+                        )
+
+                    else
+                        ( { model | syncInProgress = False }
+                        , Cmd.none
+                        , [ ShowToast Toast.Error ("Sync: " ++ Server.errorToString err) ]
+                        )
+
+                _ ->
+                    ( { model | syncInProgress = False }
+                    , Cmd.none
+                    , [ ShowToast Toast.Error ("Sync: " ++ Server.errorToString err) ]
+                    )
 
         OnGroupSynced _ _ (ConcurrentTask.UnexpectedError _) ->
             ( { model | syncInProgress = False }, Cmd.none, [] )
