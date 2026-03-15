@@ -34,7 +34,7 @@ import Page.Setup
 import PocketBase
 import Process
 import PushServer
-import Pwa
+import PwaState
 import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import Server
@@ -43,7 +43,6 @@ import Storage
 import Task
 import Time
 import Translations as T exposing (I18n, Language(..))
-import UI.Components
 import UI.Shell
 import UI.Theme as Theme
 import UI.Toast as Toast
@@ -112,12 +111,7 @@ type alias Model =
     , origin : String
     , pbClient : Maybe PocketBase.Client
     , pendingServerCreations : Set Group.Id
-    , isOnline : Bool
-    , updateAvailable : Bool
-    , installAvailable : Bool
-    , notificationPermission : Maybe Pwa.NotificationPermission
-    , pushSubscription : Maybe Json.Encode.Value
-    , vapidKey : Maybe String
+    , pwaState : PwaState.Model
     }
 
 
@@ -167,17 +161,7 @@ type Msg
     | ClipboardCopied
     | DismissToast Toast.ToastId
       -- PWA
-    | PwaMsg PwaMsg
-
-
-type PwaMsg
-    = GotPwaEvent (Result Json.Decode.Error Pwa.Event)
-    | AcceptUpdate
-    | RequestInstall
-    | DismissInstallBanner
-    | EnableNotifications
-    | OnVapidKeyFetched (ConcurrentTask.Response PushServer.Error String)
-    | ToggleGroupNotification Group.Id String
+    | PwaStateMsg PwaState.Msg
     | OnToggleNotifResult Group.Id (ConcurrentTask.Response PushServer.Error Bool)
 
 
@@ -189,7 +173,7 @@ subscriptions model =
         , Page.Group.subscription model.groupModel |> Sub.map GroupMsg
         , onClipboardCopy (\() -> ClipboardCopied)
         , onPocketbaseEvent (GroupMsg << Page.Group.pocketbaseEventMsg)
-        , pwaIn (PwaMsg << GotPwaEvent << Pwa.decodeEvent)
+        , PwaState.subscription pwaIn PwaStateMsg
         ]
 
 
@@ -259,8 +243,7 @@ init flags =
             )
                 |> Runner.andRun OnInitComplete
                     (initStorage |> ConcurrentTask.andThen storeNotificationTranslations)
-                |> Runner.andRun (PwaMsg << OnVapidKeyFetched)
-                    PushServer.fetchVapidKey
+                |> PwaState.initTask PwaStateMsg
     in
     ( { route = route
       , appState = Loading
@@ -288,12 +271,7 @@ init flags =
       , origin = flags.origin
       , pbClient = Nothing
       , pendingServerCreations = Set.empty
-      , isOnline = flags.isOnline
-      , updateAvailable = False
-      , installAvailable = False
-      , notificationPermission = Nothing
-      , pushSubscription = Nothing
-      , vapidKey = Nothing
+      , pwaState = PwaState.init { isOnline = flags.isOnline }
       }
     , initCmds
     )
@@ -359,7 +337,7 @@ processGroupOutputs model groupCmd outputs =
                                     ( m, cmds )
 
                         Page.Group.RemoveGroup groupId memberRootId ->
-                            case ( m.appState, m.pushSubscription ) of
+                            case ( m.appState, m.pwaState.pushSubscription ) of
                                 ( Ready readyData, Just subscription ) ->
                                     let
                                         ( runner, unsubCmd ) =
@@ -390,7 +368,7 @@ processGroupOutputs model groupCmd outputs =
                         Page.Group.ToggleGroupNotification groupId memberRootId ->
                             let
                                 ( toggledModel, toggleCmd ) =
-                                    updatePwa (ToggleGroupNotification groupId memberRootId) m
+                                    handleToggleGroupNotification groupId memberRootId m
                             in
                             ( toggledModel, toggleCmd :: cmds )
 
@@ -1150,8 +1128,38 @@ update msg model =
                 _ ->
                     ( model, rescheduleStorageCheckTomorrow )
 
-        PwaMsg pwaMsg ->
-            updatePwa pwaMsg model
+        PwaStateMsg pwaMsg ->
+            let
+                ( pwaState, pwaCmd, outMsgs ) =
+                    PwaState.update pwaOut pwaMsg model.pwaState
+            in
+            processPwaOutMsgs { model | pwaState = pwaState } pwaCmd outMsgs
+
+        OnToggleNotifResult groupId (ConcurrentTask.Success isSubscribed) ->
+            case model.appState of
+                Ready readyData ->
+                    case Dict.get groupId readyData.groups of
+                        Just summary ->
+                            let
+                                updatedSummary : Group.Summary
+                                updatedSummary =
+                                    { summary | isSubscribed = isSubscribed }
+                            in
+                            ( { model
+                                | appState = Ready { readyData | groups = Dict.insert groupId updatedSummary readyData.groups }
+                                , groupModel = Page.Group.updateLoadedSummary updatedSummary model.groupModel
+                              }
+                            , Cmd.none
+                            )
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        OnToggleNotifResult _ _ ->
+            addToast Toast.Error (T.toastPushError model.i18n) model
 
 
 storageCheckTask : Idb.Db -> ConcurrentTask Never ( Maybe UsageStats, UsageStats.StorageEstimate )
@@ -1297,173 +1305,74 @@ handleJoinRoute model route groupId key maybeIdentity =
 -- PWA
 
 
-updatePwa : PwaMsg -> Model -> ( Model, Cmd Msg )
-updatePwa pwaMsg model =
-    case pwaMsg of
-        GotPwaEvent (Ok event) ->
-            case event of
-                Pwa.ConnectionChanged online ->
-                    let
-                        modelWithOnline : Model
-                        modelWithOnline =
-                            { model | isOnline = online }
-                    in
-                    if online then
-                        case model.groupModel.loadedGroup of
-                            Just loaded ->
-                                if loaded.syncCursor == Nothing then
-                                    attemptServerGroupCreation loaded.summary.id (Just loaded.groupKey) modelWithOnline
+processPwaOutMsgs : Model -> Cmd Msg -> List PwaState.OutMsg -> ( Model, Cmd Msg )
+processPwaOutMsgs model pwaCmd outMsgs =
+    let
+        ( finalModel, extraCmds ) =
+            List.foldl
+                (\outMsg ( m, cmds ) ->
+                    case outMsg of
+                        PwaState.ShowToastError ->
+                            let
+                                ( modelWithToast, toastCmd ) =
+                                    addToast Toast.Error (T.toastPushError m.i18n) m
+                            in
+                            ( modelWithToast, toastCmd :: cmds )
 
-                                else
-                                    ( modelWithOnline, Cmd.none )
-
-                            Nothing ->
-                                ( modelWithOnline, Cmd.none )
-
-                    else
-                        ( modelWithOnline, Cmd.none )
-
-                Pwa.UpdateAvailable ->
-                    ( { model | updateAvailable = True }, Cmd.none )
-
-                Pwa.InstallAvailable ->
-                    ( { model | installAvailable = True }, Cmd.none )
-
-                Pwa.Installed ->
-                    ( { model | installAvailable = False }, Cmd.none )
-
-                Pwa.NotificationPermissionChanged permission ->
-                    let
-                        newModel : Model
-                        newModel =
-                            { model | notificationPermission = Just permission }
-                    in
-                    case ( permission, model.vapidKey ) of
-                        ( Pwa.Granted, Just key ) ->
-                            ( newModel, Pwa.subscribePush pwaOut key )
-
-                        _ ->
-                            ( newModel, Cmd.none )
-
-                Pwa.PushSubscription subscription ->
-                    ( { model | pushSubscription = Just subscription }, Cmd.none )
-
-                Pwa.PushSubscriptionError _ ->
-                    addToast Toast.Error (T.toastPushError model.i18n) model
-
-                Pwa.PushUnsubscribed ->
-                    ( { model | pushSubscription = Nothing }, Cmd.none )
-
-                Pwa.NotificationClicked data ->
-                    case Json.Decode.decodeValue (Json.Decode.field "url" Json.Decode.string) data of
-                        Ok url ->
-                            case Url.fromString (model.origin ++ url) of
+                        PwaState.NavigateToUrl url ->
+                            case Url.fromString (m.origin ++ url) of
                                 Just parsedUrl ->
                                     let
                                         route : Route
                                         route =
                                             Route.fromAppUrl (AppUrl.fromUrl parsedUrl)
                                     in
-                                    ( model, Navigation.pushUrl navCmd (Route.toAppUrl route) )
+                                    ( m, Navigation.pushUrl navCmd (Route.toAppUrl route) :: cmds )
 
                                 Nothing ->
-                                    ( model, Cmd.none )
+                                    ( m, cmds )
 
-                        Err _ ->
-                            ( model, Cmd.none )
+                        PwaState.CameOnline ->
+                            case m.groupModel.loadedGroup of
+                                Just loaded ->
+                                    if loaded.syncCursor == Nothing then
+                                        attemptServerGroupCreation loaded.summary.id (Just loaded.groupKey) m
+                                            |> Tuple.mapSecond (\cmd -> cmd :: cmds)
 
-                _ ->
-                    ( model, Cmd.none )
+                                    else
+                                        ( m, cmds )
 
-        GotPwaEvent (Err _) ->
-            ( model, Cmd.none )
+                                Nothing ->
+                                    ( m, cmds )
+                )
+                ( model, [] )
+                outMsgs
+    in
+    ( finalModel, Cmd.batch (pwaCmd :: extraCmds) )
 
-        AcceptUpdate ->
-            ( model, Pwa.acceptUpdate pwaOut )
 
-        RequestInstall ->
-            ( { model | installAvailable = False }, Pwa.requestInstall pwaOut )
-
-        DismissInstallBanner ->
-            ( { model | installAvailable = False }, Cmd.none )
-
-        EnableNotifications ->
-            case model.notificationPermission of
-                Just Pwa.Granted ->
-                    -- Already granted, subscribe to push
-                    case model.vapidKey of
-                        Just key ->
-                            ( model, Pwa.subscribePush pwaOut key )
-
-                        Nothing ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Pwa.requestNotificationPermission pwaOut )
-
-        OnVapidKeyFetched (ConcurrentTask.Success key) ->
-            let
-                newModel : Model
-                newModel =
-                    { model | vapidKey = Just key }
-            in
-            case model.notificationPermission of
-                Just Pwa.Granted ->
-                    ( newModel, Pwa.subscribePush pwaOut key )
-
-                _ ->
-                    ( newModel, Cmd.none )
-
-        OnVapidKeyFetched _ ->
-            ( model, Cmd.none )
-
-        ToggleGroupNotification groupId memberRootId ->
-            case model.appState of
-                Ready readyData ->
-                    case ( Dict.get groupId readyData.groups, model.pushSubscription ) of
-                        ( Just summary, Just subscription ) ->
-                            ( model.runner, Cmd.none )
-                                |> Runner.andRun (PwaMsg << OnToggleNotifResult groupId)
-                                    (PushServer.toggleGroupNotification
-                                        { db = readyData.db
-                                        , summary = summary
-                                        , subscription = subscription
-                                        , memberRootId = memberRootId
-                                        }
-                                    )
-                                |> Tuple.mapFirst (\r -> { model | runner = r })
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
-
-        OnToggleNotifResult groupId (ConcurrentTask.Success isSubscribed) ->
-            case model.appState of
-                Ready readyData ->
-                    case Dict.get groupId readyData.groups of
-                        Just summary ->
-                            let
-                                updatedSummary : Group.Summary
-                                updatedSummary =
-                                    { summary | isSubscribed = isSubscribed }
-                            in
-                            ( { model
-                                | appState = Ready { readyData | groups = Dict.insert groupId updatedSummary readyData.groups }
-                                , groupModel = Page.Group.updateLoadedSummary updatedSummary model.groupModel
-                              }
-                            , Cmd.none
+handleToggleGroupNotification : Group.Id -> String -> Model -> ( Model, Cmd Msg )
+handleToggleGroupNotification groupId memberRootId model =
+    case model.appState of
+        Ready readyData ->
+            case ( Dict.get groupId readyData.groups, model.pwaState.pushSubscription ) of
+                ( Just summary, Just subscription ) ->
+                    ( model.runner, Cmd.none )
+                        |> Runner.andRun (OnToggleNotifResult groupId)
+                            (PushServer.toggleGroupNotification
+                                { db = readyData.db
+                                , summary = summary
+                                , subscription = subscription
+                                , memberRootId = memberRootId
+                                }
                             )
-
-                        Nothing ->
-                            ( model, Cmd.none )
+                        |> Tuple.mapFirst (\r -> { model | runner = r })
 
                 _ ->
                     ( model, Cmd.none )
 
-        OnToggleNotifResult _ _ ->
-            addToast Toast.Error (T.toastPushError model.i18n) model
+        _ ->
+            ( model, Cmd.none )
 
 
 
@@ -1526,21 +1435,9 @@ view model =
                     , right = Theme.spacing.xl
                     }
                 ]
-                [ viewPwaBanners model, pageResult.content ]
+                [ Ui.map PwaStateMsg (PwaState.viewBanners model.i18n model.pwaState), pageResult.content ]
             )
         )
-
-
-viewPwaBanners : Model -> Ui.Element Msg
-viewPwaBanners model =
-    UI.Components.pwaBanners model.i18n
-        { isOnline = model.isOnline
-        , updateAvailable = model.updateAvailable
-        , installAvailable = model.installAvailable
-        , onUpdate = PwaMsg AcceptUpdate
-        , onInstall = PwaMsg RequestInstall
-        , onDismissInstall = PwaMsg DismissInstallBanner
-        }
 
 
 viewPage : Model -> Page.Group.ViewResult Msg
@@ -1585,9 +1482,9 @@ viewReady model readyData =
                 Page.Home.view i18n
                     { onNavigate = NavigateTo
                     , onExport = ExportGroup
-                    , notificationPermission = model.notificationPermission
-                    , pushActive = pushIsActive model
-                    , onEnableNotifications = PwaMsg EnableNotifications
+                    , notificationPermission = model.pwaState.notificationPermission
+                    , pushActive = PwaState.pushIsActive model.pwaState
+                    , onEnableNotifications = PwaStateMsg PwaState.enableNotificationsMsg
                     }
                     HomeMsg
                     model.homeModel
@@ -1612,7 +1509,7 @@ viewReady model readyData =
                 , today = Date.posixToDate model.currentTime
                 , groupId = groupId
                 , origin = model.origin
-                , pushActive = pushIsActive model
+                , pushActive = PwaState.pushIsActive model.pwaState
                 }
                 groupView
                 model.groupModel
@@ -1631,11 +1528,6 @@ viewReady model readyData =
             noOverlay <|
                 UI.Shell.pageShell { title = T.shellPartage i18n, onBack = NavigateTo Home }
                     (Page.NotFound.view i18n)
-
-
-pushIsActive : Model -> Bool
-pushIsActive model =
-    model.notificationPermission == Just Pwa.Granted && model.pushSubscription /= Nothing
 
 
 {-| Create a group on the server. Called after sync has already failed,
