@@ -2,7 +2,6 @@ port module Main exposing (AppState, Flags, Model, Msg, main)
 
 import AppUrl
 import Browser
-import Compression
 import ConcurrentTask exposing (ConcurrentTask)
 import ConcurrentTaskExtra as Runner exposing (TaskRunner)
 import Dict
@@ -12,11 +11,11 @@ import Domain.Group as Group
 import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Form.NewGroup
-import GroupExport
 import GroupOps
 import Html exposing (Html)
 import Html.Attributes
 import Identity exposing (Identity)
+import ImportExport
 import IndexedDb as Idb
 import Json.Decode
 import Json.Encode
@@ -144,11 +143,7 @@ type Msg
     | OnGroupCreated (ConcurrentTask.Response Idb.Error Group.Summary)
       -- Import / Export
     | HomeMsg Page.Home.Msg
-    | ExportGroup Group.Id
-    | OnExportDataLoaded Group.Id (ConcurrentTask.Response Idb.Error ( List Event.Envelope, Maybe String ))
-    | OnExportCompressed (ConcurrentTask.Response String ())
-    | OnImportDecompressed (ConcurrentTask.Response String String)
-    | OnGroupImported Group.Summary (ConcurrentTask.Response Idb.Error ())
+    | ImportExportMsg ImportExport.Msg
       -- Server sync
     | OnPbClientInitialized (ConcurrentTask.Response PocketBase.Error PocketBase.Client)
     | OnServerGroupCreated Group.Id (ConcurrentTask.Response Server.Error ())
@@ -816,53 +811,26 @@ update msg model =
             addToast Toast.Error (T.toastJoinError model.i18n) model
 
         -- Import / Export
-        ExportGroup groupId ->
+        ImportExportMsg ieMsg ->
             case model.appState of
                 Ready readyData ->
-                    ( model.runner, Cmd.none )
-                        |> Runner.andRun (OnExportDataLoaded groupId)
-                            (ConcurrentTask.map2 Tuple.pair
-                                (Storage.loadGroupEvents readyData.db groupId)
-                                (Storage.loadGroupKey readyData.db groupId)
-                            )
-                        |> Tuple.mapFirst (\r -> { model | runner = r })
+                    let
+                        config : ImportExport.Config Msg
+                        config =
+                            { toMsg = ImportExportMsg
+                            , db = readyData.db
+                            , groups = readyData.groups
+                            , currentTime = model.currentTime
+                            , i18n = model.i18n
+                            }
+
+                        ( ( runner, cmd ), maybeOutMsg ) =
+                            ImportExport.update config ieMsg ( model.runner, Cmd.none )
+                    in
+                    processImportExportOutMsg { model | runner = runner } cmd maybeOutMsg
 
                 _ ->
                     ( model, Cmd.none )
-
-        OnExportDataLoaded groupId (ConcurrentTask.Success ( events, maybeKey )) ->
-            case model.appState of
-                Ready readyData ->
-                    case Dict.get groupId readyData.groups of
-                        Just summary ->
-                            let
-                                json : String
-                                json =
-                                    GroupExport.encodeExport model.currentTime summary events maybeKey
-
-                                filename : String
-                                filename =
-                                    GroupExport.exportFilename summary
-                            in
-                            ( model.runner, Cmd.none )
-                                |> Runner.andRun OnExportCompressed
-                                    (Compression.compressAndDownload json filename)
-                                |> Tuple.mapFirst (\r -> { model | runner = r })
-
-                        Nothing ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
-
-        OnExportDataLoaded _ _ ->
-            addToast Toast.Error (T.toastExportError model.i18n) model
-
-        OnExportCompressed (ConcurrentTask.Error _) ->
-            addToast Toast.Error (T.toastExportError model.i18n) model
-
-        OnExportCompressed _ ->
-            ( model, Cmd.none )
 
         HomeMsg homeMsg ->
             case model.appState of
@@ -877,8 +845,7 @@ update msg model =
                     case maybeOutput of
                         Just (Page.Home.ImportFileLoaded base64) ->
                             ( updatedModel.runner, cmd )
-                                |> Runner.andRun OnImportDecompressed
-                                    (Compression.decompress base64)
+                                |> ImportExport.startImport ImportExportMsg base64
                                 |> Tuple.mapFirst (\r -> { updatedModel | runner = r })
 
                         Just (Page.Home.JoinLink url) ->
@@ -900,57 +867,6 @@ update msg model =
 
                 _ ->
                     ( model, Cmd.none )
-
-        OnImportDecompressed (ConcurrentTask.Success jsonString) ->
-            case model.appState of
-                Ready readyData ->
-                    let
-                        existingIds : Set.Set Group.Id
-                        existingIds =
-                            Dict.keys readyData.groups |> Set.fromList
-                    in
-                    case GroupExport.validateImport existingIds jsonString of
-                        Err GroupExport.InvalidFile ->
-                            ( { model | homeModel = Page.Home.setImportError (T.importErrorInvalidFile model.i18n) model.homeModel }
-                            , Cmd.none
-                            )
-
-                        Err GroupExport.AlreadyExists ->
-                            ( { model | homeModel = Page.Home.setImportError (T.importErrorAlreadyExists model.i18n) model.homeModel }
-                            , Cmd.none
-                            )
-
-                        Ok exportData ->
-                            ( model.runner, Cmd.none )
-                                |> Runner.andRun (OnGroupImported exportData.group)
-                                    (Storage.saveGroup readyData.db exportData.group exportData.groupKey exportData.events Nothing)
-                                |> Tuple.mapFirst (\r -> { model | runner = r })
-
-                _ ->
-                    ( model, Cmd.none )
-
-        OnImportDecompressed _ ->
-            ( { model | homeModel = Page.Home.setImportError (T.importErrorInvalidFile model.i18n) model.homeModel }
-            , Cmd.none
-            )
-
-        OnGroupImported summary (ConcurrentTask.Success _) ->
-            case model.appState of
-                Ready readyData ->
-                    addToast Toast.Success
-                        (T.toastImportSuccess model.i18n)
-                        { model
-                            | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
-                            , groupModel = Page.Group.resetLoadedGroup model.groupModel
-                            , homeModel = Page.Home.init
-                        }
-                        |> Update.addCmd (Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute summary.id (Tab BalanceTab))))
-
-                _ ->
-                    ( model, Cmd.none )
-
-        OnGroupImported _ _ ->
-            addToast Toast.Error (T.toastImportError model.i18n) model
 
         -- Server sync
         OnPbClientInitialized (ConcurrentTask.Success client) ->
@@ -1351,6 +1267,36 @@ processPwaOutMsgs model pwaCmd outMsgs =
     ( finalModel, Cmd.batch (pwaCmd :: extraCmds) )
 
 
+processImportExportOutMsg : Model -> Cmd Msg -> Maybe ImportExport.OutMsg -> ( Model, Cmd Msg )
+processImportExportOutMsg model ieCmd maybeOutMsg =
+    case maybeOutMsg of
+        Nothing ->
+            ( model, ieCmd )
+
+        Just (ImportExport.ShowToast level message) ->
+            addToast level message model
+                |> Update.addCmd ieCmd
+
+        Just (ImportExport.SetImportError errorMsg) ->
+            ( { model | homeModel = Page.Home.setImportError errorMsg model.homeModel }, ieCmd )
+
+        Just (ImportExport.GroupImported summary) ->
+            case model.appState of
+                Ready readyData ->
+                    addToast Toast.Success
+                        (T.toastImportSuccess model.i18n)
+                        { model
+                            | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
+                            , groupModel = Page.Group.resetLoadedGroup model.groupModel
+                            , homeModel = Page.Home.init
+                        }
+                        |> Update.addCmd ieCmd
+                        |> Update.addCmd (Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute summary.id (Tab BalanceTab))))
+
+                _ ->
+                    ( model, ieCmd )
+
+
 handleToggleGroupNotification : Group.Id -> String -> Model -> ( Model, Cmd Msg )
 handleToggleGroupNotification groupId memberRootId model =
     case model.appState of
@@ -1481,7 +1427,7 @@ viewReady model readyData =
             noOverlay <|
                 Page.Home.view i18n
                     { onNavigate = NavigateTo
-                    , onExport = ExportGroup
+                    , onExport = ImportExportMsg << ImportExport.exportMsg
                     , notificationPermission = model.pwaState.notificationPermission
                     , pushActive = PwaState.pushIsActive model.pwaState
                     , onEnableNotifications = PwaStateMsg PwaState.enableNotificationsMsg
