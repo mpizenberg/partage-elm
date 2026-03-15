@@ -88,7 +88,7 @@ payerField i18n activeMembers data =
                                 , placeholder = Just "0.00"
                                 , label = Ui.Input.labelHidden member.name
                                 }
-                            , Ui.text <| "(" ++ Currency.currencyCode data.currency ++ ")"
+                            , Ui.text <| "(" ++ Currency.currencySymbol data.currency ++ ")"
                             ]
                 in
                 List.filterMap
@@ -241,7 +241,7 @@ beneficiaryRow data member =
                                 , label = Ui.Input.labelHidden member.name
                                 }
                             , Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
-                                (Ui.text (Currency.currencyCode data.currency))
+                                (Ui.text (Currency.currencySymbol data.currency))
                             ]
 
                     else

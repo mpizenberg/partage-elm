@@ -78,9 +78,9 @@ formatCents cents =
     sign ++ String.fromInt whole ++ "." ++ String.padLeft 2 '0' (String.fromInt frac)
 
 
-{-| Format cents with a currency code suffix.
-e.g., 1050, EUR -> "10.50 EUR"
+{-| Format cents with a currency symbol.
+e.g., 1050, EUR -> "€10.50", 1050, JPY -> "¥1050"
 -}
 formatCentsWithCurrency : Int -> Currency -> String
 formatCentsWithCurrency amount currency =
-    formatMinorUnits currency amount ++ " " ++ Currency.currencyCode currency
+    Currency.currencySymbol currency ++ formatMinorUnits currency amount

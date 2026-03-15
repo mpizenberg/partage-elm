@@ -1,4 +1,4 @@
-module Domain.Currency exposing (Currency(..), allCurrencies, currencyCode, currencyDecoder, currencyFromCode, encodeCurrency, precision)
+module Domain.Currency exposing (Currency(..), allCurrencies, currencyCode, currencyDecoder, currencyFromCode, currencySymbol, encodeCurrency, precision)
 
 {-| Supported currencies and their precision.
 -}
@@ -63,6 +63,42 @@ currencyCode currency =
 
         ARS ->
             "ARS"
+
+
+{-| Get the symbol for a currency (e.g. "€", "$", "£").
+-}
+currencySymbol : Currency -> String
+currencySymbol currency =
+    case currency of
+        USD ->
+            "$"
+
+        EUR ->
+            "€"
+
+        GBP ->
+            "£"
+
+        CHF ->
+            "CHF"
+
+        JPY ->
+            "¥"
+
+        AUD ->
+            "A$"
+
+        CAD ->
+            "C$"
+
+        NZD ->
+            "NZ$"
+
+        BRL ->
+            "R$"
+
+        ARS ->
+            "AR$"
 
 
 {-| Parse a currency code string (case-insensitive) into a Currency.

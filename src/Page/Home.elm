@@ -276,7 +276,7 @@ groupCard i18n ctx summary =
             String.join " · "
                 [ String.fromInt summary.memberCount ++ " " ++ T.homeMembers i18n
                 , T.homeCreated i18n ++ " " ++ formatYear summary.createdAt
-                , Currency.currencyCode summary.defaultCurrency
+                , Currency.currencySymbol summary.defaultCurrency
                 ]
 
         balanceView : Ui.Element msg
@@ -302,7 +302,7 @@ groupCard i18n ctx summary =
                         , Ui.Font.weight Theme.fontWeight.medium
                         , Ui.Font.color Theme.success.text
                         ]
-                        (Ui.text ("+€" ++ Format.formatCents cents))
+                        (Ui.text ("+" ++ Format.formatCentsWithCurrency cents summary.defaultCurrency))
                     ]
 
             else if cents < 0 then
@@ -313,7 +313,7 @@ groupCard i18n ctx summary =
                         , Ui.Font.weight Theme.fontWeight.medium
                         , Ui.Font.color Theme.danger.text
                         ]
-                        (Ui.text ("-€" ++ Format.formatCents (abs cents)))
+                        (Ui.text ("-" ++ Format.formatCentsWithCurrency (abs cents) summary.defaultCurrency))
                     ]
 
             else

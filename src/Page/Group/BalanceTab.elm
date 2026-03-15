@@ -5,6 +5,7 @@ module Page.Group.BalanceTab exposing (Config, Model, Msg, init, update, view)
 
 import Dict
 import Domain.Balance as Balance exposing (MemberBalance)
+import Domain.Currency as Currency
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
 import Domain.Settlement as Settlement
@@ -128,7 +129,7 @@ yourBalanceCard i18n currentUserRootId state =
                                 Balance.Settled ->
                                     ""
                     in
-                    ( prefix ++ Format.formatCents (abs b.netBalance)
+                    ( prefix ++ Format.formatCentsWithCurrency (abs b.netBalance) state.groupMeta.defaultCurrency
                     , case status of
                         Balance.Creditor ->
                             T.balanceIsOwedYou i18n
@@ -141,7 +142,7 @@ yourBalanceCard i18n currentUserRootId state =
                     )
 
                 Nothing ->
-                    ( Format.formatCents 0, T.balanceSettled i18n )
+                    ( Format.formatCentsWithCurrency 0 state.groupMeta.defaultCurrency, T.balanceSettled i18n )
 
         amountColor : Ui.Color
         amountColor =
@@ -214,12 +215,12 @@ otherMembersSection i18n config expandedMember maybeUserRootId state =
         Ui.column []
             [ UI.Components.sectionLabel (T.membersTabTitle i18n)
             , Ui.column [ Ui.spacing Theme.spacing.xs ]
-                (List.map (memberBalanceCard i18n config (maybeUserRootId /= Nothing) resolveName expandedMember) balances)
+                (List.map (memberBalanceCard i18n config (maybeUserRootId /= Nothing) state.groupMeta.defaultCurrency resolveName expandedMember) balances)
             ]
 
 
-memberBalanceCard : I18n -> Config msg -> Bool -> (Member.Id -> String) -> Maybe Member.Id -> MemberBalance -> Ui.Element msg
-memberBalanceCard i18n config isMember resolveName expandedMember b =
+memberBalanceCard : I18n -> Config msg -> Bool -> Currency.Currency -> (Member.Id -> String) -> Maybe Member.Id -> MemberBalance -> Ui.Element msg
+memberBalanceCard i18n config isMember currency resolveName expandedMember b =
     let
         name : String
         name =
@@ -312,7 +313,7 @@ memberBalanceCard i18n config isMember resolveName expandedMember b =
                         Balance.Settled ->
                             ""
                      )
-                        ++ Format.formatCents (abs b.netBalance)
+                        ++ Format.formatCentsWithCurrency (abs b.netBalance) currency
                     )
                 )
             ]
@@ -436,7 +437,7 @@ settlementItem i18n config resolveName maybeUserRootId showTopBorder isSelected 
                     , Ui.Font.weight Theme.fontWeight.semibold
                     , amountColor
                     ]
-                    (Ui.text (Format.formatCents t.amount))
+                    (Ui.text (Format.formatCentsWithCurrency t.amount state.groupMeta.defaultCurrency))
                 ]
     in
     if isSelected then
