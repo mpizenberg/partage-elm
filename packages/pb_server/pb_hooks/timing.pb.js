@@ -9,6 +9,7 @@ onEvent("OnServe", (e) => {
     "http://localhost:50217",
     "http://localhost:54448",
     // Add production origin here
+    "https://partage.dokploy.zidev.ovh",
   ];
 
   e.router.use((e) => {
