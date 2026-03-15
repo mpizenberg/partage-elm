@@ -143,6 +143,7 @@ type Msg
     | JoinGroupMsg Page.JoinGroup.Msg
       -- Join flow
     | OnJoinGroupFetched (ConcurrentTask.Response Server.Error Server.SyncResult)
+    | OnJoinLocalGroupLoaded (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe String, unpushedIds : Set.Set String })
     | OnJoinGroupSaved Group.Id Member.Id (ConcurrentTask.Response Idb.Error ())
       -- Form submission responses
     | OnGroupCreated (ConcurrentTask.Response Idb.Error Group.Summary)
@@ -719,6 +720,60 @@ update msg model =
                 Nothing ->
                     ( { model | joinGroupModel = joinModel }, Cmd.none )
 
+        OnJoinLocalGroupLoaded (ConcurrentTask.Success groupData) ->
+            case model.appState of
+                Ready readyData ->
+                    let
+                        groupState : GroupState.GroupState
+                        groupState =
+                            GroupState.applyEvents groupData.events GroupState.empty
+
+                        identityHash : String
+                        identityHash =
+                            Maybe.map .publicKeyHash readyData.identity
+                                |> Maybe.withDefault ""
+
+                        isMember : Bool
+                        isMember =
+                            GroupState.resolveMemberRootId groupState identityHash /= Nothing
+                    in
+                    if isMember then
+                        -- User is already a member: navigate to the group
+                        case model.route of
+                            GroupRoute groupId _ ->
+                                let
+                                    balanceRoute : Route
+                                    balanceRoute =
+                                        GroupRoute groupId (Tab BalanceTab)
+                                in
+                                addToast Toast.Success (T.toastAlreadyInGroup model.i18n) { model | route = balanceRoute }
+                                    |> Update.addCmd (Navigation.replaceUrl navCmd (Route.toAppUrl balanceRoute))
+
+                            _ ->
+                                ( model, Cmd.none )
+
+                    else
+                        -- User is not a member: show join preview from local data
+                        ( { model
+                            | joinGroupModel =
+                                Page.JoinGroup.showPreview
+                                    { groupName = groupState.groupMeta.name
+                                    , groupState = groupState
+                                    , events = groupData.events
+                                    , syncCursor = Maybe.withDefault "" groupData.syncCursor
+                                    , selectedAction = Page.JoinGroup.JoinAsNewMember
+                                    , newMemberName = ""
+                                    }
+                          }
+                        , Cmd.none
+                        )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        OnJoinLocalGroupLoaded _ ->
+            ( model, Cmd.none )
+
         OnJoinGroupFetched (ConcurrentTask.Success syncResult) ->
             let
                 groupState : GroupState.GroupState
@@ -1133,14 +1188,10 @@ handleJoinRoute model route groupId key maybeIdentity =
     case model.appState of
         Ready readyData ->
             if Dict.member groupId readyData.groups then
-                -- Group already exists locally: navigate to it and trigger sync
-                let
-                    balanceRoute : Route
-                    balanceRoute =
-                        GroupRoute groupId (Tab BalanceTab)
-                in
-                addToast Toast.Success (T.toastAlreadyInGroup model.i18n) { model | route = balanceRoute }
-                    |> Update.addCmd (Navigation.replaceUrl navCmd (Route.toAppUrl balanceRoute))
+                -- Group exists locally: load it to check membership
+                ( model.runner, Cmd.none )
+                    |> Runner.andRun OnJoinLocalGroupLoaded (Storage.loadGroup readyData.db groupId)
+                    |> Tuple.mapFirst (\r -> { model | route = route, runner = r, joinGroupModel = Page.JoinGroup.init })
 
             else
                 case maybeIdentity of

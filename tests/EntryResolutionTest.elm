@@ -72,8 +72,8 @@ modificationTests =
                         GroupState.applyEvents
                             (bootstrapMembers
                                 ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
-                            , makeEnvelope "e2" 2000 "admin" (EntryModified modifiedEntry)
-                               ]
+                                   , makeEnvelope "e2" 2000 "admin" (EntryModified modifiedEntry)
+                                   ]
                             )
                             GroupState.empty
                 in
@@ -87,8 +87,8 @@ modificationTests =
                         GroupState.applyEvents
                             (bootstrapMembers
                                 ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
-                            , makeEnvelope "e2" 2000 "admin" (EntryModified modifiedEntry)
-                               ]
+                                   , makeEnvelope "e2" 2000 "admin" (EntryModified modifiedEntry)
+                                   ]
                             )
                             GroupState.empty
                 in
@@ -132,8 +132,8 @@ deletionTests =
                         GroupState.applyEvents
                             (bootstrapMembers
                                 ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
-                            , makeEnvelope "e2" 2000 "admin" (EntryDeleted { rootId = "entry1" })
-                               ]
+                                   , makeEnvelope "e2" 2000 "admin" (EntryDeleted { rootId = "entry1" })
+                                   ]
                             )
                             GroupState.empty
                 in
@@ -150,9 +150,9 @@ deletionTests =
                         GroupState.applyEvents
                             (bootstrapMembers
                                 ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
-                            , makeEnvelope "e2" 2000 "admin" (EntryDeleted { rootId = "entry1" })
-                            , makeEnvelope "e3" 3000 "admin" (EntryUndeleted { rootId = "entry1" })
-                               ]
+                                   , makeEnvelope "e2" 2000 "admin" (EntryDeleted { rootId = "entry1" })
+                                   , makeEnvelope "e3" 3000 "admin" (EntryUndeleted { rootId = "entry1" })
+                                   ]
                             )
                             GroupState.empty
                 in
@@ -172,9 +172,9 @@ deletionTests =
                         GroupState.applyEvents
                             (bootstrapMembers
                                 ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry1)
-                            , makeEnvelope "e2" 1001 "admin" (EntryAdded entry2)
-                            , makeEnvelope "e3" 2000 "admin" (EntryDeleted { rootId = "entry1" })
-                               ]
+                                   , makeEnvelope "e2" 1001 "admin" (EntryAdded entry2)
+                                   , makeEnvelope "e3" 2000 "admin" (EntryDeleted { rootId = "entry1" })
+                                   ]
                             )
                             GroupState.empty
                 in
@@ -214,9 +214,9 @@ concurrentModificationTests =
                         GroupState.applyEvents
                             (bootstrapMembers
                                 ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
-                            , makeEnvelope "e2" 2000 "alice" (EntryModified mod1)
-                            , makeEnvelope "e3" 3000 "bob" (EntryModified mod2)
-                               ]
+                                   , makeEnvelope "e2" 2000 "alice" (EntryModified mod1)
+                                   , makeEnvelope "e3" 3000 "bob" (EntryModified mod2)
+                                   ]
                             )
                             GroupState.empty
                 in
@@ -240,9 +240,9 @@ concurrentModificationTests =
                         GroupState.applyEvents
                             (bootstrapMembers
                                 ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded originalEntry)
-                            , makeEnvelope "e2" 2000 "alice" (EntryModified mod1)
-                            , makeEnvelope "e3" 2000 "bob" (EntryModified mod2)
-                               ]
+                                   , makeEnvelope "e2" 2000 "alice" (EntryModified mod1)
+                                   , makeEnvelope "e3" 2000 "bob" (EntryModified mod2)
+                                   ]
                             )
                             GroupState.empty
                 in
@@ -266,8 +266,8 @@ rejectionTests =
                         GroupState.applyEvents
                             (bootstrapMembers
                                 ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
-                            , makeEnvelope "e2" 2000 "admin" (EntryAdded entry)
-                               ]
+                                   , makeEnvelope "e2" 2000 "admin" (EntryAdded entry)
+                                   ]
                             )
                             GroupState.empty
                 in
@@ -333,8 +333,8 @@ rejectionTests =
                         GroupState.applyEvents
                             (bootstrapMembers
                                 ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
-                            , makeEnvelope "e2" 2000 "admin" (EntryModified modified)
-                               ]
+                                   , makeEnvelope "e2" 2000 "admin" (EntryModified modified)
+                                   ]
                             )
                             GroupState.empty
                 in
@@ -369,9 +369,9 @@ rejectionTests =
                         GroupState.applyEvents
                             (bootstrapMembers
                                 ++ [ makeEnvelope "e1" 1000 "admin" (EntryAdded entry)
-                            , makeEnvelope "e2" 2000 "admin" (EntryModified orphan1)
-                            , makeEnvelope "e3" 3000 "admin" (EntryModified orphan2)
-                               ]
+                                   , makeEnvelope "e2" 2000 "admin" (EntryModified orphan1)
+                                   , makeEnvelope "e3" 3000 "admin" (EntryModified orphan2)
+                                   ]
                             )
                             GroupState.empty
                 in
