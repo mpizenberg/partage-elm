@@ -1463,7 +1463,7 @@ viewReady model readyData =
 
         About ->
             noOverlay <|
-                UI.Shell.pageShell { title = T.shellPartage i18n, onBack = NavigateTo Home }
+                UI.Shell.pageShell { title = T.aboutTitle i18n, onBack = NavigateTo Home }
                     (Page.About.view i18n
                         { onSwitchLanguage = SwitchLanguage
                         , toMsg = AboutMsg

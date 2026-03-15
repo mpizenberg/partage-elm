@@ -310,5 +310,13 @@
   "monthShortDec": "Déc",
   "groupArchiveButton": "Archiver le groupe",
   "groupUnarchiveButton": "Désarchiver le groupe",
-  "homeArchivedGroups": "Archivés"
+  "homeArchivedGroups": "Archivés",
+  "aboutVersion": "Version {version}",
+  "aboutFeatureEncrypted": "Chiffrement de bout en bout",
+  "aboutFeatureLocalFirst": "Local d'abord, fonctionne hors-ligne",
+  "aboutFeatureGroupSharing": "Synchronisation en temps réel",
+  "aboutFeatureOpenSource": "Gratuit et open source",
+  "aboutHowItWorksTitle": "Comment ça marche",
+  "aboutHowItWorks": "Vos dépenses sont stockées localement sur votre appareil et chiffrées avant synchronisation. Seuls les membres du groupe ayant la clé partagée peuvent lire les données. Aucun compte requis.",
+  "aboutSourceCode": "Code source"
 }

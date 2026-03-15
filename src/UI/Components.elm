@@ -672,7 +672,6 @@ featherIconColored strokeColor size icon =
         |> Ui.html
 
 
-
 {-| App logo (the Partage sharing icon) rendered as inline SVG at the given size.
 -}
 appLogo : Float -> Ui.Element msg
@@ -703,11 +702,12 @@ appLogo size =
 -}
 languageSelector : (Language -> msg) -> Language -> Ui.Element msg
 languageSelector onSwitch current =
-    Ui.row [ Ui.spacing Theme.spacing.xs ]
+    Ui.row [ Ui.spacing Theme.spacing.lg ]
         (List.map
             (\lang ->
                 Ui.el
                     [ Ui.pointer
+                    , Ui.width Ui.shrink
                     , Ui.Font.size Theme.font.lg
                     , Ui.Events.onClick (onSwitch lang)
                     , if lang == current then

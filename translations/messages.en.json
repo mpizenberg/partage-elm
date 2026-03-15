@@ -310,5 +310,13 @@
   "monthShortDec": "Dec",
   "groupArchiveButton": "Archive group",
   "groupUnarchiveButton": "Unarchive group",
-  "homeArchivedGroups": "Archived"
+  "homeArchivedGroups": "Archived",
+  "aboutVersion": "Version {version}",
+  "aboutFeatureEncrypted": "End-to-end encrypted",
+  "aboutFeatureLocalFirst": "Local-first, works offline",
+  "aboutFeatureGroupSharing": "Real-time group sync",
+  "aboutFeatureOpenSource": "Free and open source",
+  "aboutHowItWorksTitle": "How it works",
+  "aboutHowItWorks": "Your expenses are stored locally on your device and encrypted before syncing. Only group members with the shared key can read the data. No account needed.",
+  "aboutSourceCode": "Source code"
 }

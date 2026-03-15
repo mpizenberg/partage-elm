@@ -28,6 +28,16 @@ type Output
     = RequestResetStats
 
 
+appVersion : String
+appVersion =
+    "0.1.0"
+
+
+sourceUrl : String
+sourceUrl =
+    "https://github.com/nicosMusic/partage"
+
+
 init : Model
 init =
     Loading
@@ -64,37 +74,111 @@ update msg model =
 
 view : I18n -> { onSwitchLanguage : Language -> msg, toMsg : Msg -> msg } -> Model -> Ui.Element msg
 view i18n config model =
-    Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.md ]
-        [ Ui.el
-            [ Ui.Font.size Theme.font.xl
-            , Ui.Font.weight Theme.fontWeight.bold
-            ]
-            (Ui.text (T.aboutTitle i18n))
-        , UI.Components.card [ Ui.padding Theme.spacing.lg ]
-            [ Ui.column [ Ui.spacing Theme.spacing.md ]
-                [ Ui.el
-                    [ Ui.Font.size Theme.font.sm
-                    , Ui.Font.color Theme.base.text
-                    ]
-                    (Ui.text (T.aboutDescription i18n))
-                , Ui.el
-                    [ Ui.Font.size Theme.font.sm
-                    , Ui.Font.color Theme.base.textSubtle
-                    ]
-                    (Ui.text (T.aboutPrivacy i18n))
-                ]
-            ]
+    Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.md ]
+        [ heroSection i18n
         , languageSection i18n config.onSwitchLanguage
+        , featuresSection i18n
+        , howItWorksSection i18n
         , Ui.map config.toMsg (usageSection i18n model)
+        , sourceSection i18n
         ]
+
+
+
+-- HERO
+
+
+heroSection : I18n -> Ui.Element msg
+heroSection i18n =
+    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill, Ui.contentCenterX ]
+        [ Ui.el [ Ui.centerX ] (UI.Components.appLogo 64)
+        , Ui.el
+            [ Ui.centerX
+            , Ui.Font.size Theme.font.xl
+            , Ui.Font.weight Theme.fontWeight.bold
+            , Ui.Font.letterSpacing Theme.letterSpacing.tight
+            ]
+            (Ui.text (T.shellPartage i18n))
+        , Ui.el
+            [ Ui.centerX
+            , Ui.Font.size Theme.font.md
+            , Ui.Font.color Theme.base.text
+            , Ui.Font.center
+            ]
+            (Ui.text (T.aboutDescription i18n))
+        , Ui.row
+            [ Ui.centerX
+            , Ui.spacing Theme.spacing.xs
+            , Ui.Font.size Theme.font.sm
+            , Ui.Font.color Theme.base.textSubtle
+            , Ui.contentCenterY
+            ]
+            [ UI.Components.featherIcon 14 FeatherIcons.shield
+            , Ui.text (T.aboutPrivacy i18n)
+            ]
+        , Ui.el
+            [ Ui.centerX
+            , Ui.Font.size Theme.font.xs
+            , Ui.Font.color Theme.base.textSubtle
+            ]
+            (Ui.text (T.aboutVersion appVersion i18n))
+        ]
+
+
+
+-- FEATURES
+
+
+featuresSection : I18n -> Ui.Element msg
+featuresSection i18n =
+    Ui.column [ Ui.spacing Theme.spacing.md, Ui.centerX ]
+        [ featureRow FeatherIcons.lock (T.aboutFeatureEncrypted i18n)
+        , featureRow FeatherIcons.smartphone (T.aboutFeatureLocalFirst i18n)
+        , featureRow FeatherIcons.refreshCw (T.aboutFeatureGroupSharing i18n)
+        , featureRow FeatherIcons.heart (T.aboutFeatureOpenSource i18n)
+        ]
+
+
+featureRow : FeatherIcons.Icon -> String -> Ui.Element msg
+featureRow icon label =
+    Ui.row [ Ui.spacing Theme.spacing.md, Ui.contentCenterY ]
+        [ Ui.el [ Ui.Font.color Theme.primary.solid, Ui.width Ui.shrink ] (UI.Components.featherIcon 20 icon)
+        , Ui.el [ Ui.Font.size Theme.font.sm ] (Ui.text label)
+        ]
+
+
+
+-- HOW IT WORKS
+
+
+howItWorksSection : I18n -> Ui.Element msg
+howItWorksSection i18n =
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        [ UI.Components.sectionLabel (T.aboutHowItWorksTitle i18n)
+        , UI.Components.card [ Ui.padding Theme.spacing.lg ]
+            [ Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.base.text
+                ]
+                (Ui.text (T.aboutHowItWorks i18n))
+            ]
+        ]
+
+
+
+-- LANGUAGE
 
 
 languageSection : I18n -> (Language -> msg) -> Ui.Element msg
 languageSection i18n onSwitchLanguage =
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.centerX ]
         [ UI.Components.sectionLabel (T.aboutLanguageTitle i18n)
         , UI.Components.languageSelector onSwitchLanguage (T.currentLanguage i18n)
         ]
+
+
+
+-- USAGE STATS
 
 
 usageSection : I18n -> Model -> Ui.Element Msg
@@ -178,3 +262,23 @@ resetSection i18n confirmingReset =
             , icon = Nothing
             , onPress = ToggleResetConfirm
             }
+
+
+
+-- SOURCE LINK
+
+
+sourceSection : I18n -> Ui.Element msg
+sourceSection i18n =
+    Ui.row
+        [ Ui.centerX
+        , Ui.spacing Theme.spacing.xs
+        , Ui.Font.size Theme.font.sm
+        , Ui.Font.color Theme.primary.text
+        , Ui.contentCenterY
+        , Ui.link sourceUrl
+        , Ui.pointer
+        ]
+        [ UI.Components.featherIcon 14 FeatherIcons.github
+        , Ui.text (T.aboutSourceCode i18n)
+        ]
