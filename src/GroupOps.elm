@@ -34,6 +34,7 @@ import Infra.Identity exposing (Identity)
 import Infra.Server as Server
 import Infra.Storage as Storage
 import Page.Group.NewEntry
+import Page.Group.NewEntry.Shared as NewEntryShared
 import PocketBase
 import Random
 import Set exposing (Set)
@@ -215,7 +216,7 @@ newGroup ctx onComplete output =
 
 {-| Submit a new entry (expense or transfer) to a group.
 -}
-newEntry : Context msg -> LoadedGroup -> Page.Group.NewEntry.Output -> ( State msg, Cmd msg )
+newEntry : Context msg -> LoadedGroup -> NewEntryShared.Output -> ( State msg, Cmd msg )
 newEntry ctx loaded output =
     let
         ( entryId, seedAfter ) =
@@ -242,7 +243,7 @@ newEntry ctx loaded output =
 
 {-| Submit an edit to an existing entry. Returns Nothing if the entry is not found.
 -}
-editEntry : Context msg -> LoadedGroup -> Entry.Id -> Page.Group.NewEntry.Output -> Maybe ( State msg, Cmd msg )
+editEntry : Context msg -> LoadedGroup -> Entry.Id -> NewEntryShared.Output -> Maybe ( State msg, Cmd msg )
 editEntry ctx loaded originalEntryId output =
     case Dict.get originalEntryId loaded.groupState.entries of
         Nothing ->

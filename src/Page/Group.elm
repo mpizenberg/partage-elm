@@ -52,6 +52,7 @@ import Page.Group.EditMemberMetadata
 import Page.Group.EntriesTab
 import Page.Group.MembersTab
 import Page.Group.NewEntry
+import Page.Group.NewEntry.Shared as NewEntryShared
 import Page.JoinGroup
 import PocketBase
 import PocketBase.Realtime
@@ -176,7 +177,7 @@ type
     | AddMemberMsg Page.Group.AddMember.Msg
     | EditMemberMetadataMsg Page.Group.EditMemberMetadata.Msg
       -- Entry pages
-    | NewEntryMsg Page.Group.NewEntry.Msg
+    | NewEntryMsg NewEntryShared.Msg
       -- Group pages
     | EditGroupMetadataMsg Page.Group.EditGroupMetadata.Msg
     | SettleTransaction Settlement.Transaction
@@ -510,9 +511,9 @@ update config msg model =
             case model.loadedGroup of
                 Just loaded ->
                     let
-                        output : Page.Group.NewEntry.Output
+                        output : NewEntryShared.Output
                         output =
-                            Page.Group.NewEntry.TransferOutput
+                            NewEntryShared.TransferOutput
                                 { amountCents = tx.amount
                                 , currency = loaded.summary.defaultCurrency
                                 , defaultCurrencyAmount = Nothing
@@ -1077,7 +1078,7 @@ initPagesIfNeeded config groupView model =
             case ( groupView, currentUserRootId model loaded ) of
                 ( NewEntry, Just userRootId ) ->
                     let
-                        entryFormConfig : Page.Group.NewEntry.Config
+                        entryFormConfig : NewEntryShared.Config
                         entryFormConfig =
                             memberEntryFormConfig config userRootId loaded
                     in
@@ -1116,7 +1117,7 @@ initPagesIfNeeded config groupView model =
 
 {-| Build entry form config for a confirmed member.
 -}
-memberEntryFormConfig : UpdateConfig -> Member.Id -> LoadedGroup -> Page.Group.NewEntry.Config
+memberEntryFormConfig : UpdateConfig -> Member.Id -> LoadedGroup -> NewEntryShared.Config
 memberEntryFormConfig config userRootId loaded =
     { currentUserRootId = userRootId
     , activeMembersRootIds = List.map .rootId (GroupState.activeMembers loaded.groupState)
