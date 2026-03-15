@@ -1,4 +1,4 @@
-module Page.JoinGroup exposing (JoinAction(..), Model, Msg, Output(..), PreviewData, error, getPreview, init, showPreview, update, view)
+module Page.JoinGroup exposing (JoinAction(..), Model, Msg, Output(..), PreviewData, defaultAction, error, getPreview, init, showPreview, update, view)
 
 {-| Join group page shown when opening an invite link.
 Displays a group preview with options to claim a virtual member or join as new.
@@ -12,7 +12,6 @@ import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
 import Ui
-import Ui.Anim as Anim
 import Ui.Font
 import Ui.Input
 
@@ -74,6 +73,18 @@ getPreview model =
             Nothing
 
 
+{-| Pick the default join action: select the first virtual member if any, otherwise join as new.
+-}
+defaultAction : GroupState -> JoinAction
+defaultAction groupState =
+    Dict.values groupState.members
+        |> List.filter (\m -> m.currentMember.memberType == Member.Virtual && not m.isRetired)
+        |> List.sortBy (\m -> String.toLower m.name)
+        |> List.head
+        |> Maybe.map (\m -> ClaimMember m.rootId)
+        |> Maybe.withDefault JoinAsNewMember
+
+
 update : Msg -> Model -> ( Model, Maybe Output )
 update msg model =
     case ( msg, model ) of
@@ -124,7 +135,7 @@ update msg model =
 
 view : I18n -> Model -> Ui.Element Msg
 view i18n model =
-    Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.xl ]
+    Ui.column [ Ui.spacing Theme.spacing.xl ]
         (case model of
             FetchingGroup ->
                 [ Ui.el
@@ -192,71 +203,83 @@ viewPreview i18n preview =
 
                 JoinAsNewMember ->
                     not (String.isEmpty (String.trim preview.newMemberName))
+
+        confirmLabel : String
+        confirmLabel =
+            case preview.selectedAction of
+                ClaimMember memberId ->
+                    let
+                        member =
+                            Dict.get memberId preview.groupState.members
+                    in
+                    case Maybe.map (\m -> ( m.name, m.currentMember.memberType )) member of
+                        Just ( name, Member.Virtual ) ->
+                            T.joinGroupConfirmClaim name i18n
+
+                        Just ( name, _ ) ->
+                            T.joinGroupConfirmRecover name i18n
+
+                        Nothing ->
+                            T.joinGroupConfirm i18n
+
+                JoinAsNewMember ->
+                    T.joinGroupConfirmNew i18n
     in
     [ Ui.el
         [ Ui.centerX
-        , Ui.Font.size Theme.font.lg
-        , Ui.Font.weight Theme.fontWeight.semibold
-        , Ui.Font.color Theme.base.textSubtle
-        ]
-        (Ui.text (T.joinGroupTitle i18n))
-    , Ui.el
-        [ Ui.centerX
-        , Ui.Font.size Theme.font.xxl
+        , Ui.Font.size Theme.font.xl
         , Ui.Font.weight Theme.fontWeight.bold
         , Ui.Font.letterSpacing Theme.letterSpacing.tight
         ]
         (Ui.text preview.groupName)
     , if not (List.isEmpty virtualMembers) then
-        Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        Ui.column []
             [ UI.Components.sectionLabel (T.joinGroupClaimMember i18n)
-            , UI.Components.card []
-                (List.map (viewMemberOption preview.selectedAction) virtualMembers)
+            , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.sm ]
+                (List.map (viewMemberToggle preview.selectedAction) virtualMembers)
             ]
 
       else
         Ui.none
     , if not (List.isEmpty realMembers) then
-        Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        Ui.column []
             [ UI.Components.sectionLabel (T.joinGroupRecoverMember i18n)
-            , UI.Components.card []
-                (List.map (viewMemberOption preview.selectedAction) realMembers)
+            , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.sm ]
+                (List.map (viewMemberToggle preview.selectedAction) realMembers)
             ]
 
       else
         Ui.none
-    , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+    , Ui.column []
         [ UI.Components.sectionLabel (T.joinGroupJoinAsNew i18n)
-        , UI.Components.card [ Ui.padding Theme.spacing.lg ]
-            [ radioOption isJoinAsNew (T.joinGroupJoinAsNew i18n) SelectJoinAsNew
-            , if isJoinAsNew then
-                Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill, Ui.paddingWith { top = Theme.spacing.md, bottom = 0, left = 0, right = 0 } ]
-                    [ Ui.el
-                        [ Ui.Font.size Theme.font.sm
-                        , Ui.Font.weight Theme.fontWeight.semibold
-                        ]
-                        (Ui.text (T.joinGroupNameLabel i18n))
-                    , Ui.Input.text
-                        [ Ui.width Ui.fill
-                        , Ui.padding Theme.spacing.sm
-                        , Ui.rounded Theme.radius.sm
-                        , Ui.border Theme.border
-                        , Ui.borderColor Theme.base.accent
-                        ]
-                        { onChange = InputNewMemberName
-                        , text = preview.newMemberName
-                        , placeholder = Just (T.joinGroupNamePlaceholder i18n)
-                        , label = Ui.Input.labelHidden (T.joinGroupNameLabel i18n)
-                        }
+        , UI.Components.chip
+            { label = T.joinGroupJoinAsNew i18n
+            , selected = isJoinAsNew
+            , onPress = SelectJoinAsNew
+            }
+        , if isJoinAsNew then
+            Ui.column [ Ui.paddingTop Theme.spacing.md, Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+                [ UI.Components.formLabel (T.joinGroupNameLabel i18n) True
+                , Ui.Input.text
+                    [ Ui.width Ui.fill
+                    , Ui.padding Theme.spacing.sm
+                    , Ui.rounded Theme.radius.sm
+                    , Ui.border Theme.border
+                    , Ui.borderColor Theme.base.accent
                     ]
+                    { onChange = InputNewMemberName
+                    , text = preview.newMemberName
+                    , placeholder = Just (T.joinGroupNamePlaceholder i18n)
+                    , label = Ui.Input.labelHidden (T.joinGroupNameLabel i18n)
+                    }
+                ]
 
-              else
-                Ui.none
-            ]
+          else
+            Ui.none
         ]
     , if canConfirm then
         UI.Components.btnPrimary []
-            { label = T.joinGroupConfirm i18n
+            { label = confirmLabel
             , onPress = ConfirmJoin
             }
 
@@ -265,8 +288,8 @@ viewPreview i18n preview =
     ]
 
 
-viewMemberOption : JoinAction -> Member.ChainState -> Ui.Element Msg
-viewMemberOption selectedAction member =
+viewMemberToggle : JoinAction -> Member.ChainState -> Ui.Element Msg
+viewMemberToggle selectedAction member =
     let
         isSelected : Bool
         isSelected =
@@ -277,54 +300,9 @@ viewMemberOption selectedAction member =
                 _ ->
                     False
     in
-    radioOption isSelected member.name (SelectMember member.rootId)
-
-
-radioOption : Bool -> String -> msg -> Ui.Element msg
-radioOption isSelected label onClick =
-    Ui.row
-        [ Ui.Input.button onClick
-        , Ui.width Ui.fill
-        , Ui.spacing Theme.spacing.md
-        , Ui.paddingXY Theme.spacing.lg Theme.spacing.md
-        , Ui.pointer
-        , Ui.Font.size Theme.font.md
-        , Ui.Font.weight Theme.fontWeight.medium
-        , Ui.contentCenterY
-        , if isSelected then
-            Ui.background Theme.primary.tint
-
-          else
-            Ui.noAttr
-        ]
-        [ Ui.el
-            [ Ui.width (Ui.px 20)
-            , Ui.height (Ui.px 20)
-            , Ui.rounded Theme.radius.xxxl
-            , Ui.border Theme.border
-            , Ui.contentCenterX
-            , Ui.contentCenterY
-            , Anim.transition (Anim.ms 200)
-                [ Anim.borderColor
-                    (if isSelected then
-                        Theme.primary.solid
-
-                     else
-                        Theme.base.accent
-                    )
-                ]
-            ]
-            (if isSelected then
-                Ui.el
-                    [ Ui.width (Ui.px 10)
-                    , Ui.height (Ui.px 10)
-                    , Ui.rounded Theme.radius.xxxl
-                    , Ui.background Theme.primary.solid
-                    ]
-                    Ui.none
-
-             else
-                Ui.none
-            )
-        , Ui.text label
-        ]
+    UI.Components.toggleMemberBtn
+        { name = member.name
+        , initials = String.left 2 (String.toUpper member.name)
+        , selected = isSelected
+        , onPress = SelectMember member.rootId
+        }

@@ -761,7 +761,7 @@ update msg model =
                                     , groupState = groupState
                                     , events = groupData.events
                                     , syncCursor = Maybe.withDefault "" groupData.syncCursor
-                                    , selectedAction = Page.JoinGroup.JoinAsNewMember
+                                    , selectedAction = Page.JoinGroup.defaultAction groupState
                                     , newMemberName = ""
                                     }
                           }
@@ -791,7 +791,7 @@ update msg model =
                         , groupState = groupState
                         , events = syncResult.pullResult.events
                         , syncCursor = syncResult.pullResult.cursor
-                        , selectedAction = Page.JoinGroup.JoinAsNewMember
+                        , selectedAction = Page.JoinGroup.defaultAction groupState
                         , newMemberName = ""
                         }
               }
