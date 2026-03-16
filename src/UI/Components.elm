@@ -702,7 +702,7 @@ appLogo size =
 -}
 languageSelector : (Language -> msg) -> Language -> Ui.Element msg
 languageSelector onSwitch current =
-    Ui.row [ Ui.spacing Theme.spacing.lg ]
+    Ui.row [ Ui.spacing Theme.spacing.lg, Ui.centerX ]
         (List.map
             (\lang ->
                 Ui.el

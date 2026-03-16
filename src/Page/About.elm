@@ -106,16 +106,6 @@ heroSection i18n =
             , Ui.Font.center
             ]
             (Ui.text (T.aboutDescription i18n))
-        , Ui.row
-            [ Ui.centerX
-            , Ui.spacing Theme.spacing.xs
-            , Ui.Font.size Theme.font.sm
-            , Ui.Font.color Theme.base.textSubtle
-            , Ui.contentCenterY
-            ]
-            [ UI.Components.featherIcon 14 FeatherIcons.shield
-            , Ui.text (T.aboutPrivacy i18n)
-            ]
         , Ui.el
             [ Ui.centerX
             , Ui.Font.size Theme.font.xs
@@ -133,7 +123,7 @@ featuresSection : I18n -> Ui.Element msg
 featuresSection i18n =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.centerX ]
         [ featureRow FeatherIcons.lock (T.aboutFeatureEncrypted i18n)
-        , featureRow FeatherIcons.smartphone (T.aboutFeatureLocalFirst i18n)
+        , featureRow FeatherIcons.wifiOff (T.aboutFeatureLocalFirst i18n)
         , featureRow FeatherIcons.refreshCw (T.aboutFeatureGroupSharing i18n)
         , featureRow FeatherIcons.heart (T.aboutFeatureOpenSource i18n)
         ]
