@@ -573,7 +573,7 @@ memberCard i18n toMsg expandedMembers maybeUserRootId member =
 
         -- Expanded detail content
         , if isExpanded then
-            memberDetail i18n toMsg maybeUserRootId member
+            memberDetail i18n toMsg isCurrentUser maybeUserRootId member
 
           else
             Ui.none
@@ -642,12 +642,39 @@ virtualTag i18n =
         (Ui.text (T.memberVirtualLabel i18n))
 
 
-memberDetail : I18n -> (Msg -> msg) -> Maybe Member.Id -> Member.ChainState -> Ui.Element msg
-memberDetail i18n toMsg maybeUserRootId member =
+memberDetail : I18n -> (Msg -> msg) -> Bool -> Maybe Member.Id -> Member.ChainState -> Ui.Element msg
+memberDetail i18n toMsg isCurrentUser maybeUserRootId member =
     let
         isMember : Bool
         isMember =
             maybeUserRootId /= Nothing
+
+        textColor : Ui.Color
+        textColor =
+            if isCurrentUser then
+                Theme.base.bg
+
+            else
+                Theme.base.text
+
+        subtleColor : Ui.Color
+        subtleColor =
+            if isCurrentUser then
+                Theme.base.bgSubtle
+
+            else
+                Theme.base.textSubtle
+
+        sectionLbl : String -> Ui.Element msg
+        sectionLbl label =
+            Ui.el
+                [ Ui.Font.size Theme.font.xs
+                , Ui.Font.weight Theme.fontWeight.semibold
+                , Ui.Font.letterSpacing Theme.letterSpacing.wide
+                , Ui.Font.color subtleColor
+                , Ui.paddingBottom Theme.spacing.md
+                ]
+                (Ui.text (String.toUpper label))
 
         retireButton : Ui.Element msg
         retireButton =
@@ -674,8 +701,8 @@ memberDetail i18n toMsg maybeUserRootId member =
         notesSection : String -> Ui.Element msg
         notesSection notes =
             Ui.column []
-                [ UI.Components.sectionLabel (T.memberMetadataNotes i18n)
-                , Ui.el [ Ui.Font.color Theme.base.textSubtle ] (Ui.text notes)
+                [ sectionLbl (T.memberMetadataNotes i18n)
+                , Ui.el [ Ui.Font.color subtleColor ] (Ui.text notes)
                 ]
 
         metadataSections : Ui.Element msg
@@ -688,8 +715,8 @@ memberDetail i18n toMsg maybeUserRootId member =
                 infoRows : List (Ui.Element msg)
                 infoRows =
                     List.filterMap identity
-                        [ Maybe.map (\v -> infoRow FeatherIcons.phone (T.memberMetadataPhone i18n) v (Just ("tel:" ++ stripSpaces v))) meta.phone
-                        , Maybe.map (\v -> infoRow FeatherIcons.atSign (T.memberMetadataEmail i18n) v (Just ("mailto:" ++ v))) meta.email
+                        [ Maybe.map (\v -> infoRow subtleColor FeatherIcons.phone (T.memberMetadataPhone i18n) v (Just ("tel:" ++ stripSpaces v))) meta.phone
+                        , Maybe.map (\v -> infoRow subtleColor FeatherIcons.atSign (T.memberMetadataEmail i18n) v (Just ("mailto:" ++ v))) meta.email
                         ]
 
                 contactSection : Maybe (Ui.Element msg)
@@ -700,7 +727,7 @@ memberDetail i18n toMsg maybeUserRootId member =
                     else
                         Just
                             (Ui.column []
-                                [ UI.Components.sectionLabel (T.memberDetailContactInfo i18n)
+                                [ sectionLbl (T.memberDetailContactInfo i18n)
                                 , Ui.column [ Ui.spacing Theme.spacing.md ] infoRows
                                 ]
                             )
@@ -710,14 +737,14 @@ memberDetail i18n toMsg maybeUserRootId member =
                     case meta.payment of
                         Just payment ->
                             List.filterMap identity
-                                [ Maybe.map (\v -> infoRow FeatherIcons.creditCard (T.memberMetadataIban i18n) v Nothing) payment.iban
-                                , Maybe.map (\v -> infoRow FeatherIcons.smartphone (T.memberMetadataWero i18n) v Nothing) payment.wero
-                                , Maybe.map (\v -> infoRow FeatherIcons.dollarSign (T.memberMetadataLydia i18n) v (Just (normalizeHandle "https://pay.lydia.me/l?t=" v))) payment.lydia
-                                , Maybe.map (\v -> infoRow FeatherIcons.dollarSign (T.memberMetadataRevolut i18n) v (Just (normalizeHandle "https://revolut.me/" v))) payment.revolut
-                                , Maybe.map (\v -> infoRow FeatherIcons.dollarSign (T.memberMetadataPaypal i18n) v (Just (normalizeHandle "https://paypal.me/" v))) payment.paypal
-                                , Maybe.map (\v -> infoRow FeatherIcons.dollarSign (T.memberMetadataVenmo i18n) v (Just (normalizeHandle "https://venmo.com/" v))) payment.venmo
-                                , Maybe.map (\v -> infoRow FeatherIcons.key (T.memberMetadataBtc i18n) v (Just ("bitcoin:" ++ v))) payment.btcAddress
-                                , Maybe.map (\v -> infoRow FeatherIcons.key (T.memberMetadataAda i18n) v Nothing) payment.adaAddress
+                                [ Maybe.map (\v -> infoRow subtleColor FeatherIcons.creditCard (T.memberMetadataIban i18n) v Nothing) payment.iban
+                                , Maybe.map (\v -> infoRow subtleColor FeatherIcons.smartphone (T.memberMetadataWero i18n) v Nothing) payment.wero
+                                , Maybe.map (\v -> infoRow subtleColor FeatherIcons.dollarSign (T.memberMetadataLydia i18n) v (Just (normalizeHandle "https://pay.lydia.me/l?t=" v))) payment.lydia
+                                , Maybe.map (\v -> infoRow subtleColor FeatherIcons.dollarSign (T.memberMetadataRevolut i18n) v (Just (normalizeHandle "https://revolut.me/" v))) payment.revolut
+                                , Maybe.map (\v -> infoRow subtleColor FeatherIcons.dollarSign (T.memberMetadataPaypal i18n) v (Just (normalizeHandle "https://paypal.me/" v))) payment.paypal
+                                , Maybe.map (\v -> infoRow subtleColor FeatherIcons.dollarSign (T.memberMetadataVenmo i18n) v (Just (normalizeHandle "https://venmo.com/" v))) payment.venmo
+                                , Maybe.map (\v -> infoRow subtleColor FeatherIcons.key (T.memberMetadataBtc i18n) v (Just ("bitcoin:" ++ v))) payment.btcAddress
+                                , Maybe.map (\v -> infoRow subtleColor FeatherIcons.key (T.memberMetadataAda i18n) v Nothing) payment.adaAddress
                                 ]
 
                         Nothing ->
@@ -731,7 +758,7 @@ memberDetail i18n toMsg maybeUserRootId member =
                     else
                         Just
                             (Ui.column []
-                                [ UI.Components.sectionLabel (T.memberMetadataPayment i18n)
+                                [ sectionLbl (T.memberMetadataPayment i18n)
                                 , Ui.column [ Ui.spacing Theme.spacing.md ] paymentMethods
                                 ]
                             )
@@ -750,7 +777,7 @@ memberDetail i18n toMsg maybeUserRootId member =
             else
                 Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill ] sections
     in
-    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill, Ui.Font.color textColor ]
         [ -- Metadata sections
           metadataSections
 
@@ -772,13 +799,13 @@ memberDetail i18n toMsg maybeUserRootId member =
 -- MEMBER DETAIL HELPERS
 
 
-infoRow : FeatherIcons.Icon -> String -> String -> Maybe String -> Ui.Element msg
-infoRow icon label value maybeUrl =
+infoRow : Ui.Color -> FeatherIcons.Icon -> String -> String -> Maybe String -> Ui.Element msg
+infoRow subtle icon label value maybeUrl =
     Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
-        [ Ui.el [ Ui.Font.color Theme.base.textSubtle, Ui.width Ui.shrink ] (UI.Components.featherIcon 16 icon)
+        [ Ui.el [ Ui.Font.color subtle, Ui.width Ui.shrink ] (UI.Components.featherIcon 16 icon)
         , Ui.el
             [ Ui.Font.size Theme.font.sm
-            , Ui.Font.color Theme.base.textSubtle
+            , Ui.Font.color subtle
             , Ui.width Ui.shrink
             ]
             (Ui.text label)
