@@ -175,6 +175,12 @@ usageSection : I18n -> Model -> Ui.Element Msg
 usageSection i18n model =
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
         [ UI.Components.sectionLabel (T.aboutUsageTitle i18n)
+        , Ui.el
+            [ Ui.Font.size Theme.font.sm
+            , Ui.Font.color Theme.base.textSubtle
+            , Ui.paddingBottom Theme.spacing.md
+            ]
+            (Ui.text (T.aboutUsageHint i18n))
         , case model of
             Loading ->
                 Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]

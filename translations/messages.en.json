@@ -265,6 +265,7 @@
   "readOnlyBanner": "Read-only mode — you are not a member of this group",
   "toastPushError": "Failed to update notification settings",
   "aboutUsageTitle": "Usage Statistics",
+  "aboutUsageHint": "Estimated server cost based on your sync activity. Measured locally on your device, nothing is tracked remotely.",
   "aboutUsageLoading": "Loading usage data...",
   "aboutUsageTrackingSince": "Tracking since {date}",
   "aboutCostBase": "Base cost ($0.10/mo)",

@@ -265,6 +265,7 @@
   "readOnlyBanner": "Mode lecture seule — tu n'es pas membre de ce groupe",
   "toastPushError": "Échec de la mise à jour des notifications",
   "aboutUsageTitle": "Statistiques d'utilisation",
+  "aboutUsageHint": "Coût serveur estimé à partir de ton activité de synchronisation. Mesuré localement sur ton appareil, rien n'est tracé à distance.",
   "aboutUsageLoading": "Chargement des données...",
   "aboutUsageTrackingSince": "Suivi depuis le {date}",
   "aboutCostBase": "Coût de base (0,10 $/mois)",
