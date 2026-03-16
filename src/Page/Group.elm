@@ -481,8 +481,14 @@ update config msg model =
         -- Edit member metadata
         EditMemberMetadataMsg subMsg ->
             let
+                existingNames : List String
+                existingNames =
+                    model.loadedGroup
+                        |> Maybe.map (\lg -> GroupState.activeMembers lg.groupState |> List.map .name)
+                        |> Maybe.withDefault []
+
                 ( modelWithPage, maybeOutput ) =
-                    Page.Group.EditMemberMetadata.update subMsg model.editMemberMetadataModel
+                    Page.Group.EditMemberMetadata.update existingNames subMsg model.editMemberMetadataModel
                         |> Tuple.mapFirst (\subModel -> { model | editMemberMetadataModel = subModel })
             in
             case ( maybeOutput, model.loadedGroup ) of
@@ -1412,6 +1418,7 @@ viewGroupPage config groupView loaded model =
                 pageShell config (T.memberEditMetadataButton config.i18n) <|
                     Page.Group.EditMemberMetadata.view config.i18n
                         (config.toMsg << EditMemberMetadataMsg)
+                        (GroupState.activeMembers loaded.groupState |> List.map .name)
                         model.editMemberMetadataModel
 
         ( EditGroupMetadata, Just _ ) ->

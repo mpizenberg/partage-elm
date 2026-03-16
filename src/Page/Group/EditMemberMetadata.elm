@@ -70,8 +70,8 @@ init memberId name meta =
 
 {-| Handle form input and submission, returning validated Output on success.
 -}
-update : Msg -> Model -> ( Model, Maybe Output )
-update msg (Model data) =
+update : List String -> Msg -> Model -> ( Model, Maybe Output )
+update existingNames msg (Model data) =
     case msg of
         InputName s ->
             ( Model { data | form = Form.modify .name (Field.setFromString s) data.form }, Nothing )
@@ -112,44 +112,51 @@ update msg (Model data) =
         Submit ->
             case Form.validateAsMaybe data.form of
                 Just output ->
-                    let
-                        paymentInfo : Member.PaymentInfo
-                        paymentInfo =
-                            { iban = output.iban
-                            , wero = output.wero
-                            , lydia = output.lydia
-                            , revolut = output.revolut
-                            , paypal = output.paypal
-                            , venmo = output.venmo
-                            , btcAddress = output.btcAddress
-                            , adaAddress = output.adaAddress
+                    if
+                        (String.toLower output.name /= String.toLower data.originalName)
+                            && List.any (\n -> String.toLower n == String.toLower output.name) existingNames
+                    then
+                        ( Model { data | submitted = True }, Nothing )
+
+                    else
+                        let
+                            paymentInfo : Member.PaymentInfo
+                            paymentInfo =
+                                { iban = output.iban
+                                , wero = output.wero
+                                , lydia = output.lydia
+                                , revolut = output.revolut
+                                , paypal = output.paypal
+                                , venmo = output.venmo
+                                , btcAddress = output.btcAddress
+                                , adaAddress = output.adaAddress
+                                }
+
+                            hasPayment : Bool
+                            hasPayment =
+                                paymentInfo /= Member.emptyPaymentInfo
+
+                            metadata : Member.Metadata
+                            metadata =
+                                { phone = output.phone
+                                , email = output.email
+                                , notes = output.notes
+                                , payment =
+                                    if hasPayment then
+                                        Just paymentInfo
+
+                                    else
+                                        Nothing
+                                }
+                        in
+                        ( Model data
+                        , Just
+                            { memberId = data.memberId
+                            , oldName = data.originalName
+                            , newName = output.name
+                            , metadata = metadata
                             }
-
-                        hasPayment : Bool
-                        hasPayment =
-                            paymentInfo /= Member.emptyPaymentInfo
-
-                        metadata : Member.Metadata
-                        metadata =
-                            { phone = output.phone
-                            , email = output.email
-                            , notes = output.notes
-                            , payment =
-                                if hasPayment then
-                                    Just paymentInfo
-
-                                else
-                                    Nothing
-                            }
-                    in
-                    ( Model data
-                    , Just
-                        { memberId = data.memberId
-                        , oldName = data.originalName
-                        , newName = output.name
-                        , metadata = metadata
-                        }
-                    )
+                        )
 
                 Nothing ->
                     ( Model { data | submitted = True }, Nothing )
@@ -157,8 +164,8 @@ update msg (Model data) =
 
 {-| Render the member metadata editing form.
 -}
-view : I18n -> (Msg -> msg) -> Model -> Ui.Element msg
-view i18n toMsg (Model data) =
+view : I18n -> (Msg -> msg) -> List String -> Model -> Ui.Element msg
+view i18n toMsg existingNames (Model data) =
     let
         optionalField : FeatherIcons.Icon -> String -> Maybe String -> (String -> Msg) -> (MetadataForm.Accessors -> Form.Accessor MetadataForm.State (Field.Field (Maybe String))) -> Ui.Element Msg
         optionalField icon label placeholder onChange accessor =
@@ -181,6 +188,18 @@ view i18n toMsg (Model data) =
             in
             if Field.isInvalid field && (data.submitted || Field.isDirty field) then
                 Just (T.fieldRequired i18n)
+
+            else if
+                let
+                    currentName : String
+                    currentName =
+                        Field.toRawString field
+                in
+                (data.submitted || Field.isDirty field)
+                    && (String.toLower currentName /= String.toLower data.originalName)
+                    && List.any (\n -> String.toLower n == String.toLower currentName) existingNames
+            then
+                Just (T.memberAddNameTaken i18n)
 
             else
                 Nothing
