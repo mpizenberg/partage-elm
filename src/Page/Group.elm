@@ -899,33 +899,42 @@ submitEntryAction config model action =
 submitMemberMetadata : UpdateConfig -> Model -> LoadedGroup -> Page.Group.EditMemberMetadata.Output -> ( Model, Cmd Msg, List Output )
 submitMemberMetadata config model loaded output =
     let
-        ( modelAfterMeta, metaCmd, _ ) =
-            runSubmit (OnMemberActionSaved loaded.summary.id)
-                config
-                model
-                (\ctx -> GroupOps.event ctx loaded (Event.MemberMetadataUpdated { rootId = output.memberId, metadata = output.metadata }))
-    in
-    if output.newName /= output.oldName then
-        let
-            ( modelAfterRename, renameCmd, _ ) =
-                runSubmit (OnMemberActionSaved loaded.summary.id)
-                    config
-                    modelAfterMeta
-                    (\ctx ->
-                        GroupOps.event ctx
-                            loaded
-                            (Event.MemberRenamed
-                                { rootId = output.memberId
-                                , oldName = output.oldName
-                                , newName = output.newName
-                                }
-                            )
-                    )
-        in
-        ( modelAfterRename, Cmd.batch [ metaCmd, renameCmd ], [] )
+        onSaved : ConcurrentTask.Response Idb.Error Event.Envelope -> Msg
+        onSaved =
+            OnMemberActionSaved loaded.summary.id
 
-    else
-        ( modelAfterMeta, metaCmd, [] )
+        oldMetadata : Member.Metadata
+        oldMetadata =
+            Dict.get output.memberId loaded.groupState.members
+                |> Maybe.map .metadata
+                |> Maybe.withDefault Member.emptyMetadata
+
+        submitIf : Bool -> (GroupOps.Context Msg -> ( GroupOps.State Msg, Cmd Msg )) -> ( Model, Cmd Msg, List Output ) -> ( Model, Cmd Msg, List Output )
+        submitIf condition makeEvent ( mdl, cmd, outs ) =
+            if condition then
+                let
+                    ( mdl2, cmd2, outs2 ) =
+                        runSubmit onSaved config mdl makeEvent
+                in
+                ( mdl2, Cmd.batch [ cmd, cmd2 ], outs ++ outs2 )
+
+            else
+                ( mdl, cmd, outs )
+    in
+    ( model, Cmd.none, [] )
+        |> submitIf (output.metadata /= oldMetadata)
+            (\ctx -> GroupOps.event ctx loaded (Event.MemberMetadataUpdated { rootId = output.memberId, metadata = output.metadata }))
+        |> submitIf (output.newName /= output.oldName)
+            (\ctx ->
+                GroupOps.event ctx
+                    loaded
+                    (Event.MemberRenamed
+                        { rootId = output.memberId
+                        , oldName = output.oldName
+                        , newName = output.newName
+                        }
+                    )
+            )
 
 
 handleEntriesTabOutput : UpdateConfig -> Model -> Page.Group.EntriesTab.Output -> ( Model, Cmd Msg, List Output )
