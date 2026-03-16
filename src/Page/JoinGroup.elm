@@ -106,7 +106,18 @@ update msg model =
         ( ConfirmJoin, ShowingPreview preview ) ->
             case preview.selectedAction of
                 JoinAsNewMember ->
-                    if String.isEmpty (String.trim preview.newMemberName) then
+                    let
+                        trimmed : String
+                        trimmed =
+                            String.trim preview.newMemberName
+
+                        nameExists : Bool
+                        nameExists =
+                            Dict.values preview.groupState.members
+                                |> List.filter (not << .isRetired)
+                                |> List.any (\m -> String.toLower m.name == String.toLower trimmed)
+                    in
+                    if String.isEmpty trimmed || nameExists then
                         ( model, Nothing )
 
                     else
@@ -114,7 +125,7 @@ update msg model =
                         , Just
                             (JoinConfirmed
                                 { selectedAction = preview.selectedAction
-                                , newMemberName = String.trim preview.newMemberName
+                                , newMemberName = trimmed
                                 }
                             )
                         )
@@ -195,6 +206,20 @@ viewPreview i18n preview =
                 _ ->
                     False
 
+        existingNames : List String
+        existingNames =
+            Dict.values preview.groupState.members
+                |> List.filter (not << .isRetired)
+                |> List.map (\m -> String.toLower m.name)
+
+        trimmedName : String
+        trimmedName =
+            String.trim preview.newMemberName
+
+        isDuplicateName : Bool
+        isDuplicateName =
+            List.member (String.toLower trimmedName) existingNames
+
         canConfirm : Bool
         canConfirm =
             case preview.selectedAction of
@@ -202,7 +227,7 @@ viewPreview i18n preview =
                     True
 
                 JoinAsNewMember ->
-                    not (String.isEmpty (String.trim preview.newMemberName))
+                    not (String.isEmpty trimmedName) && not isDuplicateName
     in
     [ Ui.el
         [ Ui.centerX
@@ -251,6 +276,12 @@ viewPreview i18n preview =
                     , placeholder = Just (T.joinGroupNamePlaceholder i18n)
                     , label = Ui.Input.labelHidden (T.joinGroupNameLabel i18n)
                     }
+                , if isDuplicateName && not (String.isEmpty trimmedName) then
+                    Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
+                        (Ui.text (T.joinGroupNameTaken i18n))
+
+                  else
+                    Ui.none
                 ]
 
           else

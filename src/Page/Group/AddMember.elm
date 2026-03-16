@@ -39,8 +39,8 @@ init =
 
 {-| Handle form input and submission, returning a validated Output on success.
 -}
-update : Msg -> Model -> ( Model, Maybe Output )
-update msg (Model data) =
+update : List String -> Msg -> Model -> ( Model, Maybe Output )
+update existingNames msg (Model data) =
     case msg of
         InputName s ->
             ( Model { data | name = s }, Nothing )
@@ -50,8 +50,12 @@ update msg (Model data) =
                 trimmed : String
                 trimmed =
                     String.trim data.name
+
+                isDuplicate : Bool
+                isDuplicate =
+                    List.any (\n -> String.toLower n == String.toLower trimmed) existingNames
             in
-            if String.isEmpty trimmed then
+            if String.isEmpty trimmed || isDuplicate then
                 ( Model { data | submitted = True }, Nothing )
 
             else
@@ -62,8 +66,13 @@ update msg (Model data) =
 
 {-| Render the add member form with a name input and submit button.
 -}
-view : I18n -> (Msg -> msg) -> Model -> Ui.Element msg
-view i18n toMsg (Model data) =
+view : I18n -> List String -> (Msg -> msg) -> Model -> Ui.Element msg
+view i18n existingNames toMsg (Model data) =
+    let
+        trimmed : String
+        trimmed =
+            String.trim data.name
+    in
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
         [ Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
             [ Ui.el
@@ -83,9 +92,16 @@ view i18n toMsg (Model data) =
                 , placeholder = Just (T.memberAddNamePlaceholder i18n)
                 , label = Ui.Input.labelHidden (T.memberAddNameLabel i18n)
                 }
-            , if data.submitted && String.isEmpty (String.trim data.name) then
+            , if data.submitted && String.isEmpty trimmed then
                 Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
                     (Ui.text (T.fieldRequired i18n))
+
+              else if
+                data.submitted
+                    && List.any (\n -> String.toLower n == String.toLower trimmed) existingNames
+              then
+                Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
+                    (Ui.text (T.memberAddNameTaken i18n))
 
               else
                 Ui.none

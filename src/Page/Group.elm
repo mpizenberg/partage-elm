@@ -461,8 +461,14 @@ update config msg model =
         -- Add member
         AddMemberMsg subMsg ->
             let
+                existingNames : List String
+                existingNames =
+                    model.loadedGroup
+                        |> Maybe.map (\lg -> GroupState.activeMembers lg.groupState |> List.map .name)
+                        |> Maybe.withDefault []
+
                 ( modelWithPage, maybeOutput ) =
-                    Page.Group.AddMember.update subMsg model.addMemberModel
+                    Page.Group.AddMember.update existingNames subMsg model.addMemberModel
                         |> Tuple.mapFirst (\subModel -> { model | addMemberModel = subModel })
             in
             case ( maybeOutput, model.loadedGroup ) of
@@ -1397,6 +1403,7 @@ viewGroupPage config groupView loaded model =
             noOverlay <|
                 pageShell config (T.memberAddTitle config.i18n) <|
                     Page.Group.AddMember.view config.i18n
+                        (GroupState.activeMembers loaded.groupState |> List.map .name)
                         (config.toMsg << AddMemberMsg)
                         model.addMemberModel
 
