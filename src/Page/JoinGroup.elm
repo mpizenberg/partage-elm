@@ -8,7 +8,7 @@ import Dict
 import Domain.Event as Event
 import Domain.GroupState exposing (GroupState)
 import Domain.Member as Member
-import Translations as T exposing (I18n)
+import Translations as T exposing (I18n, Language)
 import UI.Components
 import UI.Theme as Theme
 import Ui
@@ -144,41 +144,49 @@ update msg model =
             ( model, Nothing )
 
 
-view : I18n -> Model -> Ui.Element Msg
-view i18n model =
-    Ui.column [ Ui.spacing Theme.spacing.xl ]
-        (case model of
-            FetchingGroup ->
-                [ Ui.el
-                    [ Ui.centerX
-                    , Ui.Font.size Theme.font.md
-                    , Ui.Font.color Theme.base.textSubtle
+view : I18n -> { toMsg : Msg -> msg, onSwitchLanguage : Language -> msg } -> Model -> Ui.Element msg
+view i18n config model =
+    let
+        content : List (Ui.Element Msg)
+        content =
+            case model of
+                FetchingGroup ->
+                    [ Ui.el
+                        [ Ui.centerX
+                        , Ui.Font.size Theme.font.md
+                        , Ui.Font.color Theme.base.textSubtle
+                        ]
+                        (Ui.text (T.joinGroupFetching i18n))
                     ]
-                    (Ui.text (T.joinGroupFetching i18n))
-                ]
 
-            Error errorMsg ->
-                [ UI.Components.card [ Ui.padding Theme.spacing.lg ]
-                    [ Ui.column [ Ui.spacing Theme.spacing.sm ]
-                        [ Ui.el
-                            [ Ui.centerX
-                            , Ui.Font.size Theme.font.md
-                            , Ui.Font.color Theme.danger.text
-                            , Ui.Font.weight Theme.fontWeight.semibold
+                Error errorMsg ->
+                    [ UI.Components.card [ Ui.padding Theme.spacing.lg ]
+                        [ Ui.column [ Ui.spacing Theme.spacing.sm ]
+                            [ Ui.el
+                                [ Ui.centerX
+                                , Ui.Font.size Theme.font.md
+                                , Ui.Font.color Theme.danger.text
+                                , Ui.Font.weight Theme.fontWeight.semibold
+                                ]
+                                (Ui.text (T.joinGroupError i18n))
+                            , Ui.el
+                                [ Ui.centerX
+                                , Ui.Font.size Theme.font.sm
+                                , Ui.Font.color Theme.base.textSubtle
+                                ]
+                                (Ui.text errorMsg)
                             ]
-                            (Ui.text (T.joinGroupError i18n))
-                        , Ui.el
-                            [ Ui.centerX
-                            , Ui.Font.size Theme.font.sm
-                            , Ui.Font.color Theme.base.textSubtle
-                            ]
-                            (Ui.text errorMsg)
                         ]
                     ]
-                ]
 
-            ShowingPreview preview ->
-                viewPreview i18n preview
+                ShowingPreview preview ->
+                    viewPreview i18n preview
+    in
+    Ui.column [ Ui.spacing Theme.spacing.xl ]
+        (List.map (Ui.map config.toMsg) content
+            ++ [ Ui.el [ Ui.centerX ]
+                    (UI.Components.languageSelector config.onSwitchLanguage (T.currentLanguage i18n))
+               ]
         )
 
 

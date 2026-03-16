@@ -1422,7 +1422,7 @@ viewReady model readyData =
         Setup ->
             noOverlay <|
                 UI.Shell.pageShell { title = T.shellPartage i18n, onBack = NavigateTo Home }
-                    (Page.Setup.view i18n { onGenerate = GenerateIdentity, isGenerating = model.generatingIdentity })
+                    (Page.Setup.view i18n { onGenerate = GenerateIdentity, onSwitchLanguage = SwitchLanguage, isGenerating = model.generatingIdentity })
 
         Home ->
             noOverlay <|
@@ -1445,7 +1445,7 @@ viewReady model readyData =
         GroupRoute _ (Join _) ->
             noOverlay <|
                 UI.Shell.pageShell { title = T.shellJoinGroup i18n, onBack = GoBack }
-                    (Ui.map JoinGroupMsg (Page.JoinGroup.view i18n model.joinGroupModel))
+                    (Page.JoinGroup.view i18n { toMsg = JoinGroupMsg, onSwitchLanguage = SwitchLanguage } model.joinGroupModel)
 
         GroupRoute groupId groupView ->
             Page.Group.view
