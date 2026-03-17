@@ -53,7 +53,7 @@ type alias InitData =
 
 dbSchema : Idb.Schema
 dbSchema =
-    Idb.schema "partage" 4
+    Idb.schema "partage" 5
         |> Idb.withStore identityStore
         |> Idb.withStore groupsStore
         |> Idb.withStore groupKeysStore
