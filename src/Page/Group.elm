@@ -38,6 +38,7 @@ import Domain.Group as Group
 import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Domain.Settlement as Settlement
+import ErrorLog
 import GroupOps exposing (LoadedGroup)
 import IndexedDb as Idb
 import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
@@ -223,6 +224,7 @@ type Output
     | UpdateCurrentTime Time.Posix
     | ToggleGroupNotification Group.Id Member.Id
     | RequestServerGroupCreation Group.Id Symmetric.Key
+    | LogError ErrorLog.Source ErrorLog.Severity String
 
 
 
@@ -620,7 +622,7 @@ update config msg model =
                     ( model, Cmd.none, [] )
 
         OnEntrySaved _ _ ->
-            ( model, Cmd.none, [ ShowToast Toast.Error (T.toastEntrySaveError config.i18n) ] )
+            ( model, Cmd.none, [ ShowToast Toast.Error (T.toastEntrySaveError config.i18n), LogError ErrorLog.StorageSource ErrorLog.Err "Failed to save entry" ] )
 
         OnEntryActionSaved groupId (ConcurrentTask.Success envelope) ->
             let
@@ -636,7 +638,7 @@ update config msg model =
                     ( syncModel, syncCmd, timeOutputs )
 
         OnEntryActionSaved _ _ ->
-            ( model, Cmd.none, [ ShowToast Toast.Error (T.toastEntryActionError config.i18n) ] )
+            ( model, Cmd.none, [ ShowToast Toast.Error (T.toastEntryActionError config.i18n), LogError ErrorLog.StorageSource ErrorLog.Err "Failed to update entry" ] )
 
         OnMemberActionSaved groupId (ConcurrentTask.Success envelope) ->
             case applyAndSync config groupId envelope model of
@@ -662,7 +664,7 @@ update config msg model =
                     ( model, Cmd.none, [] )
 
         OnMemberActionSaved _ _ ->
-            ( model, Cmd.none, [ ShowToast Toast.Error (T.toastMemberActionError config.i18n) ] )
+            ( model, Cmd.none, [ ShowToast Toast.Error (T.toastMemberActionError config.i18n), LogError ErrorLog.StorageSource ErrorLog.Err "Failed to update member" ] )
 
         OnGroupMetadataActionSaved groupId (ConcurrentTask.Success envelope) ->
             case appendEventAndRecompute model groupId envelope of
@@ -687,7 +689,7 @@ update config msg model =
                     ( model, Cmd.none, [] )
 
         OnGroupMetadataActionSaved _ _ ->
-            ( model, Cmd.none, [ ShowToast Toast.Error (T.toastGroupSettingsError config.i18n) ] )
+            ( model, Cmd.none, [ ShowToast Toast.Error (T.toastGroupSettingsError config.i18n), LogError ErrorLog.StorageSource ErrorLog.Err "Failed to save group settings" ] )
 
         OnGroupRemoved groupId (ConcurrentTask.Success _) ->
             let
@@ -799,17 +801,17 @@ update config msg model =
                     else
                         ( { model | syncInProgress = False }
                         , Cmd.none
-                        , [ ShowToast Toast.Error ("Sync: " ++ Server.errorToString err) ]
+                        , [ ShowToast Toast.Error ("Sync: " ++ Server.errorToString err), LogError ErrorLog.SyncSource ErrorLog.Err ("Sync: " ++ Server.errorToString err) ]
                         )
 
                 _ ->
                     ( { model | syncInProgress = False }
                     , Cmd.none
-                    , [ ShowToast Toast.Error ("Sync: " ++ Server.errorToString err) ]
+                    , [ ShowToast Toast.Error ("Sync: " ++ Server.errorToString err), LogError ErrorLog.SyncSource ErrorLog.Err ("Sync: " ++ Server.errorToString err) ]
                     )
 
         OnGroupSynced _ _ (ConcurrentTask.UnexpectedError _) ->
-            ( { model | syncInProgress = False }, Cmd.none, [] )
+            ( { model | syncInProgress = False }, Cmd.none, [ LogError ErrorLog.SyncSource ErrorLog.Err "Unexpected error during group sync" ] )
 
         PostSyncTasksDone (ConcurrentTask.Success ()) ->
             ( model, Cmd.none, [] )

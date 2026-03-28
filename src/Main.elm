@@ -9,6 +9,8 @@ import Domain.Event as Event
 import Domain.Group as Group
 import Domain.GroupState as GroupState
 import Domain.Member as Member
+import ErrorLog
+import FeatherIcons
 import Form.NewGroup
 import GroupOps
 import Html exposing (Html)
@@ -26,6 +28,7 @@ import Json.Encode
 import Maybe.Extra
 import Navigation
 import Page.About
+import Page.ErrorLog
 import Page.Group
 import Page.Home
 import Page.InitError
@@ -43,12 +46,14 @@ import Set exposing (Set)
 import Task
 import Time
 import Translations as T exposing (I18n, Language(..))
+import UI.Components
 import UI.Shell
 import UI.Theme as Theme
 import UI.Toast as Toast
 import UUID
 import Ui
 import Ui.Font
+import Ui.Input
 import Update
 import Url
 import WebCrypto
@@ -111,6 +116,7 @@ type alias Model =
     , pbClient : Maybe PocketBase.Client
     , pendingServerCreations : Set Group.Id
     , pwaState : PwaState.Model
+    , errorLog : ErrorLog.Model
     }
 
 
@@ -267,6 +273,7 @@ init flags =
       , pbClient = Nothing
       , pendingServerCreations = Set.empty
       , pwaState = PwaState.init { isOnline = flags.isOnline }
+      , errorLog = ErrorLog.empty
       }
     , initCmds
     )
@@ -276,6 +283,11 @@ addToast : Toast.ToastLevel -> String -> Model -> ( Model, Cmd Msg )
 addToast level message model =
     Toast.push DismissToast level message model.toastModel
         |> Tuple.mapFirst (\toast -> { model | toastModel = toast })
+
+
+logError : ErrorLog.Source -> ErrorLog.Severity -> String -> Model -> Model
+logError source severity message model =
+    { model | errorLog = ErrorLog.log model.currentTime source severity message model.errorLog }
 
 
 {-| Build a Page.Group.UpdateConfig from current model state.
@@ -371,6 +383,9 @@ processGroupOutputs model groupCmd outputs =
                         Page.Group.RequestServerGroupCreation groupId groupKey ->
                             attemptServerGroupCreation groupId (Just groupKey) m
                                 |> Tuple.mapSecond (\attemptCmd -> attemptCmd :: cmds)
+
+                        Page.Group.LogError source severity message ->
+                            ( logError source severity message m, cmds )
                 )
                 ( model, [] )
                 outputs
@@ -495,7 +510,12 @@ update msg model =
                     ( { model | generatingIdentity = False }, Cmd.none )
 
         OnIdentityGenerated _ ->
-            ( { model | generatingIdentity = False }, Cmd.none )
+            ( logError ErrorLog.IdentitySource
+                ErrorLog.Err
+                "Unexpected error generating identity"
+                { model | generatingIdentity = False }
+            , Cmd.none
+            )
 
         OnInitComplete (ConcurrentTask.Success readyData) ->
             let
@@ -558,13 +578,18 @@ update msg model =
             ( { model | appState = InitError (Storage.errorToString err) }, Cmd.none )
 
         OnInitComplete (ConcurrentTask.UnexpectedError _) ->
-            ( { model | appState = InitError "Unexpected error during initialization" }, Cmd.none )
+            ( logError ErrorLog.StorageSource
+                ErrorLog.Err
+                "Unexpected error during initialization"
+                { model | appState = InitError "Unexpected error during initialization" }
+            , Cmd.none
+            )
 
         OnIdentitySaved (ConcurrentTask.Success _) ->
             ( model, Cmd.none )
 
         OnIdentitySaved _ ->
-            ( model, Cmd.none )
+            ( logError ErrorLog.IdentitySource ErrorLog.Err "Unexpected error saving identity" model, Cmd.none )
 
         -- Page form messages
         NewGroupMsg subMsg ->
@@ -781,7 +806,10 @@ update msg model =
             )
 
         OnJoinGroupFetched (ConcurrentTask.UnexpectedError _) ->
-            ( { model | joinGroupModel = Page.JoinGroup.error "Unexpected error" }
+            ( logError ErrorLog.SyncSource
+                ErrorLog.Err
+                "Unexpected error fetching join group"
+                { model | joinGroupModel = Page.JoinGroup.error "Unexpected error" }
             , Cmd.none
             )
 
@@ -909,7 +937,7 @@ update msg model =
             addToast Toast.Error ("Server: " ++ Server.errorToString (Server.PbError err)) model
 
         OnPbClientInitialized (ConcurrentTask.UnexpectedError _) ->
-            ( model, Cmd.none )
+            ( logError ErrorLog.ServerSource ErrorLog.Err "Unexpected error initializing PocketBase client" model, Cmd.none )
 
         OnServerGroupCreated groupId (ConcurrentTask.Success _) ->
             -- Server group created; now sync (push initial events + pull + subscribe)
@@ -936,7 +964,12 @@ update msg model =
             addToast Toast.Error ("Sync: " ++ Server.errorToString err) cleanModel
 
         OnServerGroupCreated groupId (ConcurrentTask.UnexpectedError _) ->
-            ( { model | pendingServerCreations = Set.remove groupId model.pendingServerCreations }, Cmd.none )
+            ( logError ErrorLog.ServerSource
+                ErrorLog.Err
+                "Unexpected error creating server group"
+                { model | pendingServerCreations = Set.remove groupId model.pendingServerCreations }
+            , Cmd.none
+            )
 
         ClipboardCopied ->
             addToast Toast.Success (T.toastCopied model.i18n) model
@@ -1033,7 +1066,7 @@ update msg model =
                     ( model, Cmd.none )
 
         OnAboutStatsReset _ ->
-            ( model, Cmd.none )
+            ( logError ErrorLog.StorageSource ErrorLog.Err "Unexpected error resetting usage stats" model, Cmd.none )
 
         ScheduleStorageCheck ->
             case model.appState of
@@ -1234,7 +1267,7 @@ processPwaOutMsgs model pwaCmd outMsgs =
                                 ( modelWithToast, toastCmd ) =
                                     addToast Toast.Error (T.toastPushError m.i18n) m
                             in
-                            ( modelWithToast, toastCmd :: cmds )
+                            ( logError ErrorLog.PushSource ErrorLog.Err "Push subscription error" modelWithToast, toastCmd :: cmds )
 
                         PwaState.NavigateToUrl url ->
                             case Url.fromString (m.origin ++ url) of
@@ -1248,6 +1281,9 @@ processPwaOutMsgs model pwaCmd outMsgs =
 
                                 Nothing ->
                                     ( m, cmds )
+
+                        PwaState.LogError source severity message ->
+                            ( logError source severity message m, cmds )
 
                         PwaState.CameOnline ->
                             case m.groupModel.loadedGroup of
@@ -1275,7 +1311,15 @@ processImportExportOutMsg model ieCmd maybeOutMsg =
             ( model, ieCmd )
 
         Just (ImportExport.ShowToast level message) ->
-            addToast level message model
+            addToast level
+                message
+                (case level of
+                    Toast.Error ->
+                        logError ErrorLog.ImportExportSource ErrorLog.Err message model
+
+                    _ ->
+                        model
+                )
                 |> Update.addCmd ieCmd
 
         Just (ImportExport.SetImportError errorMsg) ->
@@ -1361,6 +1405,29 @@ view model =
             Ui.inFront <|
                 Ui.el (Ui.alignBottom :: innerAppArea)
                     (Toast.view model.toastModel)
+
+        errorLogButton : Ui.Attribute Msg
+        errorLogButton =
+            if model.errorLog.size > 0 && model.route /= Route.ErrorLog then
+                Ui.inFront <|
+                    Ui.el
+                        [ Ui.alignRight
+                        , Ui.centerY
+                        ]
+                        (Ui.el
+                            [ Ui.Input.button (NavigateTo Route.ErrorLog)
+                            , Ui.pointer
+                            , Ui.background Theme.danger.solid
+                            , Ui.rounded 8
+                            , Ui.padding Theme.spacing.sm
+                            , Ui.htmlAttribute (Html.Attributes.style "border-top-right-radius" "0")
+                            , Ui.htmlAttribute (Html.Attributes.style "border-bottom-right-radius" "0")
+                            ]
+                            (UI.Components.featherIconColored "white" 20 FeatherIcons.alertTriangle)
+                        )
+
+            else
+                Ui.noAttr
     in
     Ui.layout Ui.default
         [ Ui.background Theme.base.bg
@@ -1369,6 +1436,7 @@ view model =
         , Ui.Font.size Theme.font.md
         , overlayAttr
         , toasts
+        , errorLogButton
         ]
         (Ui.el [ Ui.background Theme.base.bg ]
             (Ui.column
@@ -1394,17 +1462,46 @@ viewPage model =
         noOverlay content =
             { content = content, overlay = Nothing }
     in
-    case model.appState of
-        Loading ->
-            noOverlay (Page.Loading.view model.i18n)
-
-        InitError errorMsg ->
+    case model.route of
+        Route.ErrorLog ->
             noOverlay <|
-                UI.Shell.pageShell { title = T.shellPartage model.i18n, onBack = NavigateTo Home }
-                    (Page.InitError.view model.i18n errorMsg)
+                UI.Shell.pageShell { title = T.errorLogTitle model.i18n, onBack = GoBack }
+                    (Page.ErrorLog.view
+                        { i18n = model.i18n
+                        , errorLog = model.errorLog
+                        , groups =
+                            case model.appState of
+                                Ready readyData ->
+                                    Dict.values readyData.groups
 
-        Ready readyData ->
-            viewReady model readyData
+                                _ ->
+                                    []
+                        , currentTime = model.currentTime
+                        , appState =
+                            case model.appState of
+                                Loading ->
+                                    "Loading"
+
+                                InitError _ ->
+                                    "InitError"
+
+                                Ready _ ->
+                                    "Ready"
+                        }
+                    )
+
+        _ ->
+            case model.appState of
+                Loading ->
+                    noOverlay (Page.Loading.view model.i18n)
+
+                InitError errorMsg ->
+                    noOverlay <|
+                        UI.Shell.pageShell { title = T.shellPartage model.i18n, onBack = NavigateTo Home }
+                            (Page.InitError.view model.i18n errorMsg)
+
+                Ready readyData ->
+                    viewReady model readyData
 
 
 viewReady : Model -> Storage.InitData -> Page.Group.ViewResult Msg
@@ -1470,6 +1567,10 @@ viewReady model readyData =
                         }
                         model.aboutModel
                     )
+
+        Route.ErrorLog ->
+            -- Handled in viewPage before reaching viewReady
+            noOverlay Ui.none
 
         NotFound ->
             noOverlay <|

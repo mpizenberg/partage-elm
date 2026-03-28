@@ -8,7 +8,7 @@ module UI.Components exposing
     , filterToggleButton, filterSection, filterSummaryChip, clearAllFiltersButton
     , avatar, AvatarColor(..)
     , fab
-    , featherIcon
+    , featherIcon, featherIconColored
     , appLogo
     , languageSelector, pwaBanners, readOnlyBanner
     )
@@ -47,7 +47,7 @@ module UI.Components exposing
 
 # Icons
 
-@docs featherIcon
+@docs featherIcon, featherIconColored
 @docs appLogo
 
 

@@ -330,5 +330,9 @@
   "aboutFeatureOpenSource": "Free and open source",
   "aboutHowItWorksTitle": "How it works",
   "aboutHowItWorks": "Your expenses are stored locally on your device and encrypted before syncing. Only group members with the shared key can read the data. No account needed.",
-  "aboutSourceCode": "Source code"
+  "aboutSourceCode": "Source code",
+  "errorLogTitle": "Error Log",
+  "errorLogEmpty": "No errors recorded.",
+  "errorLogCopyReport": "Copy Debug Report",
+  "errorLogPrivacyNotice": "This debug report contains information about your groups (names, members, settings). By copying and sending it to the developer, you acknowledge this data will be visible to them."
 }

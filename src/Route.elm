@@ -18,6 +18,7 @@ type Route
     | NewGroup
     | GroupRoute Group.Id GroupView
     | About
+    | ErrorLog
     | NotFound
 
 
@@ -95,6 +96,9 @@ fromAppUrl appUrl =
         [ "about" ] ->
             About
 
+        [ "error-log" ] ->
+            ErrorLog
+
         _ ->
             NotFound
 
@@ -170,6 +174,9 @@ toPathSegments route =
         About ->
             [ "about" ]
 
+        ErrorLog ->
+            [ "error-log" ]
+
         NotFound ->
             []
 
@@ -223,6 +230,9 @@ toPath route =
 
         About ->
             "/about"
+
+        ErrorLog ->
+            "/error-log"
 
         NotFound ->
             "/"

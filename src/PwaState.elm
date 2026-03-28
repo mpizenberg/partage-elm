@@ -12,6 +12,7 @@ construction happens internally through `subscription`, `initTask`,
 -}
 
 import ConcurrentTask
+import ErrorLog
 import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
 import Infra.PushServer as PushServer
 import Json.Decode
@@ -77,6 +78,7 @@ type OutMsg
     = ShowToastError
     | NavigateToUrl String
     | CameOnline
+    | LogError ErrorLog.Source ErrorLog.Severity String
 
 
 pushIsActive : Model -> Bool
@@ -151,7 +153,7 @@ update pwaOut msg model =
                     ( newModel, Cmd.none, [] )
 
         OnVapidKeyFetched _ ->
-            ( model, Cmd.none, [] )
+            ( model, Cmd.none, [ LogError ErrorLog.PwaSource ErrorLog.Err "Failed to fetch VAPID key" ] )
 
 
 handleEvent : (Json.Encode.Value -> Cmd msg) -> Pwa.Event -> Model -> ( Model, Cmd msg, List OutMsg )
@@ -193,7 +195,7 @@ handleEvent pwaOut event model =
             ( { model | pushSubscription = Just sub }, Cmd.none, [] )
 
         Pwa.PushSubscriptionError _ ->
-            ( model, Cmd.none, [ ShowToastError ] )
+            ( model, Cmd.none, [ ShowToastError, LogError ErrorLog.PushSource ErrorLog.Err "Push subscription error" ] )
 
         Pwa.PushUnsubscribed ->
             ( { model | pushSubscription = Nothing }, Cmd.none, [] )
