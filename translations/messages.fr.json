@@ -334,5 +334,6 @@
   "errorLogTitle": "Journal d'erreurs",
   "errorLogEmpty": "Aucune erreur enregistrée.",
   "errorLogCopyReport": "Copier le rapport de debug",
+  "errorLogShareReport": "Partager le rapport de debug",
   "errorLogPrivacyNotice": "Ce rapport contient des informations sur tes groupes (noms, membres, paramètres). En le copiant et en l'envoyant au développeur, tu reconnais que ces données lui seront visibles."
 }

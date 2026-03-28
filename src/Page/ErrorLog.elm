@@ -47,7 +47,10 @@ debugReportSection config =
             Encode.encode 2 (encodeDebugReport config)
     in
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-        [ copyReportButton reportJson (T.errorLogCopyReport config.i18n)
+        [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+            [ copyReportButton reportJson (T.errorLogCopyReport config.i18n)
+            , shareReportButton reportJson (T.errorLogShareReport config.i18n)
+            ]
         , Ui.el
             [ Ui.Font.size Theme.font.xs
             , Ui.Font.color Theme.base.textSubtle
@@ -79,6 +82,25 @@ copyReportButton copyText label =
         [ UI.Components.featherIcon 16 FeatherIcons.copy
         , Ui.text label
         ]
+
+
+shareReportButton : String -> String -> Ui.Element msg
+shareReportButton shareText label =
+    Ui.html
+        (Html.node "share-button"
+            [ Html.Attributes.attribute "data-share-title" "Partage Debug Report"
+            , Html.Attributes.attribute "data-share-text" shareText
+            ]
+            [ Ui.layout (Ui.default |> Ui.withNoStylesheet)
+                []
+                (Ui.row
+                    (Ui.width Ui.shrink :: UI.Components.btnOutlineAttrs)
+                    [ UI.Components.featherIcon 16 FeatherIcons.share2
+                    , Ui.text label
+                    ]
+                )
+            ]
+        )
 
 
 encodeDebugReport : ViewConfig -> Encode.Value

@@ -334,5 +334,6 @@
   "errorLogTitle": "Error Log",
   "errorLogEmpty": "No errors recorded.",
   "errorLogCopyReport": "Copy Debug Report",
+  "errorLogShareReport": "Share Debug Report",
   "errorLogPrivacyNotice": "This debug report contains information about your groups (names, members, settings). By copying and sending it to the developer, you acknowledge this data will be visible to them."
 }
