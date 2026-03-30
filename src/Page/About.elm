@@ -35,7 +35,7 @@ appVersion =
 
 sourceUrl : String
 sourceUrl =
-    "https://github.com/nicosMusic/partage"
+    "https://github.com/mpizenberg/partage-elm"
 
 
 init : Model
