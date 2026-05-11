@@ -163,10 +163,25 @@ beneficiariesField i18n activeMembers data =
                         }
                     ]
                 ]
+
+        partsColumnHeader : Ui.Element Msg
+        partsColumnHeader =
+            case data.splitMode of
+                ShareSplit ->
+                    Ui.el
+                        [ Ui.alignRight
+                        , Ui.Font.size Theme.font.sm
+                        , Ui.Font.color Theme.base.textSubtle
+                        ]
+                        (Ui.text (T.newEntryPartsLabel i18n))
+
+                ExactSplit ->
+                    Ui.none
     in
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
         [ headerRow
         , Shared.formHint (T.newEntryBeneficiariesHint i18n)
+        , partsColumnHeader
         , Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
             (List.map (beneficiaryRow data) activeMembers)
         , Shared.errorWhen (data.submitted && Dict.isEmpty data.beneficiaries) (T.newEntryNoBeneficiaries i18n)

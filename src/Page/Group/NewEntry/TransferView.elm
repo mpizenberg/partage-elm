@@ -30,16 +30,21 @@ transferFields i18n activeMembers data =
     ]
 
 
+type TransferRole
+    = FromRole
+    | ToRole
+
+
 transferMembersField : I18n -> List Member.ChainState -> ModelData -> Ui.Element Msg
 transferMembersField i18n activeMembers data =
     let
-        memberRole : Member.Id -> Maybe String
+        memberRole : Member.Id -> Maybe TransferRole
         memberRole memberId =
             if data.fromMemberId == Just memberId then
-                Just "From"
+                Just FromRole
 
             else if data.toMemberId == Just memberId then
-                Just "To"
+                Just ToRole
 
             else
                 Nothing
@@ -60,7 +65,7 @@ transferMembersField i18n activeMembers data =
         [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.wrap ]
             (List.map
                 (\member ->
-                    transferMemberBtn
+                    transferMemberBtn i18n
                         { name = member.name
                         , initials = String.left 2 (String.toUpper member.name)
                         , role = memberRole member.rootId
@@ -75,24 +80,32 @@ transferMembersField i18n activeMembers data =
 
 
 transferMemberBtn :
-    { name : String
-    , initials : String
-    , role : Maybe String
-    , onPress : msg
-    }
+    I18n
+    ->
+        { name : String
+        , initials : String
+        , role : Maybe TransferRole
+        , onPress : msg
+        }
     -> Ui.Element msg
-transferMemberBtn config =
+transferMemberBtn i18n config =
     let
-        ( borderClr, backgroundColor, avatarColor ) =
+        ( ( borderClr, backgroundColor, avatarColor ), roleText ) =
             case config.role of
-                Just "From" ->
-                    ( Theme.success.solid, Theme.success.bg, UI.Components.AvatarAccent )
+                Just FromRole ->
+                    ( ( Theme.success.solid, Theme.success.bg, UI.Components.AvatarAccent )
+                    , Just (T.entryDetailFrom i18n)
+                    )
 
-                Just "To" ->
-                    ( Theme.warning.solid, Theme.warning.bg, UI.Components.AvatarRed )
+                Just ToRole ->
+                    ( ( Theme.warning.solid, Theme.warning.bg, UI.Components.AvatarRed )
+                    , Just (T.entryDetailTo i18n)
+                    )
 
-                _ ->
-                    ( Theme.base.solid, Theme.base.bg, UI.Components.AvatarNeutral )
+                Nothing ->
+                    ( ( Theme.base.solid, Theme.base.bg, UI.Components.AvatarNeutral )
+                    , Nothing
+                    )
     in
     Ui.row
         [ Ui.Input.button config.onPress
@@ -109,15 +122,14 @@ transferMemberBtn config =
             ]
         ]
         [ UI.Components.avatar avatarColor config.initials
-        , case config.role of
-            Just role ->
+        , case roleText of
+            Just text ->
                 Ui.el
-                    [ Ui.alignRight
-                    , Ui.Font.size Theme.font.md
+                    [ Ui.Font.size Theme.font.md
                     , Ui.Font.weight Theme.fontWeight.semibold
                     , Ui.Font.color borderClr
                     ]
-                    (Ui.text <| String.toUpper role ++ ":")
+                    (Ui.text <| String.toUpper text ++ ":")
 
             Nothing ->
                 Ui.none
