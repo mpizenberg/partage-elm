@@ -35,11 +35,18 @@ type Output
 
 
 type Model
-    = Model { importError : Maybe String, showJoinInput : Bool, joinLink : String, showArchived : Bool }
+    = Model
+        { importError : Maybe String
+        , showJoinInput : Bool
+        , joinLink : String
+        , showArchived : Bool
+        , showImportInfo : Bool
+        }
 
 
 type Msg
-    = StartImport
+    = ToggleImportInfo
+    | StartImport
     | FileSelected File.File
     | FileLoaded String
     | ShowJoinInput
@@ -50,7 +57,13 @@ type Msg
 
 init : Model
 init =
-    Model { importError = Nothing, showJoinInput = False, joinLink = "", showArchived = False }
+    Model
+        { importError = Nothing
+        , showJoinInput = False
+        , joinLink = ""
+        , showArchived = False
+        , showImportInfo = False
+        }
 
 
 setImportError : String -> Model -> Model
@@ -61,8 +74,14 @@ setImportError err (Model data) =
 update : Msg -> Model -> ( Model, Cmd Msg, Maybe Output )
 update msg (Model data) =
     case msg of
+        ToggleImportInfo ->
+            ( Model { data | showImportInfo = not data.showImportInfo, importError = Nothing }
+            , Cmd.none
+            , Nothing
+            )
+
         StartImport ->
-            ( Model { data | importError = Nothing }
+            ( Model { data | importError = Nothing, showImportInfo = False }
             , File.Select.file [ "application/gzip", ".partage" ] FileSelected
             , Nothing
             )
@@ -125,7 +144,7 @@ view i18n ctx toMsg (Model data) groups =
                     [ UI.Components.btnOutline []
                         { label = T.homeImportGroup i18n
                         , icon = Just (UI.Components.featherIcon 16 FeatherIcons.download)
-                        , onPress = toMsg StartImport
+                        , onPress = toMsg ToggleImportInfo
                         }
                     , UI.Components.btnOutline []
                         { label = T.shellJoinGroup i18n
@@ -133,6 +152,7 @@ view i18n ctx toMsg (Model data) groups =
                         , onPress = toMsg ShowJoinInput
                         }
                     ]
+                , importInfo i18n toMsg data
                 , joinInput i18n toMsg data
                 , UI.Components.btnPrimary
                     (UI.Components.spaLinkAttrs (Route.toPath Route.NewGroup) (ctx.onNavigate Route.NewGroup))
@@ -408,6 +428,37 @@ importError error =
             ]
             (Ui.text error)
         )
+
+
+
+-- IMPORT INFO
+
+
+importInfo : I18n -> (Msg -> msg) -> { a | showImportInfo : Bool } -> Ui.Element msg
+importInfo i18n toMsg data =
+    if not data.showImportInfo then
+        Ui.none
+
+    else
+        Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+            [ Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.base.textSubtle
+                , Ui.width Ui.fill
+                ]
+                (Ui.text (T.homeImportHint i18n))
+            , Ui.row [ Ui.spacing Theme.spacing.sm ]
+                [ UI.Components.btnOutline []
+                    { label = T.homeImportCancel i18n
+                    , icon = Nothing
+                    , onPress = toMsg ToggleImportInfo
+                    }
+                , UI.Components.btnDark []
+                    { label = T.homeImportConfirm i18n
+                    , onPress = toMsg StartImport
+                    }
+                ]
+            ]
 
 
 
