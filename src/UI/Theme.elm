@@ -7,6 +7,7 @@ module UI.Theme exposing
     , border
     , shadow, shadowXl, shadowAccent, shadowKnob
     , contentMaxWidth
+    , Breakpoint(..), breakpoints
     )
 
 {-| Design tokens for the warm minimal theme.
@@ -46,11 +47,13 @@ module UI.Theme exposing
 # Layout
 
 @docs contentMaxWidth
+@docs Breakpoint, breakpoints
 
 -}
 
 import Ui
 import Ui.Font
+import Ui.Responsive
 import Ui.Shadow
 
 
@@ -360,3 +363,22 @@ shadowKnob =
 contentMaxWidth : Int
 contentMaxWidth =
     430
+
+
+{-| Responsive layout breakpoints.
+
+`Compact` covers narrow phones (below `contentMaxWidth`), where horizontal
+padding and other layout values should be tighter to preserve usable width.
+`Wide` covers everything at or above `contentMaxWidth`, where the centered
+column hits its cap and there is room to breathe.
+
+-}
+type Breakpoint
+    = Compact
+    | Wide
+
+
+{-| -}
+breakpoints : Ui.Responsive.Breakpoints Breakpoint
+breakpoints =
+    Ui.Responsive.breakpoints Compact [ ( contentMaxWidth, Wide ) ]

@@ -54,6 +54,7 @@ import UUID
 import Ui
 import Ui.Font
 import Ui.Input
+import Ui.Responsive
 import Update
 import Url
 import WebCrypto
@@ -1382,12 +1383,15 @@ view model =
             [ Ui.centerX
             , Ui.widthMax Theme.contentMaxWidth
             , Ui.width Ui.fill
-            , Ui.paddingWith
-                { top = 0
-                , bottom = 0
-                , left = Theme.spacing.xl
-                , right = Theme.spacing.xl
-                }
+            , Ui.Responsive.paddingXY Theme.breakpoints
+                (\bp ->
+                    case bp of
+                        Theme.Compact ->
+                            { x = Ui.Responsive.value Theme.spacing.md, y = Ui.Responsive.value 0 }
+
+                        Theme.Wide ->
+                            { x = Ui.Responsive.value Theme.spacing.xl, y = Ui.Responsive.value 0 }
+                )
             ]
 
         overlayAttr : Ui.Attribute Msg
@@ -1429,7 +1433,7 @@ view model =
             else
                 Ui.noAttr
     in
-    Ui.layout Ui.default
+    Ui.layout (Ui.default |> Ui.withBreakpoints Theme.breakpoints)
         [ Ui.background Theme.base.bg
         , Theme.fontFamily
         , Ui.Font.color Theme.base.text
@@ -1443,12 +1447,23 @@ view model =
                 [ Ui.widthMax Theme.contentMaxWidth
                 , Ui.centerX
                 , Ui.htmlAttribute (Html.Attributes.style "min-height" "100dvh")
-                , Ui.paddingWith
-                    { top = Theme.spacing.md
-                    , bottom = 0
-                    , left = Theme.spacing.xl
-                    , right = Theme.spacing.xl
-                    }
+                , Ui.Responsive.paddingEach Theme.breakpoints
+                    (\bp ->
+                        case bp of
+                            Theme.Compact ->
+                                { top = Ui.Responsive.value Theme.spacing.md
+                                , bottom = Ui.Responsive.value 0
+                                , left = Ui.Responsive.value Theme.spacing.md
+                                , right = Ui.Responsive.value Theme.spacing.md
+                                }
+
+                            Theme.Wide ->
+                                { top = Ui.Responsive.value Theme.spacing.md
+                                , bottom = Ui.Responsive.value 0
+                                , left = Ui.Responsive.value Theme.spacing.xl
+                                , right = Ui.Responsive.value Theme.spacing.xl
+                                }
+                    )
                 ]
                 [ Ui.map PwaStateMsg (PwaState.viewBanners model.i18n model.pwaState), pageResult.content ]
             )
