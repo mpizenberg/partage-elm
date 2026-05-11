@@ -218,7 +218,7 @@
   "settlementRecordTransfer": "Enregistrer ce transfert",
   "homeExportGroup": "Exporter",
   "homeImportGroup": "Importer",
-  "homeImportHint": "Importe un groupe précédemment exporté depuis Partage. Les fichiers d'autres applications comme Tricount ou Splitwise ne sont pas pris en charge.",
+  "homeImportHint": "Importe un groupe précédemment exporté depuis Partage. Tricount ne permet pas d’exporter ses groupes (sauf par email avec une demande RGPD), et Splitwise n’est pas encore pris en charge.",
   "homeImportConfirm": "Choisir un fichier",
   "homeImportCancel": "Annuler",
   "importErrorAlreadyExists": "Ce groupe existe déjà sur ton appareil.",

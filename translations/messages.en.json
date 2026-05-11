@@ -218,7 +218,7 @@
   "settlementRecordTransfer": "Record this transfer",
   "homeExportGroup": "Export",
   "homeImportGroup": "Import",
-  "homeImportHint": "Imports a group previously exported from Partage. Files from other apps like Tricount or Splitwise are not supported.",
+  "homeImportHint": "Imports a group previously exported from Partage. Files from other apps like Splitwise are not supported yet.",
   "homeImportConfirm": "Choose file",
   "homeImportCancel": "Cancel",
   "importErrorAlreadyExists": "This group already exists on your device.",
