@@ -301,17 +301,17 @@ view i18n config maybeUserRootId today (Model data) state =
         totalAmount : Int
         totalAmount =
             visibleEntries
-                |> List.map
+                |> List.filterMap
                     (\{ entry } ->
                         case entry.kind of
                             Entry.Expense d ->
-                                d.amount
+                                Just d.amount
 
-                            Entry.Transfer d ->
-                                d.amount
+                            Entry.Income _ ->
+                                Nothing
 
-                            Entry.Income d ->
-                                d.amount
+                            Entry.Transfer _ ->
+                                Nothing
                     )
                 |> List.sum
 
