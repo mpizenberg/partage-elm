@@ -23,6 +23,7 @@ type alias ViewConfig =
     , errorLog : ErrorLog.Model
     , groups : List Group.Summary
     , currentTime : Time.Posix
+    , timeZone : Time.Zone
     , appState : String
     }
 
@@ -141,11 +142,11 @@ entriesSection config =
 
     else
         Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-            (List.map viewEntry config.errorLog.entries)
+            (List.map (viewEntry config.timeZone) config.errorLog.entries)
 
 
-viewEntry : ErrorLog.Entry -> Ui.Element msg
-viewEntry entry =
+viewEntry : Time.Zone -> ErrorLog.Entry -> Ui.Element msg
+viewEntry zone entry =
     UI.Components.card [ Ui.padding Theme.spacing.md ]
         [ Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
             [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill, Ui.contentCenterY ]
@@ -156,7 +157,7 @@ viewEntry entry =
                     , Ui.Font.color Theme.base.textSubtle
                     , Ui.alignRight
                     ]
-                    (Ui.text (formatTimestamp entry.timestamp))
+                    (Ui.text (formatTimestamp zone entry.timestamp))
                 ]
             , Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
                 [ Ui.el
@@ -210,36 +211,15 @@ sourceBadge source =
         (Ui.text (ErrorLog.sourceToString source))
 
 
-formatTimestamp : Time.Posix -> String
-formatTimestamp posix =
+formatTimestamp : Time.Zone -> Time.Posix -> String
+formatTimestamp zone posix =
     let
-        ms : Int
-        ms =
-            Time.posixToMillis posix
-
-        -- Simple HH:MM:SS format in UTC
-        totalSeconds : Int
-        totalSeconds =
-            ms // 1000
-
-        hours : Int
-        hours =
-            modBy 24 (totalSeconds // 3600)
-
-        minutes : Int
-        minutes =
-            modBy 60 (totalSeconds // 60)
-
-        seconds : Int
-        seconds =
-            modBy 60 totalSeconds
-
         pad : Int -> String
         pad n =
-            if n < 10 then
-                "0" ++ String.fromInt n
-
-            else
-                String.fromInt n
+            String.padLeft 2 '0' (String.fromInt n)
     in
-    pad hours ++ ":" ++ pad minutes ++ ":" ++ pad seconds
+    pad (Time.toHour zone posix)
+        ++ ":"
+        ++ pad (Time.toMinute zone posix)
+        ++ ":"
+        ++ pad (Time.toSecond zone posix)

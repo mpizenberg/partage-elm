@@ -49,6 +49,7 @@ type alias Config msg =
     , onNavigateToEntry : Entry.Id -> msg
     , toMsg : Msg -> msg
     , allMembers : List ( Member.Id, String )
+    , timeZone : Time.Zone
     }
 
 
@@ -266,33 +267,33 @@ groupedByDate i18n config expandedActivities activities =
     let
         dateKey : Activity -> ( Int, Int, Int )
         dateKey activity =
-            ( Time.toYear Time.utc activity.timestamp
-            , monthToInt (Time.toMonth Time.utc activity.timestamp)
-            , Time.toDay Time.utc activity.timestamp
+            ( Time.toYear config.timeZone activity.timestamp
+            , monthToInt (Time.toMonth config.timeZone activity.timestamp)
+            , Time.toDay config.timeZone activity.timestamp
             )
     in
     List.Extra.groupWhile (\a1 a2 -> dateKey a1 == dateKey a2) activities
         |> List.concatMap
             (\( first, rest ) ->
-                dateSeparator i18n first.timestamp
+                dateSeparator i18n config.timeZone first.timestamp
                     :: List.map (activityItem i18n config expandedActivities) (first :: rest)
             )
 
 
-dateSeparator : I18n -> Time.Posix -> Ui.Element msg
-dateSeparator i18n posix =
+dateSeparator : I18n -> Time.Zone -> Time.Posix -> Ui.Element msg
+dateSeparator i18n zone posix =
     let
         year : Int
         year =
-            Time.toYear Time.utc posix
+            Time.toYear zone posix
 
         month : Int
         month =
-            monthToInt (Time.toMonth Time.utc posix)
+            monthToInt (Time.toMonth zone posix)
 
         day : Int
         day =
-            Time.toDay Time.utc posix
+            Time.toDay zone posix
     in
     Ui.el
         [ Ui.paddingTop Theme.spacing.md
@@ -380,7 +381,7 @@ activityItem i18n config expandedActivities activity =
         , borderColor
         ]
         [ Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-            [ summaryRow i18n config.resolveName activity
+            [ summaryRow i18n config.timeZone config.resolveName activity
             , if isExpanded then
                 detailPanel i18n config activity.detail
 
@@ -439,8 +440,8 @@ detailIcon detail =
             FeatherIcons.sliders
 
 
-summaryRow : I18n -> (Member.Id -> String) -> Activity -> Ui.Element msg
-summaryRow i18n resolveName activity =
+summaryRow : I18n -> Time.Zone -> (Member.Id -> String) -> Activity -> Ui.Element msg
+summaryRow i18n zone resolveName activity =
     Ui.row [ Ui.spacing Theme.spacing.md, Ui.contentCenterY ]
         [ Ui.el [ Ui.width Ui.shrink, Ui.Font.color Theme.base.textSubtle ]
             (UI.Components.featherIcon 16 (detailIcon activity.detail))
@@ -456,7 +457,7 @@ summaryRow i18n resolveName activity =
                 , Ui.Font.color Theme.base.textSubtle
                 , Ui.clipWithEllipsis
                 ]
-                (Ui.text (formatTimestamp activity.timestamp))
+                (Ui.text (formatTimestamp zone activity.timestamp))
             ]
         , Ui.el [ Ui.Font.size Theme.font.sm ]
             (Ui.text (detailSummaryText i18n activity.detail))
@@ -1297,28 +1298,28 @@ diffRow label oldValue newValue =
 -- TIMESTAMP
 
 
-formatTimestamp : Time.Posix -> String
-formatTimestamp posix =
+formatTimestamp : Time.Zone -> Time.Posix -> String
+formatTimestamp zone posix =
     let
         year : String
         year =
-            String.fromInt (Time.toYear Time.utc posix)
+            String.fromInt (Time.toYear zone posix)
 
         month : String
         month =
-            String.padLeft 2 '0' (String.fromInt (monthToInt (Time.toMonth Time.utc posix)))
+            String.padLeft 2 '0' (String.fromInt (monthToInt (Time.toMonth zone posix)))
 
         day : String
         day =
-            String.padLeft 2 '0' (String.fromInt (Time.toDay Time.utc posix))
+            String.padLeft 2 '0' (String.fromInt (Time.toDay zone posix))
 
         hour : String
         hour =
-            String.padLeft 2 '0' (String.fromInt (Time.toHour Time.utc posix))
+            String.padLeft 2 '0' (String.fromInt (Time.toHour zone posix))
 
         minute : String
         minute =
-            String.padLeft 2 '0' (String.fromInt (Time.toMinute Time.utc posix))
+            String.padLeft 2 '0' (String.fromInt (Time.toMinute zone posix))
     in
     year ++ "-" ++ month ++ "-" ++ day ++ " " ++ hour ++ ":" ++ minute
 

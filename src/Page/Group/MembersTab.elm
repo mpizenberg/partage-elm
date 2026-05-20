@@ -95,6 +95,7 @@ type alias Config msg =
     , onToggleNotification : msg
     , isSubscribed : Bool
     , pushActive : Bool
+    , timeZone : Time.Zone
     }
 
 
@@ -145,7 +146,7 @@ view i18n config toMsg model maybeUserRootId state =
         , Ui.column []
             [ UI.Components.sectionLabel (T.membersTabTitle i18n ++ " (" ++ String.fromInt (List.length active) ++ ")")
             , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-                (List.map (memberCard i18n toMsg model.expandedMembers maybeUserRootId) active)
+                (List.map (memberCard i18n config.timeZone toMsg model.expandedMembers maybeUserRootId) active)
             ]
 
         -- Retired Members
@@ -158,7 +159,7 @@ view i18n config toMsg model maybeUserRootId state =
                     }
                 , if model.showRetired then
                     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill, Ui.opacity 0.6 ]
-                        (List.map (memberCard i18n toMsg model.expandedMembers maybeUserRootId) retired)
+                        (List.map (memberCard i18n config.timeZone toMsg model.expandedMembers maybeUserRootId) retired)
 
                   else
                     Ui.none
@@ -470,8 +471,8 @@ qrCodeView link =
 -- MEMBER CARD
 
 
-memberCard : I18n -> (Msg -> msg) -> Set Member.Id -> Maybe Member.Id -> Member.ChainState -> Ui.Element msg
-memberCard i18n toMsg expandedMembers maybeUserRootId member =
+memberCard : I18n -> Time.Zone -> (Msg -> msg) -> Set Member.Id -> Maybe Member.Id -> Member.ChainState -> Ui.Element msg
+memberCard i18n zone toMsg expandedMembers maybeUserRootId member =
     let
         isCurrentUser : Bool
         isCurrentUser =
@@ -566,7 +567,7 @@ memberCard i18n toMsg expandedMembers maybeUserRootId member =
                             Theme.base.textSubtle
                         )
                     ]
-                    (Ui.text (formatJoinDate i18n member.joinedAt))
+                    (Ui.text (formatJoinDate i18n zone member.joinedAt))
                 ]
             , metadataIcons isCurrentUser member.metadata
             ]
@@ -894,13 +895,9 @@ boolToInt b =
         0
 
 
-formatJoinDate : I18n -> Time.Posix -> String
-formatJoinDate i18n posix =
+formatJoinDate : I18n -> Time.Zone -> Time.Posix -> String
+formatJoinDate i18n zone posix =
     let
-        zone : Time.Zone
-        zone =
-            Time.utc
-
         month : String
         month =
             case Time.toMonth zone posix of

@@ -100,6 +100,7 @@ type alias UpdateConfig =
     , identity : Identity
     , pbClient : Maybe PocketBase.Client
     , currentTime : Time.Posix
+    , timeZone : Time.Zone
     , route : Route
     , i18n : I18n
     , groups : Dict Group.Id Group.Summary
@@ -115,6 +116,7 @@ type alias ViewConfig msg =
     , onNavigateHome : msg
     , onGoBack : msg
     , today : Date
+    , timeZone : Time.Zone
     , groupId : Group.Id
     , origin : String
     , pushActive : Bool
@@ -410,7 +412,7 @@ update config msg model =
                             { amount = payData.amountCents
                             , currency = loaded.summary.defaultCurrency
                             , defaultCurrencyAmount = Nothing
-                            , date = Date.posixToDate config.currentTime
+                            , date = Date.posixToDate config.timeZone config.currentTime
                             , from = currentUserRootId model loaded |> Maybe.withDefault ""
                             , to = payData.toMemberId
                             , notes = Nothing
@@ -575,7 +577,7 @@ update config msg model =
                                 , fromMemberId = tx.from
                                 , toMemberId = tx.to
                                 , notes = Nothing
-                                , date = Date.posixToDate config.currentTime
+                                , date = Date.posixToDate config.timeZone config.currentTime
                                 }
                     in
                     runSubmit (OnEntrySaved loaded.summary.id) config model (\ctx -> GroupOps.newEntry ctx loaded output)
@@ -1306,7 +1308,7 @@ memberEntryFormConfig : UpdateConfig -> Member.Id -> LoadedGroup -> NewEntryShar
 memberEntryFormConfig config userRootId loaded =
     { currentUserRootId = userRootId
     , activeMembersRootIds = List.map .rootId (GroupState.activeMembers loaded.groupState)
-    , today = Date.posixToDate config.currentTime
+    , today = Date.posixToDate config.timeZone config.currentTime
     , defaultCurrency = loaded.summary.defaultCurrency
     }
 
@@ -1543,6 +1545,7 @@ tabContent config maybeUserRootId loaded model =
                 , onToggleNotification = config.toMsg ToggleNotification
                 , isSubscribed = loaded.summary.isSubscribed
                 , pushActive = config.pushActive
+                , timeZone = config.timeZone
                 }
                 (config.toMsg << MembersTabMsg)
                 model.membersTabModel
@@ -1565,6 +1568,7 @@ tabContent config maybeUserRootId loaded model =
                 , onNavigateToEntry = \entryId -> config.toMsg (RequestNavigation (HighlightEntry entryId))
                 , toMsg = config.toMsg << ActivityTabMsg
                 , allMembers = allMembers
+                , timeZone = config.timeZone
                 }
                 model.activityTabModel
                 loaded.groupState.activities

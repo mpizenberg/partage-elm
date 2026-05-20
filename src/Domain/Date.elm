@@ -51,13 +51,13 @@ toString date =
         ++ String.padLeft 2 '0' (String.fromInt date.day)
 
 
-{-| Convert a POSIX timestamp to a calendar Date using UTC.
+{-| Convert a POSIX timestamp to a calendar Date in the given time zone.
 -}
-posixToDate : Time.Posix -> Date
-posixToDate posix =
-    { year = Time.toYear Time.utc posix
-    , month = monthToInt (Time.toMonth Time.utc posix)
-    , day = Time.toDay Time.utc posix
+posixToDate : Time.Zone -> Time.Posix -> Date
+posixToDate zone posix =
+    { year = Time.toYear zone posix
+    , month = monthToInt (Time.toMonth zone posix)
+    , day = Time.toDay zone posix
     }
 
 
