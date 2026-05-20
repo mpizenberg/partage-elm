@@ -106,6 +106,7 @@ type alias Model =
     , uuidState : UUID.V7State
     , randomSeed : Random.Seed
     , currentTime : Time.Posix
+    , timeZone : Time.Zone
     , newGroupModel : Page.NewGroup.Model
     , groupModel : Page.Group.Model
     , homeModel : Page.Home.Model
@@ -136,6 +137,7 @@ type Msg
     | SwitchLanguage Language
     | GenerateIdentity
     | OnTaskProgress ( TaskRunner Msg, Cmd Msg )
+    | GotTimeZone Time.Zone
     | OnIdentityGenerated (ConcurrentTask.Response WebCrypto.Error Identity)
     | OnInitComplete (ConcurrentTask.Response Idb.Error Storage.InitData)
     | OnIdentitySaved (ConcurrentTask.Response Idb.Error ())
@@ -256,6 +258,7 @@ init flags =
       , uuidState = uuidState
       , randomSeed = mainSeed
       , currentTime = Time.millisToPosix flags.currentTime
+      , timeZone = Time.utc
       , newGroupModel = Page.NewGroup.init
       , groupModel =
             Page.Group.init
@@ -277,7 +280,7 @@ init flags =
       , pwaState = PwaState.init { isOnline = flags.isOnline, installHint = flags.installHint }
       , errorLog = ErrorLog.empty
       }
-    , initCmds
+    , Cmd.batch [ initCmds, Task.perform GotTimeZone Time.here ]
     )
 
 
@@ -306,6 +309,7 @@ buildGroupConfig model =
                         , identity = identity
                         , pbClient = model.pbClient
                         , currentTime = model.currentTime
+                        , timeZone = model.timeZone
                         , route = model.route
                         , i18n = model.i18n
                         , groups = readyData.groups
@@ -402,6 +406,9 @@ update msg model =
     case msg of
         NoOp ->
             ( model, Cmd.none )
+
+        GotTimeZone zone ->
+            ( { model | timeZone = zone }, Cmd.none )
 
         OnNavEvent event ->
             let
@@ -1011,7 +1018,7 @@ update msg model =
 
                         updatedStats : UsageStats
                         updatedStats =
-                            UsageStats.updateStorageCost model.currentTime storageEstimate.usage stats
+                            UsageStats.updateStorageCost model.timeZone model.currentTime storageEstimate.usage stats
 
                         breakdown : UsageStats.CostBreakdown
                         breakdown =
@@ -1019,7 +1026,7 @@ update msg model =
 
                         trackingSince : String
                         trackingSince =
-                            Date.toString (Date.posixToDate updatedStats.trackingStartDate)
+                            Date.toString (Date.posixToDate model.timeZone updatedStats.trackingStartDate)
 
                         ( aboutModel, _ ) =
                             Page.About.update (Page.About.statsLoaded breakdown trackingSince) model.aboutModel
@@ -1054,7 +1061,7 @@ update msg model =
 
                         trackingSince : String
                         trackingSince =
-                            Date.toString (Date.posixToDate freshStats.trackingStartDate)
+                            Date.toString (Date.posixToDate model.timeZone freshStats.trackingStartDate)
 
                         ( aboutModel, _ ) =
                             Page.About.update (Page.About.statsLoaded breakdown trackingSince) model.aboutModel
@@ -1493,6 +1500,7 @@ viewPage model =
                                 _ ->
                                     []
                         , currentTime = model.currentTime
+                        , timeZone = model.timeZone
                         , appState =
                             case model.appState of
                                 Loading ->
@@ -1566,7 +1574,8 @@ viewReady model readyData =
                 , toMsg = GroupMsg
                 , onNavigateHome = NavigateTo Home
                 , onGoBack = GoBack
-                , today = Date.posixToDate model.currentTime
+                , today = Date.posixToDate model.timeZone model.currentTime
+                , timeZone = model.timeZone
                 , groupId = groupId
                 , origin = model.origin
                 , pushActive = PwaState.pushIsActive model.pwaState

@@ -151,12 +151,12 @@ calculateCosts now stats =
 {-| Update storage cost accumulator if the last check was more than 1 day ago.
 Returns the updated stats with new storage bytes and accumulated cost.
 -}
-updateStorageCost : Time.Posix -> Int -> UsageStats -> UsageStats
-updateStorageCost now storageUsageBytes stats =
+updateStorageCost : Time.Zone -> Time.Posix -> Int -> UsageStats -> UsageStats
+updateStorageCost zone now storageUsageBytes stats =
     let
         todayDate : Date.Date
         todayDate =
-            Date.posixToDate now
+            Date.posixToDate zone now
 
         todayStr : String
         todayStr =
