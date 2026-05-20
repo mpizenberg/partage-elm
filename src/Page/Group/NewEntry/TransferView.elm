@@ -26,7 +26,7 @@ transferFields i18n activeMembers data =
     , Shared.dateField i18n data
     , transferMembersField i18n activeMembers data
     , Shared.notesField i18n data
-    , transferSummary activeMembers data
+    , transferSummary i18n activeMembers data
     ]
 
 
@@ -138,8 +138,8 @@ transferMemberBtn i18n config =
         ]
 
 
-transferSummary : List Member.ChainState -> ModelData -> Ui.Element Msg
-transferSummary activeMembers data =
+transferSummary : I18n -> List Member.ChainState -> ModelData -> Ui.Element Msg
+transferSummary i18n activeMembers data =
     case ( data.fromMemberId, data.toMemberId ) of
         ( Just fromId, Just toId ) ->
             let
@@ -149,7 +149,7 @@ transferSummary activeMembers data =
 
                 amountText : String
                 amountText =
-                    Format.formatCentsWithCurrency amountCents data.currency
+                    Format.formatCentsWithCurrency (T.currentLanguage i18n) amountCents data.currency
 
                 memberSummary : Ui.Attribute Msg -> String -> Ui.Element Msg
                 memberSummary alignAttr name =

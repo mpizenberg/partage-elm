@@ -112,25 +112,8 @@ yourBalanceCard i18n currentUserRootId state =
         ( amountText, detailText ) =
             case myBalance of
                 Just b ->
-                    let
-                        status : Balance.Status
-                        status =
-                            Balance.status b
-
-                        prefix : String
-                        prefix =
-                            case status of
-                                Balance.Creditor ->
-                                    "+"
-
-                                Balance.Debtor ->
-                                    "-"
-
-                                Balance.Settled ->
-                                    ""
-                    in
-                    ( prefix ++ Format.formatCentsWithCurrency (abs b.netBalance) state.groupMeta.defaultCurrency
-                    , case status of
+                    ( Format.formatCentsSigned (T.currentLanguage i18n) b.netBalance state.groupMeta.defaultCurrency
+                    , case Balance.status b of
                         Balance.Creditor ->
                             T.balanceIsOwedYou i18n
 
@@ -142,7 +125,7 @@ yourBalanceCard i18n currentUserRootId state =
                     )
 
                 Nothing ->
-                    ( Format.formatCentsWithCurrency 0 state.groupMeta.defaultCurrency, T.balanceSettled i18n )
+                    ( Format.formatCentsSigned (T.currentLanguage i18n) 0 state.groupMeta.defaultCurrency, T.balanceSettled i18n )
 
         amountColor : Ui.Color
         amountColor =
@@ -302,20 +285,7 @@ memberBalanceCard i18n config isMember currency resolveName expandedMember b =
                 , Ui.Font.weight Theme.fontWeight.semibold
                 , Ui.Font.color amountColor
                 ]
-                (Ui.text
-                    ((case balanceStatus of
-                        Balance.Creditor ->
-                            "+"
-
-                        Balance.Debtor ->
-                            "-"
-
-                        Balance.Settled ->
-                            ""
-                     )
-                        ++ Format.formatCentsWithCurrency (abs b.netBalance) currency
-                    )
-                )
+                (Ui.text (Format.formatCentsSigned (T.currentLanguage i18n) b.netBalance currency))
             ]
         , if isExpanded && isMember then
             transferActionBtn i18n
@@ -437,7 +407,7 @@ settlementItem i18n config resolveName maybeUserRootId showTopBorder isSelected 
                     , Ui.Font.weight Theme.fontWeight.semibold
                     , amountColor
                     ]
-                    (Ui.text (Format.formatCentsWithCurrency t.amount state.groupMeta.defaultCurrency))
+                    (Ui.text (Format.formatCentsWithCurrency (T.currentLanguage i18n) t.amount state.groupMeta.defaultCurrency))
                 ]
     in
     if isSelected then

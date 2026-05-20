@@ -326,7 +326,7 @@ groupCard i18n ctx summary =
                         , Ui.Font.weight Theme.fontWeight.medium
                         , Ui.Font.color Theme.success.text
                         ]
-                        (Ui.text ("+" ++ Format.formatCentsWithCurrency cents summary.defaultCurrency))
+                        (Ui.text (Format.formatCentsSigned (T.currentLanguage i18n) cents summary.defaultCurrency))
                     ]
 
             else if cents < 0 then
@@ -337,7 +337,7 @@ groupCard i18n ctx summary =
                         , Ui.Font.weight Theme.fontWeight.medium
                         , Ui.Font.color Theme.danger.text
                         ]
-                        (Ui.text ("-" ++ Format.formatCentsWithCurrency (abs cents) summary.defaultCurrency))
+                        (Ui.text (Format.formatCentsSigned (T.currentLanguage i18n) cents summary.defaultCurrency))
                     ]
 
             else

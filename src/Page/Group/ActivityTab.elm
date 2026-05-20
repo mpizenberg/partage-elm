@@ -472,7 +472,7 @@ detailSummaryText i18n detail =
                 Expense expData ->
                     T.activityEntryAdded expData.description i18n
                         ++ " ("
-                        ++ Format.formatCentsWithCurrency expData.amount expData.currency
+                        ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) expData.amount expData.currency
                         ++ ")"
 
                 Transfer _ ->
@@ -481,7 +481,7 @@ detailSummaryText i18n detail =
                 Income incData ->
                     T.activityIncomeAdded incData.description i18n
                         ++ " ("
-                        ++ Format.formatCentsWithCurrency incData.amount incData.currency
+                        ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) incData.amount incData.currency
                         ++ ")"
 
         EntryModifiedDetail data ->
@@ -489,7 +489,7 @@ detailSummaryText i18n detail =
                 Expense expData ->
                     T.activityEntryModified expData.description i18n
                         ++ " ("
-                        ++ Format.formatCentsWithCurrency expData.amount expData.currency
+                        ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) expData.amount expData.currency
                         ++ ")"
                         ++ changesText i18n data.changes
 
@@ -499,7 +499,7 @@ detailSummaryText i18n detail =
                 Income incData ->
                     T.activityIncomeModified incData.description i18n
                         ++ " ("
-                        ++ Format.formatCentsWithCurrency incData.amount incData.currency
+                        ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) incData.amount incData.currency
                         ++ ")"
                         ++ changesText i18n data.changes
 
@@ -508,7 +508,7 @@ detailSummaryText i18n detail =
                 Transfer tData ->
                     T.activityTransferAdded i18n
                         ++ " ("
-                        ++ Format.formatCentsWithCurrency tData.amount tData.currency
+                        ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) tData.amount tData.currency
                         ++ ")"
 
                 Expense _ ->
@@ -522,7 +522,7 @@ detailSummaryText i18n detail =
                 Transfer tData ->
                     T.activityTransferModified i18n
                         ++ " ("
-                        ++ Format.formatCentsWithCurrency tData.amount tData.currency
+                        ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) tData.amount tData.currency
                         ++ ")"
                         ++ changesText i18n data.changes
 
@@ -757,9 +757,9 @@ entryDetailRows i18n groupCurrency resolveName entry =
             List.concat
                 [ [ detailRow (T.newEntryDescriptionLabel i18n) data.description
                   , detailRow (T.entryDetailDate i18n) (Date.toString data.date)
-                  , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency data.amount data.currency)
+                  , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount data.currency)
                   ]
-                , defaultCurrencyAmountRow groupCurrency data.defaultCurrencyAmount
+                , defaultCurrencyAmountRow i18n groupCurrency data.defaultCurrencyAmount
                 , [ detailRow (T.entryDetailPaidBy i18n) (payerNames resolveName data.payers)
                   , detailRow (T.entryDetailSplitAmong i18n) (beneficiaryNames resolveName data.beneficiaries)
                   ]
@@ -770,9 +770,9 @@ entryDetailRows i18n groupCurrency resolveName entry =
         Transfer data ->
             List.concat
                 [ [ detailRow (T.entryDetailDate i18n) (Date.toString data.date)
-                  , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency data.amount data.currency)
+                  , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount data.currency)
                   ]
-                , defaultCurrencyAmountRow groupCurrency data.defaultCurrencyAmount
+                , defaultCurrencyAmountRow i18n groupCurrency data.defaultCurrencyAmount
                 , [ detailRow (T.entryDetailFrom i18n) (resolveName data.from)
                   , detailRow (T.entryDetailTo i18n) (resolveName data.to)
                   ]
@@ -783,9 +783,9 @@ entryDetailRows i18n groupCurrency resolveName entry =
             List.concat
                 [ [ detailRow (T.newEntryDescriptionLabel i18n) data.description
                   , detailRow (T.entryDetailDate i18n) (Date.toString data.date)
-                  , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency data.amount data.currency)
+                  , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount data.currency)
                   ]
-                , defaultCurrencyAmountRow groupCurrency data.defaultCurrencyAmount
+                , defaultCurrencyAmountRow i18n groupCurrency data.defaultCurrencyAmount
                 , [ detailRow (T.entryDetailReceivedBy i18n) (resolveName data.receivedBy)
                   , detailRow (T.entryDetailSplitAmong i18n) (beneficiaryNames resolveName data.beneficiaries)
                   ]
@@ -793,15 +793,15 @@ entryDetailRows i18n groupCurrency resolveName entry =
                 ]
 
 
-defaultCurrencyAmountRow : Currency -> Maybe Int -> List (Ui.Element msg)
-defaultCurrencyAmountRow groupCurrency maybeAmount =
+defaultCurrencyAmountRow : I18n -> Currency -> Maybe Int -> List (Ui.Element msg)
+defaultCurrencyAmountRow i18n groupCurrency maybeAmount =
     case maybeAmount of
         Just amount ->
             [ Ui.el
                 [ Ui.Font.size Theme.font.sm
                 , Ui.Font.color Theme.base.textSubtle
                 ]
-                (Ui.text ("≈ " ++ Format.formatCentsWithCurrency amount groupCurrency))
+                (Ui.text ("≈ " ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) amount groupCurrency))
             ]
 
         Nothing ->
@@ -897,7 +897,7 @@ amountCurrencyDiffRows i18n groupCurrency old new =
 
         formatDefaultAmount : Int -> String
         formatDefaultAmount amt =
-            Format.formatCentsWithCurrency amt groupCurrency
+            Format.formatCentsWithCurrency (T.currentLanguage i18n) amt groupCurrency
 
         currencyRow : List (Ui.Element msg)
         currencyRow =
@@ -923,13 +923,13 @@ amountCurrencyDiffRows i18n groupCurrency old new =
 
                 newFormatted : String
                 newFormatted =
-                    Format.formatCentsWithCurrency new.newAmount new.newCurrency
+                    Format.formatCentsWithCurrency (T.currentLanguage i18n) new.newAmount new.newCurrency
             in
             if amountChanged || currencyChanged then
                 let
                     oldFormatted : String
                     oldFormatted =
-                        Format.formatCentsWithCurrency old.oldAmount old.oldCurrency
+                        Format.formatCentsWithCurrency (T.currentLanguage i18n) old.oldAmount old.oldCurrency
                 in
                 [ diffRow label oldFormatted newFormatted ]
 

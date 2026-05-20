@@ -321,7 +321,7 @@ view i18n config maybeUserRootId today (Model data) state =
     in
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         [ -- Summary row
-          summaryRow (List.length visibleEntries) totalAmount
+          summaryRow i18n (List.length visibleEntries) totalAmount
 
         -- New Entry button (hidden in read-only mode)
         , if maybeUserRootId /= Nothing then
@@ -363,13 +363,13 @@ view i18n config maybeUserRootId today (Model data) state =
 -- SUMMARY ROW
 
 
-summaryRow : Int -> Int -> Ui.Element msg
-summaryRow entryCount totalAmount =
+summaryRow : I18n -> Int -> Int -> Ui.Element msg
+summaryRow i18n entryCount totalAmount =
     Ui.el
         [ Ui.Font.size Theme.font.sm
         , Ui.Font.color Theme.base.textSubtle
         ]
-        (Ui.text (String.fromInt entryCount ++ " entries · " ++ Format.formatCents totalAmount ++ " total"))
+        (Ui.text (String.fromInt entryCount ++ " entries · " ++ Format.formatCents (T.currentLanguage i18n) totalAmount ++ " total"))
 
 
 
@@ -731,7 +731,7 @@ expenseCardHeader i18n resolveName data =
                 , Ui.Font.size Theme.font.md
                 , Ui.Font.letterSpacing Theme.letterSpacing.tight
                 ]
-                (Ui.text (Format.formatCentsWithCurrency data.amount data.currency))
+                (Ui.text (Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount data.currency))
             ]
 
         -- Meta row: date + category tag
@@ -781,7 +781,7 @@ transferCardHeader i18n resolveName data =
                 , Ui.Font.size Theme.font.md
                 , Ui.Font.letterSpacing Theme.letterSpacing.tight
                 ]
-                (Ui.text (Format.formatCentsWithCurrency data.amount data.currency))
+                (Ui.text (Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount data.currency))
             ]
 
         -- Meta row: date + transfer tag + flow from->to
@@ -827,7 +827,7 @@ incomeCardHeader i18n resolveName data =
                 , Ui.Font.letterSpacing Theme.letterSpacing.tight
                 , Ui.Font.color Theme.success.text
                 ]
-                (Ui.text ("+" ++ Format.formatCentsWithCurrency data.amount data.currency))
+                (Ui.text (Format.formatCentsSigned (T.currentLanguage i18n) data.amount data.currency))
             ]
 
         -- Meta row: date + income tag + receiver
@@ -1012,9 +1012,9 @@ expenseContent i18n resolveName data =
         (List.concat
             [ [ detailRow (T.newEntryDescriptionLabel i18n) data.description
               , detailRow (T.entryDetailDate i18n) (Date.toString data.date)
-              , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency data.amount data.currency)
+              , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount data.currency)
               ]
-            , defaultCurrencyAmountRow data.defaultCurrencyAmount
+            , defaultCurrencyAmountRow i18n data.defaultCurrencyAmount
             , [ detailRow (T.entryDetailPaidBy i18n) (payerNames resolveName data.payers)
               , beneficiariesSection i18n resolveName data.beneficiaries
               ]
@@ -1029,9 +1029,9 @@ transferContent i18n resolveName data =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         (List.concat
             [ [ detailRow (T.entryDetailDate i18n) (Date.toString data.date)
-              , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency data.amount data.currency)
+              , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount data.currency)
               ]
-            , defaultCurrencyAmountRow data.defaultCurrencyAmount
+            , defaultCurrencyAmountRow i18n data.defaultCurrencyAmount
             , [ detailRow (T.entryDetailFrom i18n) (resolveName data.from)
               , detailRow (T.entryDetailTo i18n) (resolveName data.to)
               ]
@@ -1046,9 +1046,9 @@ incomeContent i18n resolveName data =
         (List.concat
             [ [ detailRow (T.newEntryDescriptionLabel i18n) data.description
               , detailRow (T.entryDetailDate i18n) (Date.toString data.date)
-              , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency data.amount data.currency)
+              , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount data.currency)
               ]
-            , defaultCurrencyAmountRow data.defaultCurrencyAmount
+            , defaultCurrencyAmountRow i18n data.defaultCurrencyAmount
             , [ detailRow (T.entryDetailReceivedBy i18n) (resolveName data.receivedBy)
               , beneficiariesSection i18n resolveName data.beneficiaries
               ]
@@ -1057,15 +1057,15 @@ incomeContent i18n resolveName data =
         )
 
 
-defaultCurrencyAmountRow : Maybe Int -> List (Ui.Element msg)
-defaultCurrencyAmountRow maybeAmount =
+defaultCurrencyAmountRow : I18n -> Maybe Int -> List (Ui.Element msg)
+defaultCurrencyAmountRow i18n maybeAmount =
     case maybeAmount of
         Just amount ->
             [ Ui.el
                 [ Ui.Font.size Theme.font.sm
                 , Ui.Font.color Theme.base.textSubtle
                 ]
-                (Ui.text ("≈ " ++ Format.formatCents amount))
+                (Ui.text ("≈ " ++ Format.formatCents (T.currentLanguage i18n) amount))
             ]
 
         Nothing ->
@@ -1114,14 +1114,14 @@ beneficiariesSection i18n resolveName beneficiaries =
             ]
             (Ui.text (T.entryDetailSplitAmong i18n))
         , Ui.row [ Ui.spacing Theme.spacing.sm, Ui.wrap ]
-            (List.map (beneficiaryItem resolveName) beneficiaries
+            (List.map (beneficiaryItem i18n resolveName) beneficiaries
                 |> List.intersperse (Ui.text "·")
             )
         ]
 
 
-beneficiaryItem : (Member.Id -> String) -> Entry.Beneficiary -> Ui.Element msg
-beneficiaryItem resolveName beneficiary =
+beneficiaryItem : I18n -> (Member.Id -> String) -> Entry.Beneficiary -> Ui.Element msg
+beneficiaryItem i18n resolveName beneficiary =
     case beneficiary of
         Entry.ShareBeneficiary data ->
             Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.shrink ]
@@ -1145,7 +1145,7 @@ beneficiaryItem resolveName beneficiary =
                     , Ui.Font.color Theme.base.textSubtle
                     , Ui.alignBottom
                     ]
-                    (Ui.text (Format.formatCents data.amount))
+                    (Ui.text (Format.formatCents (T.currentLanguage i18n) data.amount))
                 ]
 
 
