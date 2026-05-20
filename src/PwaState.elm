@@ -26,18 +26,22 @@ import Ui
 type alias Model =
     { isOnline : Bool
     , updateAvailable : Bool
-    , installAvailable : Bool
+    , installHint : Pwa.InstallHint
+    , installHintDismissed : Bool
+    , justInstalled : Bool
     , notificationPermission : Maybe Pwa.NotificationPermission
     , pushSubscription : Maybe Json.Encode.Value
     , vapidKey : Maybe String
     }
 
 
-init : { isOnline : Bool } -> Model
+init : { isOnline : Bool, installHint : String } -> Model
 init flags =
     { isOnline = flags.isOnline
     , updateAvailable = False
-    , installAvailable = False
+    , installHint = Pwa.installHintFromString flags.installHint
+    , installHintDismissed = False
+    , justInstalled = False
     , notificationPermission = Nothing
     , pushSubscription = Nothing
     , vapidKey = Nothing
@@ -69,7 +73,8 @@ type Msg
     = GotPwaEvent (Result Json.Decode.Error Pwa.Event)
     | AcceptUpdate
     | RequestInstall
-    | DismissInstallBanner
+    | DismissInstallHint
+    | DismissJustInstalled
     | EnableNotifications
     | OnVapidKeyFetched (ConcurrentTask.Response PushServer.Error String)
 
@@ -101,10 +106,17 @@ viewBanners i18n model =
     UI.Components.pwaBanners i18n
         { isOnline = model.isOnline
         , updateAvailable = model.updateAvailable
-        , installAvailable = model.installAvailable
+        , installHint =
+            if model.installHintDismissed || model.justInstalled then
+                Pwa.NoInstallHint
+
+            else
+                model.installHint
+        , justInstalled = model.justInstalled
         , onUpdate = AcceptUpdate
         , onInstall = RequestInstall
-        , onDismissInstall = DismissInstallBanner
+        , onDismissInstall = DismissInstallHint
+        , onDismissJustInstalled = DismissJustInstalled
         }
 
 
@@ -121,10 +133,13 @@ update pwaOut msg model =
             ( model, Pwa.acceptUpdate pwaOut, [] )
 
         RequestInstall ->
-            ( { model | installAvailable = False }, Pwa.requestInstall pwaOut, [] )
+            ( model, Pwa.requestInstall pwaOut, [] )
 
-        DismissInstallBanner ->
-            ( { model | installAvailable = False }, Cmd.none, [] )
+        DismissInstallHint ->
+            ( { model | installHintDismissed = True }, Cmd.none, [] )
+
+        DismissJustInstalled ->
+            ( { model | justInstalled = False }, Cmd.none, [] )
 
         EnableNotifications ->
             case model.notificationPermission of
@@ -172,11 +187,20 @@ handleEvent pwaOut event model =
         Pwa.UpdateAvailable ->
             ( { model | updateAvailable = True }, Cmd.none, [] )
 
-        Pwa.InstallAvailable ->
-            ( { model | installAvailable = True }, Cmd.none, [] )
-
-        Pwa.Installed ->
-            ( { model | installAvailable = False }, Cmd.none, [] )
+        Pwa.InstallHintChanged newHint ->
+            let
+                justInstalled : Bool
+                justInstalled =
+                    newHint == Pwa.LaunchedAsInstalled && model.installHint /= Pwa.LaunchedAsInstalled
+            in
+            ( { model
+                | installHint = newHint
+                , installHintDismissed = model.installHintDismissed && newHint == model.installHint
+                , justInstalled = model.justInstalled || justInstalled
+              }
+            , Cmd.none
+            , []
+            )
 
         Pwa.NotificationPermissionChanged permission ->
             let
@@ -207,6 +231,3 @@ handleEvent pwaOut event model =
 
                 Err _ ->
                     ( model, Cmd.none, [] )
-
-        _ ->
-            ( model, Cmd.none, [] )

@@ -93,6 +93,7 @@ type alias Flags =
     , serverUrl : String
     , origin : String
     , isOnline : Bool
+    , installHint : String
     }
 
 
@@ -273,7 +274,7 @@ init flags =
       , origin = flags.origin
       , pbClient = Nothing
       , pendingServerCreations = Set.empty
-      , pwaState = PwaState.init { isOnline = flags.isOnline }
+      , pwaState = PwaState.init { isOnline = flags.isOnline, installHint = flags.installHint }
       , errorLog = ErrorLog.empty
       }
     , initCmds

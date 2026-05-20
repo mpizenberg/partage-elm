@@ -59,6 +59,7 @@ module UI.Components exposing
 
 import FeatherIcons
 import Json.Decode
+import Pwa
 import Svg
 import Svg.Attributes
 import Translations as T exposing (I18n, Language(..))
@@ -738,7 +739,19 @@ languageFlag lang =
 
 {-| PWA banners: offline indicator, update prompt, and install prompt.
 -}
-pwaBanners : I18n -> { isOnline : Bool, updateAvailable : Bool, installAvailable : Bool, onUpdate : msg, onInstall : msg, onDismissInstall : msg } -> Ui.Element msg
+pwaBanners :
+    I18n
+    ->
+        { isOnline : Bool
+        , updateAvailable : Bool
+        , installHint : Pwa.InstallHint
+        , justInstalled : Bool
+        , onUpdate : msg
+        , onInstall : msg
+        , onDismissInstall : msg
+        , onDismissJustInstalled : msg
+        }
+    -> Ui.Element msg
 pwaBanners i18n config =
     let
         showIf : Bool -> a -> Maybe a
@@ -751,7 +764,7 @@ pwaBanners i18n config =
 
         banners : List (Ui.Element msg)
         banners =
-            List.filterMap identity <|
+            List.filterMap identity
                 [ showIf (not config.isOnline) <|
                     pwaBanner (T.pwaOffline i18n)
                         { bgColor = Theme.warning.tint
@@ -766,13 +779,14 @@ pwaBanners i18n config =
                         , action = Just ( T.pwaUpdateButton i18n, config.onUpdate )
                         , dismiss = Nothing
                         }
-                , showIf config.installAvailable <|
-                    pwaBanner (T.pwaInstallPrompt i18n)
-                        { bgColor = Theme.warning.tint
-                        , textColor = Theme.warning.text
-                        , action = Just ( T.pwaInstallButton i18n, config.onInstall )
-                        , dismiss = Just config.onDismissInstall
+                , showIf config.justInstalled <|
+                    pwaBanner (T.pwaJustInstalled i18n)
+                        { bgColor = Theme.success.tint
+                        , textColor = Theme.success.text
+                        , action = Nothing
+                        , dismiss = Just config.onDismissJustInstalled
                         }
+                , installHintBanner i18n config
                 ]
     in
     if List.isEmpty banners then
@@ -780,6 +794,50 @@ pwaBanners i18n config =
 
     else
         Ui.column [ Ui.spacing Theme.spacing.md ] banners
+
+
+installHintBanner :
+    I18n
+    -> { c | installHint : Pwa.InstallHint, onInstall : msg, onDismissInstall : msg }
+    -> Maybe (Ui.Element msg)
+installHintBanner i18n config =
+    let
+        manual : String -> Ui.Element msg
+        manual message =
+            pwaBanner message
+                { bgColor = Theme.warning.tint
+                , textColor = Theme.warning.text
+                , action = Nothing
+                , dismiss = Just config.onDismissInstall
+                }
+    in
+    case config.installHint of
+        Pwa.InstallableNow ->
+            Just <|
+                pwaBanner (T.pwaInstallPrompt i18n)
+                    { bgColor = Theme.warning.tint
+                    , textColor = Theme.warning.text
+                    , action = Just ( T.pwaInstallButton i18n, config.onInstall )
+                    , dismiss = Just config.onDismissInstall
+                    }
+
+        Pwa.ManualIosSafari ->
+            Just (manual (T.pwaInstallHintIos i18n))
+
+        Pwa.ManualMacSafari ->
+            Just (manual (T.pwaInstallHintMac i18n))
+
+        Pwa.ManualAndroidMenu ->
+            Just (manual (T.pwaInstallHintAndroid i18n))
+
+        Pwa.AlreadyInstalledInBrowser ->
+            Just (manual (T.pwaAlreadyInstalled i18n))
+
+        Pwa.LaunchedAsInstalled ->
+            Nothing
+
+        Pwa.NoInstallHint ->
+            Nothing
 
 
 pwaBanner :
