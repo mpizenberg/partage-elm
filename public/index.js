@@ -2,7 +2,19 @@ import * as ConcurrentTask from "@andrewmacmurray/elm-concurrent-task";
 import { createTasks as createWebCryptoTasks } from "../vendor/elm-webcrypto/js/src/index.js";
 import { createTasks as createIndexedDbTasks } from "../vendor/elm-indexeddb/js/src/index.js";
 import { createTasks as createPocketBaseTasks } from "../vendor/elm-pocketbase/js/src/index.js";
-import { init as initPwa } from "../vendor/elm-pwa/js/src/index.js";
+import {
+  init as initPwa,
+  evaluateInstallHint,
+} from "../vendor/elm-pwa/js/src/index.js";
+
+// Keep these options identical to the ones passed to `initPwa` below so the
+// initial flag and the runtime `installHintChanged` events agree.
+var installHintOptions = {
+  // Manifest start_url adds `?source=pwa`, so only real PWA launches see it.
+  // Hardens against chrome-less in-app WebViews (Discord, Slack, ...) that
+  // can fake a standalone display mode.
+  requireStartUrlParam: "source",
+};
 
 // Copy-to-clipboard custom element
 class CopyButton extends HTMLElement {
@@ -79,6 +91,7 @@ var app = Elm.Main.init({
     serverUrl: __PB_URL__,
     origin: location.origin,
     isOnline: navigator.onLine,
+    installHint: evaluateInstallHint(installHintOptions),
   },
 });
 
@@ -343,4 +356,5 @@ initPwa({
     pwaIn: app.ports.pwaIn,
     pwaOut: app.ports.pwaOut,
   },
+  ...installHintOptions,
 });
