@@ -113,7 +113,7 @@ beneficiariesField i18n activeMembers data =
         [ headerRow
         , Shared.formHint (T.newEntryIncomeBeneficiariesHint i18n)
         , Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-            (List.map (beneficiaryRow data) activeMembers)
+            (List.map (beneficiaryRow i18n data) activeMembers)
         , Shared.errorWhen (data.submitted && Dict.isEmpty data.beneficiaries) (T.newEntryNoBeneficiaries i18n)
         , exactMismatchError
         ]
@@ -129,8 +129,8 @@ toggleSplitMode mode =
             ShareSplit
 
 
-beneficiaryRow : ModelData -> Member.ChainState -> Ui.Element Msg
-beneficiaryRow data member =
+beneficiaryRow : I18n -> ModelData -> Member.ChainState -> Ui.Element Msg
+beneficiaryRow i18n data member =
     let
         isSelected : Bool
         isSelected =
@@ -165,7 +165,7 @@ beneficiaryRow data member =
                             [ Ui.Font.size Theme.font.sm
                             , Ui.Font.color Theme.base.textSubtle
                             ]
-                            (Ui.text (Format.formatCentsWithCurrency cents data.currency))
+                            (Ui.text (Format.formatCentsWithCurrency (T.currentLanguage i18n) cents data.currency))
 
                     ExactSplit ->
                         Ui.none
