@@ -32,6 +32,7 @@ type GroupView
     | EditEntry Entry.Id
     | AddVirtualMember
     | EditMemberMetadata Member.Id
+    | MergeMember Member.Id (Maybe Member.Id)
     | EditGroupMetadata
 
 
@@ -89,6 +90,12 @@ fromAppUrl appUrl =
 
         [ "groups", groupId, "members", memberId, "edit" ] ->
             GroupRoute groupId (EditMemberMetadata memberId)
+
+        [ "groups", groupId, "members", sourceId, "merge" ] ->
+            GroupRoute groupId (MergeMember sourceId Nothing)
+
+        [ "groups", groupId, "members", sourceId, "merge", targetId ] ->
+            GroupRoute groupId (MergeMember sourceId (Just targetId))
 
         [ "groups", groupId, "settings" ] ->
             GroupRoute groupId EditGroupMetadata
@@ -168,6 +175,12 @@ toPathSegments route =
         GroupRoute groupId (EditMemberMetadata memberId) ->
             [ "groups", groupId, "members", memberId, "edit" ]
 
+        GroupRoute groupId (MergeMember sourceId Nothing) ->
+            [ "groups", groupId, "members", sourceId, "merge" ]
+
+        GroupRoute groupId (MergeMember sourceId (Just targetId)) ->
+            [ "groups", groupId, "members", sourceId, "merge", targetId ]
+
         GroupRoute groupId EditGroupMetadata ->
             [ "groups", groupId, "settings" ]
 
@@ -224,6 +237,12 @@ toPath route =
 
         GroupRoute groupId (EditMemberMetadata memberId) ->
             "/groups/" ++ groupId ++ "/members/" ++ memberId ++ "/edit"
+
+        GroupRoute groupId (MergeMember sourceId Nothing) ->
+            "/groups/" ++ groupId ++ "/members/" ++ sourceId ++ "/merge"
+
+        GroupRoute groupId (MergeMember sourceId (Just targetId)) ->
+            "/groups/" ++ groupId ++ "/members/" ++ sourceId ++ "/merge/" ++ targetId
 
         GroupRoute groupId EditGroupMetadata ->
             "/groups/" ++ groupId ++ "/settings"

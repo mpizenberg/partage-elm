@@ -4,6 +4,7 @@ module Page.Group exposing
     , Msg
     , Output(..)
     , PendingEntry
+    , PendingMerge
     , UpdateConfig
     , ViewConfig
     , ViewResult
@@ -37,12 +38,14 @@ import Domain.Event as Event
 import Domain.Group as Group
 import Domain.GroupState as GroupState
 import Domain.Member as Member
+import Domain.MemberMerge as Merge
 import Domain.Settlement as Settlement
 import ErrorLog
 import GroupOps exposing (LoadedGroup)
 import IndexedDb as Idb
 import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
 import Infra.EventVerification as EventVerification
+import Infra.IdGen as IdGen
 import Infra.Identity exposing (Identity)
 import Infra.PushServer as PushServer
 import Infra.Server as Server
@@ -56,6 +59,7 @@ import Page.Group.EditGroupMetadata
 import Page.Group.EditMemberMetadata
 import Page.Group.EntriesTab
 import Page.Group.MembersTab
+import Page.Group.MergeMember
 import Page.Group.NewEntry
 import Page.Group.NewEntry.Shared as NewEntryShared
 import Page.JoinGroup
@@ -146,6 +150,12 @@ type alias Model =
     -- Member pages
     , addMemberModel : Page.Group.AddMember.Model
     , editMemberMetadataModel : Page.Group.EditMemberMetadata.Model
+    , mergeMemberModel : Page.Group.MergeMember.Model
+
+    -- In-flight multi-event member merge: the source/target plus the set of
+    -- envelope ids we're waiting to land. The merge is complete when the set
+    -- drains. Reset to Nothing on success, on failure, or when no merge runs.
+    , pendingMerge : Maybe PendingMerge
 
     -- Entry pages
     , newEntryModel : Page.Group.NewEntry.Model
@@ -160,6 +170,13 @@ type PendingEntry
     = PendingTransfer Entry.TransferData
     | PendingExpense Entry.ExpenseData
     | PendingIncome Entry.IncomeData
+
+
+type alias PendingMerge =
+    { sourceRootId : Member.Id
+    , targetRootId : Member.Id
+    , pendingIds : Set Event.Id
+    }
 
 
 
@@ -191,6 +208,7 @@ type
       -- Member pages
     | AddMemberMsg Page.Group.AddMember.Msg
     | EditMemberMetadataMsg Page.Group.EditMemberMetadata.Msg
+    | MergeMemberMsg Page.Group.MergeMember.Msg
       -- Entry pages
     | NewEntryMsg NewEntryShared.Msg
       -- Group pages
@@ -254,6 +272,8 @@ init config =
     , membersTabModel = Page.Group.MembersTab.init
     , addMemberModel = Page.Group.AddMember.init
     , editMemberMetadataModel = Page.Group.EditMemberMetadata.init "" "" Member.emptyMetadata
+    , mergeMemberModel = Page.Group.MergeMember.init "" Nothing
+    , pendingMerge = Nothing
     , newEntryModel = Page.Group.NewEntry.init { currentUserRootId = "", activeMembersRootIds = [], today = { year = 2000, month = 1, day = 1 }, defaultCurrency = EUR }
     , pendingEntry = Nothing
     , editGroupMetadataModel = Page.Group.EditGroupMetadata.init GroupState.empty.groupMeta
@@ -502,6 +522,31 @@ update config msg model =
                 _ ->
                     ( modelWithPage, Cmd.none, [] )
 
+        -- Merge member
+        MergeMemberMsg subMsg ->
+            case model.loadedGroup of
+                Just loaded ->
+                    let
+                        ( modelWithPage, maybeOutput ) =
+                            Page.Group.MergeMember.update loaded.groupState subMsg model.mergeMemberModel
+                                |> Tuple.mapFirst (\subModel -> { model | mergeMemberModel = subModel })
+                    in
+                    case ( maybeOutput, config.route ) of
+                        ( Just (Page.Group.MergeMember.NavigateToStep1 sourceId), GroupRoute gid _ ) ->
+                            ( modelWithPage, Cmd.none, [ NavigateTo (GroupRoute gid (MergeMember sourceId Nothing)) ] )
+
+                        ( Just (Page.Group.MergeMember.NavigateToStep2 sourceId targetId), GroupRoute gid _ ) ->
+                            ( modelWithPage, Cmd.none, [ NavigateTo (GroupRoute gid (MergeMember sourceId (Just targetId))) ] )
+
+                        ( Just (Page.Group.MergeMember.CommitMerge mergeData), _ ) ->
+                            submitMerge config modelWithPage loaded mergeData
+
+                        _ ->
+                            ( modelWithPage, Cmd.none, [] )
+
+                Nothing ->
+                    ( model, Cmd.none, [] )
+
         -- New entry / edit entry
         NewEntryMsg subMsg ->
             let
@@ -645,28 +690,47 @@ update config msg model =
         OnMemberActionSaved groupId (ConcurrentTask.Success envelope) ->
             case applyAndSync config groupId envelope model of
                 Just ( syncModel, syncCmd, timeOutputs ) ->
-                    case config.route of
-                        GroupRoute gid AddVirtualMember ->
-                            ( { syncModel | addMemberModel = Page.Group.AddMember.init }
+                    let
+                        ( afterMergeModel, mergeStatus, mergeOutputs ) =
+                            handleMergeCompletion config envelope syncModel
+                    in
+                    case ( mergeStatus, config.route ) of
+                        ( _, GroupRoute gid AddVirtualMember ) ->
+                            ( { afterMergeModel | addMemberModel = Page.Group.AddMember.init }
                             , syncCmd
-                            , NavigateTo (GroupRoute gid (Tab MembersTab)) :: timeOutputs
+                            , NavigateTo (GroupRoute gid (Tab MembersTab)) :: mergeOutputs ++ timeOutputs
                             )
 
-                        GroupRoute gid (EditMemberMetadata _) ->
-                            ( syncModel, syncCmd, NavigateTo (GroupRoute gid (Tab MembersTab)) :: timeOutputs )
+                        ( _, GroupRoute gid (EditMemberMetadata _) ) ->
+                            ( afterMergeModel
+                            , syncCmd
+                            , NavigateTo (GroupRoute gid (Tab MembersTab)) :: mergeOutputs ++ timeOutputs
+                            )
 
-                        _ ->
+                        ( NotMergeEvent, _ ) ->
                             let
                                 ( initModel, initCmd ) =
-                                    initPagesIfNeeded config (routeToGroupView config.route) syncModel
+                                    initPagesIfNeeded config (routeToGroupView config.route) afterMergeModel
                             in
                             ( initModel, Cmd.batch [ syncCmd, initCmd ], timeOutputs )
+
+                        _ ->
+                            -- Merge event still pending or just completed: don't re-init
+                            -- pages (would wipe the merge form mid-flight).
+                            ( afterMergeModel, syncCmd, mergeOutputs ++ timeOutputs )
 
                 Nothing ->
                     ( model, Cmd.none, [] )
 
         OnMemberActionSaved _ _ ->
-            ( model, Cmd.none, [ ShowToast Toast.Error (T.toastMemberActionError config.i18n), LogError ErrorLog.StorageSource ErrorLog.Err "Failed to update member" ] )
+            -- We can't tell from a failure whether the failed envelope belonged
+            -- to an in-flight merge, so clear pendingMerge defensively. This
+            -- means a partially-failed merge will not fire the success toast
+            -- even if the remaining events succeed.
+            ( { model | pendingMerge = Nothing }
+            , Cmd.none
+            , [ ShowToast Toast.Error (T.toastMemberActionError config.i18n), LogError ErrorLog.StorageSource ErrorLog.Err "Failed to update member" ]
+            )
 
         OnGroupMetadataActionSaved groupId (ConcurrentTask.Success envelope) ->
             case appendEventAndRecompute model groupId envelope of
@@ -941,6 +1005,160 @@ submitMemberMetadata config model loaded output =
             )
 
 
+{-| Result of looking up an incoming envelope against the in-flight merge.
+-}
+type MergeStatus
+    = NotMergeEvent
+    | MergeStillPending
+    | MergeCompleted
+
+
+{-| Inspect an incoming envelope against the in-flight merge (if any).
+If the envelope's id is in the pending set, it's removed; when the set drains
+the merge is reported as completed, the model is cleared, and the success
+toast + (if still on the merge route) navigation outputs are emitted.
+-}
+handleMergeCompletion : UpdateConfig -> Event.Envelope -> Model -> ( Model, MergeStatus, List Output )
+handleMergeCompletion config envelope model =
+    case model.pendingMerge of
+        Just pm ->
+            if Set.member envelope.id pm.pendingIds then
+                let
+                    remainingIds : Set Event.Id
+                    remainingIds =
+                        Set.remove envelope.id pm.pendingIds
+                in
+                if Set.isEmpty remainingIds then
+                    ( { model | pendingMerge = Nothing }
+                    , MergeCompleted
+                    , mergeSuccessOutputs config model pm
+                    )
+
+                else
+                    ( { model | pendingMerge = Just { pm | pendingIds = remainingIds } }
+                    , MergeStillPending
+                    , []
+                    )
+
+            else
+                ( model, NotMergeEvent, [] )
+
+        Nothing ->
+            ( model, NotMergeEvent, [] )
+
+
+mergeSuccessOutputs : UpdateConfig -> Model -> PendingMerge -> List Output
+mergeSuccessOutputs config model pm =
+    let
+        nameFor : Member.Id -> String
+        nameFor mid =
+            case model.loadedGroup of
+                Just lg ->
+                    GroupState.resolveMemberName lg.groupState mid
+
+                Nothing ->
+                    mid
+
+        toast : Output
+        toast =
+            ShowToast Toast.Success
+                (T.toastMergeSuccess
+                    { source = nameFor pm.sourceRootId, target = nameFor pm.targetRootId }
+                    config.i18n
+                )
+
+        navOutputs : List Output
+        navOutputs =
+            case config.route of
+                GroupRoute gid (MergeMember _ _) ->
+                    [ NavigateTo (GroupRoute gid (Tab MembersTab)) ]
+
+                _ ->
+                    []
+    in
+    toast :: navOutputs
+
+
+{-| Submit a member merge as a sequence of events. Each action in the plan is
+mapped to one Event.Payload, submitted as a separate ConcurrentTask, and its
+freshly generated envelope id is collected. The full set of pending ids is
+stashed in `model.pendingMerge` so the completion handler can detect when
+every write has landed and only then fire the success toast.
+-}
+submitMerge :
+    UpdateConfig
+    -> Model
+    -> LoadedGroup
+    -> { sourceRootId : Member.Id, targetRootId : Member.Id, plan : Merge.Plan }
+    -> ( Model, Cmd Msg, List Output )
+submitMerge config model loaded mergeData =
+    let
+        onSaved : ConcurrentTask.Response Idb.Error Event.Envelope -> Msg
+        onSaved =
+            OnMemberActionSaved loaded.summary.id
+
+        submitOne :
+            (GroupOps.Context Msg -> ( GroupOps.State Msg, Cmd Msg, Event.Id ))
+            -> ( Model, List (Cmd Msg), Set Event.Id )
+            -> ( Model, List (Cmd Msg), Set Event.Id )
+        submitOne makeEvent ( mdl, accCmds, accIds ) =
+            let
+                ( state, cmd, eventId ) =
+                    makeEvent (submitContext onSaved config mdl)
+            in
+            ( { mdl
+                | runner = state.runner
+                , randomSeed = state.randomSeed
+                , uuidState = state.uuidState
+              }
+            , cmd :: accCmds
+            , Set.insert eventId accIds
+            )
+
+        runAction : Merge.Action -> ( Model, List (Cmd Msg), Set Event.Id ) -> ( Model, List (Cmd Msg), Set Event.Id )
+        runAction action acc =
+            case action of
+                Merge.ModifyEntry { original, rewritten } ->
+                    submitOne (\ctx -> submitModifyEntry ctx loaded original rewritten) acc
+
+                Merge.DeleteSelfTransfer { original } ->
+                    submitOne (\ctx -> GroupOps.eventWithId ctx loaded (Event.EntryDeleted { rootId = original.meta.rootId })) acc
+
+                Merge.UpdateSettlementPref pref ->
+                    submitOne (\ctx -> GroupOps.eventWithId ctx loaded (Event.SettlementPreferencesUpdated pref)) acc
+
+                Merge.RetireSource ->
+                    submitOne (\ctx -> GroupOps.eventWithId ctx loaded (Event.MemberRetired { rootId = mergeData.sourceRootId })) acc
+
+        ( finalModel, cmds, ids ) =
+            List.foldl runAction ( model, [], Set.empty ) mergeData.plan
+    in
+    ( { finalModel
+        | pendingMerge =
+            Just
+                { sourceRootId = mergeData.sourceRootId
+                , targetRootId = mergeData.targetRootId
+                , pendingIds = ids
+                }
+      }
+    , Cmd.batch cmds
+    , []
+    )
+
+
+submitModifyEntry : GroupOps.Context Msg -> LoadedGroup -> Entry.Entry -> Entry.Entry -> ( GroupOps.State Msg, Cmd Msg, Event.Id )
+submitModifyEntry ctx loaded original rewritten =
+    let
+        ( newEntryId, seedAfter ) =
+            IdGen.v4 ctx.randomSeed
+
+        modifiedEntry : Entry.Entry
+        modifiedEntry =
+            Entry.replace original.meta newEntryId rewritten.kind
+    in
+    GroupOps.eventWithId { ctx | randomSeed = seedAfter } loaded (Event.EntryModified modifiedEntry)
+
+
 handleEntriesTabOutput : UpdateConfig -> Model -> Page.Group.EntriesTab.Output -> ( Model, Cmd Msg, List Output )
 handleEntriesTabOutput config model output =
     case output of
@@ -1008,6 +1226,14 @@ handleMembersTabOutput config model output =
                     case config.route of
                         GroupRoute groupId _ ->
                             ( model, Cmd.none, [ NavigateTo (GroupRoute groupId (EditMemberMetadata memberId)) ] )
+
+                        _ ->
+                            ( model, Cmd.none, [] )
+
+                Page.Group.MembersTab.MergeOutput memberId ->
+                    case config.route of
+                        GroupRoute groupId _ ->
+                            ( model, Cmd.none, [ NavigateTo (GroupRoute groupId (MergeMember memberId Nothing)) ] )
 
                         _ ->
                             ( model, Cmd.none, [] )
@@ -1275,6 +1501,9 @@ initPagesIfNeeded config groupView model =
                         Nothing ->
                             ( model, Cmd.none )
 
+                ( MergeMember sourceId maybeTargetId, Just _ ) ->
+                    ( { model | mergeMemberModel = Page.Group.MergeMember.init sourceId maybeTargetId }, Cmd.none )
+
                 ( EditGroupMetadata, Just _ ) ->
                     ( { model | editGroupMetadataModel = Page.Group.EditGroupMetadata.init loaded.groupState.groupMeta }, Cmd.none )
 
@@ -1433,6 +1662,14 @@ viewGroupPage config groupView loaded model =
                         (config.toMsg << EditMemberMetadataMsg)
                         (GroupState.activeMembers loaded.groupState |> List.map .name)
                         model.editMemberMetadataModel
+
+        ( MergeMember _ _, Just _ ) ->
+            noOverlay <|
+                pageShell config (T.mergePageTitle config.i18n) <|
+                    Page.Group.MergeMember.view config.i18n
+                        (config.toMsg << MergeMemberMsg)
+                        loaded.groupState
+                        model.mergeMemberModel
 
         ( EditGroupMetadata, Just _ ) ->
             noOverlay <|
