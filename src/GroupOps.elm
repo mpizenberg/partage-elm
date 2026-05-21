@@ -10,6 +10,7 @@ module GroupOps exposing
     , deleteEntry
     , editEntry
     , event
+    , eventWithId
     , initLoadedGroup
     , newEntry
     , newGroup
@@ -333,6 +334,24 @@ simpleEvent ctx loaded payload =
 event : Context msg -> LoadedGroup -> Event.Payload -> ( State msg, Cmd msg )
 event =
     simpleEvent
+
+
+{-| Same as `event`, but also returns the freshly generated envelope id.
+Useful when the caller needs to track completion of one or more submitted
+events (e.g. a multi-event merge).
+-}
+eventWithId : Context msg -> LoadedGroup -> Event.Payload -> ( State msg, Cmd msg, Event.Id )
+eventWithId ctx loaded payload =
+    let
+        ( eventId, uuidStateAfter ) =
+            IdGen.v7 ctx.currentTime ctx.uuidState
+
+        ( state, cmd ) =
+            attempt { ctx | uuidState = uuidStateAfter }
+                (\now -> Event.wrap eventId now ctx.identity.publicKeyHash payload "")
+                loaded.summary.id
+    in
+    ( state, cmd, eventId )
 
 
 

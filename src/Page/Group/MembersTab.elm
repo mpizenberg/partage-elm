@@ -41,6 +41,7 @@ type Output
     = RetireOutput Member.Id
     | UnretireOutput Member.Id
     | EditMetadataOutput Member.Id
+    | MergeOutput Member.Id
 
 
 type Msg
@@ -50,6 +51,7 @@ type Msg
     | Retire Member.Id
     | Unretire Member.Id
     | EditMetadata Member.Id
+    | Merge Member.Id
 
 
 update : Msg -> Model -> ( Model, Maybe Output )
@@ -81,6 +83,9 @@ update msg model =
 
         EditMetadata memberId ->
             ( model, Just (EditMetadataOutput memberId) )
+
+        Merge memberId ->
+            ( model, Just (MergeOutput memberId) )
 
 
 {-| Callback messages for member interactions on this tab.
@@ -699,6 +704,18 @@ memberDetail i18n toMsg isCurrentUser maybeUserRootId member =
             else
                 Ui.none
 
+        mergeButton : Ui.Element msg
+        mergeButton =
+            if isMember then
+                UI.Components.btnOutline []
+                    { label = T.memberMergeButton i18n
+                    , icon = Just (UI.Components.featherIcon 16 FeatherIcons.gitMerge)
+                    , onPress = toMsg (Merge member.rootId)
+                    }
+
+            else
+                Ui.none
+
         notesSection : String -> Ui.Element msg
         notesSection notes =
             Ui.column []
@@ -792,6 +809,7 @@ memberDetail i18n toMsg isCurrentUser maybeUserRootId member =
 
           else
             Ui.none
+        , mergeButton
         , retireButton
         ]
 
