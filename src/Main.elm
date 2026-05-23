@@ -161,6 +161,7 @@ type Msg
     | AboutMsg Page.About.Msg
     | OnStorageCheckComplete (ConcurrentTask.Response Never ( Maybe UsageStats, UsageStats.StorageEstimate ))
     | OnAboutStatsReset (ConcurrentTask.Response Idb.Error ())
+    | OnSelfProfileSaved (ConcurrentTask.Response Idb.Error ())
     | ScheduleStorageCheck
       -- Toast notifications
     | ClipboardCopied
@@ -400,7 +401,7 @@ processGroupOutputs model groupCmd outputs =
                                     let
                                         ( runner, saveCmd ) =
                                             ( m.runner, Cmd.none )
-                                                |> Runner.andRun (\_ -> NoOp)
+                                                |> Runner.andRun OnSelfProfileSaved
                                                     (Storage.saveSelfProfile readyData.db meta)
                                     in
                                     ( { m
@@ -1096,6 +1097,12 @@ update msg model =
 
         OnAboutStatsReset _ ->
             ( logError ErrorLog.StorageSource ErrorLog.Err "Unexpected error resetting usage stats" model, Cmd.none )
+
+        OnSelfProfileSaved (ConcurrentTask.Success ()) ->
+            ( model, Cmd.none )
+
+        OnSelfProfileSaved _ ->
+            ( logError ErrorLog.StorageSource ErrorLog.Err "Unexpected error saving self profile" model, Cmd.none )
 
         ScheduleStorageCheck ->
             case model.appState of

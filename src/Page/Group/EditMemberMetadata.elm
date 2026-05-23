@@ -344,7 +344,7 @@ defaultFillSelections form =
     let
         isEmpty : (MetadataForm.Accessors -> Form.Accessor MetadataForm.State (Field.Field (Maybe String))) -> Bool
         isEmpty accessor =
-            Form.get accessor form |> Field.toRawString |> String.isEmpty
+            Form.get accessor form |> Field.toRawString |> String.trim |> String.isEmpty
     in
     { phone = isEmpty .phone
     , email = isEmpty .email
@@ -367,7 +367,7 @@ defaultSaveSelections form =
     let
         nonEmpty : (MetadataForm.Accessors -> Form.Accessor MetadataForm.State (Field.Field (Maybe String))) -> Bool
         nonEmpty accessor =
-            Form.get accessor form |> Field.toRawString |> String.isEmpty |> not
+            Form.get accessor form |> Field.toRawString |> String.trim |> String.isEmpty |> not
     in
     { phone = nonEmpty .phone
     , email = nonEmpty .email
@@ -699,7 +699,7 @@ viewProfileButtons i18n profile =
             else
                 UI.Components.btnOutline []
                     { label = T.editMetadataProfileFillBtn i18n
-                    , icon = Just (FeatherIcons.download |> FeatherIcons.withSize 16 |> FeatherIcons.toHtml [] |> Ui.html)
+                    , icon = Just (FeatherIcons.upload |> FeatherIcons.withSize 16 |> FeatherIcons.toHtml [] |> Ui.html)
                     , onPress = OpenFillPanel
                     }
     in
@@ -707,7 +707,7 @@ viewProfileButtons i18n profile =
         [ fillBtn
         , UI.Components.btnOutline []
             { label = T.editMetadataProfileSaveBtn i18n
-            , icon = Just (FeatherIcons.upload |> FeatherIcons.withSize 16 |> FeatherIcons.toHtml [] |> Ui.html)
+            , icon = Just (FeatherIcons.download |> FeatherIcons.withSize 16 |> FeatherIcons.toHtml [] |> Ui.html)
             , onPress = OpenSavePanel
             }
         ]
@@ -759,7 +759,7 @@ viewSavePanel i18n form sel =
                         let
                             value : String
                             value =
-                                formValue field form
+                                formValue field form |> String.trim
                         in
                         if String.isEmpty value then
                             Nothing
@@ -831,19 +831,26 @@ panelShell i18n cfg =
 
 fieldRow : I18n -> ProfileField -> String -> Bool -> Ui.Element Msg
 fieldRow i18n field value selected =
-    Ui.row
-        [ Ui.spacing Theme.spacing.sm
-        , Ui.width Ui.fill
-        , Ui.Input.button (ToggleField field)
-        , Ui.pointer
-        ]
-        [ checkboxBox selected
-        , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-            [ Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.weight Theme.fontWeight.bold ]
-                (Ui.text (fieldLabel i18n field))
-            , Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
-                (Ui.text value)
-            ]
+    let
+        label =
+            Ui.Input.label ("edit-meta-profile-" ++ fieldDomId field)
+                [ Ui.width Ui.fill ]
+                (Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+                    [ Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.weight Theme.fontWeight.bold ]
+                        (Ui.text (fieldLabel i18n field))
+                    , Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
+                        (Ui.text value)
+                    ]
+                )
+    in
+    Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+        [ Ui.Input.checkbox []
+            { onChange = \_ -> ToggleField field
+            , icon = Just checkboxBox
+            , checked = selected
+            , label = label.id
+            }
+        , label.element
         ]
 
 
@@ -869,6 +876,43 @@ checkboxBox selected =
         , Ui.borderColor Theme.base.accentStrong
         ]
         content
+
+
+fieldDomId : ProfileField -> String
+fieldDomId field =
+    case field of
+        PhoneField ->
+            "phone"
+
+        EmailField ->
+            "email"
+
+        NotesField ->
+            "notes"
+
+        IbanField ->
+            "iban"
+
+        WeroField ->
+            "wero"
+
+        LydiaField ->
+            "lydia"
+
+        RevolutField ->
+            "revolut"
+
+        PaypalField ->
+            "paypal"
+
+        VenmoField ->
+            "venmo"
+
+        BtcField ->
+            "btc"
+
+        AdaField ->
+            "ada"
 
 
 fieldLabel : I18n -> ProfileField -> String
