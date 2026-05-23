@@ -465,6 +465,37 @@ avatar color initials =
         (Ui.text initials)
 
 
+{-| Circular avatar containing a Feather icon (same shape and palette as `avatar`).
+-}
+avatarIcon : AvatarColor -> FeatherIcons.Icon -> Ui.Element msg
+avatarIcon color icon =
+    let
+        ( bgColor, strokeColor ) =
+            case color of
+                AvatarAccent ->
+                    ( Theme.primary.tint, Theme.primary.accent )
+
+                AvatarNeutral ->
+                    ( Theme.base.tint, Theme.base.textSubtle )
+
+                AvatarNeutralInversed ->
+                    ( Theme.base.bgSubtle, Theme.base.textSubtle )
+
+                AvatarRed ->
+                    ( Theme.danger.tint, Theme.danger.accent )
+    in
+    Ui.el
+        [ Ui.width (Ui.px Theme.sizing.lg)
+        , Ui.height (Ui.px Theme.sizing.lg)
+        , Ui.rounded Theme.radius.xxxl
+        , Ui.background bgColor
+        , Ui.Font.color strokeColor
+        , Ui.contentCenterX
+        , Ui.contentCenterY
+        ]
+        (featherIcon 20 icon)
+
+
 
 -- EXPAND TRIGGER
 
@@ -515,6 +546,14 @@ toggleMemberBtn config =
 
             else
                 ( Theme.base.solid, Theme.base.bg, AvatarNeutral )
+
+        avatarContent : Ui.Element msg
+        avatarContent =
+            if config.selected then
+                avatarIcon avatarColor FeatherIcons.check
+
+            else
+                avatar avatarColor config.initials
     in
     Ui.row
         [ Ui.Input.button config.onPress
@@ -530,7 +569,7 @@ toggleMemberBtn config =
             , Anim.backgroundColor backgroundColor
             ]
         ]
-        [ avatar avatarColor config.initials
+        [ avatarContent
         , Ui.el [ Ui.Font.weight Theme.fontWeight.medium ]
             (Ui.text config.name)
         ]
