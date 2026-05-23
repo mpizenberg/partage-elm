@@ -328,7 +328,7 @@ settlementSection i18n config maybeUserRootId selectedSettlement state =
     let
         transactions : List Settlement.Transaction
         transactions =
-            StableSettlement.stablePlan state.anchorBalances state.anchorPrefs state.balances
+            StableSettlement.stablePlan state.anchorBalances state.settlementPreferences state.balances
     in
     if List.isEmpty transactions then
         Ui.none

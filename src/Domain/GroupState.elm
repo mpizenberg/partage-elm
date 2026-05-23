@@ -30,12 +30,12 @@ import Time
 {-| The full state of a group, computed by replaying events.
 
 The `anchor*` fields support `Domain.StableSettlement`: they hold the entries
-and preferences as of the most recent **anchor-mover** event (anything other
-than a Transfer). The displayed settlement plan is
-derived from `anchorBalances` + `anchorPrefs`, then perturbed by the per-member
-delta `balances − anchorBalances` (the cumulative effect of post-anchor
-transfers). Snapshotting at anchor-movers — and _not_ at transfer events —
-is what keeps the plan visually stable between expense edits.
+as of the most recent **anchor-mover** event (anything other than a Transfer).
+The displayed settlement plan is derived from `anchorBalances` +
+`settlementPreferences`, then perturbed by the per-member delta
+`balances − anchorBalances` (the cumulative effect of post-anchor transfers).
+Snapshotting at anchor-movers — and _not_ at transfer events — is what keeps
+the plan visually stable between expense edits.
 
 -}
 type alias GroupState =
@@ -49,7 +49,6 @@ type alias GroupState =
     , settlementPreferences : List Settlement.Preference
     , anchorEntries : Dict Entry.Id EntryState
     , anchorBalances : Dict Member.Id MemberBalance
-    , anchorPrefs : List Settlement.Preference
     }
 
 
@@ -112,7 +111,6 @@ empty =
     , settlementPreferences = []
     , anchorEntries = Dict.empty
     , anchorBalances = Dict.empty
-    , anchorPrefs = []
     }
 
 
@@ -199,10 +197,7 @@ applyEvent envelope state =
             withSnapshot : GroupState
             withSnapshot =
                 if anchored then
-                    { newState
-                        | anchorEntries = newState.entries
-                        , anchorPrefs = newState.settlementPreferences
-                    }
+                    { newState | anchorEntries = newState.entries }
 
                 else
                     newState

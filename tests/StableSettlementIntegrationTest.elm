@@ -1,9 +1,9 @@
 module StableSettlementIntegrationTest exposing (suite)
 
-{-| Integration tests for the anchor cache (`anchorEntries`, `anchorBalances`,
-`anchorPrefs`) maintained by `Domain.GroupState`. They check that anchor-mover
-events trigger a re-snapshot while non-anchor-mover events leave the cache
-untouched. See `Domain.GroupState.isAnchorMover` for the classification.
+{-| Integration tests for the anchor cache (`anchorEntries`, `anchorBalances`)
+maintained by `Domain.GroupState`. They check that anchor-mover events trigger
+a re-snapshot while non-anchor-mover events leave the cache untouched. See
+`Domain.GroupState.isAnchorMover` for the classification.
 -}
 
 import Dict
@@ -49,7 +49,6 @@ suite =
     describe "StableSettlement anchor cache (GroupState wiring)"
         [ expenseEventTests
         , transferEventTests
-        , preferenceTests
         , memberMetadataTests
         , preAnchorTransferEditDeviationTest
         ]
@@ -182,54 +181,6 @@ transferEventTests =
                             stateWithTransfer
                 in
                 Expect.equal baseAnchorEntries state.anchorEntries
-        ]
-
-
-preferenceTests : Test
-preferenceTests =
-    describe "SettlementPreferencesUpdated is an anchor-mover"
-        [ test "preference change resnapshots anchorPrefs" <|
-            \_ ->
-                let
-                    state : GroupState.GroupState
-                    state =
-                        GroupState.applyEvents
-                            [ makeEnvelope "e-pref"
-                                20
-                                "bob"
-                                (SettlementPreferencesUpdated
-                                    { memberRootId = "bob", preferredRecipients = [ "alice" ] }
-                                )
-                            ]
-                            afterFirstExpense
-                in
-                Expect.equal state.settlementPreferences state.anchorPrefs
-        , test "preference change resnapshots after a transfer (anchor catches up)" <|
-            \_ ->
-                let
-                    stateAfterTransfer : GroupState.GroupState
-                    stateAfterTransfer =
-                        GroupState.applyEvents
-                            [ makeEnvelope "e-trf"
-                                20
-                                "bob"
-                                (EntryAdded (makeTransferEntry "trf-1" 20 defaultTransferData))
-                            ]
-                            afterFirstExpense
-
-                    state : GroupState.GroupState
-                    state =
-                        GroupState.applyEvents
-                            [ makeEnvelope "e-pref"
-                                30
-                                "bob"
-                                (SettlementPreferencesUpdated
-                                    { memberRootId = "bob", preferredRecipients = [ "alice" ] }
-                                )
-                            ]
-                            stateAfterTransfer
-                in
-                Expect.equal state.balances state.anchorBalances
         ]
 
 

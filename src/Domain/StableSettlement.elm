@@ -37,7 +37,7 @@ stablePlan :
     -> List Settlement.Preference
     -> Dict Member.Id MemberBalance
     -> List Settlement.Transaction
-stablePlan anchorBalances anchorPrefs currentBalances =
+stablePlan anchorBalances preferences currentBalances =
     let
         delta : Dict Member.Id Int
         delta =
@@ -45,7 +45,7 @@ stablePlan anchorBalances anchorPrefs currentBalances =
 
         anchorPlan : List Settlement.Transaction
         anchorPlan =
-            Settlement.computeSettlement anchorBalances anchorPrefs
+            Settlement.computeSettlement anchorBalances preferences
     in
     applyVectorUpdate anchorPlan delta
 
