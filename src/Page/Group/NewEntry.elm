@@ -734,20 +734,24 @@ submitIncome data =
 view : I18n -> List Member.ChainState -> (Shared.Msg -> msg) -> Model -> Ui.Element msg
 view i18n activeMembers toMsg (Model data) =
     let
+        sortedMembers : List Member.ChainState
+        sortedMembers =
+            List.sortBy (\m -> String.toLower m.name) activeMembers
+
         content : Ui.Element Msg
         content =
             case data.kind of
                 ExpenseKind ->
                     Ui.column [ Ui.spacing Theme.spacing.lg ] <|
-                        ExpenseView.expenseFields i18n activeMembers data
+                        ExpenseView.expenseFields i18n sortedMembers data
 
                 TransferKind ->
                     Ui.column [ Ui.spacing Theme.spacing.lg ] <|
-                        TransferView.transferFields i18n activeMembers data
+                        TransferView.transferFields i18n sortedMembers data
 
                 IncomeKind ->
                     Ui.column [ Ui.spacing Theme.spacing.lg ] <|
-                        IncomeView.incomeFields i18n activeMembers data
+                        IncomeView.incomeFields i18n sortedMembers data
 
         ( entryKindTabs, confirmButton ) =
             if data.isEditing then
