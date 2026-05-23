@@ -149,6 +149,8 @@
   "newEntryNoReceiverError": "Please select a receiver.",
   "newEntryIncomeBeneficiariesHint": "Select the members who should receive a share of this income.",
   "loadingGroup": "Loading group...",
+  "missingGroupTitle": "Group not on this device",
+  "missingGroupMessage": "You don't have this group locally. Open an invitation link (with its key after the #) to join it.",
   "entryDetailCopyLink": "Copy link",
   "entryDetailDuplicateButton": "Duplicate",
   "entryDetailEditButton": "Edit",
