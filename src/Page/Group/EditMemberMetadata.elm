@@ -832,6 +832,7 @@ panelShell i18n cfg =
 fieldRow : I18n -> ProfileField -> String -> Bool -> Ui.Element Msg
 fieldRow i18n field value selected =
     let
+        label : { element : Ui.Element Msg, id : Ui.Input.Label }
         label =
             Ui.Input.label ("edit-meta-profile-" ++ fieldDomId field)
                 [ Ui.width Ui.fill ]
