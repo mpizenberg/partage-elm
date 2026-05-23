@@ -260,6 +260,7 @@
   "settlementNoPaymentMethods": "{name} n'a pas de méthode de paiement configurée",
   "settlementRecordTransfer": "Enregistrer ce transfert",
   "homeExportGroup": "Exporter",
+  "homeExportGroupCsv": "CSV",
   "homeImportGroup": "Importer",
   "homeImportHint": "Importe un groupe précédemment exporté depuis Partage. Tricount ne permet pas d’exporter ses groupes (sauf par email avec une demande RGPD), et Splitwise n’est pas encore pris en charge.",
   "homeImportConfirm": "Choisir un fichier",

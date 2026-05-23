@@ -11,6 +11,7 @@ module Domain.Entry exposing
     , TransferData
     , beneficiaryDecoder
     , categoryDecoder
+    , categoryToString
     , encodeBeneficiary
     , encodeCategory
     , encodeEntry
@@ -187,35 +188,40 @@ andMap =
 -}
 encodeCategory : Category -> Encode.Value
 encodeCategory category =
-    Encode.string
-        (case category of
-            Food ->
-                "food"
+    Encode.string (categoryToString category)
 
-            Transport ->
-                "transport"
 
-            Accommodation ->
-                "accommodation"
+{-| String tag for a Category. Stable wire format shared with JSON encoding.
+-}
+categoryToString : Category -> String
+categoryToString category =
+    case category of
+        Food ->
+            "food"
 
-            Entertainment ->
-                "entertainment"
+        Transport ->
+            "transport"
 
-            Shopping ->
-                "shopping"
+        Accommodation ->
+            "accommodation"
 
-            Groceries ->
-                "groceries"
+        Entertainment ->
+            "entertainment"
 
-            Utilities ->
-                "utilities"
+        Shopping ->
+            "shopping"
 
-            Healthcare ->
-                "healthcare"
+        Groceries ->
+            "groceries"
 
-            Other ->
-                "other"
-        )
+        Utilities ->
+            "utilities"
+
+        Healthcare ->
+            "healthcare"
+
+        Other ->
+            "other"
 
 
 {-| Decode a Category from a JSON string.

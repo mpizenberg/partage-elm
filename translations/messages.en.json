@@ -260,6 +260,7 @@
   "settlementNoPaymentMethods": "{name} has no payment methods configured",
   "settlementRecordTransfer": "Record this transfer",
   "homeExportGroup": "Export",
+  "homeExportGroupCsv": "CSV",
   "homeImportGroup": "Import",
   "homeImportHint": "Imports a group previously exported from Partage. Files from other apps like Splitwise are not supported yet.",
   "homeImportConfirm": "Choose file",
