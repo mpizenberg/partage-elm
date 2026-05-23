@@ -36,7 +36,7 @@ import Page.JoinGroup
 import Page.Loading
 import Page.NewGroup
 import Page.NotFound
-import Page.Setup
+import Page.Welcome
 import PocketBase
 import Process
 import PwaState
@@ -1201,7 +1201,7 @@ applyRouteGuard identity route =
     case identity of
         Nothing ->
             case route of
-                Setup ->
+                Welcome ->
                     ( route, Cmd.none )
 
                 About ->
@@ -1211,15 +1211,10 @@ applyRouteGuard identity route =
                     ( route, Cmd.none )
 
                 _ ->
-                    ( Setup, Navigation.replaceUrl navCmd (AppUrl.fromPath [ "setup" ]) )
+                    ( Welcome, Navigation.replaceUrl navCmd (AppUrl.fromPath []) )
 
         Just _ ->
-            case route of
-                Setup ->
-                    ( Home, Navigation.replaceUrl navCmd (AppUrl.fromPath []) )
-
-                _ ->
-                    ( route, Cmd.none )
+            ( route, Cmd.none )
 
 
 {-| Handle navigation to a Join route.
@@ -1567,9 +1562,15 @@ viewReady model readyData =
             { content = content, overlay = Nothing }
     in
     case model.route of
-        Setup ->
+        Welcome ->
             noOverlay <|
-                Page.Setup.view i18n { onGenerate = GenerateIdentity, onSwitchLanguage = SwitchLanguage, isGenerating = model.generatingIdentity }
+                Page.Welcome.view i18n
+                    { onGenerate = GenerateIdentity
+                    , onSwitchLanguage = SwitchLanguage
+                    , onNavigate = NavigateTo
+                    , isGenerating = model.generatingIdentity
+                    , hasIdentity = readyData.identity /= Nothing
+                    }
 
         Home ->
             noOverlay <|
