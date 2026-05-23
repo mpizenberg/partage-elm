@@ -13,7 +13,7 @@ import Domain.Member as Member
 {-| Top-level application routes.
 -}
 type Route
-    = Setup
+    = Welcome
     | Home
     | NewGroup
     | GroupRoute Group.Id GroupView
@@ -51,10 +51,13 @@ fromAppUrl : AppUrl -> Route
 fromAppUrl appUrl =
     case appUrl.path of
         [] ->
-            Home
+            Welcome
 
-        [ "setup" ] ->
-            Setup
+        [ "welcome" ] ->
+            Welcome
+
+        [ "groups" ] ->
+            Home
 
         [ "groups", "new" ] ->
             NewGroup
@@ -136,11 +139,11 @@ toAppUrl route =
 toPathSegments : Route -> List String
 toPathSegments route =
     case route of
-        Home ->
+        Welcome ->
             []
 
-        Setup ->
-            [ "setup" ]
+        Home ->
+            [ "groups" ]
 
         NewGroup ->
             [ "groups", "new" ]
@@ -195,15 +198,19 @@ toPathSegments route =
 
 
 {-| Serialize a Route to a URL path string.
+
+Note: `Welcome` always serializes to `/`. The `/welcome` URL is
+accepted as an alias only at parse time (in `fromAppUrl`).
+
 -}
 toPath : Route -> String
 toPath route =
     case route of
-        Home ->
+        Welcome ->
             "/"
 
-        Setup ->
-            "/setup"
+        Home ->
+            "/groups"
 
         NewGroup ->
             "/groups/new"
