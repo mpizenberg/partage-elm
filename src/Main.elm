@@ -1576,6 +1576,7 @@ viewReady model readyData =
                 Page.Home.view i18n
                     { onNavigate = NavigateTo
                     , onExport = ImportExportMsg << ImportExport.exportMsg
+                    , onExportCsv = ImportExportMsg << ImportExport.exportCsvMsg
                     , notificationPermission = model.pwaState.notificationPermission
                     , pushActive = PwaState.pushIsActive model.pwaState
                     , onEnableNotifications = PwaStateMsg PwaState.enableNotificationsMsg

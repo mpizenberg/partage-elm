@@ -1,4 +1,4 @@
-module ImportExport exposing (Config, Msg, OutMsg(..), exportMsg, startImport, update)
+module ImportExport exposing (Config, Msg, OutMsg(..), exportCsvMsg, exportMsg, startImport, update)
 
 {-| Import/export orchestration, extracted from Main.elm.
 
@@ -15,6 +15,9 @@ import ConcurrentTask
 import Dict exposing (Dict)
 import Domain.Event as Event
 import Domain.Group as Group
+import Domain.GroupState as GroupState
+import File.Download
+import GroupCsvExport
 import GroupExport
 import IndexedDb as Idb
 import Infra.Compression as Compression
@@ -28,7 +31,9 @@ import UI.Toast as Toast
 
 type Msg
     = ExportGroup Group.Id
+    | ExportGroupCsv Group.Id
     | OnExportDataLoaded Group.Id (ConcurrentTask.Response Idb.Error ( List Event.Envelope, Maybe String ))
+    | OnExportCsvDataLoaded Group.Id (ConcurrentTask.Response Idb.Error (List Event.Envelope))
     | OnExportCompressed (ConcurrentTask.Response String ())
     | OnImportDecompressed (ConcurrentTask.Response String String)
     | OnGroupImported Group.Summary (ConcurrentTask.Response Idb.Error ())
@@ -48,6 +53,13 @@ type OutMsg
 exportMsg : Group.Id -> Msg
 exportMsg =
     ExportGroup
+
+
+{-| Opaque message to start a snapshot CSV export. One-way (no re-import).
+-}
+exportCsvMsg : Group.Id -> Msg
+exportCsvMsg =
+    ExportGroupCsv
 
 
 {-| Start importing from a base64-encoded compressed file.
@@ -112,6 +124,32 @@ update config msg runnerCmd =
 
         OnExportCompressed _ ->
             ( runnerCmd, Nothing )
+
+        ExportGroupCsv groupId ->
+            ( runnerCmd
+                |> Runner.andRun (config.toMsg << OnExportCsvDataLoaded groupId)
+                    (Storage.loadGroupEvents config.db groupId)
+            , Nothing
+            )
+
+        OnExportCsvDataLoaded groupId (ConcurrentTask.Success events) ->
+            case Dict.get groupId config.groups of
+                Just summary ->
+                    let
+                        csvDownloadCmd : Cmd msg
+                        csvDownloadCmd =
+                            GroupCsvExport.encode (GroupState.applyEvents events GroupState.empty)
+                                |> File.Download.string (GroupCsvExport.exportFilename summary) "text/csv;charset=utf-8"
+                    in
+                    ( runnerCmd |> Runner.andCmd csvDownloadCmd
+                    , Nothing
+                    )
+
+                Nothing ->
+                    ( runnerCmd, Nothing )
+
+        OnExportCsvDataLoaded _ _ ->
+            ( runnerCmd, Just (ShowToast Toast.Error (T.toastExportError config.i18n)) )
 
         OnImportDecompressed (ConcurrentTask.Success jsonString) ->
             let

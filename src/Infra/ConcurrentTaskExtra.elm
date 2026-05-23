@@ -1,6 +1,6 @@
 module Infra.ConcurrentTaskExtra exposing
     ( AttemptBatch, initAttemptBatch, andAttempt, batchAttempt
-    , TaskRunner, TaskRunnerConfig, initTaskRunner, andRun, subscription
+    , TaskRunner, TaskRunnerConfig, initTaskRunner, andRun, andCmd, subscription
     )
 
 {-| Helpers for working with `ConcurrentTask`.
@@ -30,7 +30,7 @@ Thread a `( TaskRunner msg, Cmd msg )` tuple through multiple task attempts.
         |> andRun OnTask2Complete task2
         |> Tuple.mapFirst (\r -> { model | runner = r })
 
-@docs TaskRunner, TaskRunnerConfig, initTaskRunner, andRun, subscription
+@docs TaskRunner, TaskRunnerConfig, initTaskRunner, andRun, andCmd, subscription
 
 -}
 
@@ -120,6 +120,15 @@ andRun onComplete task ( TaskRunner r, cmd ) =
         }
     , Cmd.batch [ cmd, newCmd ]
     )
+
+
+{-| Batch an extra `Cmd msg` into the runner pipeline without scheduling a task.
+Useful for fire-and-forget side effects (e.g. `File.Download.string`) that sit
+alongside task attempts in the same update branch.
+-}
+andCmd : Cmd msg -> ( TaskRunner msg, Cmd msg ) -> ( TaskRunner msg, Cmd msg )
+andCmd extraCmd ( runner, cmd ) =
+    ( runner, Cmd.batch [ cmd, extraCmd ] )
 
 
 {-| Subscribe to task progress events. Use in your `subscriptions`.

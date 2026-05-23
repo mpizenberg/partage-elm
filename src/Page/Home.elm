@@ -23,6 +23,7 @@ import Ui.Input
 type alias Context msg =
     { onNavigate : Route -> msg
     , onExport : Group.Id -> msg
+    , onExportCsv : Group.Id -> msg
     , notificationPermission : Maybe Pwa.NotificationPermission
     , pushActive : Bool
     , onEnableNotifications : msg
@@ -372,25 +373,35 @@ groupCard i18n ctx summary =
             UI.Components.horizontalSeparator
         , Ui.row
             [ Ui.width Ui.fill
-            , Ui.spacing Theme.spacing.sm
+            , Ui.spacing Theme.spacing.md
             ]
             [ balanceView
-            , Ui.el
-                [ Ui.Font.size Theme.font.sm
-                , Ui.Font.color Theme.primary.text
-                , Ui.pointer
+            , Ui.row
+                [ Ui.spacing Theme.spacing.md
                 , Ui.alignRight
-                , Ui.Events.custom "click"
-                    (Json.Decode.succeed
-                        { message = ctx.onExport summary.id
-                        , stopPropagation = True
-                        , preventDefault = True
-                        }
-                    )
+                , Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.primary.text
                 ]
-                (Ui.text (T.homeExportGroup i18n))
+                [ exportLink (ctx.onExport summary.id) (T.homeExportGroup i18n)
+                , exportLink (ctx.onExportCsv summary.id) (T.homeExportGroupCsv i18n)
+                ]
             ]
         ]
+
+
+exportLink : msg -> String -> Ui.Element msg
+exportLink onClickMsg label =
+    Ui.el
+        [ Ui.pointer
+        , Ui.Events.custom "click"
+            (Json.Decode.succeed
+                { message = onClickMsg
+                , stopPropagation = True
+                , preventDefault = True
+                }
+            )
+        ]
+        (Ui.text label)
 
 
 {-| Extract the year from a timestamp in milliseconds.

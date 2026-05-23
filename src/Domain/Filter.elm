@@ -368,44 +368,13 @@ categoryFilterToString : CategoryFilter -> String
 categoryFilterToString cf =
     case cf of
         ExpenseCategory cat ->
-            "expense:" ++ categoryToString cat
+            "expense:" ++ Entry.categoryToString cat
 
         TransferCategory ->
             "transfer"
 
         IncomeCategory ->
             "income"
-
-
-categoryToString : Entry.Category -> String
-categoryToString cat =
-    case cat of
-        Entry.Food ->
-            "food"
-
-        Entry.Transport ->
-            "transport"
-
-        Entry.Accommodation ->
-            "accommodation"
-
-        Entry.Entertainment ->
-            "entertainment"
-
-        Entry.Shopping ->
-            "shopping"
-
-        Entry.Groceries ->
-            "groceries"
-
-        Entry.Utilities ->
-            "utilities"
-
-        Entry.Healthcare ->
-            "healthcare"
-
-        Entry.Other ->
-            "other"
 
 
 activityTypeToString : ActivityType -> String
