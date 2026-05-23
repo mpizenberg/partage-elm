@@ -18,6 +18,7 @@ module Infra.Storage exposing
     , saveIdentity
     , saveLanguage
     , saveNotificationTranslations
+    , saveSelfProfile
     , saveSyncCursor
     , saveUnpushedIds
     , saveUsageStats
@@ -27,6 +28,7 @@ import ConcurrentTask exposing (ConcurrentTask)
 import Dict exposing (Dict)
 import Domain.Event as Event
 import Domain.Group as Group
+import Domain.Member as Member
 import IndexedDb as Idb
 import Infra.Identity as Identity exposing (Identity)
 import Infra.UsageStats as UsageStats exposing (UsageStats)
@@ -44,6 +46,7 @@ type alias InitData =
     , identity : Maybe Identity
     , groups : Dict Group.Id Group.Summary
     , savedLanguage : Maybe String
+    , selfProfile : Member.Metadata
     }
 
 
@@ -121,10 +124,11 @@ open =
 -}
 init : Idb.Db -> ConcurrentTask Idb.Error InitData
 init db =
-    ConcurrentTask.map3 (InitData db)
+    ConcurrentTask.map4 (InitData db)
         (loadIdentity db)
         (loadAllGroups db)
         (loadLanguage db)
+        (loadSelfProfile db |> ConcurrentTask.map (Maybe.withDefault Member.emptyMetadata))
 
 
 {-| Save the user's identity to the database.
@@ -161,6 +165,21 @@ Stored in the identity store under the "notificationTranslations" key.
 saveNotificationTranslations : Idb.Db -> Encode.Value -> ConcurrentTask Idb.Error ()
 saveNotificationTranslations db translations =
     Idb.putAt db identityStore (Idb.StringKey "notificationTranslations") translations
+
+
+{-| Save the user's local self profile (contact info and payment handles
+remembered across groups). Stored in the identity store.
+-}
+saveSelfProfile : Idb.Db -> Member.Metadata -> ConcurrentTask Idb.Error ()
+saveSelfProfile db meta =
+    Idb.putAt db identityStore (Idb.StringKey "selfProfile") (Member.encodeMetadata meta)
+
+
+{-| Load the user's local self profile, if any.
+-}
+loadSelfProfile : Idb.Db -> ConcurrentTask Idb.Error (Maybe Member.Metadata)
+loadSelfProfile db =
+    Idb.get db identityStore (Idb.StringKey "selfProfile") Member.metadataDecoder
 
 
 {-| Save a group summary to the database.

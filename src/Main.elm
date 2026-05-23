@@ -161,6 +161,7 @@ type Msg
     | AboutMsg Page.About.Msg
     | OnStorageCheckComplete (ConcurrentTask.Response Never ( Maybe UsageStats, UsageStats.StorageEstimate ))
     | OnAboutStatsReset (ConcurrentTask.Response Idb.Error ())
+    | OnSelfProfileSaved (ConcurrentTask.Response Idb.Error ())
     | ScheduleStorageCheck
       -- Toast notifications
     | ClipboardCopied
@@ -314,6 +315,7 @@ buildGroupConfig model =
                         , i18n = model.i18n
                         , groups = readyData.groups
                         , pendingServerCreations = model.pendingServerCreations
+                        , selfProfile = readyData.selfProfile
                         }
                     )
 
@@ -392,6 +394,25 @@ processGroupOutputs model groupCmd outputs =
 
                         Page.Group.LogError source severity message ->
                             ( logError source severity message m, cmds )
+
+                        Page.Group.SaveSelfProfile meta ->
+                            case m.appState of
+                                Ready readyData ->
+                                    let
+                                        ( runner, saveCmd ) =
+                                            ( m.runner, Cmd.none )
+                                                |> Runner.andRun OnSelfProfileSaved
+                                                    (Storage.saveSelfProfile readyData.db meta)
+                                    in
+                                    ( { m
+                                        | runner = runner
+                                        , appState = Ready { readyData | selfProfile = meta }
+                                      }
+                                    , saveCmd :: cmds
+                                    )
+
+                                _ ->
+                                    ( m, cmds )
                 )
                 ( model, [] )
                 outputs
@@ -1077,6 +1098,12 @@ update msg model =
         OnAboutStatsReset _ ->
             ( logError ErrorLog.StorageSource ErrorLog.Err "Unexpected error resetting usage stats" model, Cmd.none )
 
+        OnSelfProfileSaved (ConcurrentTask.Success ()) ->
+            ( model, Cmd.none )
+
+        OnSelfProfileSaved _ ->
+            ( logError ErrorLog.StorageSource ErrorLog.Err "Unexpected error saving self profile" model, Cmd.none )
+
         ScheduleStorageCheck ->
             case model.appState of
                 Ready readyData ->
@@ -1580,6 +1607,7 @@ viewReady model readyData =
                 , isKnownGroup = Dict.member groupId readyData.groups
                 , origin = model.origin
                 , pushActive = PwaState.pushIsActive model.pwaState
+                , selfProfile = readyData.selfProfile
                 }
                 groupView
                 model.groupModel
