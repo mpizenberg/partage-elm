@@ -30,11 +30,11 @@ view i18n config =
     Ui.column [ Ui.spacing Theme.spacing.xxl, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.xl ]
         [ heroSection i18n
         , primaryCta i18n config
+        , languageSection i18n config.onSwitchLanguage
         , whySection i18n
         , featuresSection i18n
         , howItWorksSection i18n
         , fundingSection i18n
-        , languageSection i18n config.onSwitchLanguage
         , if config.hasIdentity then
             aboutFooterLink i18n config.onNavigate
 
