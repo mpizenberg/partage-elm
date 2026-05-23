@@ -119,9 +119,11 @@ type alias ViewConfig msg =
     , toMsg : Msg -> msg
     , onNavigateHome : msg
     , onGoBack : msg
+    , onSwitchLanguage : T.Language -> msg
     , today : Date
     , timeZone : Time.Zone
     , groupId : Group.Id
+    , isKnownGroup : Bool
     , origin : String
     , pushActive : Bool
     }
@@ -300,16 +302,22 @@ handleNavigation config groupId groupView model =
 
 ensureGroupLoaded : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
 ensureGroupLoaded config groupId model =
-    case model.loadedGroup of
-        Just loaded ->
-            if loaded.summary.id == groupId then
-                ( model, Cmd.none )
+    if not (Dict.member groupId config.groups) then
+        -- No local summary for this group: nothing to load. The view will render
+        -- the missing-group page based on the same membership check.
+        ( { model | loadedGroup = Nothing }, Cmd.none )
 
-            else
+    else
+        case model.loadedGroup of
+            Just loaded ->
+                if loaded.summary.id == groupId then
+                    ( model, Cmd.none )
+
+                else
+                    loadGroup config groupId model
+
+            Nothing ->
                 loadGroup config groupId model
-
-        Nothing ->
-            loadGroup config groupId model
 
 
 loadGroup : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
@@ -1590,16 +1598,20 @@ Handles loading state internally.
 -}
 view : ViewConfig msg -> GroupView -> Model -> ViewResult msg
 view config groupView model =
-    case model.loadedGroup of
-        Just loaded ->
-            if loaded.summary.id == config.groupId then
-                viewGroupPage config groupView loaded model
+    if not config.isKnownGroup then
+        { content = viewMissingGroupShell config, overlay = Nothing }
 
-            else
+    else
+        case model.loadedGroup of
+            Just loaded ->
+                if loaded.summary.id == config.groupId then
+                    viewGroupPage config groupView loaded model
+
+                else
+                    { content = viewLoadingShell config, overlay = Nothing }
+
+            Nothing ->
                 { content = viewLoadingShell config, overlay = Nothing }
-
-        Nothing ->
-            { content = viewLoadingShell config, overlay = Nothing }
 
 
 viewLoadingShell : ViewConfig msg -> Ui.Element msg
@@ -1607,6 +1619,28 @@ viewLoadingShell config =
     UI.Shell.pageShell { title = T.shellPartage config.i18n, onBack = config.onNavigateHome } <|
         Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
             (Ui.text (T.loadingGroup config.i18n))
+
+
+viewMissingGroupShell : ViewConfig msg -> Ui.Element msg
+viewMissingGroupShell config =
+    UI.Shell.pageShell { title = T.shellPartage config.i18n, onBack = config.onNavigateHome } <|
+        Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.xxl ]
+            [ Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+                [ Ui.el
+                    [ Ui.Font.size Theme.font.lg
+                    , Ui.Font.weight Theme.fontWeight.bold
+                    , Ui.Font.color Theme.base.text
+                    ]
+                    (Ui.text (T.missingGroupTitle config.i18n))
+                , Ui.el
+                    [ Ui.Font.size Theme.font.md
+                    , Ui.Font.color Theme.base.textSubtle
+                    ]
+                    (Ui.text (T.missingGroupMessage config.i18n))
+                ]
+            , Ui.el [ Ui.centerX ]
+                (UI.Components.languageSelector config.onSwitchLanguage (T.currentLanguage config.i18n))
+            ]
 
 
 viewGroupPage : ViewConfig msg -> GroupView -> LoadedGroup -> Model -> ViewResult msg

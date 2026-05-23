@@ -1573,9 +1573,11 @@ viewReady model readyData =
                 , toMsg = GroupMsg
                 , onNavigateHome = NavigateTo Home
                 , onGoBack = GoBack
+                , onSwitchLanguage = SwitchLanguage
                 , today = Date.posixToDate model.timeZone model.currentTime
                 , timeZone = model.timeZone
                 , groupId = groupId
+                , isKnownGroup = Dict.member groupId readyData.groups
                 , origin = model.origin
                 , pushActive = PwaState.pushIsActive model.pwaState
                 }
