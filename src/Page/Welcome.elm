@@ -133,8 +133,12 @@ featuresSection i18n =
         [ UI.Components.sectionLabel (T.welcomeFeaturesTitle i18n)
         , Ui.column [ Ui.spacing Theme.spacing.md, Ui.centerX ]
             [ featureRow FeatherIcons.lock (T.welcomeFeatureEncrypted i18n)
+            , featureRow FeatherIcons.key (T.welcomeFeatureNoAccount i18n)
             , featureRow FeatherIcons.wifiOff (T.welcomeFeatureLocalFirst i18n)
-            , featureRow FeatherIcons.refreshCw (T.welcomeFeatureGroupSharing i18n)
+            , featureRow FeatherIcons.gitMerge (T.welcomeFeatureSettleUp i18n)
+            , featureRow FeatherIcons.globe (T.welcomeFeatureMultiCurrency i18n)
+            , featureRow FeatherIcons.clock (T.welcomeFeatureActivityLog i18n)
+            , featureRow FeatherIcons.smartphone (T.welcomeFeatureInstallable i18n)
             , featureRow FeatherIcons.heart (T.welcomeFeatureOpenSource i18n)
             ]
         ]
