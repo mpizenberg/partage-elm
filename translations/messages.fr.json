@@ -34,7 +34,7 @@
   "welcomeDetailsTitle": "Les détails qui comptent",
   "welcomeDetailFilter": "Filtrer les entrées par personne, catégorie, devise ou date",
   "welcomeDetailBackup": "Export CSV gratuit et sauvegarde JSON complète",
-  "welcomeDetailPaymentMethods": "Moyens de paiement : IBAN, Wero, Lydia, Revolut, PayPal, Venmo, BTC, ADA",
+  "welcomeDetailPaymentMethods": "Raccourcis de remboursement : IBAN, Wero, Lydia, Revolut, PayPal, Venmo, BTC, ADA",
   "welcomeDetailMembers": "Membres virtuels, fusion, retrait sans perte d'historique",
   "welcomeDetailEntryTypes": "Dépenses, transferts et revenus, tous gérés",
   "welcomeDetailHistory": "Suppression réversible et historique détaillé des modifications",
