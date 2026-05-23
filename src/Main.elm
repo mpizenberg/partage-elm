@@ -533,6 +533,11 @@ update msg model =
                             handleJoinRoute modelWithIdentity model.route groupId key (Just identity)
                                 |> Update.addCmd (Cmd.batch [ navCmd_, taskCmd ])
 
+                        Welcome ->
+                            ( modelWithIdentity
+                            , Cmd.batch [ navCmd_, taskCmd, Navigation.pushUrl navCmd (Route.toAppUrl Home) ]
+                            )
+
                         _ ->
                             ( modelWithIdentity, Cmd.batch [ navCmd_, taskCmd ] )
 
