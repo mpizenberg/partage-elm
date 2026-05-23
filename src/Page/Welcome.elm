@@ -33,6 +33,7 @@ view i18n config =
         , languageSection i18n config.onSwitchLanguage
         , whySection i18n
         , featuresSection i18n
+        , screenshotsSection i18n
         , detailsSection i18n
         , howItWorksSection i18n
         , fundingSection i18n
@@ -150,6 +151,76 @@ featureRow icon label =
     Ui.row [ Ui.spacing Theme.spacing.md, Ui.contentCenterY ]
         [ Ui.el [ Ui.Font.color Theme.primary.solid, Ui.width Ui.shrink ] (UI.Components.featherIcon 20 icon)
         , Ui.el [ Ui.Font.size Theme.font.sm ] (Ui.text label)
+        ]
+
+
+
+-- SCREENSHOTS
+
+
+screenshotsSection : I18n -> Ui.Element msg
+screenshotsSection i18n =
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        [ UI.Components.sectionLabel (T.welcomeScreenshotsTitle i18n)
+        , Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill, Ui.contentCenterX ]
+            [ screenshot i18n "/screenshots/balance.png" (T.welcomeScreenshotBalance i18n)
+            , screenshot i18n "/screenshots/multi-currency.png" (T.welcomeScreenshotMultiCurrency i18n)
+            , screenshot i18n "/screenshots/activity.png" (T.welcomeScreenshotActivity i18n)
+            , screenshot i18n "/screenshots/invite.png" (T.welcomeScreenshotInvite i18n)
+            ]
+        ]
+
+
+screenshot : I18n -> String -> String -> Ui.Element msg
+screenshot i18n source caption =
+    Ui.column [ Ui.spacing Theme.spacing.sm, Ui.centerX, Ui.width (Ui.px 280) ]
+        [ Ui.imageWithFallback
+            [ Ui.width (Ui.px 280)
+            , Ui.height (Ui.px 560)
+            , Ui.rounded Theme.spacing.sm
+            , Ui.border 1
+            , Ui.borderColor Theme.base.accent
+            ]
+            { source = source
+            , fallback = screenshotPlaceholder i18n caption
+            }
+        , Ui.el
+            [ Ui.Font.size Theme.font.sm
+            , Ui.Font.color Theme.base.textSubtle
+            , Ui.Font.center
+            , Ui.centerX
+            ]
+            (Ui.text caption)
+        ]
+
+
+screenshotPlaceholder : I18n -> String -> Ui.Element msg
+screenshotPlaceholder i18n caption =
+    Ui.column
+        [ Ui.width Ui.fill
+        , Ui.height Ui.fill
+        , Ui.contentCenterX
+        , Ui.contentCenterY
+        , Ui.spacing Theme.spacing.sm
+        , Ui.background Theme.base.bgSubtle
+        ]
+        [ Ui.el [ Ui.Font.color Theme.base.textSubtle, Ui.centerX ]
+            (UI.Components.featherIcon 32 FeatherIcons.image)
+        , Ui.el
+            [ Ui.Font.size Theme.font.xs
+            , Ui.Font.color Theme.base.textSubtle
+            , Ui.Font.center
+            , Ui.centerX
+            , Ui.paddingXY Theme.spacing.sm 0
+            ]
+            (Ui.text caption)
+        , Ui.el
+            [ Ui.Font.size Theme.font.xs
+            , Ui.Font.color Theme.base.textSubtle
+            , Ui.Font.center
+            , Ui.centerX
+            ]
+            (Ui.text ("(" ++ T.welcomeScreenshotPending i18n ++ ")"))
         ]
 
 
