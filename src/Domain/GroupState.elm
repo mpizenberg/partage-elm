@@ -28,6 +28,15 @@ import Time
 
 
 {-| The full state of a group, computed by replaying events.
+
+The `anchor*` fields support `Domain.StableSettlement`: they hold the entries
+as of the most recent **anchor-mover** event (anything other than a Transfer).
+The displayed settlement plan is derived from `anchorBalances` +
+`settlementPreferences`, then perturbed by the per-member delta
+`balances − anchorBalances` (the cumulative effect of post-anchor transfers).
+Snapshotting at anchor-movers — and _not_ at transfer events — is what keeps
+the plan visually stable between expense edits.
+
 -}
 type alias GroupState =
     { members : Dict Member.Id Member.ChainState
@@ -38,6 +47,8 @@ type alias GroupState =
     , pendingActivities : List Activity
     , rejectedEntries : List ( Entry.Entry, RejectionReason )
     , settlementPreferences : List Settlement.Preference
+    , anchorEntries : Dict Entry.Id EntryState
+    , anchorBalances : Dict Member.Id MemberBalance
     }
 
 
@@ -98,6 +109,8 @@ empty =
     , pendingActivities = []
     , rejectedEntries = []
     , settlementPreferences = []
+    , anchorEntries = Dict.empty
+    , anchorBalances = Dict.empty
     }
 
 
@@ -144,16 +157,22 @@ applyEvents events state =
         |> recomputeBalances
 
 
-{-| Recompute all member balances from the current active entries.
+{-| Recompute all member balances from the current active entries, plus the
+matching `anchorBalances` from `anchorEntries`.
 -}
 recomputeBalances : GroupState -> GroupState
 recomputeBalances state =
-    { state | balances = Balance.computeBalances (activeEntries state) }
+    { state
+        | balances = Balance.computeBalances (activeEntries state)
+        , anchorBalances = Balance.computeBalances (activeEntriesFrom state.anchorEntries)
+    }
 
 
 {-| Apply a single event to the group state, without recomputing balances.
 Builds an activity item from the state before the event is applied, then
 mutates the state. New activities accumulate in pendingActivities (newest-first).
+On an anchor-mover event the anchor cache is also snapshotted (see the
+docstring on `GroupState` and `isAnchorMover` below).
 Not exposed — use `applyEvents` which merges pending into activities after all events.
 -}
 applyEvent : Envelope -> GroupState -> GroupState
@@ -167,11 +186,99 @@ applyEvent envelope state =
             activity =
                 Activity.fromEnvelope (activityContext state) envelope
 
+            anchored : Bool
+            anchored =
+                isAnchorMover envelope.payload state
+
             newState : GroupState
             newState =
                 applyPayload envelope.clientTimestamp envelope.payload state
+
+            withSnapshot : GroupState
+            withSnapshot =
+                if anchored then
+                    { newState | anchorEntries = newState.entries }
+
+                else
+                    newState
         in
-        { newState | pendingActivities = activity :: newState.pendingActivities }
+        { withSnapshot | pendingActivities = activity :: withSnapshot.pendingActivities }
+
+
+{-| Classify an event as an anchor-mover for the stable settlement cache.
+Anchor-movers are events that change `balances` or `settlementPreferences`
+_and_ are not Transfer events. The kind for delete/undelete is read from the
+pre-event entry state (the event payload only carries the rootId); for
+add/modify it comes from the new payload.
+
+The user-level invariant is "transfers never anchor-move," so
+a pre-anchor edit that retroactively shifts the balance is just folded into
+the post-anchor delta and absorbed by the vector update. The displayed plan
+stays correct either way; this choice keeps the cache simple (no per-entry
+timestamps, no anchor timestamp) and avoids re-shuffling on transfer edits.
+
+-}
+isAnchorMover : Payload -> GroupState -> Bool
+isAnchorMover payload state =
+    case payload of
+        EntryAdded entry ->
+            not (isTransferEntry entry)
+
+        EntryModified entry ->
+            not (isTransferEntry entry)
+
+        EntryDeleted { rootId } ->
+            isKnownNonTransfer state rootId
+
+        EntryUndeleted { rootId } ->
+            isKnownNonTransfer state rootId
+
+        SettlementPreferencesUpdated _ ->
+            True
+
+        MemberCreated _ ->
+            False
+
+        MemberRenamed _ ->
+            False
+
+        MemberRetired _ ->
+            False
+
+        MemberUnretired _ ->
+            False
+
+        MemberReplaced _ ->
+            False
+
+        MemberMetadataUpdated _ ->
+            False
+
+        GroupCreated _ ->
+            False
+
+        GroupMetadataUpdated _ ->
+            False
+
+
+isTransferEntry : Entry -> Bool
+isTransferEntry entry =
+    case entry.kind of
+        Transfer _ ->
+            True
+
+        _ ->
+            False
+
+
+isKnownNonTransfer : GroupState -> Entry.Id -> Bool
+isKnownNonTransfer state rootId =
+    case Dict.get rootId state.entries of
+        Just es ->
+            not (isTransferEntry es.currentVersion)
+
+        Nothing ->
+            False
 
 
 {-| Check if an event's author is authorized to perform the action.
@@ -748,6 +855,11 @@ activeMembers state =
 -}
 activeEntries : GroupState -> List Entry
 activeEntries state =
-    Dict.values state.entries
+    activeEntriesFrom state.entries
+
+
+activeEntriesFrom : Dict Entry.Id EntryState -> List Entry
+activeEntriesFrom entriesDict =
+    Dict.values entriesDict
         |> List.filter (not << .isDeleted)
         |> List.map .currentVersion

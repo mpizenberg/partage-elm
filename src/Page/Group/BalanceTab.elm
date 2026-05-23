@@ -9,6 +9,7 @@ import Domain.Currency as Currency
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
 import Domain.Settlement as Settlement
+import Domain.StableSettlement as StableSettlement
 import FeatherIcons
 import Format
 import Html
@@ -327,7 +328,7 @@ settlementSection i18n config maybeUserRootId selectedSettlement state =
     let
         transactions : List Settlement.Transaction
         transactions =
-            Settlement.computeSettlement state.balances state.settlementPreferences
+            StableSettlement.stablePlan state.anchorBalances state.settlementPreferences state.balances
     in
     if List.isEmpty transactions then
         Ui.none
