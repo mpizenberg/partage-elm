@@ -33,6 +33,7 @@ view i18n config =
         , languageSection i18n config.onSwitchLanguage
         , whySection i18n
         , featuresSection i18n
+        , detailsSection i18n
         , howItWorksSection i18n
         , fundingSection i18n
         , if config.hasIdentity then
@@ -149,6 +150,27 @@ featureRow icon label =
     Ui.row [ Ui.spacing Theme.spacing.md, Ui.contentCenterY ]
         [ Ui.el [ Ui.Font.color Theme.primary.solid, Ui.width Ui.shrink ] (UI.Components.featherIcon 20 icon)
         , Ui.el [ Ui.Font.size Theme.font.sm ] (Ui.text label)
+        ]
+
+
+
+-- DETAILS THAT MATTER
+
+
+detailsSection : I18n -> Ui.Element msg
+detailsSection i18n =
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        [ UI.Components.sectionLabel (T.welcomeDetailsTitle i18n)
+        , Ui.column [ Ui.spacing Theme.spacing.md, Ui.centerX ]
+            [ featureRow FeatherIcons.filter (T.welcomeDetailFilter i18n)
+            , featureRow FeatherIcons.download (T.welcomeDetailBackup i18n)
+            , featureRow FeatherIcons.creditCard (T.welcomeDetailPaymentMethods i18n)
+            , featureRow FeatherIcons.users (T.welcomeDetailMembers i18n)
+            , featureRow FeatherIcons.trendingUp (T.welcomeDetailEntryTypes i18n)
+            , featureRow FeatherIcons.rotateCcw (T.welcomeDetailHistory i18n)
+            , featureRow FeatherIcons.userCheck (T.welcomeDetailPreferences i18n)
+            , featureRow FeatherIcons.gift (T.welcomeDetailNoLimits i18n)
+            ]
         ]
 
 
