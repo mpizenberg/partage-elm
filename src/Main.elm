@@ -1542,8 +1542,7 @@ viewReady model readyData =
     case model.route of
         Setup ->
             noOverlay <|
-                UI.Shell.pageShell { title = T.shellPartage i18n, onBack = NavigateTo Home }
-                    (Page.Setup.view i18n { onGenerate = GenerateIdentity, onSwitchLanguage = SwitchLanguage, isGenerating = model.generatingIdentity })
+                Page.Setup.view i18n { onGenerate = GenerateIdentity, onSwitchLanguage = SwitchLanguage, isGenerating = model.generatingIdentity }
 
         Home ->
             noOverlay <|
