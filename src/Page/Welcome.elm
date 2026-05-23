@@ -188,7 +188,7 @@ fundingSection i18n =
                     , Ui.Font.weight Theme.fontWeight.semibold
                     , Ui.Font.color Theme.primary.text
                     , Ui.contentCenterY
-                    , Ui.link fundingUrl
+                    , Ui.linkNewTab fundingUrl
                     , Ui.pointer
                     ]
                     [ UI.Components.featherIcon 16 FeatherIcons.heart
