@@ -163,10 +163,10 @@ screenshotsSection i18n =
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
         [ UI.Components.sectionLabel (T.welcomeScreenshotsTitle i18n)
         , Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill, Ui.contentCenterX ]
-            [ screenshot i18n "/screenshots/balance.png" (T.welcomeScreenshotBalance i18n)
-            , screenshot i18n "/screenshots/multi-currency.png" (T.welcomeScreenshotMultiCurrency i18n)
-            , screenshot i18n "/screenshots/activity.png" (T.welcomeScreenshotActivity i18n)
-            , screenshot i18n "/screenshots/invite.png" (T.welcomeScreenshotInvite i18n)
+            [ screenshot i18n "https://github.com/user-attachments/assets/11f892b5-6a9c-4495-98b3-aaa99fd86a96" (T.welcomeScreenshotBalance i18n)
+            , screenshot i18n "https://github.com/user-attachments/assets/e18a1a55-d3be-49ec-a5b1-b74f40e82b27" (T.welcomeScreenshotMultiCurrency i18n)
+            , screenshot i18n "https://github.com/user-attachments/assets/1338983d-4acb-41c5-9a74-cf2eef77d298" (T.welcomeScreenshotActivity i18n)
+            , screenshot i18n "https://github.com/user-attachments/assets/a9a57610-83a7-4c55-9641-700fb32a3699" (T.welcomeScreenshotInvite i18n)
             ]
         ]
 
@@ -176,7 +176,7 @@ screenshot i18n source caption =
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.centerX, Ui.width (Ui.px 280) ]
         [ Ui.imageWithFallback
             [ Ui.width (Ui.px 280)
-            , Ui.height (Ui.px 560)
+            , Ui.height (Ui.px 623)
             , Ui.rounded Theme.spacing.sm
             , Ui.border 1
             , Ui.borderColor Theme.base.accent
