@@ -109,6 +109,7 @@ type alias UpdateConfig =
     , i18n : I18n
     , groups : Dict Group.Id Group.Summary
     , pendingServerCreations : Set Group.Id
+    , selfProfile : Member.Metadata
     }
 
 
@@ -126,6 +127,7 @@ type alias ViewConfig msg =
     , isKnownGroup : Bool
     , origin : String
     , pushActive : Bool
+    , selfProfile : Member.Metadata
     }
 
 
@@ -247,6 +249,7 @@ type Output
     | ToggleGroupNotification Group.Id Member.Id
     | RequestServerGroupCreation Group.Id Symmetric.Key
     | LogError ErrorLog.Source ErrorLog.Severity String
+    | SaveSelfProfile Member.Metadata
 
 
 
@@ -520,14 +523,27 @@ update config msg model =
                         |> Maybe.withDefault []
 
                 ( modelWithPage, maybeOutput ) =
-                    Page.Group.EditMemberMetadata.update existingNames subMsg model.editMemberMetadataModel
+                    Page.Group.EditMemberMetadata.update
+                        { existingNames = existingNames
+                        , savedProfile = config.selfProfile
+                        }
+                        subMsg
+                        model.editMemberMetadataModel
                         |> Tuple.mapFirst (\subModel -> { model | editMemberMetadataModel = subModel })
             in
-            case ( maybeOutput, model.loadedGroup ) of
-                ( Just metaOutput, Just loaded ) ->
-                    submitMemberMetadata config modelWithPage loaded metaOutput
+            case maybeOutput of
+                Just (Page.Group.EditMemberMetadata.Submitted submitted) ->
+                    case model.loadedGroup of
+                        Just loaded ->
+                            submitMemberMetadata config modelWithPage loaded submitted
 
-                _ ->
+                        Nothing ->
+                            ( modelWithPage, Cmd.none, [] )
+
+                Just (Page.Group.EditMemberMetadata.SaveProfile meta) ->
+                    ( modelWithPage, Cmd.none, [ SaveSelfProfile meta ] )
+
+                Nothing ->
                     ( modelWithPage, Cmd.none, [] )
 
         -- Merge member
@@ -972,7 +988,7 @@ submitEntryAction config model action =
 
 {-| Submit member metadata update, with optional rename if name changed.
 -}
-submitMemberMetadata : UpdateConfig -> Model -> LoadedGroup -> Page.Group.EditMemberMetadata.Output -> ( Model, Cmd Msg, List Output )
+submitMemberMetadata : UpdateConfig -> Model -> LoadedGroup -> Page.Group.EditMemberMetadata.SubmittedData -> ( Model, Cmd Msg, List Output )
 submitMemberMetadata config model loaded output =
     let
         onSaved : ConcurrentTask.Response Idb.Error Event.Envelope -> Msg
@@ -1689,12 +1705,21 @@ viewGroupPage config groupView loaded model =
                         (config.toMsg << AddMemberMsg)
                         model.addMemberModel
 
-        ( EditMemberMetadata _, Just _ ) ->
+        ( EditMemberMetadata memberId, Just _ ) ->
+            let
+                isSelf : Bool
+                isSelf =
+                    currentUserRootId model loaded == Just memberId
+            in
             noOverlay <|
                 pageShell config (T.memberEditMetadataButton config.i18n) <|
-                    Page.Group.EditMemberMetadata.view config.i18n
-                        (config.toMsg << EditMemberMetadataMsg)
-                        (GroupState.activeMembers loaded.groupState |> List.map .name)
+                    Page.Group.EditMemberMetadata.view
+                        { i18n = config.i18n
+                        , toMsg = config.toMsg << EditMemberMetadataMsg
+                        , existingNames = GroupState.activeMembers loaded.groupState |> List.map .name
+                        , isSelf = isSelf
+                        , savedProfile = config.selfProfile
+                        }
                         model.editMemberMetadataModel
 
         ( MergeMember _ _, Just _ ) ->
