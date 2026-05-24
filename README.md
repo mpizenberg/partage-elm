@@ -1,4 +1,8 @@
-# Partage
+<p align="center">
+  <img src="public/icon.svg" alt="Partage logo" width="128" height="128">
+</p>
+
+<h1 align="center">Partage</h1>
 
 Partage is a fully encrypted, local-first bill-splitting application for trusted groups (friends, family, roommates). It runs as an installable Progressive Web App and works offline.
 
