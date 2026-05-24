@@ -47,7 +47,7 @@ type alias CostBreakdown =
 
 
 
--- Rates from SPECIFICATION.md Section 17.2
+-- Rates from docs/SPECIFICATION.md Section 17.2
 
 
 baseCostCentsPerMonth : Float
