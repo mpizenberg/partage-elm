@@ -252,7 +252,7 @@ sourceSection i18n =
             , Ui.Font.size Theme.font.sm
             , Ui.Font.color Theme.primary.text
             , Ui.contentCenterY
-            , Ui.link sourceUrl
+            , Ui.linkNewTab sourceUrl
             , Ui.pointer
             ]
             [ UI.Components.featherIcon 14 FeatherIcons.github
