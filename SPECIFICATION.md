@@ -49,17 +49,19 @@
 
 ### 2.1 Identity Creation
 
-- On first launch, the user is presented with a **setup screen**.
+- On first launch, the user lands on a **public welcome/landing page** that explains the app and shows a button to start using the app (by generating a local ID).
 - The application generates a **cryptographic keypair** locally in the browser using **ECDSA P-256** (chosen for broad Web Crypto API compatibility across browsers).
 - The keypair is used for **digital signatures** (to authenticate operations).
 - The **public key hash** (SHA-256 of the public key) serves as the user's anonymous, unique identifier.
 - No username, email, or password is required.
+- The welcome page itself is reachable without an identity (for SEO and prospective users) and includes a language selector.
 
 ### 2.2 Identity Storage
 
 - The keypair is stored in the browser's local database (IndexedDB), serialized as JWK (JSON Web Key).
 - There is exactly **one identity per browser profile**.
 - The identity persists across sessions until the browser data is cleared.
+- Alongside the keypair, the app also persists a **local "self profile"** of contact and payment information (see [4.6](#46-member-metadata-encrypted)). It is stored only in IndexedDB (never synced) and is used to pre-fill member metadata across groups.
 
 ### 2.3 Identity Recovery
 
@@ -210,7 +212,21 @@ Each member can have optional contact and payment information:
 - Phone numbers are displayed as clickable `tel:` links.
 - Metadata changes are tracked in the activity feed with field-by-field change detection.
 
-### 4.7 Member Display Order
+### 4.7 Member Merging
+
+In addition to identity claiming (which links a new join to an existing chain), the app supports **merging one existing member chain into another**, primarily to clean up duplicates created when someone joined as a new member instead of claiming a virtual placeholder.
+
+- The merge is a two-step flow: pick the **target** member to keep, then preview the effects before confirming.
+- Confirmation requires typing a sentinel string (type-to-confirm) to guard against accidental merges.
+- A merge produces a batch of events submitted together:
+  - Every active entry referencing the source member as a payer, beneficiary, transfer participant, or income receiver is **rewritten** via `EntryModified` to reference the target.
+  - Transfers that would become self-transfers after rewriting are **soft-deleted** via `EntryDeleted`.
+  - The source member's settlement preferences are merged into the target's via `SettlementPreferencesUpdated`.
+  - Finally, the source member is retired via `MemberRetired`.
+- Merge is **not atomic** on the server: if a sync fails mid-way the merge lands partially. There is no automated rollback, but the operation is replayable because each underlying event is idempotent.
+- Late-arriving events that still reference the source are not rewritten retroactively; the source is retired so it remains visible only in history.
+
+### 4.8 Member Display Order
 
 - **Active members**: The current user appears first (with a "(you)" badge), then others sorted alphabetically (case-insensitive).
 - **Departed members**: Listed alphabetically in a collapsible section.
@@ -316,7 +332,12 @@ Each entry has metadata that supports versioning:
 - Deleted entries can be **restored** (via `EntryUndeleted` event).
 - Deleted entries are excluded from balance calculations.
 
-### 5.9 Form Validation Rules
+### 5.9 Entry Duplication
+
+- From an entry's detail view, a **Duplicate** button opens the new-entry form pre-filled with the entry's fields (kind, description, amount, currency, payers, beneficiaries, etc.) and today's date.
+- Submitting creates an independent new entry; the duplicate has no link to the source in the version chain.
+
+### 5.10 Form Validation Rules
 
 - Description (expense, income): required, non-empty after trimming.
 - Amount: required, numeric, strictly positive.
@@ -387,6 +408,8 @@ The application generates an optimized **settlement plan** that minimizes the to
 - Amounts are rounded to 2 decimal places.
 - Micro-debts below 0.01 are treated as zero.
 
+**Plan stability:** To avoid the displayed plan jumping around as members record transfers one by one, the app uses a **stable settlement** derivation. The greedy two-pass runs against an **anchor snapshot** (the balances as of the most recent non-transfer event), and only the cumulative effect of post-anchor transfers is applied on top. As long as transfers don't change which non-transfer events have occurred, edges untouched by the new transfers keep their position in the plan list.
+
 ### 7.2 Settlement Preferences
 
 Each member can configure **preferred recipients** for receiving payments, ordered by priority.
@@ -415,10 +438,12 @@ The activity feed tracks all significant actions in a group. Activities are spli
 
 | Activity Type | Trigger |
 |---|---|
-| `EntryAdded` | A new expense or income is created. |
-| `EntryModified` | An existing expense or income is edited. Records field-by-field changes. |
+| `EntryAdded` | A new expense is created. |
+| `EntryModified` | An existing expense is edited. Records field-by-field changes. |
 | `TransferAdded` | A new transfer is created. |
 | `TransferModified` | An existing transfer is edited. Records field-by-field changes. |
+| `IncomeAdded` | A new income entry is created. |
+| `IncomeModified` | An existing income entry is edited. Records field-by-field changes. |
 | `EntryDeleted` | An entry is soft-deleted. |
 | `EntryUndeleted` | A deleted entry is restored. |
 
@@ -530,6 +555,11 @@ Activities can be filtered by three dimensions (combined with AND):
 - Deleted entries are **hidden by default**.
 - A toggle allows showing/hiding deleted entries in the list.
 
+### 9.6 Entry Search
+
+- The Entries tab has a **search bar** that case-insensitively matches the query against entry description, notes, and the resolved display names of payers, beneficiaries, transfer participants, and income receivers.
+- Search is combined with the active filters using **AND** logic.
+
 ---
 
 ## 10. Multi-Currency Support
@@ -569,8 +599,8 @@ The application supports 10 currencies:
 
 ### 10.4 Currency Formatting
 
-- Amounts are formatted with the currency symbol and appropriate decimal precision (e.g., "€10.50", "¥1050").
-- **Future work:** Full locale-aware currency formatting via `Intl.NumberFormat` (e.g., "1 234,56 EUR" in French).
+- Amounts are formatted with the currency symbol and **locale-aware decimal and grouping separators** (e.g., `€10.50` / `1,234.56` in English, `10,50 €` / `1 234,56` in French) and the currency-specific precision (e.g., `¥1050` with no fractional part).
+- Formatting is done in Elm against per-language locale config; no dependency on `Intl.NumberFormat`.
 
 ---
 
@@ -669,15 +699,17 @@ When a user opens an invite link:
 
 ### 13.1 Export
 
-- Users can export a single group from the group selection screen.
-- Export format: **JSON** containing all decrypted data (entries, members, metadata, events, audit trail).
-- The export is compressed before download.
-- Metadata includes export timestamp and version.
+Two export formats are available per group from the home screen:
+
+- **Full group export (JSON)** — contains all decrypted data (entries, members, metadata, events, audit trail). Compressed (gzip) before download. Metadata includes export timestamp and version. Intended for backup or transferring a group to another device.
+- **CSV expense export** — a flat, spreadsheet-friendly view of the group's entries with one row per active entry: date, kind, description, amount, currency, default-currency amount, payers, beneficiaries, category, location, notes, and creator. Intended for accounting or external analysis, not for re-import.
 
 ### 13.2 Import
 
-- Users can import a previously exported JSON file.
+- Users can import a previously exported full-group JSON file.
 - If the group already exists locally, the import is rejected (duplicate group ID).
+- After import, the user can **re-join** the imported group with their current identity (via a new invite link or by replaying the join flow on the imported state), reusing the same local copy.
+- If the user has imported a group they are **not a member of**, the group is shown in **read-only mode**: a banner is displayed and all mutating actions (add entry, edit member, etc.) are hidden. The user must join the group to make changes.
 - **Future work:** Merge analysis for overlapping groups (detect `local_subset`, `import_subset`, `diverged` relationships and merge by taking the union of all events deduplicated by event ID).
 
 ---
@@ -710,16 +742,17 @@ The following data is stored locally per group in IndexedDB:
 - **Initial sync**: Fetches all historical events (paginated, 200 per page) and replays them in deterministic order to build local state.
 - **Incremental sync**: Pushes local unpushed events and pulls remote events since last cursor.
 - **Real-time subscriptions**: The app subscribes to server-sent events via WebSocket for live updates from other devices/users.
-- **Offline queue**: Events created while offline are queued (tracked in `unpushedIds`) and synced when connectivity returns.
+- **Offline queue**: Events created while offline are queued (tracked in `unpushedIds`) and synced when connectivity returns. Groups **created** while offline are also queued and registered on the server when connectivity returns (the server account is created on the first successful push).
 
-### 14.4 Event Compression
+### 14.4 Event Compression & Batching
 
-Event data can be **compressed** before encryption to reduce bandwidth and storage:
+Event data is **compressed and batched** before encryption to reduce bandwidth and storage:
 
-- Compression uses gzip (via the browser's CompressionStream API).
-- Compression is applied conditionally when it achieves meaningful size reduction.
+- Compression uses gzip (via the browser's `CompressionStream` API).
+- Compression is applied conditionally: the compressed payload is kept only when it is at least **30% smaller** than the uncompressed version, otherwise the original bytes are stored uncompressed.
 - A `compressed` flag on each record indicates whether decompression is needed on read.
-- Multiple events can be batched into a single compressed+encrypted payload.
+- **Batching:** Multiple unpushed events are flushed into a single compressed+encrypted record on a periodic timer (current cadence: every ~100 seconds), as well as on explicit user actions and when transitioning back online.
+- JSON wire identifiers in encoded events are kept short to further reduce payload size.
 
 ### 14.5 Event Ordering & Conflict Resolution
 
@@ -823,6 +856,7 @@ Push notification messages are localized in the service worker:
 - The app can be **installed** on any device as a standalone application.
 - **Android / Desktop Chrome**: The native browser install prompt is intercepted and presented as a custom UI.
 - **iOS**: Manual installation instructions are shown (with step-by-step guide) after a delay.
+- **macOS Safari**: Dedicated manual installation hint, since the native prompt is unavailable.
 - The install prompt is **dismissible** and re-appears after a cooldown period.
 - The prompt is not shown if the app is already running in standalone mode.
 
@@ -859,13 +893,14 @@ Push notification messages are localized in the service worker:
 |---|---|---|
 | `en` | English | Supported |
 | `fr` | French | Supported |
-| `es` | Spanish | Planned (temporarily deferred to prioritize feature development) |
+
+Spanish support is **deferred** (see Appendix B) and is not currently selectable.
 
 ### 17.2 Language Detection & Persistence
 
 - On first visit, the language is **auto-detected** from the browser's locale (`navigator.language`).
 - The selected language is **persisted** in IndexedDB (under the `identity` store).
-- A **language switcher** is available on every screen.
+- A **language switcher** is available on the welcome page, the join page, and the About page.
 
 ### 17.3 Translation Coverage
 
@@ -923,8 +958,8 @@ The app estimates the user's share of infrastructure costs:
 
 | Route | Screen | Auth Required |
 |---|---|---|
-| `/setup` | Identity creation | No (redirects away if identity exists) |
-| `/` | Group selection (home) | Yes |
+| `/` | Welcome landing page (also `/welcome`) | No |
+| `/groups` | Group selection (home) | Yes |
 | `/groups/new` | Create new group | Yes |
 | `/join/:groupId#key` | Join group via invite link | No (auto-generates identity if needed) |
 | `/groups/:groupId` | Group view - Balance tab | Yes |
@@ -936,39 +971,45 @@ The app estimates the user's share of infrastructure costs:
 | `/groups/:groupId/entries/:entryId/edit` | Edit entry form | Yes |
 | `/groups/:groupId/members/new` | Add virtual member | Yes |
 | `/groups/:groupId/members/:memberId/edit` | Edit member metadata | Yes |
+| `/groups/:groupId/members/:sourceId/merge` | Member merge - pick target | Yes |
+| `/groups/:groupId/members/:sourceId/merge/:targetId` | Member merge - preview & confirm | Yes |
 | `/groups/:groupId/settings` | Edit group metadata | Yes |
 | `/about` | About & usage stats | No |
-| `*` (catch-all) | Redirects to `/` | - |
+| `/error-log` | In-memory error log & debug report | No |
+| `*` (catch-all) | NotFound screen | - |
 
 ### 19.2 Route Guards
 
-- **Identity required**: Routes that need a user identity redirect to `/setup` if no identity exists.
-- **Setup guard**: The setup screen redirects to `/` if an identity already exists.
+- **Identity required**: Routes that need a user identity redirect to `/` (the welcome page) if no identity exists.
+- **Welcome page**: When the user already has an identity, the welcome page still renders but exposes a shortcut to `/groups`. Once identity is generated from the welcome page, the user is sent to `/groups`.
 - **Join exception**: The join route is accessible without an identity; one is auto-generated before proceeding.
+- **About / Error log**: Accessible regardless of identity, so the user can read about the app or copy a debug report even when they have no groups.
 
 ### 19.3 Screen Descriptions
 
 | Screen | Purpose |
 |---|---|
-| **SetupScreen** | First-time onboarding. Generates cryptographic identity. Shows privacy explanation. |
-| **GroupSelectionScreen** | Home screen. Lists all groups with name, date, member count, and color-coded balance badge. Provides export/import and group deletion. Archived groups shown in collapsible section. |
+| **WelcomeScreen** | Public landing page. Explains the app, lists features and screenshots, offers identity generation, language switcher, and a funding/sponsorship link. Doubles as the entry point for SEO. |
+| **GroupSelectionScreen** | Home screen for users with an identity. Lists all groups with name, date, member count, and color-coded balance badge. Provides JSON export, CSV expense export, JSON import, and group removal. Archived groups shown in collapsible section. |
 | **CreateGroupScreen** | Group creation form with name, creator name, currency, and optional virtual members. Includes PoW solver with progress feedback. |
-| **JoinGroupScreen** | Invite acceptance. Shows group info, virtual/real member lists, and new member form. |
-| **GroupViewScreen** | Main group interaction with 4 tabs (Balance, Entries, Members, Activities). Header shows group name, subtitle, and user's balance summary. Floating Action Button for adding entries. |
-| **NewEntryScreen** | Entry creation/editing form. Supports expense, transfer, and income entry types with type switcher. |
-| **AddMemberScreen** | Form to add a virtual (placeholder) member to the group. |
-| **EditMemberMetadataScreen** | Form to edit a member's display name, contact info, and payment methods. |
+| **JoinGroupScreen** | Invite acceptance. Shows group info, virtual/real member lists, and new member form. Includes a language switcher. |
+| **GroupViewScreen** | Main group interaction with 4 tabs (Balance, Entries, Members, Activities). Header shows group name, subtitle, and user's balance summary. Floating Action Button for adding entries. Shows a read-only banner when the user is not a member of an imported group. |
+| **NewEntryScreen** | Entry creation/editing form. Supports expense, transfer, and income entry types with type switcher. Also reached via the **Duplicate** action on an entry. |
+| **AddMemberScreen** | Form to add a virtual (placeholder) member to the group. Prevents duplicate names. |
+| **EditMemberMetadataScreen** | Form to edit a member's display name, contact info, and payment methods. For the current user, also exposes **Pre-fill from saved profile** and **Save as my profile** actions to share metadata across groups. Prevents duplicate names on rename. |
+| **MergeMemberScreen** | Two-step page to merge one member chain into another (pick target, then preview effects and type-to-confirm). |
 | **EditGroupMetadataScreen** | Form to edit group name, subtitle, description, links, and archive state. |
-| **AboutScreen** | App information, motivation, privacy info, usage statistics, links to GitHub, Sponsors, and Discussions. |
+| **AboutScreen** | App information, motivation, privacy info, usage statistics, language switcher, and links to GitHub, Sponsors, and Discussions (each opening in a new tab). |
+| **ErrorLogScreen** | Displays in-memory error entries collected during the session. Provides **Copy** and **Share** buttons to send a debug report (via the Web Share API when available). |
 
 ### 19.4 Tab System (GroupViewScreen)
 
 | Tab | Features |
 |---|---|
 | **Balance** | Per-member balance cards (color-coded). Settlement plan with "Record Transfer" buttons and payment method display. Settlement preference editor. |
-| **Entries** | Entry list with cards (expenses, transfers, income). Filters (person, category, currency, date). Toggle deleted entries. Click to view details/edit/delete. |
-| **Members** | Member list with metadata indicators. Invite button with QR code. Add virtual member. Group info section. Member detail with name editing, contact and payment info. Group metadata editing. Notification toggle. |
-| **Activities** | Activity feed (newest first, grouped by date). Activity type, actor, and involved member filters. |
+| **Entries** | Entry list with cards (expenses, transfers, income). Search bar + filters (person, category, currency, date). Toggle deleted entries. Click to view details / edit / duplicate / delete. Total amount counts expenses only (transfers and income excluded). Active filters are summarized when collapsed. |
+| **Members** | Member list with metadata indicators. Invite button with QR code, Copy link, and Web Share. Add virtual member. Merge member. Group info section. Member detail with name editing, contact and payment info. Group metadata editing. Notification toggle. |
+| **Activities** | Activity feed (newest first, grouped by date). Activity type, actor, and involved member filters. Active filters are summarized when collapsed. Each entry-related activity links back to the entry via deep link. |
 
 ---
 
@@ -978,7 +1019,7 @@ The app estimates the user's share of infrastructure costs:
 
 - The offline banner uses `role="alert"` and `aria-live="polite"` for screen reader compatibility.
 - Form inputs include proper labels and error states.
-- Buttons use semantic HTML.
+- Buttons use semantic HTML; in-app navigation uses real `<a href>` anchors to preserve middle-click, copy-link, and screen-reader navigation.
 - Color-coded elements (balances) also use text indicators (+/-/settled).
 
 ### 20.2 Toast Notifications
