@@ -298,6 +298,10 @@ view i18n config maybeUserRootId today (Model data) state =
                 |> List.filter (\{ entry } -> matchesSearch i18n resolveName data.searchQuery entry)
                 |> List.sortBy (\{ entry } -> entrySortKey entry)
 
+        groupDefaultCurrency : Currency.Currency
+        groupDefaultCurrency =
+            state.groupMeta.defaultCurrency
+
         totalAmount : Int
         totalAmount =
             visibleEntries
@@ -305,7 +309,11 @@ view i18n config maybeUserRootId today (Model data) state =
                     (\{ entry } ->
                         case entry.kind of
                             Entry.Expense d ->
-                                Just d.amount
+                                if d.currency == groupDefaultCurrency then
+                                    Just d.amount
+
+                                else
+                                    d.defaultCurrencyAmount
 
                             Entry.Income _ ->
                                 Nothing
@@ -321,7 +329,7 @@ view i18n config maybeUserRootId today (Model data) state =
     in
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         [ -- Summary row
-          summaryRow i18n (List.length visibleEntries) totalAmount
+          summaryRow i18n (List.length visibleEntries) totalAmount groupDefaultCurrency
 
         -- New Entry button (hidden in read-only mode)
         , if maybeUserRootId /= Nothing then
@@ -363,13 +371,20 @@ view i18n config maybeUserRootId today (Model data) state =
 -- SUMMARY ROW
 
 
-summaryRow : I18n -> Int -> Int -> Ui.Element msg
-summaryRow i18n entryCount totalAmount =
+summaryRow : I18n -> Int -> Int -> Currency.Currency -> Ui.Element msg
+summaryRow i18n entryCount totalAmount currency =
     Ui.el
         [ Ui.Font.size Theme.font.sm
         , Ui.Font.color Theme.base.textSubtle
         ]
-        (Ui.text (String.fromInt entryCount ++ " entries · " ++ Format.formatCents (T.currentLanguage i18n) totalAmount ++ " total"))
+        (Ui.text
+            (T.entriesSummary
+                { count = String.fromInt entryCount
+                , amount = Format.formatCentsWithCurrency (T.currentLanguage i18n) totalAmount currency
+                }
+                i18n
+            )
+        )
 
 
 

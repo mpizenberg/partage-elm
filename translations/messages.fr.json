@@ -198,6 +198,7 @@
   "entryDetailFrom": "De",
   "entryDetailTo": "À",
   "entriesShowDeleted": "Afficher supprimées ({count})",
+  "entriesSummary": "{count} dépenses · {amount} au total",
   "editEntryTitle": "Modifier l'écriture",
   "editEntrySubmit": "Enregistrer",
   "memberDetailTypeReal": "Membre réel",

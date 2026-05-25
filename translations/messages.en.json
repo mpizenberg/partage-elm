@@ -198,6 +198,7 @@
   "entryDetailFrom": "From",
   "entryDetailTo": "To",
   "entriesShowDeleted": "Show deleted ({count})",
+  "entriesSummary": "{count} entries · {amount} total",
   "editEntryTitle": "Edit Entry",
   "editEntrySubmit": "Save Changes",
   "memberDetailTypeReal": "Real member",
