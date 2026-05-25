@@ -8,6 +8,7 @@ import FeatherIcons
 import Field
 import Form
 import Form.NewEntry as NewEntry
+import Format
 import Page.Group.NewEntry.ExpenseView as ExpenseView
 import Page.Group.NewEntry.IncomeView as IncomeView
 import Page.Group.NewEntry.Shared as Shared
@@ -41,7 +42,7 @@ type Model
 init : Shared.Config -> Model
 init config =
     Model
-        { form = NewEntry.form |> NewEntry.initDate config.today
+        { form = NewEntry.form config.language |> NewEntry.initDate config.today
         , submitted = False
         , isEditing = False
         , kind = ExpenseKind
@@ -128,7 +129,7 @@ initFromExpenseData config editing data =
                     (\b ->
                         case b of
                             Entry.ExactBeneficiary e ->
-                                Just ( e.memberId, Shared.centsToDecimalString e.amount )
+                                Just ( e.memberId, Format.formatCentsForInput config.language e.amount )
 
                             _ ->
                                 Nothing
@@ -141,12 +142,12 @@ initFromExpenseData config editing data =
 
         payerAmountsDict : Dict Member.Id String
         payerAmountsDict =
-            List.map (\p -> ( p.memberId, Shared.centsToDecimalString p.amount )) data.payers
+            List.map (\p -> ( p.memberId, Format.formatCentsForInput config.language p.amount )) data.payers
                 |> Dict.fromList
     in
     Model
         { form =
-            NewEntry.form
+            NewEntry.form config.language
                 |> NewEntry.initDescription data.description
                 |> NewEntry.initAmount data.amount
                 |> NewEntry.initDate data.date
@@ -173,7 +174,7 @@ initFromExpenseData config editing data =
         , defaultCurrencyAmount =
             case data.defaultCurrencyAmount of
                 Just amt ->
-                    Shared.centsToDecimalString amt
+                    Format.formatCentsForInput config.language amt
 
                 Nothing ->
                     ""
@@ -184,7 +185,7 @@ initFromTransferData : Shared.Config -> Bool -> Entry.TransferData -> Model
 initFromTransferData config editing data =
     Model
         { form =
-            NewEntry.form
+            NewEntry.form config.language
                 |> NewEntry.initAmount data.amount
                 |> NewEntry.initDate data.date
         , submitted = False
@@ -205,7 +206,7 @@ initFromTransferData config editing data =
         , defaultCurrencyAmount =
             case data.defaultCurrencyAmount of
                 Just amt ->
-                    Shared.centsToDecimalString amt
+                    Format.formatCentsForInput config.language amt
 
                 Nothing ->
                     ""
@@ -249,7 +250,7 @@ initFromIncomeData config editing data =
                     (\b ->
                         case b of
                             Entry.ExactBeneficiary e ->
-                                Just ( e.memberId, Shared.centsToDecimalString e.amount )
+                                Just ( e.memberId, Format.formatCentsForInput config.language e.amount )
 
                             _ ->
                                 Nothing
@@ -262,7 +263,7 @@ initFromIncomeData config editing data =
     in
     Model
         { form =
-            NewEntry.form
+            NewEntry.form config.language
                 |> NewEntry.initDescription data.description
                 |> NewEntry.initAmount data.amount
                 |> NewEntry.initDate data.date
@@ -289,7 +290,7 @@ initFromIncomeData config editing data =
         , defaultCurrencyAmount =
             case data.defaultCurrencyAmount of
                 Just amt ->
-                    Shared.centsToDecimalString amt
+                    Format.formatCentsForInput config.language amt
 
                 Nothing ->
                     ""

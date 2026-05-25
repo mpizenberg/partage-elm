@@ -279,7 +279,7 @@ init config =
     , editMemberMetadataModel = Page.Group.EditMemberMetadata.init "" "" Member.emptyMetadata
     , mergeMemberModel = Page.Group.MergeMember.init "" Nothing
     , pendingMerge = Nothing
-    , newEntryModel = Page.Group.NewEntry.init { currentUserRootId = "", activeMembersRootIds = [], today = { year = 2000, month = 1, day = 1 }, defaultCurrency = EUR }
+    , newEntryModel = Page.Group.NewEntry.init { currentUserRootId = "", activeMembersRootIds = [], today = { year = 2000, month = 1, day = 1 }, defaultCurrency = EUR, language = T.En }
     , pendingEntry = Nothing
     , editGroupMetadataModel = Page.Group.EditGroupMetadata.init GroupState.empty.groupMeta
     }
@@ -1563,6 +1563,7 @@ memberEntryFormConfig config userRootId loaded =
     , activeMembersRootIds = List.map .rootId (GroupState.activeMembers loaded.groupState)
     , today = Date.posixToDate config.timeZone config.currentTime
     , defaultCurrency = loaded.summary.defaultCurrency
+    , language = T.currentLanguage config.i18n
     }
 
 

@@ -8,11 +8,14 @@ module Form.NewEntry exposing
     , initAmount
     , initDate
     , initDescription
+    , normalizeAmountInput
     )
 
 import Domain.Date exposing (Date)
 import Field exposing (Field, Validation)
 import Form exposing (Accessor)
+import Format
+import Translations exposing (Language)
 
 
 {-| The new entry form type combining state, accessors, errors, and output.
@@ -57,14 +60,18 @@ type alias Output =
 
 
 
--- Amount field type: parses "12.50" -> 1250 (cents)
+-- Amount field type: parses "12.50" or "12,50" -> 1250 (cents).
+-- Accepts both decimal separators and ignores spaces (regular, NBSP, NNBSP)
+-- so French-formatted input like "1 234,56" round-trips. The active Language
+-- is baked into the type so `setFromValue` / `toString` produce the right
+-- separator without any caller having to remember to pass it.
 
 
-amountType : Field.Type Int
-amountType =
+amountType : Language -> Field.Type Int
+amountType lang =
     Field.customType
         { fromString = amountFromString
-        , toString = amountToString
+        , toString = Format.formatCentsForInput lang
         }
 
 
@@ -72,7 +79,7 @@ amountFromString : String -> Result Field.Error Int
 amountFromString =
     Field.trim
         (\s ->
-            case String.toFloat s of
+            case String.toFloat (normalizeAmountInput s) of
                 Just f ->
                     let
                         cents : Int
@@ -90,18 +97,16 @@ amountFromString =
         )
 
 
-amountToString : Int -> String
-amountToString cents =
-    let
-        whole : Int
-        whole =
-            cents // 100
-
-        remainder : Int
-        remainder =
-            modBy 100 (abs cents)
-    in
-    String.fromInt whole ++ "." ++ String.padLeft 2 '0' (String.fromInt remainder)
+{-| Strip locale-specific decimations so `String.toFloat` can parse the result.
+Accepts comma as decimal separator and removes spaces / NBSP / NNBSP that French
+grouping uses as thousands separators.
+-}
+normalizeAmountInput : String -> String
+normalizeAmountInput str =
+    String.replace "," "." str
+        |> String.replace " " ""
+        |> String.replace "\u{00A0}" ""
+        |> String.replace "\u{202F}" ""
 
 
 
@@ -147,12 +152,13 @@ dateToString date =
 -- Form
 
 
-{-| The new entry form definition.
+{-| The new entry form definition. Carries the active language so the amount
+field formats values with the locale's decimal separator.
 -}
-form : Form
-form =
+form : Language -> Form
+form lang =
     Form.new
-        { init = init
+        { init = init lang
         , accessors = accessors
         , validate = validate
         }
@@ -172,17 +178,18 @@ initDescription desc =
     Form.modify .description (Field.setFromString desc)
 
 
-{-| Initialize the amount field from cents.
+{-| Initialize the amount field from cents. The raw string is produced by the
+field type's `toString`, so the locale is whatever was passed to `form`.
 -}
 initAmount : Int -> Form -> Form
 initAmount cents =
-    Form.modify .amount (Field.setFromString (amountToString cents))
+    Form.modify .amount (Field.setFromValue cents)
 
 
-init : State
-init =
+init : Language -> State
+init lang =
     { description = Field.empty Field.nonBlankString
-    , amount = Field.empty amountType
+    , amount = Field.empty (amountType lang)
     , date = Field.empty dateType
     }
 

@@ -179,10 +179,10 @@ beneficiaryRow i18n data member =
                 ExactSplit ->
                     if isSelected then
                         Ui.row [ Ui.spacing Theme.spacing.xs, Ui.contentCenterY ]
-                            [ Ui.Input.text [ Ui.width (Ui.px 100) ]
+                            [ Ui.Input.text [ Ui.width (Ui.px 100), Shared.decimalInputAttr ]
                                 { onChange = InputExactAmount member.rootId
                                 , text = Maybe.withDefault "" (Dict.get member.rootId data.exactAmounts)
-                                , placeholder = Just "0.00"
+                                , placeholder = Just (Shared.zeroAmountPlaceholder i18n)
                                 , label = Ui.Input.labelHidden member.name
                                 }
                             , Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
