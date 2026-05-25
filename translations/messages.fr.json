@@ -116,7 +116,7 @@
   "joinGroupConfirm": "Rejoindre",
   "joinGroupConfirmClaim": "Rejoindre en tant que {name}",
   "joinGroupConfirmRecover": "Récupérer {name}",
-  "joinGroupConfirmNew": "Rejoindre en tant que nouveau membre",
+  "joinGroupConfirmNew": "Rejoindre en tant que {name}",
   "joinGroupNameTaken": "Ce nom est déjà utilisé par un autre membre.",
   "toastAlreadyInGroup": "Tu es déjà dans ce groupe.",
   "toastJoinedGroup": "Groupe rejoint !",

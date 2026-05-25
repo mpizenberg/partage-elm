@@ -317,7 +317,7 @@ viewPreview i18n preview =
                                 T.joinGroupConfirm i18n
 
                     JoinAsNewMember ->
-                        T.joinGroupConfirmNew i18n
+                        T.joinGroupConfirmNew trimmedName i18n
         in
         UI.Components.btnPrimary []
             { label = confirmLabel

@@ -116,7 +116,7 @@
   "joinGroupConfirm": "Join",
   "joinGroupConfirmClaim": "Join as {name}",
   "joinGroupConfirmRecover": "Recover {name}",
-  "joinGroupConfirmNew": "Join as new member",
+  "joinGroupConfirmNew": "Join as {name}",
   "joinGroupNameTaken": "This name is already used by another member.",
   "toastAlreadyInGroup": "You are already in this group.",
   "toastJoinedGroup": "Joined group!",
