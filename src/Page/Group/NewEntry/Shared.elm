@@ -7,8 +7,8 @@ module Page.Group.NewEntry.Shared exposing
     , SplitData(..)
     , SplitMode(..)
     , amountCurrencyField
-    , centsToDecimalString
     , dateField
+    , decimalInputAttr
     , defaultCurrencyAmountField
     , errorWhen
     , fieldError
@@ -17,6 +17,7 @@ module Page.Group.NewEntry.Shared exposing
     , formHint
     , notesField
     , parseAmountCents
+    , zeroAmountPlaceholder
     )
 
 {-| Internal shared types, form helpers, and shared field views for NewEntry.
@@ -34,6 +35,7 @@ import Domain.Member as Member
 import Field
 import Form
 import Form.NewEntry as NewEntry
+import Format
 import Html
 import Html.Attributes
 import Html.Events
@@ -131,6 +133,7 @@ type alias Config =
     , activeMembersRootIds : List Member.Id
     , today : Date
     , defaultCurrency : Currency
+    , language : T.Language
     }
 
 
@@ -163,7 +166,7 @@ type Msg
 
 parseAmountCents : String -> Maybe Int
 parseAmountCents s =
-    String.toFloat (String.trim s)
+    String.toFloat (NewEntry.normalizeAmountInput s)
         |> Maybe.map (\f -> round (f * 100))
         |> Maybe.andThen
             (\cents ->
@@ -173,20 +176,6 @@ parseAmountCents s =
                 else
                     Nothing
             )
-
-
-centsToDecimalString : Int -> String
-centsToDecimalString cents =
-    let
-        whole : Int
-        whole =
-            cents // 100
-
-        frac : Int
-        frac =
-            remainderBy 100 cents
-    in
-    String.fromInt whole ++ "." ++ String.padLeft 2 '0' (String.fromInt frac)
 
 
 
@@ -261,6 +250,21 @@ errorWhen condition message =
 -- SHARED FIELD VIEWS
 
 
+{-| Triggers the mobile decimal keypad and hints that the field accepts decimals.
+Use on every monetary amount input.
+-}
+decimalInputAttr : Ui.Attribute msg
+decimalInputAttr =
+    Ui.htmlAttribute (Html.Attributes.attribute "inputmode" "decimal")
+
+
+{-| Locale-aware placeholder for an empty amount input (e.g. "0,00" in French).
+-}
+zeroAmountPlaceholder : I18n -> String
+zeroAmountPlaceholder i18n =
+    Format.formatCentsForInput (T.currentLanguage i18n) 0
+
+
 amountCurrencyField : I18n -> ModelData -> Ui.Element Msg
 amountCurrencyField i18n data =
     let
@@ -270,7 +274,7 @@ amountCurrencyField i18n data =
     in
     formField { label = T.newEntryAmountLabel i18n, required = True }
         [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill, Ui.contentCenterY ]
-            [ Ui.Input.text [ Ui.width Ui.fill ]
+            [ Ui.Input.text [ Ui.width Ui.fill, decimalInputAttr ]
                 { onChange = InputAmount
                 , text = Field.toRawString field
                 , placeholder = Just (T.newEntryAmountPlaceholder i18n)
@@ -330,7 +334,7 @@ defaultCurrencyAmountField i18n data =
                 not isEmpty && parseAmountCents (String.trim data.defaultCurrencyAmount) == Nothing
         in
         formField { label = T.newEntryDefaultCurrencyAmountLabel (Currency.currencyCode data.groupDefaultCurrency) i18n, required = True }
-            [ Ui.Input.text [ Ui.width Ui.fill ]
+            [ Ui.Input.text [ Ui.width Ui.fill, decimalInputAttr ]
                 { onChange = InputDefaultCurrencyAmount
                 , text = data.defaultCurrencyAmount
                 , placeholder = Just (T.newEntryAmountPlaceholder i18n)

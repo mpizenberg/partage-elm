@@ -145,7 +145,7 @@
   "newEntryDescriptionPlaceholder": "ex. Dîner au restaurant",
   "newEntryDescriptionHint": "Une courte description de la dépense.",
   "newEntryAmountLabel": "Montant",
-  "newEntryAmountPlaceholder": "ex. 42.50",
+  "newEntryAmountPlaceholder": "ex. 42,50",
   "newEntryAmountHint": "Montant total payé.",
   "newEntryDateLabel": "Date",
   "newEntryPayerMismatch": "Les montants des payeurs doivent correspondre au total.",

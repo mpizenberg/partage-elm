@@ -1,4 +1,4 @@
-module Format exposing (formatCents, formatCentsSigned, formatCentsWithCurrency)
+module Format exposing (formatCents, formatCentsForInput, formatCentsSigned, formatCentsWithCurrency)
 
 {-| Locale-aware formatting helpers for currency amounts stored as smallest currency units.
 
@@ -47,6 +47,20 @@ e.g. (En, 1050) -> "10.50", (Fr, 1050) -> "10,50", (En, -1234567) -> "-12,345.67
 formatCents : Language -> Int -> String
 formatCents lang cents =
     formatMinorUnits (localeConfig lang) 2 cents
+
+
+{-| Format cents for pre-filling a text input: locale-aware decimal separator
+but no thousands grouping (users edit a flat number, not a formatted display).
+e.g. (En, 1234567) -> "12345.67", (Fr, 1234567) -> "12345,67".
+-}
+formatCentsForInput : Language -> Int -> String
+formatCentsForInput lang cents =
+    let
+        cfg : LocaleConfig
+        cfg =
+            localeConfig lang
+    in
+    formatMinorUnits { cfg | group = "" } 2 cents
 
 
 {-| Format cents with an explicit sign: "+" for positive, locale "-" for negative,
