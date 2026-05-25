@@ -258,6 +258,15 @@ decimalInputAttr =
     Ui.htmlAttribute (Html.Attributes.attribute "inputmode" "decimal")
 
 
+{-| Switches the underlying input to `type="date"` so the browser shows a native
+calendar picker and locale-formatted display. The input's value stays in
+`YYYY-MM-DD` regardless of locale, which is what `dateFromString` parses.
+-}
+dateInputAttr : Ui.Attribute msg
+dateInputAttr =
+    Ui.htmlAttribute (Html.Attributes.type_ "date")
+
+
 {-| Locale-aware placeholder for an empty amount input (e.g. "0,00" in French).
 -}
 zeroAmountPlaceholder : I18n -> String
@@ -354,10 +363,10 @@ dateField i18n data =
             Form.get .date data.form
     in
     formField { label = T.newEntryDateLabel i18n, required = True }
-        [ Ui.Input.text [ Ui.width Ui.fill ]
+        [ Ui.Input.text [ Ui.width Ui.fill, dateInputAttr ]
             { onChange = InputDate
             , text = Field.toRawString field
-            , placeholder = Just "YYYY-MM-DD"
+            , placeholder = Nothing
             , label = Ui.Input.labelHidden (T.newEntryDateLabel i18n)
             }
         , fieldError i18n data.submitted field
