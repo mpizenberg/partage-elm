@@ -1,4 +1,4 @@
-module Domain.Currency exposing (Currency(..), allCurrencies, currencyCode, currencyDecoder, currencyFromCode, currencySymbol, encodeCurrency, precision)
+module Domain.Currency exposing (Currency(..), allCurrencies, convertCents, currencyCode, currencyDecoder, currencyFromCode, currencySymbol, encodeCurrency, precision)
 
 {-| Supported currencies and their precision.
 -}
@@ -150,6 +150,20 @@ precision currency =
 
         _ ->
             2
+
+
+{-| Convert `amountCents` (in the smallest unit of `from`) into the smallest unit
+of `to`, given a rate where `1 from = rate to`. Accounts for each currency's
+decimal precision (e.g. JPY has 0).
+-}
+convertCents : Float -> Int -> Currency -> Currency -> Int
+convertCents rate amountCents from to =
+    let
+        realAmount : Float
+        realAmount =
+            toFloat amountCents / toFloat (10 ^ precision from)
+    in
+    round (realAmount * rate * toFloat (10 ^ precision to))
 
 
 {-| Encode a Currency as a lowercase JSON string.

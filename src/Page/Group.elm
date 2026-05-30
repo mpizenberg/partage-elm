@@ -30,6 +30,7 @@ Owns its own ConcurrentTask.Pool and handles all group business logic
 
 import Browser.Dom
 import ConcurrentTask exposing (ConcurrentTask)
+import ConcurrentTask.Http as Http
 import Dict exposing (Dict)
 import Domain.Currency exposing (Currency(..))
 import Domain.Date as Date exposing (Date)
@@ -45,6 +46,7 @@ import GroupOps exposing (LoadedGroup)
 import IndexedDb as Idb
 import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
 import Infra.EventVerification as EventVerification
+import Infra.ExchangeRate as ExchangeRate
 import Infra.IdGen as IdGen
 import Infra.Identity exposing (Identity)
 import Infra.PushServer as PushServer
@@ -232,6 +234,7 @@ type
     | PostSyncTasksDone (ConcurrentTask.Response Idb.Error ())
     | OnPocketbaseEvent Json.Decode.Value
     | ScrollToEntryResult (Result Browser.Dom.Error ())
+    | OnRateFetched Currency (ConcurrentTask.Response Http.Error Float)
 
 
 
@@ -574,26 +577,35 @@ update config msg model =
         -- New entry / edit entry
         NewEntryMsg subMsg ->
             let
-                ( modelWithPage, maybeOutput ) =
-                    Page.Group.NewEntry.update subMsg model.newEntryModel
+                ( modelWithPage, effect ) =
+                    Page.Group.NewEntry.update (T.currentLanguage config.i18n) subMsg model.newEntryModel
                         |> Tuple.mapFirst (\subModel -> { model | newEntryModel = subModel })
             in
-            case ( maybeOutput, model.loadedGroup ) of
-                ( Just entryOutput, Just loaded ) ->
-                    case config.route of
-                        GroupRoute _ (EditEntry entryId) ->
-                            case GroupOps.editEntry (submitContext (OnEntrySaved loaded.summary.id) config modelWithPage) loaded entryId entryOutput of
-                                Just ( state, cmd ) ->
-                                    ( { modelWithPage | runner = state.runner, randomSeed = state.randomSeed, uuidState = state.uuidState }, cmd, [] )
+            case effect of
+                NewEntryShared.NoEffect ->
+                    ( modelWithPage, Cmd.none, [] )
 
-                                Nothing ->
-                                    ( modelWithPage, Cmd.none, [] )
+                NewEntryShared.SubmitEntry output ->
+                    handleNewEntryOutput config modelWithPage output
+
+                NewEntryShared.RequestRate pair ->
+                    fetchExchangeRate config modelWithPage pair
+
+        OnRateFetched base response ->
+            let
+                rateMsg : NewEntryShared.Msg
+                rateMsg =
+                    case response of
+                        ConcurrentTask.Success rate ->
+                            NewEntryShared.RateFetched base rate
 
                         _ ->
-                            runSubmit (OnEntrySaved loaded.summary.id) config modelWithPage (\ctx -> GroupOps.newEntry ctx loaded entryOutput)
-
-                _ ->
-                    ( modelWithPage, Cmd.none, [] )
+                            NewEntryShared.RateFetchFailed
+            in
+            ( { model | newEntryModel = Page.Group.NewEntry.update (T.currentLanguage config.i18n) rateMsg model.newEntryModel |> Tuple.first }
+            , Cmd.none
+            , []
+            )
 
         -- Edit group metadata
         EditGroupMetadataMsg subMsg ->
@@ -972,6 +984,45 @@ runSubmit onComplete config model submitFn =
     , cmd
     , []
     )
+
+
+{-| Route a validated new-entry/edit-entry output to the right submit operation.
+-}
+handleNewEntryOutput : UpdateConfig -> Model -> NewEntryShared.Output -> ( Model, Cmd Msg, List Output )
+handleNewEntryOutput config model entryOutput =
+    case model.loadedGroup of
+        Just loaded ->
+            case config.route of
+                GroupRoute _ (EditEntry entryId) ->
+                    case GroupOps.editEntry (submitContext (OnEntrySaved loaded.summary.id) config model) loaded entryId entryOutput of
+                        Just ( state, cmd ) ->
+                            ( { model | runner = state.runner, randomSeed = state.randomSeed, uuidState = state.uuidState }, cmd, [] )
+
+                        Nothing ->
+                            ( model, Cmd.none, [] )
+
+                _ ->
+                    runSubmit (OnEntrySaved loaded.summary.id) config model (\ctx -> GroupOps.newEntry ctx loaded entryOutput)
+
+        Nothing ->
+            ( model, Cmd.none, [] )
+
+
+{-| Fetch the exchange rate for the pair requested by the new-entry form, then
+fill the form via the NewEntry update.
+-}
+fetchExchangeRate : UpdateConfig -> Model -> { base : Currency, quote : Currency } -> ( Model, Cmd Msg, List Output )
+fetchExchangeRate config model pair =
+    let
+        ( runner, cmd ) =
+            ( model.runner, Cmd.none )
+                |> Runner.andRun (OnRateFetched pair.base)
+                    (ExchangeRate.fetchRateCached config.db
+                        (Date.posixToDate config.timeZone config.currentTime)
+                        pair
+                    )
+    in
+    ( { model | runner = runner }, cmd, [] )
 
 
 {-| Submit an entry action (delete/restore), checking loadedGroup.

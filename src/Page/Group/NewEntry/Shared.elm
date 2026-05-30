@@ -1,9 +1,11 @@
 module Page.Group.NewEntry.Shared exposing
     ( Config
+    , Effect(..)
     , EntryKind(..)
     , ModelData
     , Msg(..)
     , Output(..)
+    , RateStatus(..)
     , SplitData(..)
     , SplitMode(..)
     , amountCurrencyField
@@ -32,6 +34,7 @@ import Domain.Currency as Currency exposing (Currency)
 import Domain.Date exposing (Date)
 import Domain.Entry as Entry
 import Domain.Member as Member
+import FeatherIcons
 import Field
 import Form
 import Form.NewEntry as NewEntry
@@ -39,7 +42,9 @@ import Format
 import Html
 import Html.Attributes
 import Html.Events
+import Infra.ExchangeRate as ExchangeRate
 import Translations as T exposing (I18n)
+import UI.Components
 import UI.Theme as Theme
 import Ui
 import Ui.Font
@@ -68,6 +73,25 @@ type SplitMode
 type SplitData
     = ShareSplitData (List { memberId : Member.Id, shares : Int })
     | ExactSplitData (List { memberId : Member.Id, amount : Int })
+
+
+{-| Status of an automated exchange-rate fetch for the default-currency amount.
+-}
+type RateStatus
+    = RateIdle
+    | RateLoading
+    | RateFailed
+
+
+{-| What the parent page should do after the form handles a message: nothing,
+submit a validated entry, or fetch an exchange rate for a currency pair. This is
+the form's way of telling the parent its intent without the parent having to
+inspect the incoming message.
+-}
+type Effect
+    = NoEffect
+    | SubmitEntry Output
+    | RequestRate { base : Currency, quote : Currency }
 
 
 {-| The validated output produced on successful form submission.
@@ -123,6 +147,7 @@ type alias ModelData =
     , currency : Currency
     , groupDefaultCurrency : Currency
     , defaultCurrencyAmount : String
+    , rateStatus : RateStatus
     }
 
 
@@ -156,6 +181,9 @@ type Msg
     | InputCategory (Maybe Entry.Category)
     | InputCurrency Currency
     | InputDefaultCurrencyAmount String
+    | FetchRate { base : Currency, quote : Currency }
+    | RateFetched Currency Float
+    | RateFetchFailed
     | InputDate String
     | Submit
 
@@ -341,18 +369,73 @@ defaultCurrencyAmountField i18n data =
             isInvalid : Bool
             isInvalid =
                 not isEmpty && parseAmountCents (String.trim data.defaultCurrencyAmount) == Nothing
+
+            amountCents : Int
+            amountCents =
+                Form.get .amount data.form |> Field.toMaybe |> Maybe.withDefault 0
         in
         formField { label = T.newEntryDefaultCurrencyAmountLabel (Currency.currencyCode data.groupDefaultCurrency) i18n, required = True }
-            [ Ui.Input.text [ Ui.width Ui.fill, decimalInputAttr ]
-                { onChange = InputDefaultCurrencyAmount
-                , text = data.defaultCurrencyAmount
-                , placeholder = Just (T.newEntryAmountPlaceholder i18n)
-                , label = Ui.Input.labelHidden (T.newEntryDefaultCurrencyAmountLabel (Currency.currencyCode data.groupDefaultCurrency) i18n)
-                }
+            [ Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
+                [ Ui.Input.text [ Ui.width Ui.fill, decimalInputAttr ]
+                    { onChange = InputDefaultCurrencyAmount
+                    , text = data.defaultCurrencyAmount
+                    , placeholder = Just (T.newEntryAmountPlaceholder i18n)
+                    , label = Ui.Input.labelHidden (T.newEntryDefaultCurrencyAmountLabel (Currency.currencyCode data.groupDefaultCurrency) i18n)
+                    }
+                , fetchRateControl i18n amountCents data
+                ]
             , formHint (T.newEntryDefaultCurrencyAmountHint (Currency.currencyCode data.groupDefaultCurrency) i18n)
+            , xeComLink i18n { base = data.currency, quote = data.groupDefaultCurrency, amountCents = amountCents }
+            , errorWhen (data.rateStatus == RateFailed) (T.newEntryRateError i18n)
             , errorWhen (data.submitted && isEmpty) (T.fieldRequired i18n)
             , errorWhen (data.submitted && isInvalid) (T.fieldInvalidFormat i18n)
             ]
+
+
+{-| Auto-fetch control shown beside the default-currency amount input. Renders a
+"Fetch rate" button when both currencies are supported and an amount is entered,
+a "Fetching…" hint while in flight, and nothing otherwise. The manual xe.com link
+below is always available as a fallback.
+-}
+fetchRateControl : I18n -> Int -> ModelData -> Ui.Element Msg
+fetchRateControl i18n amountCents data =
+    let
+        canAutoFetch : Bool
+        canAutoFetch =
+            ExchangeRate.supports data.currency
+                && ExchangeRate.supports data.groupDefaultCurrency
+                && (amountCents > 0)
+    in
+    if not canAutoFetch then
+        Ui.none
+
+    else
+        case data.rateStatus of
+            RateLoading ->
+                formHint (T.newEntryFetchingRate i18n)
+
+            _ ->
+                UI.Components.btnOutline [ Ui.width Ui.shrink ]
+                    { label = T.newEntryFetchRate i18n
+                    , icon = Just (UI.Components.featherIcon 14 FeatherIcons.refreshCw)
+                    , onPress = FetchRate { base = data.currency, quote = data.groupDefaultCurrency }
+                    }
+
+
+xeComLink : I18n -> { base : Currency, quote : Currency, amountCents : Int } -> Ui.Element msg
+xeComLink i18n params =
+    Ui.row
+        [ Ui.linkNewTab (ExchangeRate.xeComUrl params)
+        , Ui.spacing Theme.spacing.xs
+        , Ui.contentCenterY
+        , Ui.pointer
+        , Ui.width Ui.shrink
+        , Ui.Font.size Theme.font.sm
+        , Ui.Font.color Theme.primary.text
+        ]
+        [ UI.Components.featherIcon 14 FeatherIcons.externalLink
+        , Ui.el [ Ui.Font.underline ] (Ui.text (T.newEntryRateCheckXe i18n))
+        ]
 
 
 dateField : I18n -> ModelData -> Ui.Element Msg

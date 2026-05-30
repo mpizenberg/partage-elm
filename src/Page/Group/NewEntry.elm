@@ -1,6 +1,7 @@
 module Page.Group.NewEntry exposing (Model, init, initDuplicate, initFromEntry, outputToKind, update, view)
 
 import Dict exposing (Dict)
+import Domain.Currency as Currency
 import Domain.Date exposing (Date)
 import Domain.Entry as Entry
 import Domain.Member as Member
@@ -17,6 +18,7 @@ import Page.Group.NewEntry.Shared as Shared
         , ModelData
         , Msg(..)
         , Output(..)
+        , RateStatus(..)
         , SplitData(..)
         , SplitMode(..)
         )
@@ -59,6 +61,7 @@ init config =
         , currency = config.defaultCurrency
         , groupDefaultCurrency = config.defaultCurrency
         , defaultCurrencyAmount = ""
+        , rateStatus = RateIdle
         }
 
 
@@ -178,6 +181,7 @@ initFromExpenseData config editing data =
 
                 Nothing ->
                     ""
+        , rateStatus = RateIdle
         }
 
 
@@ -210,6 +214,7 @@ initFromTransferData config editing data =
 
                 Nothing ->
                     ""
+        , rateStatus = RateIdle
         }
 
 
@@ -294,29 +299,33 @@ initFromIncomeData config editing data =
 
                 Nothing ->
                     ""
+        , rateStatus = RateIdle
         }
 
 
-{-| Handle form input and submission for expense or transfer entries.
+{-| Handle form input and submission for expense or transfer entries. Returns an
+Effect telling the parent its intent (submit an entry, request a rate, or nothing)
+rather than relying on the parent to interpret the message. The language is needed
+to locale-format the converted default-currency amount.
 -}
-update : Shared.Msg -> Model -> ( Model, Maybe Shared.Output )
-update msg (Model data) =
+update : T.Language -> Shared.Msg -> Model -> ( Model, Shared.Effect )
+update language msg (Model data) =
     case msg of
         InputDescription s ->
             ( Model { data | form = Form.modify .description (Field.setFromString s) data.form }
-            , Nothing
+            , Shared.NoEffect
             )
 
         InputAmount s ->
             ( Model { data | form = Form.modify .amount (Field.setFromString s) data.form }
-            , Nothing
+            , Shared.NoEffect
             )
 
         InputNotes s ->
-            ( Model { data | notes = s }, Nothing )
+            ( Model { data | notes = s }, Shared.NoEffect )
 
         SelectEntryKind kind ->
-            ( Model { data | kind = kind }, Nothing )
+            ( Model { data | kind = kind }, Shared.NoEffect )
 
         TogglePayer memberId ->
             let
@@ -328,10 +337,10 @@ update msg (Model data) =
                     else
                         Dict.insert memberId "" data.payerAmounts
             in
-            ( Model { data | payerAmounts = newDict }, Nothing )
+            ( Model { data | payerAmounts = newDict }, Shared.NoEffect )
 
         InputPayerAmount memberId s ->
-            ( Model { data | payerAmounts = Dict.insert memberId s data.payerAmounts }, Nothing )
+            ( Model { data | payerAmounts = Dict.insert memberId s data.payerAmounts }, Shared.NoEffect )
 
         ToggleBeneficiary memberId ->
             let
@@ -343,7 +352,7 @@ update msg (Model data) =
                     else
                         Dict.insert memberId 1 data.beneficiaries
             in
-            ( Model { data | beneficiaries = newDict }, Nothing )
+            ( Model { data | beneficiaries = newDict }, Shared.NoEffect )
 
         IncrementShares memberId ->
             let
@@ -356,7 +365,7 @@ update msg (Model data) =
                         Nothing ->
                             Dict.insert memberId 1 data.beneficiaries
             in
-            ( Model { data | beneficiaries = newDict }, Nothing )
+            ( Model { data | beneficiaries = newDict }, Shared.NoEffect )
 
         DecrementShares memberId ->
             let
@@ -374,55 +383,94 @@ update msg (Model data) =
                         )
                         data.beneficiaries
             in
-            ( Model { data | beneficiaries = newDict }, Nothing )
+            ( Model { data | beneficiaries = newDict }, Shared.NoEffect )
 
         InputSplitMode mode ->
-            ( Model { data | splitMode = mode }, Nothing )
+            ( Model { data | splitMode = mode }, Shared.NoEffect )
 
         InputExactAmount memberId s ->
-            ( Model { data | exactAmounts = Dict.insert memberId s data.exactAmounts }, Nothing )
+            ( Model { data | exactAmounts = Dict.insert memberId s data.exactAmounts }, Shared.NoEffect )
 
         CycleTransferRole memberId ->
             if data.fromMemberId == Just memberId then
-                ( Model { data | fromMemberId = Nothing }, Nothing )
+                ( Model { data | fromMemberId = Nothing }, Shared.NoEffect )
 
             else if data.toMemberId == Just memberId then
-                ( Model { data | toMemberId = Nothing }, Nothing )
+                ( Model { data | toMemberId = Nothing }, Shared.NoEffect )
 
             else if data.fromMemberId == Nothing then
-                ( Model { data | fromMemberId = Just memberId }, Nothing )
+                ( Model { data | fromMemberId = Just memberId }, Shared.NoEffect )
 
             else if data.toMemberId == Nothing then
-                ( Model { data | toMemberId = Just memberId }, Nothing )
+                ( Model { data | toMemberId = Just memberId }, Shared.NoEffect )
 
             else
-                ( Model data, Nothing )
+                ( Model data, Shared.NoEffect )
 
         SelectReceiver memberId ->
-            ( Model { data | receiverMemberId = Just memberId }, Nothing )
+            ( Model { data | receiverMemberId = Just memberId }, Shared.NoEffect )
 
         InputCategory cat ->
-            ( Model { data | category = cat }, Nothing )
+            ( Model { data | category = cat }, Shared.NoEffect )
 
         InputCurrency c ->
-            ( Model { data | currency = c }, Nothing )
+            ( Model { data | currency = c, rateStatus = RateIdle }, Shared.NoEffect )
 
         InputDefaultCurrencyAmount s ->
-            ( Model { data | defaultCurrencyAmount = s }, Nothing )
+            ( Model { data | defaultCurrencyAmount = s }, Shared.NoEffect )
+
+        FetchRate pair ->
+            ( Model { data | rateStatus = RateLoading }, Shared.RequestRate pair )
+
+        RateFetched fetchedBase rate ->
+            if fetchedBase /= data.currency then
+                -- The selected currency changed after this fetch was requested;
+                -- the rate no longer matches the form, so ignore it.
+                ( Model data, Shared.NoEffect )
+
+            else
+                let
+                    converted : String
+                    converted =
+                        case Form.get .amount data.form |> Field.toMaybe of
+                            Just baseCents ->
+                                Currency.convertCents rate baseCents data.currency data.groupDefaultCurrency
+                                    |> Format.formatCentsForInput language
+
+                            Nothing ->
+                                data.defaultCurrencyAmount
+                in
+                ( Model { data | defaultCurrencyAmount = converted, rateStatus = RateIdle }, Shared.NoEffect )
+
+        RateFetchFailed ->
+            ( Model { data | rateStatus = RateFailed }, Shared.NoEffect )
 
         InputDate s ->
-            ( Model { data | form = Form.modify .date (Field.setFromString s) data.form }, Nothing )
+            ( Model { data | form = Form.modify .date (Field.setFromString s) data.form }, Shared.NoEffect )
 
         Submit ->
-            case data.kind of
-                ExpenseKind ->
-                    submitExpense data
+            Tuple.mapSecond toSubmitEffect <|
+                case data.kind of
+                    ExpenseKind ->
+                        submitExpense data
 
-                TransferKind ->
-                    submitTransfer data
+                    TransferKind ->
+                        submitTransfer data
 
-                IncomeKind ->
-                    submitIncome data
+                    IncomeKind ->
+                        submitIncome data
+
+
+{-| Lift a form-submission result into an Effect.
+-}
+toSubmitEffect : Maybe Shared.Output -> Shared.Effect
+toSubmitEffect maybeOutput =
+    case maybeOutput of
+        Just output ->
+            Shared.SubmitEntry output
+
+        Nothing ->
+            Shared.NoEffect
 
 
 submitExpense : ModelData -> ( Model, Maybe Shared.Output )
