@@ -1,9 +1,12 @@
 module Infra.Storage exposing
     ( InitData
     , addUnpushedIds
+    , deleteExchangeRates
     , deleteGroup
     , errorToString
+    , exchangeRateKeys
     , init
+    , loadExchangeRate
     , loadGroup
     , loadGroupEvents
     , loadGroupKey
@@ -12,6 +15,7 @@ module Infra.Storage exposing
     , open
     , resetUsageStats
     , saveEvents
+    , saveExchangeRate
     , saveGroup
     , saveGroupKey
     , saveGroupSummary
@@ -56,7 +60,7 @@ type alias InitData =
 
 dbSchema : Idb.Schema
 dbSchema =
-    Idb.schema "partage" 5
+    Idb.schema "partage" 6
         |> Idb.withStore identityStore
         |> Idb.withStore groupsStore
         |> Idb.withStore groupKeysStore
@@ -64,6 +68,7 @@ dbSchema =
         |> Idb.withStore syncCursorsStore
         |> Idb.withStore unpushedIdsStore
         |> Idb.withStore usageStatsStore
+        |> Idb.withStore exchangeRatesStore
 
 
 identityStore : Idb.Store Idb.ExplicitKey
@@ -107,6 +112,11 @@ unpushedIdsStore =
 usageStatsStore : Idb.Store Idb.ExplicitKey
 usageStatsStore =
     Idb.defineStore "usageStats"
+
+
+exchangeRatesStore : Idb.Store Idb.ExplicitKey
+exchangeRatesStore =
+    Idb.defineStore "exchangeRates"
 
 
 
@@ -372,6 +382,49 @@ saveUsageStats db stats =
 resetUsageStats : Idb.Db -> ConcurrentTask Idb.Error ()
 resetUsageStats db =
     Idb.delete db usageStatsStore (Idb.StringKey "stats")
+
+
+
+-- Exchange rates
+
+
+{-| Cache a fetched exchange rate under the given key (e.g. "USD-EUR-2026-05-28").
+-}
+saveExchangeRate : Idb.Db -> String -> Float -> ConcurrentTask Idb.Error ()
+saveExchangeRate db key rate =
+    Idb.putAt db exchangeRatesStore (Idb.StringKey key) (Encode.float rate)
+
+
+{-| Load a cached exchange rate by key, if present.
+-}
+loadExchangeRate : Idb.Db -> String -> ConcurrentTask Idb.Error (Maybe Float)
+loadExchangeRate db key =
+    Idb.get db exchangeRatesStore (Idb.StringKey key) Decode.float
+
+
+{-| List all cached exchange-rate keys (used to sweep stale entries).
+-}
+exchangeRateKeys : Idb.Db -> ConcurrentTask Idb.Error (List String)
+exchangeRateKeys db =
+    Idb.getAllKeys db exchangeRatesStore
+        |> ConcurrentTask.map
+            (List.filterMap
+                (\k ->
+                    case k of
+                        Idb.StringKey s ->
+                            Just s
+
+                        _ ->
+                            Nothing
+                )
+            )
+
+
+{-| Delete the given cached exchange-rate keys.
+-}
+deleteExchangeRates : Idb.Db -> List String -> ConcurrentTask Idb.Error ()
+deleteExchangeRates db keys =
+    Idb.deleteMany db exchangeRatesStore (List.map Idb.StringKey keys)
 
 
 
