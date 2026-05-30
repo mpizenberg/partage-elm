@@ -775,16 +775,37 @@ update msg model =
                             GroupState.resolveMemberRootId groupState identityHash /= Nothing
                     in
                     if isMember then
-                        -- User is already a member: navigate to the group
+                        -- User is already a member: navigate to the group and load it
                         case model.route of
                             GroupRoute groupId _ ->
                                 let
+                                    balanceTab : GroupView
+                                    balanceTab =
+                                        Tab BalanceTab
+
                                     balanceRoute : Route
                                     balanceRoute =
-                                        GroupRoute groupId (Tab BalanceTab)
+                                        GroupRoute groupId balanceTab
+
+                                    ( toastedModel, toastCmd ) =
+                                        addToast Toast.Success (T.toastAlreadyInGroup model.i18n) { model | route = balanceRoute }
+
+                                    ( loadedModel, loadCmd ) =
+                                        case buildGroupConfig toastedModel of
+                                            Just config ->
+                                                Page.Group.handleNavigation config groupId balanceTab toastedModel.groupModel
+                                                    |> Update.wrap GroupMsg (\gm -> { toastedModel | groupModel = gm })
+
+                                            Nothing ->
+                                                ( toastedModel, Cmd.none )
                                 in
-                                addToast Toast.Success (T.toastAlreadyInGroup model.i18n) { model | route = balanceRoute }
-                                    |> Update.addCmd (Navigation.replaceUrl navCmd (Route.toAppUrl balanceRoute))
+                                ( loadedModel
+                                , Cmd.batch
+                                    [ toastCmd
+                                    , loadCmd
+                                    , Navigation.replaceUrl navCmd (Route.toAppUrl balanceRoute)
+                                    ]
+                                )
 
                             _ ->
                                 ( model, Cmd.none )
