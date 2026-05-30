@@ -212,7 +212,7 @@
   "memberEditMetadataButton": "Modifier les infos du membre",
   "memberRetireButton": "Retirer",
   "memberUnretireButton": "Réactiver",
-  "memberMergeButton": "Fusionner avec un autre membre…",
+  "memberMergeButton": "Fusionner avec un autre membre",
   "mergePageTitle": "Fusionner des membres",
   "mergeStep1Title": "Choisir le membre à conserver",
   "mergeStep1Subtitle": "Toutes les dépenses et préférences de remboursement du membre retiré seront déplacées vers le membre conservé.",

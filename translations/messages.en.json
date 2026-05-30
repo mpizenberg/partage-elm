@@ -212,7 +212,7 @@
   "memberEditMetadataButton": "Edit Member Info",
   "memberRetireButton": "Retire",
   "memberUnretireButton": "Reactivate",
-  "memberMergeButton": "Merge with another member…",
+  "memberMergeButton": "Merge with another member",
   "mergePageTitle": "Merge members",
   "mergeStep1Title": "Pick the member to keep",
   "mergeStep1Subtitle": "All expenses and settlement preferences from the retiring member will move to the kept member.",
