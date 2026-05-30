@@ -8,7 +8,7 @@ module UI.Components exposing
     , filterToggleButton, filterSection, filterSummaryChip, clearAllFiltersButton
     , avatar, AvatarColor(..)
     , fab
-    , featherIcon, featherIconColored
+    , featherIcon, featherIconColored, animatedChevron
     , appLogo
     , languageSelector, pwaBanners, readOnlyBanner
     )
@@ -47,7 +47,7 @@ module UI.Components exposing
 
 # Icons
 
-@docs featherIcon, featherIconColored
+@docs featherIcon, featherIconColored, animatedChevron
 @docs appLogo
 
 
@@ -512,19 +512,7 @@ expandTrigger config =
             :: sectionLabelAttrs
         )
         [ Ui.el [ Ui.width Ui.shrink ] <| Ui.text (String.toUpper config.label)
-        , Ui.el
-            [ Anim.transition (Anim.ms 300)
-                [ Anim.rotation
-                    (if config.isOpen then
-                        0.5
-
-                     else
-                        0
-                    )
-                    |> Anim.withTransition (Anim.bezier 0.16 1 0.3 1)
-                ]
-            ]
-            (featherIcon 18 FeatherIcons.chevronDown)
+        , animatedChevron config.isOpen
         ]
 
 
@@ -700,6 +688,27 @@ featherIcon size icon =
         |> FeatherIcons.withSize size
         |> FeatherIcons.toHtml []
         |> Ui.html
+
+
+{-| A chevron that rotates 180° to signal collapsed/expanded state.
+Inherits its color from the surrounding context (SVG `currentColor`).
+-}
+animatedChevron : Bool -> Ui.Element msg
+animatedChevron isOpen =
+    Ui.el
+        [ Ui.width Ui.shrink
+        , Anim.transition (Anim.ms 300)
+            [ Anim.rotation
+                (if isOpen then
+                    0.5
+
+                 else
+                    0
+                )
+                |> Anim.withTransition (Anim.bezier 0.16 1 0.3 1)
+            ]
+        ]
+        (featherIcon 18 FeatherIcons.chevronDown)
 
 
 {-| Render a Feather icon with a custom stroke color.

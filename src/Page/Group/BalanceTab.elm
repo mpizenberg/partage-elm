@@ -403,12 +403,19 @@ settlementItem i18n config resolveName maybeUserRootId showTopBorder isSelected 
                     , Ui.el [ Ui.Font.color Theme.base.textSubtle ] (Ui.text "→")
                     , Ui.el [ Ui.Font.weight Theme.fontWeight.semibold ] (Ui.text (resolveName t.to))
                     ]
-                , Ui.el
+                , Ui.row
                     [ Ui.alignRight
-                    , Ui.Font.weight Theme.fontWeight.semibold
-                    , amountColor
+                    , Ui.spacing Theme.spacing.sm
+                    , Ui.contentCenterY
+                    , Ui.width Ui.shrink
                     ]
-                    (Ui.text (Format.formatCentsWithCurrency (T.currentLanguage i18n) t.amount state.groupMeta.defaultCurrency))
+                    [ Ui.el
+                        [ Ui.Font.weight Theme.fontWeight.semibold
+                        , amountColor
+                        ]
+                        (Ui.text (Format.formatCentsWithCurrency (T.currentLanguage i18n) t.amount state.groupMeta.defaultCurrency))
+                    , UI.Components.animatedChevron isSelected
+                    ]
                 ]
     in
     if isSelected then
