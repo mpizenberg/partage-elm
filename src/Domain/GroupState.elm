@@ -42,6 +42,7 @@ type alias GroupState =
     { members : Dict Member.Id Member.ChainState
     , entries : Dict Entry.Id EntryState
     , balances : Dict Member.Id MemberBalance
+    , expenseShares : Dict Member.Id Int
     , groupMeta : GroupMetadata
     , activities : List Activity
     , pendingActivities : List Activity
@@ -97,6 +98,7 @@ empty =
     { members = Dict.empty
     , entries = Dict.empty
     , balances = Dict.empty
+    , expenseShares = Dict.empty
     , groupMeta =
         { name = ""
         , subtitle = Nothing
@@ -162,8 +164,14 @@ matching `anchorBalances` from `anchorEntries`.
 -}
 recomputeBalances : GroupState -> GroupState
 recomputeBalances state =
+    let
+        active : List Entry
+        active =
+            activeEntries state
+    in
     { state
-        | balances = Balance.computeBalances (activeEntries state)
+        | balances = Balance.computeBalances active
+        , expenseShares = Balance.computeExpenseShares active
         , anchorBalances = Balance.computeBalances (activeEntriesFrom state.anchorEntries)
     }
 

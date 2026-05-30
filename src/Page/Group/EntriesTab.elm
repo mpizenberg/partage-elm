@@ -328,8 +328,8 @@ view i18n config maybeUserRootId today (Model data) state =
             config.toMsg
     in
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
-        [ -- Summary row
-          summaryRow i18n (List.length visibleEntries) totalAmount groupDefaultCurrency
+        [ -- Stable, whole-group expense totals (unaffected by filters/search)
+          summaryCard i18n maybeUserRootId groupDefaultCurrency state.expenseShares
 
         -- New Entry button (hidden in read-only mode)
         , if maybeUserRootId /= Nothing then
@@ -354,6 +354,9 @@ view i18n config maybeUserRootId today (Model data) state =
           else
             Ui.none
 
+        -- Count + total of the currently shown entries (reflects filters/search)
+        , summaryRow i18n (List.length visibleEntries) totalAmount groupDefaultCurrency
+
         -- Entry list grouped by date
         , if List.isEmpty visibleEntries then
             Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
@@ -367,8 +370,56 @@ view i18n config maybeUserRootId today (Model data) state =
 
 
 
--- SEARCH BAR
 -- SUMMARY ROW
+
+
+summaryCard : I18n -> Maybe Member.Id -> Currency.Currency -> Dict.Dict Member.Id Int -> Ui.Element msg
+summaryCard i18n maybeUserRootId currency expenseShares =
+    let
+        lang : T.Language
+        lang =
+            T.currentLanguage i18n
+
+        groupTotal : Int
+        groupTotal =
+            Dict.values expenseShares |> List.sum
+
+        stat : String -> Int -> Bool -> Ui.Element msg
+        stat label amount isPrimary =
+            Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+                [ Ui.el
+                    [ Ui.Font.size Theme.font.xs
+                    , Ui.Font.weight Theme.fontWeight.semibold
+                    , Ui.Font.letterSpacing Theme.letterSpacing.wide
+                    , Ui.Font.color Theme.base.textSubtle
+                    ]
+                    (Ui.text (String.toUpper label))
+                , Ui.el
+                    [ Ui.Font.size Theme.font.xl
+                    , Ui.Font.weight Theme.fontWeight.bold
+                    , Ui.Font.letterSpacing Theme.letterSpacing.tight
+                    , if isPrimary then
+                        Ui.Font.color Theme.primary.text
+
+                      else
+                        Ui.noAttr
+                    ]
+                    (Ui.text (Format.formatCentsWithCurrency lang amount currency))
+                ]
+
+        yourStat : List (Ui.Element msg)
+        yourStat =
+            case maybeUserRootId of
+                Just uid ->
+                    [ stat (T.entriesYourSpending i18n) (Dict.get uid expenseShares |> Maybe.withDefault 0) True ]
+
+                Nothing ->
+                    []
+    in
+    UI.Components.card [ Ui.padding Theme.spacing.lg ]
+        [ Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.md ]
+            (stat (T.entriesGroupTotal i18n) groupTotal False :: yourStat)
+        ]
 
 
 summaryRow : I18n -> Int -> Int -> Currency.Currency -> Ui.Element msg

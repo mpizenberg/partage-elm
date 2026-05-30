@@ -1,4 +1,4 @@
-module Domain.Balance exposing (MemberBalance, Status(..), computeBalances, status)
+module Domain.Balance exposing (MemberBalance, Status(..), computeBalances, computeExpenseShares, status)
 
 {-| Balance computation from ledger entries with integer arithmetic.
 -}
@@ -105,6 +105,33 @@ computeBalances entries =
             }
         )
         accumulated
+
+
+{-| Per-member share of expenses only (excluding transfers and income),
+in the group's default currency. Each member's share sums to the total
+group expenses, since every expense is fully allocated to its beneficiaries.
+-}
+computeExpenseShares : List Entry -> Dict Member.Id Int
+computeExpenseShares entries =
+    let
+        accumulate : Entry -> Dict Member.Id Int -> Dict Member.Id Int
+        accumulate entry acc =
+            case entry.kind of
+                Expense data ->
+                    computeBeneficiarySplit (entryDefaultCurrencyAmount entry) data.beneficiaries
+                        |> List.foldl
+                            (\( memberId, amount ) ->
+                                Dict.update memberId (\cur -> Just (Maybe.withDefault 0 cur + amount))
+                            )
+                            acc
+
+                Transfer _ ->
+                    acc
+
+                Income _ ->
+                    acc
+    in
+    List.foldl accumulate Dict.empty entries
 
 
 {-| Compute what each member paid for an entry.
