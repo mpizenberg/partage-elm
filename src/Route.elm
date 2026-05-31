@@ -16,6 +16,7 @@ type Route
     = Welcome
     | Home
     | NewGroup
+    | ImportSplitwise
     | GroupRoute Group.Id GroupView
     | About
     | ErrorLog
@@ -61,6 +62,9 @@ fromAppUrl appUrl =
 
         [ "groups", "new" ] ->
             NewGroup
+
+        [ "groups", "import-splitwise" ] ->
+            ImportSplitwise
 
         [ "join", groupId ] ->
             GroupRoute groupId (Join (Maybe.withDefault "" appUrl.fragment))
@@ -148,6 +152,9 @@ toPathSegments route =
         NewGroup ->
             [ "groups", "new" ]
 
+        ImportSplitwise ->
+            [ "groups", "import-splitwise" ]
+
         GroupRoute groupId (Join _) ->
             [ "join", groupId ]
 
@@ -214,6 +221,9 @@ toPath route =
 
         NewGroup ->
             "/groups/new"
+
+        ImportSplitwise ->
+            "/groups/import-splitwise"
 
         GroupRoute groupId (Join key) ->
             "/join/" ++ groupId ++ "#" ++ key

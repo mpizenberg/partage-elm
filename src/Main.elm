@@ -3,7 +3,9 @@ port module Main exposing (AppState, Flags, Model, Msg, main)
 import AppUrl
 import Browser
 import ConcurrentTask exposing (ConcurrentTask)
+import ConcurrentTask.Http as Http
 import Dict
+import Domain.Currency as Currency exposing (Currency)
 import Domain.Date as Date
 import Domain.Event as Event
 import Domain.Group as Group
@@ -18,6 +20,7 @@ import Html.Attributes
 import ImportExport
 import IndexedDb as Idb
 import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
+import Infra.ExchangeRate as ExchangeRate
 import Infra.Identity as Identity exposing (Identity)
 import Infra.PushServer as PushServer
 import Infra.Server as Server
@@ -31,6 +34,7 @@ import Page.About
 import Page.ErrorLog
 import Page.Group
 import Page.Home
+import Page.ImportSplitwise
 import Page.InitError
 import Page.JoinGroup
 import Page.Loading
@@ -43,6 +47,7 @@ import PwaState
 import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import Set exposing (Set)
+import SplitwiseImport
 import Task
 import Time
 import Translations as T exposing (I18n, Language(..))
@@ -108,6 +113,7 @@ type alias Model =
     , currentTime : Time.Posix
     , timeZone : Time.Zone
     , newGroupModel : Page.NewGroup.Model
+    , importSplitwiseModel : Maybe Page.ImportSplitwise.Model
     , groupModel : Page.Group.Model
     , homeModel : Page.Home.Model
     , aboutModel : Page.About.Model
@@ -143,6 +149,8 @@ type Msg
     | OnIdentitySaved (ConcurrentTask.Response Idb.Error ())
       -- Page form messages
     | NewGroupMsg Page.NewGroup.Msg
+    | ImportSplitwiseMsg Page.ImportSplitwise.Msg
+    | OnImportSplitwiseRate Currency (ConcurrentTask.Response Http.Error Float)
     | GroupMsg Page.Group.Msg
     | JoinGroupMsg Page.JoinGroup.Msg
       -- Join flow
@@ -261,6 +269,7 @@ init flags =
       , currentTime = Time.millisToPosix flags.currentTime
       , timeZone = Time.utc
       , newGroupModel = Page.NewGroup.init
+      , importSplitwiseModel = Nothing
       , groupModel =
             Page.Group.init
                 { pool = ConcurrentTask.withPoolId 1 ConcurrentTask.pool
@@ -671,6 +680,50 @@ update msg model =
         OnGroupCreated _ ->
             addToast Toast.Error (T.toastGroupCreateError model.i18n) model
 
+        ImportSplitwiseMsg subMsg ->
+            case ( model.importSplitwiseModel, model.appState ) of
+                ( Just pageModel, Ready readyData ) ->
+                    let
+                        ( newPageModel, effect ) =
+                            Page.ImportSplitwise.update subMsg pageModel
+                    in
+                    case effect of
+                        Page.ImportSplitwise.NoEffect ->
+                            ( { model | importSplitwiseModel = Just newPageModel }, Cmd.none )
+
+                        Page.ImportSplitwise.RequestRate pair ->
+                            ( model.runner, Cmd.none )
+                                |> Runner.andRun (OnImportSplitwiseRate pair.base)
+                                    (ExchangeRate.fetchRateCached readyData.db
+                                        (Date.posixToDate model.timeZone model.currentTime)
+                                        pair
+                                    )
+                                |> Tuple.mapFirst (\r -> { model | runner = r, importSplitwiseModel = Just newPageModel })
+
+                        Page.ImportSplitwise.Done output ->
+                            submitSplitwiseImport { model | importSplitwiseModel = Nothing } readyData output
+
+                _ ->
+                    ( model, Cmd.none )
+
+        OnImportSplitwiseRate currency response ->
+            case model.importSplitwiseModel of
+                Just pageModel ->
+                    let
+                        result : Maybe Float
+                        result =
+                            case response of
+                                ConcurrentTask.Success rate ->
+                                    Just rate
+
+                                _ ->
+                                    Nothing
+                    in
+                    ( { model | importSplitwiseModel = Just (Page.ImportSplitwise.rateFetched currency result pageModel) }, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
         GroupMsg subMsg ->
             case buildGroupConfig model of
                 Just config ->
@@ -932,6 +985,26 @@ update msg model =
                             ( updatedModel.runner, cmd )
                                 |> ImportExport.startImport ImportExportMsg base64
                                 |> Tuple.mapFirst (\r -> { updatedModel | runner = r })
+
+                        Just (Page.Home.SplitwiseFileLoaded { filename, content }) ->
+                            case SplitwiseImport.parse content of
+                                Ok parsed ->
+                                    ( { updatedModel
+                                        | importSplitwiseModel =
+                                            Just
+                                                (Page.ImportSplitwise.init
+                                                    { groupName = dropFileExtension filename
+                                                    , parsed = parsed
+                                                    }
+                                                )
+                                      }
+                                    , Cmd.batch [ cmd, Navigation.pushUrl navCmd (Route.toAppUrl Route.ImportSplitwise) ]
+                                    )
+
+                                Err _ ->
+                                    ( { updatedModel | homeModel = Page.Home.setImportError (T.splitwiseImportParseError model.i18n) updatedModel.homeModel }
+                                    , cmd
+                                    )
 
                         Just (Page.Home.JoinLink url) ->
                             let
@@ -1220,6 +1293,60 @@ submitNewGroup model readyData output =
 
         Nothing ->
             ( model, Cmd.none )
+
+
+submitSplitwiseImport : Model -> Storage.InitData -> Page.ImportSplitwise.Output -> ( Model, Cmd Msg )
+submitSplitwiseImport model readyData output =
+    case readyData.identity of
+        Just identity ->
+            let
+                ctx : GroupOps.Context Msg
+                ctx =
+                    { runner = model.runner
+                    , onComplete = \_ -> OnGroupCreated (ConcurrentTask.UnexpectedError (ConcurrentTask.InternalError "unused"))
+                    , randomSeed = model.randomSeed
+                    , uuidState = model.uuidState
+                    , currentTime = model.currentTime
+                    , db = readyData.db
+                    , identity = identity
+                    }
+
+                ( state, cmd ) =
+                    GroupOps.importSplitwiseGroup ctx
+                        OnGroupCreated
+                        { groupName = output.groupName
+                        , creatorName = output.creatorName
+                        , defaultCurrency = output.defaultCurrency
+                        , rate = \c -> Dict.get (Currency.currencyCode c) output.rates
+                        , parsed = output.parsed
+                        }
+            in
+            ( { model
+                | runner = state.runner
+                , randomSeed = state.randomSeed
+                , uuidState = state.uuidState
+              }
+            , cmd
+            )
+
+        Nothing ->
+            ( model, Cmd.none )
+
+
+{-| Strip the extension from a filename, e.g. "Trip.csv" -> "Trip".
+-}
+dropFileExtension : String -> String
+dropFileExtension name =
+    case List.reverse (String.split "." name) of
+        _ :: rest ->
+            if List.isEmpty rest then
+                name
+
+            else
+                String.join "." (List.reverse rest)
+
+        [] ->
+            name
 
 
 applyRouteGuard : Maybe Identity -> Route -> ( Route, Cmd Msg )
@@ -1616,6 +1743,17 @@ viewReady model readyData =
             noOverlay <|
                 UI.Shell.pageShell { title = T.shellNewGroup i18n, onBack = GoBack }
                     (Page.NewGroup.view i18n NewGroupMsg model.newGroupModel)
+
+        ImportSplitwise ->
+            noOverlay <|
+                UI.Shell.pageShell { title = T.splitwiseImportTitle i18n, onBack = NavigateTo Home }
+                    (case model.importSplitwiseModel of
+                        Just pageModel ->
+                            Page.ImportSplitwise.view i18n ImportSplitwiseMsg pageModel
+
+                        Nothing ->
+                            Ui.none
+                    )
 
         GroupRoute _ (Join _) ->
             noOverlay <|
