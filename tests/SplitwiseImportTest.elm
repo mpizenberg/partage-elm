@@ -42,11 +42,11 @@ parsed =
     SplitwiseImport.parse sampleCsv
 
 
-config : List String -> { memberIds : List Member.Id, defaultCurrency : Currency, rate : Currency -> Maybe Float }
+config : List String -> { memberIds : List Member.Id, defaultCurrency : Currency, rate : Currency -> Float }
 config names =
     { memberIds = names
     , defaultCurrency = EUR
-    , rate = always Nothing
+    , rate = always 1.0
     }
 
 

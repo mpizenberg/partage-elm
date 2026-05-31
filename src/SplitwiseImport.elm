@@ -62,13 +62,13 @@ order. Useful for picking a group default and prompting for rates.
 -}
 usedCurrencies : Parsed -> List Currency
 usedCurrencies parsed =
-    List.foldl
+    List.foldr
         (\row acc ->
             if List.member row.currency acc then
                 acc
 
             else
-                acc ++ [ row.currency ]
+                row.currency :: acc
         )
         []
         parsed.rows
@@ -275,7 +275,7 @@ consume chars st =
 
 flush : CsvState -> List (List String)
 flush st =
-    if st.field == "" && st.row == [] then
+    if st.field == "" && List.isEmpty st.row then
         st.rows
 
     else
@@ -289,12 +289,13 @@ flush st =
 {-| Reconstruct a row into a ledger `Kind`, or Nothing if it carries no balance
 effect (all-zero nets) or is an unmappable payment. `memberIds` must align with
 `Parsed.memberNames`. `rate c` gives the value of one unit of currency `c` in
-the default currency (used only to fill `defaultCurrencyAmount`).
+the default currency; it is consulted only for non-default-currency rows, where
+it always fills `defaultCurrencyAmount`.
 -}
 reconstruct :
     { memberIds : List Member.Id
     , defaultCurrency : Currency
-    , rate : Currency -> Maybe Float
+    , rate : Currency -> Float
     }
     -> Row
     -> Maybe Kind
@@ -318,8 +319,7 @@ reconstruct config row =
                 Nothing
 
             else
-                config.rate row.currency
-                    |> Maybe.map (\r -> Currency.convertCents r amount row.currency config.defaultCurrency)
+                Just (Currency.convertCents (config.rate row.currency) amount row.currency config.defaultCurrency)
     in
     if isPayment row.category then
         case ( positives, negatives ) of

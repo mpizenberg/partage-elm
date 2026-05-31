@@ -1318,7 +1318,7 @@ submitSplitwiseImport model readyData output =
                         , creatorName = output.creatorName
                         , claimedMemberIndex = output.claimedMemberIndex
                         , defaultCurrency = output.defaultCurrency
-                        , rate = \c -> Dict.get (Currency.currencyCode c) output.rates
+                        , rate = \c -> Dict.get (Currency.currencyCode c) output.rates |> Maybe.withDefault 1
                         , parsed = output.parsed
                         }
             in

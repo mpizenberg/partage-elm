@@ -253,7 +253,7 @@ type alias SplitwiseImportConfig =
     , creatorName : String
     , claimedMemberIndex : Maybe Int
     , defaultCurrency : Currency
-    , rate : Currency -> Maybe Float
+    , rate : Currency -> Float
     , parsed : SplitwiseImport.Parsed
     }
 

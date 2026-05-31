@@ -150,7 +150,7 @@ rateFetched currency result (Model data) =
         Just rate ->
             Model
                 { data
-                    | rateInputs = Dict.insert code (formatRate rate) data.rateInputs
+                    | rateInputs = Dict.insert code (String.fromFloat rate) data.rateInputs
                     , rateStatus = Dict.insert code RateIdle data.rateStatus
                 }
 
@@ -205,24 +205,25 @@ validate data =
         trimmedName : String
         trimmedName =
             String.trim data.groupName
-
-        parsedRates : List (Maybe ( String, Float ))
-        parsedRates =
-            otherCurrencies data
-                |> List.map
-                    (\c ->
-                        Dict.get (Currency.currencyCode c) data.rateInputs
-                            |> Maybe.andThen (parseRate >> Maybe.map (Tuple.pair (Currency.currencyCode c)))
-                    )
-
-        rates : Maybe (Dict String Float)
-        rates =
-            allJust parsedRates |> Maybe.map Dict.fromList
     in
     if String.isEmpty trimmedName then
         Nothing
 
     else
+        let
+            parsedRates : List (Maybe ( String, Float ))
+            parsedRates =
+                otherCurrencies data
+                    |> List.map
+                        (\c ->
+                            Dict.get (Currency.currencyCode c) data.rateInputs
+                                |> Maybe.andThen (parseRate >> Maybe.map (Tuple.pair (Currency.currencyCode c)))
+                        )
+
+            rates : Maybe (Dict String Float)
+            rates =
+                allJust parsedRates |> Maybe.map Dict.fromList
+        in
         Maybe.map2
             (\( claimedIndex, creatorName ) rateDict ->
                 { groupName = trimmedName
@@ -280,11 +281,6 @@ parseRate raw =
                 else
                     Nothing
             )
-
-
-formatRate : Float -> String
-formatRate rate =
-    String.fromFloat (toFloat (round (rate * 10000)) / 10000)
 
 
 allJust : List (Maybe a) -> Maybe (List a)
@@ -364,14 +360,6 @@ identitySection i18n data =
         isNew : Bool
         isNew =
             data.identity == NewMember
-
-        trimmed : String
-        trimmed =
-            String.trim data.newMemberName
-
-        clashes : Bool
-        clashes =
-            List.any (\m -> String.toLower m == String.toLower trimmed) data.parsed.memberNames
     in
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         [ Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
@@ -387,6 +375,15 @@ identitySection i18n data =
                 , onPress = SelectNewMember
                 }
             , if isNew then
+                let
+                    trimmed : String
+                    trimmed =
+                        String.trim data.newMemberName
+
+                    clashes : Bool
+                    clashes =
+                        List.any (\m -> String.toLower m == String.toLower trimmed) data.parsed.memberNames
+                in
                 Ui.column [ Ui.paddingTop Theme.spacing.xs, Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
                     [ UI.Components.formLabel (T.joinGroupNameLabel i18n) True
                     , Ui.Input.text
@@ -472,11 +469,6 @@ rateRow i18n data currency =
         status : RateStatus
         status =
             Dict.get code data.rateStatus |> Maybe.withDefault RateIdle
-
-        invalid : Bool
-        invalid =
-            data.submitted
-                && (Dict.get code data.rateInputs |> Maybe.andThen parseRate |> (==) Nothing)
     in
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
         [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill, Ui.contentCenterY ]
@@ -511,10 +503,17 @@ rateRow i18n data currency =
             Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
                 (Ui.text (T.newEntryRateError i18n))
 
-          else if invalid then
-            Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
-                (Ui.text (T.fieldRequired i18n))
-
           else
-            Ui.none
+            let
+                invalid : Bool
+                invalid =
+                    data.submitted
+                        && (Dict.get code data.rateInputs |> Maybe.andThen parseRate |> (==) Nothing)
+            in
+            if invalid then
+                Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
+                    (Ui.text (T.fieldRequired i18n))
+
+            else
+                Ui.none
         ]
