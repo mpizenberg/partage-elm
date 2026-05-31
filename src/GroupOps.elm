@@ -251,16 +251,18 @@ used only to fill `defaultCurrencyAmount` on non-default-currency entries.
 type alias SplitwiseImportConfig =
     { groupName : String
     , creatorName : String
+    , claimedMemberIndex : Maybe Int
     , defaultCurrency : Currency
     , rate : Currency -> Maybe Float
     , parsed : SplitwiseImport.Parsed
     }
 
 
-{-| Create a new group from a parsed Splitwise export. Every Splitwise
-participant becomes a Virtual member; the importer is the (Real) creator and can
-merge themselves with their virtual self afterwards. One signed event is emitted
-per reconstructed entry, on top of the group/member creation events.
+{-| Create a new group from a parsed Splitwise export. The importer is the (Real)
+creator; they either take over one Splitwise participant (`claimedMemberIndex`)
+or join as a new member, in which case every participant becomes a Virtual
+member. One signed event is emitted per reconstructed entry, on top of the
+group/member creation events.
 -}
 importSplitwiseGroup : Context msg -> (ConcurrentTask.Response Idb.Error Group.Summary -> msg) -> SplitwiseImportConfig -> ( State msg, Cmd msg )
 importSplitwiseGroup ctx onComplete cfg =
@@ -269,21 +271,48 @@ importSplitwiseGroup ctx onComplete cfg =
         memberNames =
             cfg.parsed.memberNames
 
-        memberCount : Int
-        memberCount =
-            List.length memberNames
-
         ( groupId, seed1 ) =
             IdGen.pbId ctx.randomSeed
 
         ( virtualMemberIds, seed2 ) =
-            IdGen.v4batch memberCount seed1
+            IdGen.v4batch (List.length memberNames) seed1
+
+        isClaimed : Int -> Bool
+        isClaimed index =
+            cfg.claimedMemberIndex == Just index
+
+        -- For each Splitwise column: the member id to use in reconstructed
+        -- entries (the creator's id for the claimed column, else a fresh id).
+        memberIds : List Member.Id
+        memberIds =
+            List.indexedMap
+                (\index virtualId ->
+                    if isClaimed index then
+                        ctx.identity.publicKeyHash
+
+                    else
+                        virtualId
+                )
+                virtualMemberIds
+
+        virtualMembers : List ( Member.Id, String )
+        virtualMembers =
+            List.map2 Tuple.pair virtualMemberIds memberNames
+                |> List.indexedMap Tuple.pair
+                |> List.filterMap
+                    (\( index, idName ) ->
+                        if isClaimed index then
+                            Nothing
+
+                        else
+                            Just idName
+                    )
 
         kinds : List Entry.Kind
         kinds =
             List.filterMap
                 (SplitwiseImport.reconstruct
-                    { memberIds = virtualMemberIds
+                    { memberIds = memberIds
                     , defaultCurrency = cfg.defaultCurrency
                     , rate = cfg.rate
                     }
@@ -294,7 +323,7 @@ importSplitwiseGroup ctx onComplete cfg =
             IdGen.v4batch (List.length kinds) seed2
 
         ( eventIds, uuidStateAfter ) =
-            IdGen.v7batch (2 + memberCount + List.length kinds) ctx.currentTime ctx.uuidState
+            IdGen.v7batch (2 + List.length virtualMembers + List.length kinds) ctx.currentTime ctx.uuidState
 
         payloads : List Event.Payload
         payloads =
@@ -302,7 +331,7 @@ importSplitwiseGroup ctx onComplete cfg =
                 { name = cfg.groupName
                 , defaultCurrency = cfg.defaultCurrency
                 , creator = ( ctx.identity.publicKeyHash, cfg.creatorName )
-                , virtualMembers = List.map2 Tuple.pair virtualMemberIds memberNames
+                , virtualMembers = virtualMembers
                 , publicKey = ctx.identity.signingKeyPair.publicKey
                 }
                 ++ List.map2
@@ -323,7 +352,7 @@ importSplitwiseGroup ctx onComplete cfg =
             , isSubscribed = False
             , isArchived = False
             , createdAt = ctx.currentTime
-            , memberCount = 1 + memberCount
+            , memberCount = 1 + List.length virtualMembers
             , myBalanceCents = 0
             }
 

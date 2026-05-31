@@ -1316,6 +1316,7 @@ submitSplitwiseImport model readyData output =
                         OnGroupCreated
                         { groupName = output.groupName
                         , creatorName = output.creatorName
+                        , claimedMemberIndex = output.claimedMemberIndex
                         , defaultCurrency = output.defaultCurrency
                         , rate = \c -> Dict.get (Currency.currencyCode c) output.rates
                         , parsed = output.parsed

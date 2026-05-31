@@ -312,8 +312,6 @@
   "splitwiseImportPreview": "{transactions} transactions · {members} members",
   "splitwiseImportNameLabel": "Group name",
   "splitwiseImportNamePlaceholder": "e.g. Trip to London",
-  "splitwiseImportYourNameLabel": "Your name",
-  "splitwiseImportYourNamePlaceholder": "How you appear in the group",
   "splitwiseImportDefaultCurrencyLabel": "Default currency",
   "splitwiseImportRatesLabel": "Conversion rates",
   "splitwiseImportRatesHint": "Splitwise tracks each currency separately. Pick one rate per other currency to convert balances into the default currency.",

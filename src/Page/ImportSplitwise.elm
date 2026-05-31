@@ -34,12 +34,21 @@ type Model
 type alias Data =
     { parsed : Parsed
     , groupName : String
-    , creatorName : String
+    , identity : IdentityChoice
+    , newMemberName : String
     , defaultCurrency : Currency
     , rateInputs : Dict String String
     , rateStatus : Dict String RateStatus
     , submitted : Bool
     }
+
+
+{-| Who the importer is in the group: an existing Splitwise member (by column
+index) they take over, or a brand-new member.
+-}
+type IdentityChoice
+    = ClaimMember Int
+    | NewMember
 
 
 type RateStatus
@@ -48,11 +57,14 @@ type RateStatus
     | RateFailed
 
 
-{-| Validated result of the confirmation step. `rates` maps each non-default
-currency code to its value in the default currency.
+{-| Validated result of the confirmation step. `claimedMemberIndex` is the
+column the importer takes over (Nothing = a new member); `creatorName` is the
+importer's display name. `rates` maps each non-default currency code to its
+value in the default currency.
 -}
 type alias Output =
     { groupName : String
+    , claimedMemberIndex : Maybe Int
     , creatorName : String
     , defaultCurrency : Currency
     , rates : Dict String Float
@@ -62,7 +74,9 @@ type alias Output =
 
 type Msg
     = InputGroupName String
-    | InputCreatorName String
+    | SelectClaim Int
+    | SelectNewMember
+    | InputNewMemberName String
     | SelectCurrency Currency
     | InputRate Currency String
     | FetchRate Currency
@@ -84,7 +98,13 @@ init { groupName, parsed } =
     Model
         { parsed = parsed
         , groupName = groupName
-        , creatorName = ""
+        , identity =
+            if List.isEmpty parsed.memberNames then
+                NewMember
+
+            else
+                ClaimMember 0
+        , newMemberName = ""
         , defaultCurrency = mostUsedCurrency parsed
         , rateInputs = Dict.empty
         , rateStatus = Dict.empty
@@ -144,8 +164,14 @@ update msg (Model data) =
         InputGroupName s ->
             ( Model { data | groupName = s }, NoEffect )
 
-        InputCreatorName s ->
-            ( Model { data | creatorName = s }, NoEffect )
+        SelectClaim i ->
+            ( Model { data | identity = ClaimMember i }, NoEffect )
+
+        SelectNewMember ->
+            ( Model { data | identity = NewMember }, NoEffect )
+
+        InputNewMemberName s ->
+            ( Model { data | newMemberName = s }, NoEffect )
 
         SelectCurrency c ->
             ( Model { data | defaultCurrency = c }, NoEffect )
@@ -180,10 +206,6 @@ validate data =
         trimmedName =
             String.trim data.groupName
 
-        trimmedCreator : String
-        trimmedCreator =
-            String.trim data.creatorName
-
         parsedRates : List (Maybe ( String, Float ))
         parsedRates =
             otherCurrencies data
@@ -197,20 +219,54 @@ validate data =
         rates =
             allJust parsedRates |> Maybe.map Dict.fromList
     in
-    if String.isEmpty trimmedName || String.isEmpty trimmedCreator then
+    if String.isEmpty trimmedName then
         Nothing
 
     else
-        Maybe.map
-            (\rateDict ->
+        Maybe.map2
+            (\( claimedIndex, creatorName ) rateDict ->
                 { groupName = trimmedName
-                , creatorName = trimmedCreator
+                , claimedMemberIndex = claimedIndex
+                , creatorName = creatorName
                 , defaultCurrency = data.defaultCurrency
                 , rates = rateDict
                 , parsed = data.parsed
                 }
             )
+            (resolveIdentity data)
             rates
+
+
+{-| Resolve the chosen identity into a (claimed column index, display name),
+or Nothing when a new-member name is blank or clashes with a Splitwise member.
+-}
+resolveIdentity : Data -> Maybe ( Maybe Int, String )
+resolveIdentity data =
+    case data.identity of
+        ClaimMember i ->
+            memberNameAt i data.parsed.memberNames
+                |> Maybe.map (\name -> ( Just i, name ))
+
+        NewMember ->
+            let
+                trimmed : String
+                trimmed =
+                    String.trim data.newMemberName
+
+                clashes : Bool
+                clashes =
+                    List.any (\m -> String.toLower m == String.toLower trimmed) data.parsed.memberNames
+            in
+            if String.isEmpty trimmed || clashes then
+                Nothing
+
+            else
+                Just ( Nothing, trimmed )
+
+
+memberNameAt : Int -> List String -> Maybe String
+memberNameAt i names =
+    List.drop i names |> List.head
 
 
 parseRate : String -> Maybe Float
@@ -251,7 +307,7 @@ view i18n toMsg (Model data) =
             (Ui.text (T.splitwiseImportHint i18n))
         , previewCard i18n data
         , textField i18n (T.splitwiseImportNameLabel i18n) (T.splitwiseImportNamePlaceholder i18n) data.groupName InputGroupName (data.submitted && String.isEmpty (String.trim data.groupName))
-        , textField i18n (T.splitwiseImportYourNameLabel i18n) (T.splitwiseImportYourNamePlaceholder i18n) data.creatorName InputCreatorName (data.submitted && String.isEmpty (String.trim data.creatorName))
+        , identitySection i18n data
         , currencyField i18n data
         , ratesSection i18n data
         , UI.Components.btnPrimary []
@@ -300,6 +356,77 @@ textField i18n label placeholder value onChange showError =
           else
             Ui.none
         ]
+
+
+identitySection : I18n -> Data -> Ui.Element Msg
+identitySection i18n data =
+    let
+        isNew : Bool
+        isNew =
+            data.identity == NewMember
+
+        trimmed : String
+        trimmed =
+            String.trim data.newMemberName
+
+        clashes : Bool
+        clashes =
+            List.any (\m -> String.toLower m == String.toLower trimmed) data.parsed.memberNames
+    in
+    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+        [ Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+            [ UI.Components.sectionLabel (T.joinGroupClaimMember i18n)
+            , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.sm ]
+                (List.indexedMap (memberToggle data.identity) data.parsed.memberNames)
+            ]
+        , Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+            [ UI.Components.sectionLabel (T.joinGroupJoinAsNew i18n)
+            , UI.Components.chip
+                { label = T.joinGroupJoinAsNew i18n
+                , selected = isNew
+                , onPress = SelectNewMember
+                }
+            , if isNew then
+                Ui.column [ Ui.paddingTop Theme.spacing.xs, Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+                    [ UI.Components.formLabel (T.joinGroupNameLabel i18n) True
+                    , Ui.Input.text
+                        [ Ui.width Ui.fill
+                        , Ui.padding Theme.spacing.sm
+                        , Ui.rounded Theme.radius.sm
+                        , Ui.border Theme.border
+                        , Ui.borderColor Theme.base.accent
+                        ]
+                        { onChange = InputNewMemberName
+                        , text = data.newMemberName
+                        , placeholder = Just (T.joinGroupNamePlaceholder i18n)
+                        , label = Ui.Input.labelHidden (T.joinGroupNameLabel i18n)
+                        }
+                    , if clashes && not (String.isEmpty trimmed) then
+                        Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
+                            (Ui.text (T.joinGroupNameTaken i18n))
+
+                      else if data.submitted && String.isEmpty trimmed then
+                        Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
+                            (Ui.text (T.fieldRequired i18n))
+
+                      else
+                        Ui.none
+                    ]
+
+              else
+                Ui.none
+            ]
+        ]
+
+
+memberToggle : IdentityChoice -> Int -> String -> Ui.Element Msg
+memberToggle identity index name =
+    UI.Components.toggleMemberBtn
+        { name = name
+        , initials = String.left 2 (String.toUpper name)
+        , selected = identity == ClaimMember index
+        , onPress = SelectClaim index
+        }
 
 
 currencyField : I18n -> Data -> Ui.Element Msg
