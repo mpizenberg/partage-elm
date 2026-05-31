@@ -32,6 +32,7 @@ type alias Context msg =
 
 type Output
     = ImportFileLoaded String
+    | SplitwiseFileLoaded { filename : String, content : String }
     | JoinLink String
 
 
@@ -50,6 +51,9 @@ type Msg
     | StartImport
     | FileSelected File.File
     | FileLoaded String
+    | StartSplitwiseImport
+    | SplitwiseFileSelected File.File
+    | SplitwiseContentLoaded String String
     | ShowJoinInput
     | JoinLinkChanged String
     | SubmitJoinLink
@@ -107,6 +111,24 @@ update msg (Model data) =
             ( Model { data | importError = Nothing }
             , Cmd.none
             , Just (ImportFileLoaded base64)
+            )
+
+        StartSplitwiseImport ->
+            ( Model { data | importError = Nothing, showImportInfo = False }
+            , File.Select.file [ "text/csv", ".csv" ] SplitwiseFileSelected
+            , Nothing
+            )
+
+        SplitwiseFileSelected file ->
+            ( Model data
+            , Task.perform (SplitwiseContentLoaded (File.name file)) (File.toString file)
+            , Nothing
+            )
+
+        SplitwiseContentLoaded filename content ->
+            ( Model { data | importError = Nothing }
+            , Cmd.none
+            , Just (SplitwiseFileLoaded { filename = filename, content = content })
             )
 
         ShowJoinInput ->
@@ -469,6 +491,19 @@ importInfo i18n toMsg data =
                     , onPress = toMsg StartImport
                     }
                 ]
+            , Ui.el [ Ui.paddingXY 0 Theme.spacing.xs, Ui.width Ui.fill ]
+                UI.Components.horizontalSeparator
+            , Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.base.textSubtle
+                , Ui.width Ui.fill
+                ]
+                (Ui.text (T.splitwiseImportInfo i18n))
+            , UI.Components.btnOutline [ Ui.width Ui.shrink ]
+                { label = T.splitwiseImportButton i18n
+                , icon = Nothing
+                , onPress = toMsg StartSplitwiseImport
+                }
             ]
 
 

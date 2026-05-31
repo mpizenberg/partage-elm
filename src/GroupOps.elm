@@ -11,6 +11,7 @@ module GroupOps exposing
     , editEntry
     , event
     , eventWithId
+    , importSplitwiseGroup
     , initLoadedGroup
     , newEntry
     , newGroup
@@ -21,6 +22,7 @@ module GroupOps exposing
 import ConcurrentTask exposing (ConcurrentTask)
 import ConcurrentTask.Time
 import Dict
+import Domain.Currency exposing (Currency)
 import Domain.Entry as Entry
 import Domain.Event as Event
 import Domain.Group as Group
@@ -39,6 +41,7 @@ import Page.Group.NewEntry.Shared as NewEntryShared
 import PocketBase
 import Random
 import Set exposing (Set)
+import SplitwiseImport
 import Time
 import UUID
 import WebCrypto.Signature as Signature
@@ -223,6 +226,164 @@ newGroup ctx onComplete output =
                             |> ConcurrentTask.andThen (\_ -> Storage.saveGroupKey ctx.db groupId (Symmetric.exportKey key))
                             |> ConcurrentTask.andThen (\_ -> Storage.saveEvents ctx.db groupId allEvents)
                             |> ConcurrentTask.andThen (\_ -> Storage.addUnpushedIds ctx.db groupId allEventIds)
+                            |> ConcurrentTask.map (\_ -> summary)
+                    )
+    in
+    ( ctx.runner, Cmd.none )
+        |> Runner.andRun onComplete (generateEnvelopes |> ConcurrentTask.andThen allTasks)
+        |> Tuple.mapFirst
+            (\r ->
+                { runner = r
+                , randomSeed = seedAfter
+                , uuidState = uuidStateAfter
+                }
+            )
+
+
+
+-- Import Splitwise Group
+
+
+{-| Inputs for building a new group from a parsed Splitwise CSV export.
+`rate c` gives the value of one unit of currency `c` in the default currency,
+used only to fill `defaultCurrencyAmount` on non-default-currency entries.
+-}
+type alias SplitwiseImportConfig =
+    { groupName : String
+    , creatorName : String
+    , claimedMemberIndex : Maybe Int
+    , defaultCurrency : Currency
+    , rate : Currency -> Float
+    , parsed : SplitwiseImport.Parsed
+    }
+
+
+{-| Create a new group from a parsed Splitwise export. The importer is the (Real)
+creator; they either take over one Splitwise participant (`claimedMemberIndex`)
+or join as a new member, in which case every participant becomes a Virtual
+member. One signed event is emitted per reconstructed entry, on top of the
+group/member creation events.
+-}
+importSplitwiseGroup : Context msg -> (ConcurrentTask.Response Idb.Error Group.Summary -> msg) -> SplitwiseImportConfig -> ( State msg, Cmd msg )
+importSplitwiseGroup ctx onComplete cfg =
+    let
+        memberNames : List String
+        memberNames =
+            cfg.parsed.memberNames
+
+        ( groupId, seed1 ) =
+            IdGen.pbId ctx.randomSeed
+
+        ( virtualMemberIds, seed2 ) =
+            IdGen.v4batch (List.length memberNames) seed1
+
+        isClaimed : Int -> Bool
+        isClaimed index =
+            cfg.claimedMemberIndex == Just index
+
+        -- For each Splitwise column: the member id to use in reconstructed
+        -- entries (the creator's id for the claimed column, else a fresh id).
+        memberIds : List Member.Id
+        memberIds =
+            List.indexedMap
+                (\index virtualId ->
+                    if isClaimed index then
+                        ctx.identity.publicKeyHash
+
+                    else
+                        virtualId
+                )
+                virtualMemberIds
+
+        virtualMembers : List ( Member.Id, String )
+        virtualMembers =
+            List.map2 Tuple.pair virtualMemberIds memberNames
+                |> List.indexedMap Tuple.pair
+                |> List.filterMap
+                    (\( index, idName ) ->
+                        if isClaimed index then
+                            Nothing
+
+                        else
+                            Just idName
+                    )
+
+        kinds : List Entry.Kind
+        kinds =
+            List.filterMap
+                (SplitwiseImport.reconstruct
+                    { memberIds = memberIds
+                    , defaultCurrency = cfg.defaultCurrency
+                    , rate = cfg.rate
+                    }
+                )
+                cfg.parsed.rows
+
+        ( entryIds, seedAfter ) =
+            IdGen.v4batch (List.length kinds) seed2
+
+        ( eventIds, uuidStateAfter ) =
+            IdGen.v7batch (2 + List.length virtualMembers + List.length kinds) ctx.currentTime ctx.uuidState
+
+        payloads : List Event.Payload
+        payloads =
+            Event.createGroup
+                { name = cfg.groupName
+                , defaultCurrency = cfg.defaultCurrency
+                , creator = ( ctx.identity.publicKeyHash, cfg.creatorName )
+                , virtualMembers = virtualMembers
+                , publicKey = ctx.identity.signingKeyPair.publicKey
+                }
+                ++ List.map2
+                    (\entryId kind ->
+                        Event.EntryAdded
+                            { meta = Entry.newMetadata entryId ctx.identity.publicKeyHash ctx.currentTime
+                            , kind = kind
+                            }
+                    )
+                    entryIds
+                    kinds
+
+        summary : Group.Summary
+        summary =
+            { id = groupId
+            , name = cfg.groupName
+            , defaultCurrency = cfg.defaultCurrency
+            , isSubscribed = False
+            , isArchived = False
+            , createdAt = ctx.currentTime
+            , memberCount = 1 + List.length virtualMembers
+            , myBalanceCents = 0
+            }
+
+        signingKeyPair : Signature.SigningKeyPair
+        signingKeyPair =
+            Signature.importSigningKeyPair ctx.identity.signingKeyPair
+
+        generateEnvelopes : ConcurrentTask Idb.Error (List Event.Envelope)
+        generateEnvelopes =
+            ConcurrentTask.Time.now
+                |> ConcurrentTask.map
+                    (\now ->
+                        List.map2 (\eventId payload -> Event.wrap eventId now ctx.identity.publicKeyHash payload "")
+                            eventIds
+                            payloads
+                    )
+                |> ConcurrentTask.andThen
+                    (\unsignedEnvelopes ->
+                        List.map (signEnvelope signingKeyPair) unsignedEnvelopes
+                            |> ConcurrentTask.batch
+                    )
+
+        allTasks : List Event.Envelope -> ConcurrentTask Idb.Error Group.Summary
+        allTasks allEvents =
+            Crypto.generateGroupKey
+                |> ConcurrentTask.andThen
+                    (\key ->
+                        Storage.saveGroupSummary ctx.db summary
+                            |> ConcurrentTask.andThen (\_ -> Storage.saveGroupKey ctx.db groupId (Symmetric.exportKey key))
+                            |> ConcurrentTask.andThen (\_ -> Storage.saveEvents ctx.db groupId allEvents)
+                            |> ConcurrentTask.andThen (\_ -> Storage.addUnpushedIds ctx.db groupId (List.map .id allEvents))
                             |> ConcurrentTask.map (\_ -> summary)
                     )
     in
