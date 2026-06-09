@@ -878,6 +878,9 @@ installHintBanner i18n config =
         Pwa.ManualAndroidMenu ->
             Just (manual (T.pwaInstallHintAndroid i18n))
 
+        Pwa.IosInAppBrowser ->
+            Just (manual (T.pwaInstallHintIosWebview i18n))
+
         Pwa.AlreadyInstalledInBrowser ->
             Just (manual (T.pwaAlreadyInstalled i18n))
 
