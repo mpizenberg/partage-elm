@@ -80,7 +80,7 @@ beneficiariesField i18n activeMembers data =
                         totalExact : Int
                         totalExact =
                             Dict.keys data.beneficiaries
-                                |> List.filterMap (\mid -> Dict.get mid data.exactAmounts |> Maybe.andThen Shared.parseAmountCents)
+                                |> List.filterMap (\mid -> Dict.get mid data.exactAmounts |> Maybe.andThen (Shared.parseAmountCents data.currency))
                                 |> List.sum
 
                         totalAmount : Int
@@ -182,7 +182,7 @@ beneficiaryRow i18n data member =
                             [ Ui.Input.text [ Ui.width (Ui.px 100), Shared.decimalInputAttr ]
                                 { onChange = InputExactAmount member.rootId
                                 , text = Maybe.withDefault "" (Dict.get member.rootId data.exactAmounts)
-                                , placeholder = Just (Shared.zeroAmountPlaceholder i18n)
+                                , placeholder = Just (Shared.zeroAmountPlaceholder i18n data.currency)
                                 , label = Ui.Input.labelHidden member.name
                                 }
                             , Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]

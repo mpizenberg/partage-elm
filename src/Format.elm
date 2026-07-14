@@ -41,26 +41,28 @@ localeConfig lang =
             }
 
 
-{-| Format an integer cents amount as a decimal string (assumes precision 2).
-e.g. (En, 1050) -> "10.50", (Fr, 1050) -> "10,50", (En, -1234567) -> "-12,345.67"
+{-| Format an integer minor-units amount as a decimal string, using the currency's
+precision (e.g. 2 for EUR, 0 for JPY).
+e.g. (En, 1050, EUR) -> "10.50", (Fr, 1050, EUR) -> "10,50", (En, 1050, JPY) -> "1,050"
 -}
-formatCents : Language -> Int -> String
-formatCents lang cents =
-    formatMinorUnits (localeConfig lang) 2 cents
+formatCents : Language -> Int -> Currency -> String
+formatCents lang cents currency =
+    formatMinorUnits (localeConfig lang) (Currency.precision currency) cents
 
 
-{-| Format cents for pre-filling a text input: locale-aware decimal separator
-but no thousands grouping (users edit a flat number, not a formatted display).
-e.g. (En, 1234567) -> "12345.67", (Fr, 1234567) -> "12345,67".
+{-| Format minor units for pre-filling a text input: locale-aware decimal separator
+but no thousands grouping (users edit a flat number, not a formatted display). Uses
+the currency's precision so JPY pre-fills as "1050" rather than "10.50".
+e.g. (En, 1234567, EUR) -> "12345.67", (Fr, 1234567, EUR) -> "12345,67".
 -}
-formatCentsForInput : Language -> Int -> String
-formatCentsForInput lang cents =
+formatCentsForInput : Language -> Int -> Currency -> String
+formatCentsForInput lang cents currency =
     let
         cfg : LocaleConfig
         cfg =
             localeConfig lang
     in
-    formatMinorUnits { cfg | group = "" } 2 cents
+    formatMinorUnits { cfg | group = "" } (Currency.precision currency) cents
 
 
 {-| Format cents with an explicit sign: "+" for positive, locale "-" for negative,

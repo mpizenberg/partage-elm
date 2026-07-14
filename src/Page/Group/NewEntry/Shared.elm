@@ -192,10 +192,10 @@ type Msg
 -- UTILITY FUNCTIONS
 
 
-parseAmountCents : String -> Maybe Int
-parseAmountCents s =
+parseAmountCents : Currency -> String -> Maybe Int
+parseAmountCents currency s =
     String.toFloat (NewEntry.normalizeAmountInput s)
-        |> Maybe.map (\f -> round (f * 100))
+        |> Maybe.map (\f -> round (f * toFloat (10 ^ Currency.precision currency)))
         |> Maybe.andThen
             (\cents ->
                 if cents >= 0 then
@@ -295,11 +295,12 @@ dateInputAttr =
     Ui.htmlAttribute (Html.Attributes.type_ "date")
 
 
-{-| Locale-aware placeholder for an empty amount input (e.g. "0,00" in French).
+{-| Locale- and currency-aware placeholder for an empty amount input
+(e.g. "0,00" in French for EUR, "0" for a 0-decimal currency like JPY).
 -}
-zeroAmountPlaceholder : I18n -> String
-zeroAmountPlaceholder i18n =
-    Format.formatCentsForInput (T.currentLanguage i18n) 0
+zeroAmountPlaceholder : I18n -> Currency -> String
+zeroAmountPlaceholder i18n currency =
+    Format.formatCentsForInput (T.currentLanguage i18n) 0 currency
 
 
 amountCurrencyField : I18n -> ModelData -> Ui.Element Msg
@@ -368,7 +369,7 @@ defaultCurrencyAmountField i18n data =
 
             isInvalid : Bool
             isInvalid =
-                not isEmpty && parseAmountCents (String.trim data.defaultCurrencyAmount) == Nothing
+                not isEmpty && parseAmountCents data.groupDefaultCurrency (String.trim data.defaultCurrencyAmount) == Nothing
 
             amountCents : Int
             amountCents =

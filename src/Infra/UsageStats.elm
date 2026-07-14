@@ -221,6 +221,11 @@ defaultStats now =
     }
 
 
+{-| Format a hosting-cost estimate (in cents) as a dollar string. This is hardwired
+to USD/precision 2 on purpose: it displays the server hosting cost estimate (see
+docs/SPECIFICATION.md §17.2), which is denominated in US dollars and is unrelated to
+the user's group currency.
+-}
 formatDollars : Float -> String
 formatDollars cents =
     let

@@ -4,13 +4,16 @@ module Form.NewEntry exposing
     , Form
     , Output
     , State
+    , amountFromString
     , form
     , initAmount
     , initDate
     , initDescription
     , normalizeAmountInput
+    , setAmountCurrency
     )
 
+import Domain.Currency as Currency exposing (Currency)
 import Domain.Date exposing (Date)
 import Field exposing (Field, Validation)
 import Form exposing (Accessor)
@@ -60,23 +63,25 @@ type alias Output =
 
 
 
--- Amount field type: parses "12.50" or "12,50" -> 1250 (cents).
+-- Amount field type: parses "12.50" or "12,50" -> 1250 (minor units).
 -- Accepts both decimal separators and ignores spaces (regular, NBSP, NNBSP)
 -- so French-formatted input like "1 234,56" round-trips. The active Language
--- is baked into the type so `setFromValue` / `toString` produce the right
--- separator without any caller having to remember to pass it.
+-- and Currency are baked into the type so `setFromValue` / `toString` produce
+-- the right separator and precision without any caller having to remember to
+-- pass them. The precision means "12.50" is 1250 minor units for EUR but only
+-- 13 for a 0-decimal currency like JPY.
 
 
-amountType : Language -> Field.Type Int
-amountType lang =
+amountType : Language -> Currency -> Field.Type Int
+amountType lang currency =
     Field.customType
-        { fromString = amountFromString
-        , toString = Format.formatCentsForInput lang
+        { fromString = amountFromString currency
+        , toString = \cents -> Format.formatCentsForInput lang cents currency
         }
 
 
-amountFromString : String -> Result Field.Error Int
-amountFromString =
+amountFromString : Currency -> String -> Result Field.Error Int
+amountFromString currency =
     Field.trim
         (\s ->
             case String.toFloat (normalizeAmountInput s) of
@@ -84,7 +89,7 @@ amountFromString =
                     let
                         cents : Int
                         cents =
-                            round (f * 100)
+                            round (f * toFloat (10 ^ Currency.precision currency))
                     in
                     if cents > 0 then
                         Ok cents
@@ -152,16 +157,43 @@ dateToString date =
 -- Form
 
 
-{-| The new entry form definition. Carries the active language so the amount
-field formats values with the locale's decimal separator.
+{-| The new entry form definition. Carries the active language and currency so
+the amount field formats values with the locale's decimal separator and the
+currency's precision.
 -}
-form : Language -> Form
-form lang =
+form : Language -> Currency -> Form
+form lang currency =
     Form.new
-        { init = init lang
+        { init = init lang currency
         , accessors = accessors
         , validate = validate
         }
+
+
+{-| Rebuild the amount field's type for a new currency, re-parsing the current
+raw input under the new precision. Needed when the user switches currency
+mid-entry, so "1000" means ¥1000 (precision 0) rather than 10.00 (precision 2).
+The dirty/clean state is preserved so a visible error doesn't transiently clear.
+-}
+setAmountCurrency : Language -> Currency -> Form -> Form
+setAmountCurrency lang currency =
+    Form.modify .amount
+        (\f ->
+            let
+                raw : String
+                raw =
+                    Field.toRawString f
+
+                rebuilt : Field Int
+                rebuilt =
+                    Field.fromString (amountType lang currency) raw
+            in
+            if Field.isDirty f then
+                Field.setFromString raw rebuilt
+
+            else
+                rebuilt
+        )
 
 
 {-| Initialize the date field from a Date value.
@@ -186,10 +218,10 @@ initAmount cents =
     Form.modify .amount (Field.setFromValue cents)
 
 
-init : Language -> State
-init lang =
+init : Language -> Currency -> State
+init lang currency =
     { description = Field.empty Field.nonBlankString
-    , amount = Field.empty (amountType lang)
+    , amount = Field.empty (amountType lang currency)
     , date = Field.empty dateType
     }
 

@@ -364,7 +364,7 @@ view i18n config maybeUserRootId today (Model data) state =
 
           else
             Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
-                (groupedByDate i18n (maybeUserRootId /= Nothing) resolveName config.entryLinkHref data.expandedEntries data.confirmingAction visibleEntries)
+                (groupedByDate i18n groupDefaultCurrency (maybeUserRootId /= Nothing) resolveName config.entryLinkHref data.expandedEntries data.confirmingAction visibleEntries)
                 |> Ui.map toMsg
         ]
 
@@ -685,8 +685,8 @@ dateFilterSection i18n activeRanges =
 -- DATE GROUPING
 
 
-groupedByDate : I18n -> Bool -> (Member.Id -> String) -> (Entry.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> List { entry : Entry.Entry, isDeleted : Bool } -> List (Ui.Element Msg)
-groupedByDate i18n isMember resolveName entryLinkHref expandedEntries confirmingAction entries =
+groupedByDate : I18n -> Currency.Currency -> Bool -> (Member.Id -> String) -> (Entry.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> List { entry : Entry.Entry, isDeleted : Bool } -> List (Ui.Element Msg)
+groupedByDate i18n groupDefaultCurrency isMember resolveName entryLinkHref expandedEntries confirmingAction entries =
     let
         getDate : Entry.Entry -> Date
         getDate entry =
@@ -709,7 +709,7 @@ groupedByDate i18n isMember resolveName entryLinkHref expandedEntries confirming
         |> List.concatMap
             (\( date, group ) ->
                 dateSeparator i18n date
-                    :: List.map (entryCardView i18n isMember resolveName entryLinkHref expandedEntries confirmingAction) group
+                    :: List.map (entryCardView i18n groupDefaultCurrency isMember resolveName entryLinkHref expandedEntries confirmingAction) group
             )
 
 
@@ -729,8 +729,8 @@ dateSeparator i18n date =
 -- ENTRY CARD
 
 
-entryCardView : I18n -> Bool -> (Member.Id -> String) -> (Entry.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> { entry : Entry.Entry, isDeleted : Bool } -> Ui.Element Msg
-entryCardView i18n isMember resolveName entryLinkHref expandedEntries confirmingAction { entry, isDeleted } =
+entryCardView : I18n -> Currency.Currency -> Bool -> (Member.Id -> String) -> (Entry.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> { entry : Entry.Entry, isDeleted : Bool } -> Ui.Element Msg
+entryCardView i18n groupDefaultCurrency isMember resolveName entryLinkHref expandedEntries confirmingAction { entry, isDeleted } =
     let
         entryId : Entry.Id
         entryId =
@@ -761,7 +761,7 @@ entryCardView i18n isMember resolveName entryLinkHref expandedEntries confirming
                 [ Ui.el [ Ui.Input.button (ToggleEntry entryId), Ui.pointer ]
                     headerEl
                 , if isExpanded then
-                    entryDetail i18n isMember resolveName (entryLinkHref entryId) entryId entry isDeleted confirmingAction
+                    entryDetail i18n groupDefaultCurrency isMember resolveName (entryLinkHref entryId) entryId entry isDeleted confirmingAction
 
                   else
                     Ui.none
@@ -1019,13 +1019,13 @@ recipientText resolveName beneficiaries =
 -- ENTRY DETAIL (expanded)
 
 
-entryDetail : I18n -> Bool -> (Member.Id -> String) -> String -> Entry.Id -> Entry.Entry -> Bool -> Maybe ( Entry.Id, ConfirmAction ) -> Ui.Element Msg
-entryDetail i18n isMember resolveName linkHref entryId entry isDeleted confirmingAction =
+entryDetail : I18n -> Currency.Currency -> Bool -> (Member.Id -> String) -> String -> Entry.Id -> Entry.Entry -> Bool -> Maybe ( Entry.Id, ConfirmAction ) -> Ui.Element Msg
+entryDetail i18n groupDefaultCurrency isMember resolveName linkHref entryId entry isDeleted confirmingAction =
     Ui.column
         [ Ui.paddingTop Theme.spacing.md
         , Ui.spacing Theme.spacing.md
         ]
-        [ entryContent i18n resolveName entry
+        [ entryContent i18n groupDefaultCurrency resolveName entry
         , if isMember then
             Ui.row [ Ui.spacing Theme.spacing.sm ]
                 [ copyLinkBtn linkHref (T.entryDetailCopyLink i18n)
@@ -1059,30 +1059,30 @@ entryDetail i18n isMember resolveName linkHref entryId entry isDeleted confirmin
         ]
 
 
-entryContent : I18n -> (Member.Id -> String) -> Entry.Entry -> Ui.Element msg
-entryContent i18n resolveName entry =
+entryContent : I18n -> Currency.Currency -> (Member.Id -> String) -> Entry.Entry -> Ui.Element msg
+entryContent i18n groupDefaultCurrency resolveName entry =
     case entry.kind of
         Entry.Expense data ->
-            expenseContent i18n resolveName data
+            expenseContent i18n groupDefaultCurrency resolveName data
 
         Entry.Transfer data ->
-            transferContent i18n resolveName data
+            transferContent i18n groupDefaultCurrency resolveName data
 
         Entry.Income data ->
-            incomeContent i18n resolveName data
+            incomeContent i18n groupDefaultCurrency resolveName data
 
 
-expenseContent : I18n -> (Member.Id -> String) -> Entry.ExpenseData -> Ui.Element msg
-expenseContent i18n resolveName data =
+expenseContent : I18n -> Currency.Currency -> (Member.Id -> String) -> Entry.ExpenseData -> Ui.Element msg
+expenseContent i18n groupDefaultCurrency resolveName data =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         (List.concat
             [ [ detailRow (T.newEntryDescriptionLabel i18n) data.description
               , detailRow (T.entryDetailDate i18n) (Date.toString data.date)
               , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount data.currency)
               ]
-            , defaultCurrencyAmountRow i18n data.defaultCurrencyAmount
+            , defaultCurrencyAmountRow i18n groupDefaultCurrency data.defaultCurrencyAmount
             , [ detailRow (T.entryDetailPaidBy i18n) (payerNames resolveName data.payers)
-              , beneficiariesSection i18n resolveName data.beneficiaries
+              , beneficiariesSection i18n data.currency resolveName data.beneficiaries
               ]
             , detailCategoryRow i18n data.category
             , optionalRow (T.entryDetailNotes i18n) data.notes
@@ -1090,14 +1090,14 @@ expenseContent i18n resolveName data =
         )
 
 
-transferContent : I18n -> (Member.Id -> String) -> Entry.TransferData -> Ui.Element msg
-transferContent i18n resolveName data =
+transferContent : I18n -> Currency.Currency -> (Member.Id -> String) -> Entry.TransferData -> Ui.Element msg
+transferContent i18n groupDefaultCurrency resolveName data =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         (List.concat
             [ [ detailRow (T.entryDetailDate i18n) (Date.toString data.date)
               , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount data.currency)
               ]
-            , defaultCurrencyAmountRow i18n data.defaultCurrencyAmount
+            , defaultCurrencyAmountRow i18n groupDefaultCurrency data.defaultCurrencyAmount
             , [ detailRow (T.entryDetailFrom i18n) (resolveName data.from)
               , detailRow (T.entryDetailTo i18n) (resolveName data.to)
               ]
@@ -1106,32 +1106,32 @@ transferContent i18n resolveName data =
         )
 
 
-incomeContent : I18n -> (Member.Id -> String) -> Entry.IncomeData -> Ui.Element msg
-incomeContent i18n resolveName data =
+incomeContent : I18n -> Currency.Currency -> (Member.Id -> String) -> Entry.IncomeData -> Ui.Element msg
+incomeContent i18n groupDefaultCurrency resolveName data =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         (List.concat
             [ [ detailRow (T.newEntryDescriptionLabel i18n) data.description
               , detailRow (T.entryDetailDate i18n) (Date.toString data.date)
               , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount data.currency)
               ]
-            , defaultCurrencyAmountRow i18n data.defaultCurrencyAmount
+            , defaultCurrencyAmountRow i18n groupDefaultCurrency data.defaultCurrencyAmount
             , [ detailRow (T.entryDetailReceivedBy i18n) (resolveName data.receivedBy)
-              , beneficiariesSection i18n resolveName data.beneficiaries
+              , beneficiariesSection i18n data.currency resolveName data.beneficiaries
               ]
             , optionalRow (T.entryDetailNotes i18n) data.notes
             ]
         )
 
 
-defaultCurrencyAmountRow : I18n -> Maybe Int -> List (Ui.Element msg)
-defaultCurrencyAmountRow i18n maybeAmount =
+defaultCurrencyAmountRow : I18n -> Currency.Currency -> Maybe Int -> List (Ui.Element msg)
+defaultCurrencyAmountRow i18n groupDefaultCurrency maybeAmount =
     case maybeAmount of
         Just amount ->
             [ Ui.el
                 [ Ui.Font.size Theme.font.sm
                 , Ui.Font.color Theme.base.textSubtle
                 ]
-                (Ui.text ("≈ " ++ Format.formatCents (T.currentLanguage i18n) amount))
+                (Ui.text ("≈ " ++ Format.formatCents (T.currentLanguage i18n) amount groupDefaultCurrency))
             ]
 
         Nothing ->
@@ -1171,8 +1171,8 @@ payerNames resolveName payers =
         |> String.join ", "
 
 
-beneficiariesSection : I18n -> (Member.Id -> String) -> List Entry.Beneficiary -> Ui.Element msg
-beneficiariesSection i18n resolveName beneficiaries =
+beneficiariesSection : I18n -> Currency.Currency -> (Member.Id -> String) -> List Entry.Beneficiary -> Ui.Element msg
+beneficiariesSection i18n currency resolveName beneficiaries =
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
         [ Ui.el
             [ Ui.Font.size Theme.font.sm
@@ -1180,14 +1180,14 @@ beneficiariesSection i18n resolveName beneficiaries =
             ]
             (Ui.text (T.entryDetailSplitAmong i18n))
         , Ui.row [ Ui.spacing Theme.spacing.sm, Ui.wrap ]
-            (List.map (beneficiaryItem i18n resolveName) beneficiaries
+            (List.map (beneficiaryItem i18n currency resolveName) beneficiaries
                 |> List.intersperse (Ui.text "·")
             )
         ]
 
 
-beneficiaryItem : I18n -> (Member.Id -> String) -> Entry.Beneficiary -> Ui.Element msg
-beneficiaryItem i18n resolveName beneficiary =
+beneficiaryItem : I18n -> Currency.Currency -> (Member.Id -> String) -> Entry.Beneficiary -> Ui.Element msg
+beneficiaryItem i18n currency resolveName beneficiary =
     case beneficiary of
         Entry.ShareBeneficiary data ->
             Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.shrink ]
@@ -1211,7 +1211,7 @@ beneficiaryItem i18n resolveName beneficiary =
                     , Ui.Font.color Theme.base.textSubtle
                     , Ui.alignBottom
                     ]
-                    (Ui.text (Format.formatCents (T.currentLanguage i18n) data.amount))
+                    (Ui.text (Format.formatCents (T.currentLanguage i18n) data.amount currency))
                 ]
 
 

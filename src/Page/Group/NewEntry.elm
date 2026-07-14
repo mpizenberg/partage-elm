@@ -44,7 +44,7 @@ type Model
 init : Shared.Config -> Model
 init config =
     Model
-        { form = NewEntry.form config.language |> NewEntry.initDate config.today
+        { form = NewEntry.form config.language config.defaultCurrency |> NewEntry.initDate config.today
         , submitted = False
         , isEditing = False
         , kind = ExpenseKind
@@ -132,7 +132,7 @@ initFromExpenseData config editing data =
                     (\b ->
                         case b of
                             Entry.ExactBeneficiary e ->
-                                Just ( e.memberId, Format.formatCentsForInput config.language e.amount )
+                                Just ( e.memberId, Format.formatCentsForInput config.language e.amount data.currency )
 
                             _ ->
                                 Nothing
@@ -145,12 +145,12 @@ initFromExpenseData config editing data =
 
         payerAmountsDict : Dict Member.Id String
         payerAmountsDict =
-            List.map (\p -> ( p.memberId, Format.formatCentsForInput config.language p.amount )) data.payers
+            List.map (\p -> ( p.memberId, Format.formatCentsForInput config.language p.amount data.currency )) data.payers
                 |> Dict.fromList
     in
     Model
         { form =
-            NewEntry.form config.language
+            NewEntry.form config.language data.currency
                 |> NewEntry.initDescription data.description
                 |> NewEntry.initAmount data.amount
                 |> NewEntry.initDate data.date
@@ -177,7 +177,7 @@ initFromExpenseData config editing data =
         , defaultCurrencyAmount =
             case data.defaultCurrencyAmount of
                 Just amt ->
-                    Format.formatCentsForInput config.language amt
+                    Format.formatCentsForInput config.language amt config.defaultCurrency
 
                 Nothing ->
                     ""
@@ -189,7 +189,7 @@ initFromTransferData : Shared.Config -> Bool -> Entry.TransferData -> Model
 initFromTransferData config editing data =
     Model
         { form =
-            NewEntry.form config.language
+            NewEntry.form config.language data.currency
                 |> NewEntry.initAmount data.amount
                 |> NewEntry.initDate data.date
         , submitted = False
@@ -210,7 +210,7 @@ initFromTransferData config editing data =
         , defaultCurrencyAmount =
             case data.defaultCurrencyAmount of
                 Just amt ->
-                    Format.formatCentsForInput config.language amt
+                    Format.formatCentsForInput config.language amt config.defaultCurrency
 
                 Nothing ->
                     ""
@@ -255,7 +255,7 @@ initFromIncomeData config editing data =
                     (\b ->
                         case b of
                             Entry.ExactBeneficiary e ->
-                                Just ( e.memberId, Format.formatCentsForInput config.language e.amount )
+                                Just ( e.memberId, Format.formatCentsForInput config.language e.amount data.currency )
 
                             _ ->
                                 Nothing
@@ -268,7 +268,7 @@ initFromIncomeData config editing data =
     in
     Model
         { form =
-            NewEntry.form config.language
+            NewEntry.form config.language data.currency
                 |> NewEntry.initDescription data.description
                 |> NewEntry.initAmount data.amount
                 |> NewEntry.initDate data.date
@@ -295,7 +295,7 @@ initFromIncomeData config editing data =
         , defaultCurrencyAmount =
             case data.defaultCurrencyAmount of
                 Just amt ->
-                    Format.formatCentsForInput config.language amt
+                    Format.formatCentsForInput config.language amt config.defaultCurrency
 
                 Nothing ->
                     ""
@@ -414,7 +414,16 @@ update language msg (Model data) =
             ( Model { data | category = cat }, Shared.NoEffect )
 
         InputCurrency c ->
-            ( Model { data | currency = c, rateStatus = RateIdle }, Shared.NoEffect )
+            -- Rebuild the amount field for the new currency so the raw input is
+            -- re-parsed at the right precision (e.g. "1000" -> ¥1000, not 10.00).
+            ( Model
+                { data
+                    | currency = c
+                    , rateStatus = RateIdle
+                    , form = NewEntry.setAmountCurrency language c data.form
+                }
+            , Shared.NoEffect
+            )
 
         InputDefaultCurrencyAmount s ->
             ( Model { data | defaultCurrencyAmount = s }, Shared.NoEffect )
@@ -434,8 +443,9 @@ update language msg (Model data) =
                     converted =
                         case Form.get .amount data.form |> Field.toMaybe of
                             Just baseCents ->
-                                Currency.convertCents rate baseCents data.currency data.groupDefaultCurrency
-                                    |> Format.formatCentsForInput language
+                                Format.formatCentsForInput language
+                                    (Currency.convertCents rate baseCents data.currency data.groupDefaultCurrency)
+                                    data.groupDefaultCurrency
 
                             Nothing ->
                                 data.defaultCurrencyAmount
@@ -504,7 +514,7 @@ submitExpense data =
                                         List.filterMap
                                             (\mid ->
                                                 Dict.get mid data.exactAmounts
-                                                    |> Maybe.andThen Shared.parseAmountCents
+                                                    |> Maybe.andThen (Shared.parseAmountCents data.currency)
                                                     |> Maybe.map (\cents -> { memberId = mid, amount = cents })
                                             )
                                             selectedIds
@@ -545,7 +555,7 @@ submitExpense data =
                                         Dict.toList data.payerAmounts
                                             |> List.filterMap
                                                 (\( mid, s ) ->
-                                                    Shared.parseAmountCents s
+                                                    Shared.parseAmountCents data.currency s
                                                         |> Maybe.map (\cents -> { memberId = mid, amount = cents })
                                                 )
                                 in
@@ -567,7 +577,7 @@ submitExpense data =
                     defaultCurrencyAmountResult : Result () (Maybe Int)
                     defaultCurrencyAmountResult =
                         if data.currency /= data.groupDefaultCurrency then
-                            case Shared.parseAmountCents (String.trim data.defaultCurrencyAmount) of
+                            case Shared.parseAmountCents data.groupDefaultCurrency (String.trim data.defaultCurrencyAmount) of
                                 Just amt ->
                                     Ok (Just amt)
 
@@ -635,7 +645,7 @@ submitTransfer data =
                     defaultCurrencyAmountResult : Result () (Maybe Int)
                     defaultCurrencyAmountResult =
                         if data.currency /= data.groupDefaultCurrency then
-                            case Shared.parseAmountCents (String.trim data.defaultCurrencyAmount) of
+                            case Shared.parseAmountCents data.groupDefaultCurrency (String.trim data.defaultCurrencyAmount) of
                                 Just amt ->
                                     Ok (Just amt)
 
@@ -708,7 +718,7 @@ submitIncome data =
                                         List.filterMap
                                             (\mid ->
                                                 Dict.get mid data.exactAmounts
-                                                    |> Maybe.andThen Shared.parseAmountCents
+                                                    |> Maybe.andThen (Shared.parseAmountCents data.currency)
                                                     |> Maybe.map (\cents -> { memberId = mid, amount = cents })
                                             )
                                             selectedIds
@@ -731,7 +741,7 @@ submitIncome data =
                     defaultCurrencyAmountResult : Result () (Maybe Int)
                     defaultCurrencyAmountResult =
                         if data.currency /= data.groupDefaultCurrency then
-                            case Shared.parseAmountCents (String.trim data.defaultCurrencyAmount) of
+                            case Shared.parseAmountCents data.groupDefaultCurrency (String.trim data.defaultCurrencyAmount) of
                                 Just amt ->
                                     Ok (Just amt)
 
