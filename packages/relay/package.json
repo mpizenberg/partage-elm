@@ -1,0 +1,19 @@
+{
+  "name": "@partage/relay",
+  "description": "Minimal zero-knowledge encrypted event relay for Partage",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "serve": "node src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.7",
+    "hono": "^4.11.9"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}
