@@ -5,6 +5,7 @@ Implements §10 of `plan/BACKEND_REPORT.md`: a purpose-built, zero-knowledge eve
 ## Progress
 
 - Increment 1 done: `packages/relay/` — Hono core (4 HTTP routes), PoW ported from `auth.pb.js`, `node:sqlite` storage, Node entrypoint, 23 `node:test` tests green, curl smoke OK. WS is increment 2.
+- Increment 2 done: WS live updates in the Node adapter (`src/node-server.js` via `@hono/node-ws`, broadcast `{seq}` per group; `server.js` is now a thin CLI wrapper). 28 tests green.
 
 ## Decisions
 
@@ -16,7 +17,9 @@ Implements §10 of `plan/BACKEND_REPORT.md`: a purpose-built, zero-knowledge eve
 - **Conflict responses are 409** (duplicate group, reused PoW challenge) where PocketBase returned generic 400s. The client only branches on success/failure, so this is a safe improvement; noted in case increment 3 finds client code matching on status codes.
 - **CORS + `Timing-Allow-Origin` middleware lives in the portable core**, not the Node adapter — replaces `timing.pb.js` and PocketBase's built-in CORS for the cross-origin dev setup; on same-origin deploys it's harmless.
 - **Self-host schema uses a `groups` table** (id, created_by, auth_verifier, pow_challenge unique, created) instead of the report §10.2 `meta` key/value sketch — that sketch fits the per-group DO; a relational table is the natural shape for the shared single file. The DO adapter (increment 4) may still use `meta`.
-- **`node:sqlite` with a Node ≥ 22.5 requirement** (user-confirmed). Alternative: `better-sqlite3` for older-Node support, rejected to keep the self-host adapter dependency-free. If the baseline ever needs lowering, the swap is one file behind the storage interface.
+- **`node:sqlite` with a Node ≥ 22.5 requirement** (user-confirmed).
+- **WebSocket auth via `?auth=<secret>` query parameter.** The browser WebSocket API cannot set an Authorization header; the alternative (smuggling the secret through `Sec-WebSocket-Protocol`) has inconsistent server-side support across the two adapters. The secret is the derived relay credential, not the group key, so a URL leak (e.g. server logs) exposes ciphertext access, never decryption. Revisit if either adapter grows first-class subprotocol handling.
+- **`seq` is strictly monotonic per group but not dense** — the self-host adapter uses one global autoincrement across groups, while the DO adapter will have per-group counters. The client cursor contract is therefore "opaque monotonic integer, resume with `since=<last seen>`", nothing more. Increment 3 must not assume `seq` counts a group's events. Alternative: `better-sqlite3` for older-Node support, rejected to keep the self-host adapter dependency-free. If the baseline ever needs lowering, the swap is one file behind the storage interface.
 
 ## Context (from BACKEND_REPORT.md §10)
 

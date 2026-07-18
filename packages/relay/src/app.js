@@ -30,6 +30,16 @@ async function sha256Base64Url(text) {
     .replaceAll('=', '');
 }
 
+/** Check a presented group secret against the stored verifier. */
+export async function verifyGroupSecret(storage, groupId, secret) {
+  const verifier = await storage.getGroupVerifier(groupId);
+  if (verifier === null) {
+    return 'not_found';
+  }
+  const presented = await sha256Base64Url(secret);
+  return constantTimeEqual(presented, verifier) ? 'ok' : 'unauthorized';
+}
+
 /**
  * `storage` interface:
  * - createGroup({groupId, createdBy, authVerifier, powChallenge, created})
@@ -107,12 +117,11 @@ export function createApp({ storage, powSecret, onAppend }) {
     if (!auth.startsWith('Bearer ')) {
       return c.json({ error: 'Missing bearer token' }, 401);
     }
-    const verifier = await storage.getGroupVerifier(c.req.param('id'));
-    if (verifier === null) {
+    const result = await verifyGroupSecret(storage, c.req.param('id'), auth.slice('Bearer '.length));
+    if (result === 'not_found') {
       return c.json({ error: 'Group not found' }, 404);
     }
-    const presented = await sha256Base64Url(auth.slice('Bearer '.length));
-    if (!constantTimeEqual(presented, verifier)) {
+    if (result === 'unauthorized') {
       return c.json({ error: 'Invalid credentials' }, 401);
     }
     await next();

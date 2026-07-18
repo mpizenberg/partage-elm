@@ -12,9 +12,7 @@
 
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { serve } from '@hono/node-server';
-import { serveStatic } from '@hono/node-server/serve-static';
-import { createApp } from './app.js';
+import { startServer } from './node-server.js';
 import { openStorage } from './storage-sqlite.js';
 
 const dev = process.argv.includes('--dev');
@@ -27,15 +25,12 @@ if (powSecret === null) {
 
 const dbPath = process.env.RELAY_DB ?? './data/relay.db';
 mkdirSync(dirname(dbPath), { recursive: true });
-const storage = openStorage(dbPath);
 
-const app = createApp({ storage, powSecret });
-
-if (process.env.STATIC_DIR) {
-  app.use('/*', serveStatic({ root: process.env.STATIC_DIR }));
-}
-
-const port = Number(process.env.PORT ?? 8090);
-serve({ fetch: app.fetch, port }, () => {
-  console.log(`Partage relay listening on http://127.0.0.1:${port}${dev ? ' (dev mode)' : ''}`);
+const { url } = await startServer({
+  storage: openStorage(dbPath),
+  powSecret,
+  port: Number(process.env.PORT ?? 8090),
+  staticDir: process.env.STATIC_DIR,
 });
+
+console.log(`Partage relay listening on ${url}${dev ? ' (dev mode)' : ''}`);
