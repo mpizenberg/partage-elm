@@ -13,7 +13,7 @@ export function openStorage(path) {
       id            TEXT PRIMARY KEY,
       created_by    TEXT NOT NULL,
       auth_verifier TEXT NOT NULL,
-      pow_challenge TEXT NOT NULL UNIQUE,
+      pow_challenge TEXT NOT NULL,
       created       TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS events (
@@ -46,9 +46,6 @@ export function openStorage(path) {
       } catch (err) {
         if (String(err.message).includes('groups.id')) {
           return 'group_exists';
-        }
-        if (String(err.message).includes('groups.pow_challenge')) {
-          return 'challenge_used';
         }
         throw err;
       }

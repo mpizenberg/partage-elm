@@ -1,0 +1,15 @@
+// Cloudflare deployment of the Partage relay.
+// Build the frontend first (pnpm build at the repo root), then:
+//   wrangler secret put POW_SECRET
+//   wrangler deploy
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "partage-relay",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-07-01",
+  "durable_objects": {
+    "bindings": [{ "name": "GROUP", "class_name": "GroupDo" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GroupDo"] }],
+  "assets": { "directory": "../../dist", "binding": "ASSETS" }
+}

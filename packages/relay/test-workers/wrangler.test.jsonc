@@ -1,0 +1,12 @@
+// Test-only Worker config: same bindings as ../wrangler.jsonc but without the
+// static assets directory (dist/ need not exist to run the test suite).
+{
+  "name": "partage-relay-test",
+  "main": "../src/worker.js",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [{ "name": "GROUP", "class_name": "GroupDo" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GroupDo"] }]
+}

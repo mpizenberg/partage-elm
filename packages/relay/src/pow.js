@@ -1,10 +1,13 @@
 /**
  * Stateless proof-of-work challenges for group creation (anti-spam).
  *
- * The server stores nothing when issuing a challenge: the challenge, its
- * timestamp, and the difficulty are signed with an HMAC secret, and the
- * signature is verified when the solution comes back. Replay is prevented
- * by the unique constraint on the stored challenge in the groups table.
+ * The server stores nothing when issuing a challenge: the challenge, the
+ * groupId it was requested for, its timestamp, and the difficulty are signed
+ * with an HMAC secret, and the signature is verified when the solution comes
+ * back. Binding the challenge to one groupId makes replay useless: a solved
+ * challenge only works for that group, and the group can only be created
+ * once. This must hold without shared state, because on Cloudflare each
+ * group's storage lives in its own Durable Object.
  *
  * Wire format (challenge fields, solution field names, and the
  * SHA-256(challenge + solution) leading-zero-bits condition) must match the
@@ -51,12 +54,12 @@ export function constantTimeEqual(a, b) {
   return diff === 0;
 }
 
-export async function issueChallenge(secret) {
+export async function issueChallenge(secret, groupId) {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
   const challenge = toHex(bytes.buffer);
   const timestamp = Math.floor(Date.now() / 1000);
-  const signature = await hmacSha256Hex(secret, `${challenge}:${timestamp}:${DIFFICULTY}`);
+  const signature = await hmacSha256Hex(secret, `${challenge}:${groupId}:${timestamp}:${DIFFICULTY}`);
   return { challenge, timestamp, difficulty: DIFFICULTY, signature };
 }
 
@@ -64,7 +67,7 @@ export async function issueChallenge(secret) {
  * Verify a PoW solution. Returns null when valid, or an error message.
  * `solution` carries the pow_* fields sent by the client.
  */
-export async function verifySolution(secret, solution) {
+export async function verifySolution(secret, groupId, solution) {
   const {
     pow_challenge: challenge,
     pow_timestamp: timestamp,
@@ -85,7 +88,7 @@ export async function verifySolution(secret, solution) {
     return 'Proof-of-work required for group creation';
   }
 
-  const expectedSignature = await hmacSha256Hex(secret, `${challenge}:${timestamp}:${difficulty}`);
+  const expectedSignature = await hmacSha256Hex(secret, `${challenge}:${groupId}:${timestamp}:${difficulty}`);
   if (!constantTimeEqual(signature, expectedSignature)) {
     return 'PoW verification failed: Invalid challenge signature';
   }

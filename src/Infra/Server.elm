@@ -147,7 +147,7 @@ createGroupOnServer { serverUrl, groupId, groupKey, createdBy } =
         solvedChallenge : ConcurrentTask Error PoW.Solution
         solvedChallenge =
             Http.get
-                { url = serverUrl ++ "/api/pow/challenge"
+                { url = serverUrl ++ "/api/pow/challenge?groupId=" ++ groupId
                 , headers = []
                 , expect = Http.expectJson PoW.challengeDecoder
                 , timeout = Nothing

@@ -43,7 +43,7 @@ export async function verifyGroupSecret(storage, groupId, secret) {
 /**
  * `storage` interface:
  * - createGroup({groupId, createdBy, authVerifier, powChallenge, created})
- *     → null | 'group_exists' | 'challenge_used'
+ *     → null | 'group_exists'
  * - getGroupVerifier(groupId) → string | null
  * - appendEvent(groupId, {actorId, eventData, compressed, created}) → seq
  * - listEventsSince(groupId, sinceSeq, limit)
@@ -67,7 +67,11 @@ export function createApp({ storage, powSecret, onAppend }) {
   });
 
   app.get('/api/pow/challenge', async (c) => {
-    return c.json(await issueChallenge(powSecret));
+    const groupId = c.req.query('groupId') ?? '';
+    if (groupId === '') {
+      return c.json({ error: 'groupId query parameter is required' }, 400);
+    }
+    return c.json(await issueChallenge(powSecret, groupId));
   });
 
   app.post('/api/groups', bodyLimit({ maxSize: 16 * 1024 }), async (c) => {
@@ -90,7 +94,7 @@ export function createApp({ storage, powSecret, onAppend }) {
       return c.json({ error: 'groupId, createdBy and authVerifier are required' }, 400);
     }
 
-    const powError = await verifySolution(powSecret, body);
+    const powError = await verifySolution(powSecret, groupId, body);
     if (powError !== null) {
       return c.json({ error: powError }, 400);
     }
@@ -104,9 +108,6 @@ export function createApp({ storage, powSecret, onAppend }) {
     });
     if (conflict === 'group_exists') {
       return c.json({ error: 'Group already exists' }, 409);
-    }
-    if (conflict === 'challenge_used') {
-      return c.json({ error: 'PoW verification failed: Challenge already used' }, 409);
     }
 
     return c.json({}, 201);
