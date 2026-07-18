@@ -4,21 +4,25 @@ module Infra.Server exposing
     , ServerContext
     , SyncData
     , SyncResult
-    , authenticateAndSync
     , createGroupOnServer
     , errorToString
-    , realtimeEventDecoder
+    , isNotFound
+    , isUnauthorized
+    , serverEventDecoder
     , subscribeToGroup
+    , sync
     )
 
-{-| PocketBase server sync module.
+{-| Relay server sync module.
 
-Handles authentication, encrypted event push/pull, and realtime subscriptions.
-All operations are ConcurrentTasks that compose with the existing task pool.
+Handles encrypted event push/pull and live-update subscriptions against the
+Partage relay (see packages/relay). There is no session: every request
+carries a bearer secret derived from the group key.
 
 -}
 
 import ConcurrentTask exposing (ConcurrentTask)
+import ConcurrentTask.Http as Http
 import Domain.Event as Event
 import Domain.Group as Group
 import Infra.Compression as Compression
@@ -26,11 +30,6 @@ import Infra.Crypto as Crypto
 import Infra.PushServer as PushServer
 import Json.Decode as Decode
 import Json.Encode as Encode
-import PocketBase
-import PocketBase.Auth
-import PocketBase.Collection
-import PocketBase.Custom
-import PocketBase.Realtime
 import WebCrypto
 import WebCrypto.ProofOfWork as PoW
 import WebCrypto.Symmetric as Symmetric
@@ -39,29 +38,27 @@ import WebCrypto.Symmetric as Symmetric
 {-| Context for server operations on a specific group.
 -}
 type alias ServerContext =
-    { client : PocketBase.Client
+    { serverUrl : String
     , groupId : Group.Id
     , groupKey : Symmetric.Key
     }
 
 
-{-| A server event record from the "events" PocketBase collection.
+{-| An encrypted event record pulled from the relay.
 -}
 type alias ServerEventRecord =
-    { id : String
-    , groupId : String
-    , actorId : String
+    { seq : Int
     , eventData : String
     , compressed : Bool
-    , created : String
     }
 
 
-{-| Combined error type for server operations that involve both PocketBase and WebCrypto.
+{-| Combined error type for server operations.
 -}
 type Error
-    = PbError PocketBase.Error
+    = HttpError Http.Error
     | CryptoError WebCrypto.Error
+    | InternalError String
 
 
 {-| Convert a server error to a human-readable string.
@@ -69,31 +66,22 @@ type Error
 errorToString : Error -> String
 errorToString err =
     case err of
-        PbError pbErr ->
-            case pbErr of
-                PocketBase.NotFound ->
-                    "Not found"
+        HttpError httpErr ->
+            case httpErr of
+                Http.BadUrl url ->
+                    "Bad URL: " ++ url
 
-                PocketBase.Unauthorized ->
-                    "Unauthorized"
+                Http.Timeout ->
+                    "Request timed out"
 
-                PocketBase.Forbidden ->
-                    "Forbidden"
+                Http.NetworkError ->
+                    "Network error"
 
-                PocketBase.BadRequest msg ->
-                    "Bad request: " ++ msg
+                Http.BadStatus meta _ ->
+                    "Server error (" ++ String.fromInt meta.statusCode ++ ")"
 
-                PocketBase.Conflict ->
-                    "Conflict"
-
-                PocketBase.TooManyRequests ->
-                    "Too many requests"
-
-                PocketBase.ServerError msg ->
-                    "Server error: " ++ msg
-
-                PocketBase.NetworkError msg ->
-                    "Network error: " ++ msg
+                Http.BadBody _ _ _ ->
+                    "Invalid server response"
 
         CryptoError cryptoErr ->
             case cryptoErr of
@@ -106,104 +94,97 @@ errorToString err =
                 _ ->
                     "Crypto error"
 
+        InternalError msg ->
+            msg
 
 
--- Authentication
-
-
-{-| Authenticate to the server for a group.
-Derives password from group key and authenticates as `group_{groupId}`.
+{-| True when the server says the group does not exist.
 -}
-authenticate : PocketBase.Client -> { groupId : Group.Id, groupKey : Symmetric.Key } -> ConcurrentTask Error ()
-authenticate client { groupId, groupKey } =
-    Crypto.derivePassword groupKey
-        |> ConcurrentTask.mapError CryptoError
-        |> ConcurrentTask.andThen
-            (\password ->
-                PocketBase.Auth.authWithPassword client
-                    { collection = "users"
-                    , identity = "group_" ++ groupId
-                    , password = password
-                    , decoder = Decode.succeed ()
-                    }
-                    |> ConcurrentTask.mapError PbError
-            )
+isNotFound : Error -> Bool
+isNotFound =
+    isStatus 404
+
+
+{-| True when the server rejected the group credentials.
+-}
+isUnauthorized : Error -> Bool
+isUnauthorized =
+    isStatus 401
+
+
+isStatus : Int -> Error -> Bool
+isStatus code err =
+    case err of
+        HttpError (Http.BadStatus meta _) ->
+            meta.statusCode == code
+
+        _ ->
+            False
+
+
+authHeader : String -> Http.Header
+authHeader secret =
+    Http.header "Authorization" ("Bearer " ++ secret)
+
+
+eventsUrl : ServerContext -> String
+eventsUrl ctx =
+    ctx.serverUrl ++ "/api/groups/" ++ ctx.groupId ++ "/events"
 
 
 
 -- Group creation
 
 
-{-| Create a group on the server: solve PoW, create group record, create user account, authenticate.
+{-| Create a group on the server: solve PoW, then register the group with its
+auth verifier.
 -}
 createGroupOnServer :
-    PocketBase.Client
-    -> { groupId : Group.Id, groupKey : Symmetric.Key, createdBy : String }
+    { serverUrl : String, groupId : Group.Id, groupKey : Symmetric.Key, createdBy : String }
     -> ConcurrentTask Error ()
-createGroupOnServer client { groupId, groupKey, createdBy } =
-    -- Step 1: Get and solve PoW challenge
-    fetchPowChallenge client
+createGroupOnServer { serverUrl, groupId, groupKey, createdBy } =
+    let
+        solvedChallenge : ConcurrentTask Error PoW.Solution
+        solvedChallenge =
+            Http.get
+                { url = serverUrl ++ "/api/pow/challenge"
+                , headers = []
+                , expect = Http.expectJson PoW.challengeDecoder
+                , timeout = Nothing
+                }
+                |> ConcurrentTask.mapError HttpError
+                |> ConcurrentTask.andThen
+                    (\challenge ->
+                        PoW.solveChallenge challenge
+                            |> ConcurrentTask.mapError CryptoError
+                    )
+    in
+    ConcurrentTask.map2 Tuple.pair
+        solvedChallenge
+        (Crypto.deriveAuthVerifier groupKey |> ConcurrentTask.mapError CryptoError)
         |> ConcurrentTask.andThen
-            (\challenge ->
-                PoW.solveChallenge challenge
-                    |> ConcurrentTask.mapError CryptoError
-            )
-        |> ConcurrentTask.andThen
-            (\solution ->
-                -- Step 2: Create group record with PoW solution
-                PocketBase.Collection.create client
-                    { collection = "groups"
+            (\( solution, verifier ) ->
+                Http.post
+                    { url = serverUrl ++ "/api/groups"
+                    , headers = []
                     , body =
-                        Encode.object
-                            [ ( "id", Encode.string groupId )
-                            , ( "createdBy", Encode.string createdBy )
-                            , ( "pow_challenge", Encode.string solution.pow_challenge )
-                            , ( "pow_timestamp", Encode.int solution.pow_timestamp )
-                            , ( "pow_difficulty", Encode.int solution.pow_difficulty )
-                            , ( "pow_signature", Encode.string solution.pow_signature )
-                            , ( "pow_solution", Encode.string solution.pow_solution )
-                            ]
-                    , decoder = Decode.succeed ()
+                        Http.jsonBody
+                            (Encode.object
+                                [ ( "groupId", Encode.string groupId )
+                                , ( "createdBy", Encode.string createdBy )
+                                , ( "authVerifier", Encode.string verifier )
+                                , ( "pow_challenge", Encode.string solution.pow_challenge )
+                                , ( "pow_timestamp", Encode.int solution.pow_timestamp )
+                                , ( "pow_difficulty", Encode.int solution.pow_difficulty )
+                                , ( "pow_signature", Encode.string solution.pow_signature )
+                                , ( "pow_solution", Encode.string solution.pow_solution )
+                                ]
+                            )
+                    , expect = Http.expectWhatever
+                    , timeout = Nothing
                     }
-                    |> ConcurrentTask.mapError PbError
+                    |> ConcurrentTask.mapError HttpError
             )
-        |> ConcurrentTask.andThen
-            (\() ->
-                -- Step 3: Create user account
-                Crypto.derivePassword groupKey
-                    |> ConcurrentTask.mapError CryptoError
-                    |> ConcurrentTask.andThen
-                        (\password ->
-                            PocketBase.Auth.createAccount client
-                                { collection = "users"
-                                , body =
-                                    Encode.object
-                                        [ ( "username", Encode.string ("group_" ++ groupId) )
-                                        , ( "password", Encode.string password )
-                                        , ( "passwordConfirm", Encode.string password )
-                                        , ( "groupId", Encode.string groupId )
-                                        ]
-                                , decoder = Decode.succeed ()
-                                }
-                                |> ConcurrentTask.mapError PbError
-                        )
-            )
-        |> ConcurrentTask.andThen
-            (\() ->
-                -- Step 4: Authenticate
-                authenticate client { groupId = groupId, groupKey = groupKey }
-            )
-
-
-fetchPowChallenge : PocketBase.Client -> ConcurrentTask Error PoW.Challenge
-fetchPowChallenge client =
-    PocketBase.Custom.fetch client
-        { method = "GET"
-        , path = "/api/pow/challenge"
-        , body = Nothing
-        , decoder = PoW.challengeDecoder
-        }
-        |> ConcurrentTask.mapError PbError
 
 
 
@@ -213,8 +194,8 @@ fetchPowChallenge client =
 {-| Push local events to the server as a single encrypted batch.
 Compresses the payload before encryption when gzip achieves at least 30% reduction.
 -}
-pushEvents : ServerContext -> String -> List Event.Envelope -> ConcurrentTask Error ()
-pushEvents ctx actorId envelopes =
+pushEvents : ServerContext -> String -> String -> List Event.Envelope -> ConcurrentTask Error ()
+pushEvents ctx secret actorId envelopes =
     if List.isEmpty envelopes then
         ConcurrentTask.succeed ()
 
@@ -223,18 +204,21 @@ pushEvents ctx actorId envelopes =
             |> ConcurrentTask.mapError CryptoError
             |> ConcurrentTask.andThen
                 (\result ->
-                    PocketBase.Collection.create ctx.client
-                        { collection = "events"
+                    Http.post
+                        { url = eventsUrl ctx
+                        , headers = [ authHeader secret ]
                         , body =
-                            Encode.object
-                                [ ( "groupId", Encode.string ctx.groupId )
-                                , ( "actorId", Encode.string actorId )
-                                , ( "eventData", Encode.string (Encode.encode 0 (Compression.encodeEventData result)) )
-                                , ( "compressed", Encode.bool result.compressed )
-                                ]
-                        , decoder = Decode.succeed ()
+                            Http.jsonBody
+                                (Encode.object
+                                    [ ( "actorId", Encode.string actorId )
+                                    , ( "eventData", Encode.string (Encode.encode 0 (Compression.encodeEventData result)) )
+                                    , ( "compressed", Encode.bool result.compressed )
+                                    ]
+                                )
+                        , expect = Http.expectWhatever
+                        , timeout = Nothing
                         }
-                        |> ConcurrentTask.mapError PbError
+                        |> ConcurrentTask.mapError HttpError
                 )
 
 
@@ -244,7 +228,7 @@ pushEvents ctx actorId envelopes =
 
 type alias SyncData =
     { unpushedEvents : List Event.Envelope
-    , pullCursor : Maybe String
+    , pullCursor : Maybe Int
     , notifyContext : Maybe PushServer.NotifyContext
     }
 
@@ -257,16 +241,10 @@ type alias SyncResult =
     }
 
 
-{-| Authenticate then sync a group: push unpushed events, then pull new events from the server.
+{-| Sync a group: push unpushed events, then pull new events from the server.
 -}
-authenticateAndSync : ServerContext -> String -> SyncData -> ConcurrentTask Error SyncResult
-authenticateAndSync ctx actorId syncData =
-    authenticate ctx.client { groupId = ctx.groupId, groupKey = ctx.groupKey }
-        |> ConcurrentTask.andThenDo (syncGroup ctx actorId syncData)
-
-
-syncGroup : ServerContext -> String -> SyncData -> ConcurrentTask Error SyncResult
-syncGroup ctx actorId { unpushedEvents, pullCursor, notifyContext } =
+sync : ServerContext -> String -> SyncData -> ConcurrentTask Error SyncResult
+sync ctx actorId { unpushedEvents, pullCursor, notifyContext } =
     let
         pushedCount : Int
         pushedCount =
@@ -285,13 +263,18 @@ syncGroup ctx actorId { unpushedEvents, pullCursor, notifyContext } =
                 Nothing ->
                     ConcurrentTask.succeed ()
     in
-    pushEvents ctx actorId unpushedEvents
-        |> ConcurrentTask.andThenDo
-            (ConcurrentTask.map2 (\_ pull -> { pullResult = pull, pushedCount = pushedCount })
-                -- Discard errors on the notify task
-                (ConcurrentTask.onError (\_ -> ConcurrentTask.succeed ()) notifyTask)
-                -- Pull events
-                (pullEvents ctx pullCursor)
+    Crypto.deriveRelaySecret ctx.groupKey
+        |> ConcurrentTask.mapError CryptoError
+        |> ConcurrentTask.andThen
+            (\secret ->
+                pushEvents ctx secret actorId unpushedEvents
+                    |> ConcurrentTask.andThenDo
+                        (ConcurrentTask.map2 (\_ pull -> { pullResult = pull, pushedCount = pushedCount })
+                            -- Discard errors on the notify task
+                            (ConcurrentTask.onError (\_ -> ConcurrentTask.succeed ()) notifyTask)
+                            -- Pull events
+                            (pullEvents ctx secret pullCursor)
+                        )
             )
 
 
@@ -303,60 +286,47 @@ syncGroup ctx actorId { unpushedEvents, pullCursor, notifyContext } =
 -}
 type alias PullResult =
     { events : List Event.Envelope
-    , cursor : String
+    , cursor : Int
     }
 
 
 {-| Pull events from the server since the given cursor. Decrypts each event.
 -}
-pullEvents : ServerContext -> Maybe String -> ConcurrentTask Error PullResult
-pullEvents ctx maybeCursor =
-    pullAllPages ctx maybeCursor 1 []
+pullEvents : ServerContext -> String -> Maybe Int -> ConcurrentTask Error PullResult
+pullEvents ctx secret maybeCursor =
+    pullAllPages ctx secret (Maybe.withDefault 0 maybeCursor) []
 
 
-pullAllPages : ServerContext -> Maybe String -> Int -> List Event.Envelope -> ConcurrentTask Error PullResult
-pullAllPages ctx maybeCursor page accEvents =
-    let
-        filter : String
-        filter =
-            case maybeCursor of
-                Just cursor ->
-                    "groupId=\"" ++ ctx.groupId ++ "\" && created>\"" ++ cursor ++ "\""
-
-                Nothing ->
-                    "groupId=\"" ++ ctx.groupId ++ "\""
-    in
-    PocketBase.Collection.getList ctx.client
-        { collection = "events"
-        , page = page
-        , perPage = 200
-        , filter = Just filter
-        , sort = Just "+created"
-        , decoder = serverEventRecordDecoder
+pullAllPages : ServerContext -> String -> Int -> List Event.Envelope -> ConcurrentTask Error PullResult
+pullAllPages ctx secret cursor accEvents =
+    Http.get
+        { url = eventsUrl ctx ++ "?since=" ++ String.fromInt cursor
+        , headers = [ authHeader secret ]
+        , expect = Http.expectJson pullPageDecoder
+        , timeout = Nothing
         }
-        |> ConcurrentTask.mapError PbError
+        |> ConcurrentTask.mapError HttpError
         |> ConcurrentTask.andThen
-            (\result ->
-                decryptServerEvents ctx.groupKey result.items
+            (\page ->
+                decryptServerEvents ctx.groupKey page.events
                     |> ConcurrentTask.andThen
                         (\decryptedEvents ->
                             let
                                 allEvents : List Event.Envelope
                                 allEvents =
                                     accEvents ++ decryptedEvents
+
+                                newCursor : Int
+                                newCursor =
+                                    List.head (List.reverse page.events)
+                                        |> Maybe.map .seq
+                                        |> Maybe.withDefault cursor
                             in
-                            if page < result.totalPages then
-                                pullAllPages ctx maybeCursor (page + 1) allEvents
+                            if page.hasMore then
+                                pullAllPages ctx secret newCursor allEvents
 
                             else
-                                let
-                                    lastCursor : String
-                                    lastCursor =
-                                        List.head (List.reverse result.items)
-                                            |> Maybe.map .created
-                                            |> Maybe.withDefault (Maybe.withDefault "" maybeCursor)
-                                in
-                                ConcurrentTask.succeed { events = allEvents, cursor = lastCursor }
+                                ConcurrentTask.succeed { events = allEvents, cursor = newCursor }
                         )
             )
 
@@ -385,34 +355,52 @@ decryptServerEventBatch key record =
             ConcurrentTask.fail (CryptoError (WebCrypto.DecryptionFailed ("Invalid eventData JSON: " ++ Decode.errorToString err)))
 
 
+pullPageDecoder : Decode.Decoder { events : List ServerEventRecord, hasMore : Bool }
+pullPageDecoder =
+    Decode.map2 (\events hasMore -> { events = events, hasMore = hasMore })
+        (Decode.field "events" (Decode.list serverEventRecordDecoder))
+        (Decode.field "hasMore" Decode.bool)
+
+
 serverEventRecordDecoder : Decode.Decoder ServerEventRecord
 serverEventRecordDecoder =
-    Decode.map6 ServerEventRecord
-        (Decode.field "id" Decode.string)
-        (Decode.field "groupId" Decode.string)
-        (Decode.field "actorId" Decode.string)
+    Decode.map3 ServerEventRecord
+        (Decode.field "seq" Decode.int)
         (Decode.field "eventData" Decode.string)
         (Decode.field "compressed" Decode.bool)
-        (Decode.field "created" Decode.string)
 
 
 
--- Realtime subscriptions
+-- Live updates
 
 
-{-| Subscribe to realtime events for the "events" collection.
-Events arrive via the onPocketbaseEvent port.
+{-| Open (or keep open) the live-update WebSocket for a group.
+Notifications arrive via the onServerEvent port; the JS side keeps a single
+connection per group and reconnects automatically.
 -}
-subscribeToGroup : PocketBase.Client -> ConcurrentTask a ()
-subscribeToGroup client =
-    PocketBase.Realtime.subscribe client "events"
-        |> ConcurrentTask.mapError never
+subscribeToGroup : ServerContext -> ConcurrentTask Error ()
+subscribeToGroup ctx =
+    Crypto.deriveRelaySecret ctx.groupKey
+        |> ConcurrentTask.mapError CryptoError
+        |> ConcurrentTask.andThen
+            (\secret ->
+                ConcurrentTask.define
+                    { function = "relay:subscribe"
+                    , expect = ConcurrentTask.expectWhatever
+                    , errors = ConcurrentTask.expectNoErrors
+                    , args =
+                        Encode.object
+                            [ ( "url", Encode.string ctx.serverUrl )
+                            , ( "groupId", Encode.string ctx.groupId )
+                            , ( "secret", Encode.string secret )
+                            ]
+                    }
+            )
 
 
-{-| Decode the groupId and eventData fields from a realtime event record.
+{-| Decode a live-update notification from the onServerEvent port.
 -}
-realtimeEventDecoder : Decode.Decoder { groupId : String, eventData : String }
-realtimeEventDecoder =
-    Decode.map2 (\gid ed -> { groupId = gid, eventData = ed })
+serverEventDecoder : Decode.Decoder { groupId : String }
+serverEventDecoder =
+    Decode.map (\gid -> { groupId = gid })
         (Decode.field "groupId" Decode.string)
-        (Decode.field "eventData" Decode.string)

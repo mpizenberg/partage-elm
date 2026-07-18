@@ -1,6 +1,6 @@
-module Infra.IdGen exposing (pbId, v4, v4batch, v7, v7batch)
+module Infra.IdGen exposing (groupId, v4, v4batch, v7, v7batch)
 
-{-| ID generation helpers wrapping elm-uuid, plus PocketBase-compatible IDs.
+{-| ID generation helpers wrapping elm-uuid, plus short group IDs.
 -}
 
 import Random
@@ -8,21 +8,21 @@ import Time
 import UUID
 
 
-{-| Generate a PocketBase-compatible 15-character alphanumeric ID.
+{-| Generate a 15-character alphanumeric group ID (short enough for invite URLs).
 -}
-pbId : Random.Seed -> ( String, Random.Seed )
-pbId seed =
-    Random.step pbIdGenerator seed
+groupId : Random.Seed -> ( String, Random.Seed )
+groupId seed =
+    Random.step groupIdGenerator seed
 
 
-pbIdGenerator : Random.Generator String
-pbIdGenerator =
-    Random.list 15 pbCharGenerator
+groupIdGenerator : Random.Generator String
+groupIdGenerator =
+    Random.list 15 idCharGenerator
         |> Random.map String.fromList
 
 
-pbCharGenerator : Random.Generator Char
-pbCharGenerator =
+idCharGenerator : Random.Generator Char
+idCharGenerator =
     Random.uniform 'a'
         [ 'b'
         , 'c'

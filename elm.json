@@ -6,7 +6,6 @@
         "vendor/elm-animator/src",
         "vendor/elm-webcrypto/src",
         "vendor/elm-indexeddb/src",
-        "vendor/elm-pocketbase/src",
         "vendor/elm-pwa/src"
     ],
     "elm-version": "0.19.1",

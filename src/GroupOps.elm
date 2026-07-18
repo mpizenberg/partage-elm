@@ -38,7 +38,6 @@ import Infra.Server as Server
 import Infra.Storage as Storage
 import Page.Group.NewEntry
 import Page.Group.NewEntry.Shared as NewEntryShared
-import PocketBase
 import Random
 import Set exposing (Set)
 import SplitwiseImport
@@ -77,7 +76,7 @@ type alias LoadedGroup =
     , groupState : GroupState.GroupState
     , summary : Group.Summary
     , groupKey : Symmetric.Key
-    , syncCursor : Maybe String
+    , syncCursor : Maybe Int
     , unpushedIds : Set String
     }
 
@@ -101,7 +100,7 @@ addUnpushedId eventId loaded =
 
 {-| Build a LoadedGroup from raw events, a summary, and the group key, applying all events to compute state.
 -}
-initLoadedGroup : List Event.Envelope -> Group.Summary -> Symmetric.Key -> Maybe String -> Set String -> LoadedGroup
+initLoadedGroup : List Event.Envelope -> Group.Summary -> Symmetric.Key -> Maybe Int -> Set String -> LoadedGroup
 initLoadedGroup events summary key cursor unpushed =
     -- We store the events in reverse order for efficient prepending of new events
     { events = List.reverse events
@@ -163,7 +162,7 @@ newGroup : Context msg -> (ConcurrentTask.Response Idb.Error Group.Summary -> ms
 newGroup ctx onComplete output =
     let
         ( groupId, seed1 ) =
-            IdGen.pbId ctx.randomSeed
+            IdGen.groupId ctx.randomSeed
 
         ( virtualMemberIds, seedAfter ) =
             IdGen.v4batch (List.length output.virtualMembers) seed1
@@ -272,7 +271,7 @@ importSplitwiseGroup ctx onComplete cfg =
             cfg.parsed.memberNames
 
         ( groupId, seed1 ) =
-            IdGen.pbId ctx.randomSeed
+            IdGen.groupId ctx.randomSeed
 
         ( virtualMemberIds, seed2 ) =
             IdGen.v4batch (List.length memberNames) seed1
@@ -554,7 +553,7 @@ addMember ctx loaded output =
 type alias SyncApplyResult =
     { updatedGroup : LoadedGroup
     , newEvents : List Event.Envelope
-    , pullCursor : String
+    , pullCursor : Int
     }
 
 
@@ -714,21 +713,21 @@ mergeEventsHelp xs ys acc =
 
 {-| Build the persistence tasks to run after a successful sync.
 -}
-postSyncTasks : Idb.Db -> Group.Id -> Maybe PocketBase.Client -> SyncApplyResult -> ConcurrentTask Idb.Error ()
-postSyncTasks db groupId maybePbClient result =
+postSyncTasks : Idb.Db -> Server.ServerContext -> SyncApplyResult -> ConcurrentTask Idb.Error ()
+postSyncTasks db ctx result =
     List.filterMap identity
-        [ Just <| Storage.saveUnpushedIds db groupId result.updatedGroup.unpushedIds
+        [ Just <| Storage.saveUnpushedIds db ctx.groupId result.updatedGroup.unpushedIds
         , if List.isEmpty result.newEvents then
             Nothing
 
           else
-            Just <| Storage.saveEvents db groupId result.newEvents
-        , if result.pullCursor /= "" then
-            Just <| Storage.saveSyncCursor db groupId result.pullCursor
+            Just <| Storage.saveEvents db ctx.groupId result.newEvents
+        , if result.pullCursor > 0 then
+            Just <| Storage.saveSyncCursor db ctx.groupId result.pullCursor
 
           else
             Nothing
-        , Maybe.map Server.subscribeToGroup maybePbClient
+        , Just <| ConcurrentTask.onError (\_ -> ConcurrentTask.succeed ()) (Server.subscribeToGroup ctx)
         ]
         |> ConcurrentTask.batch
         |> ConcurrentTask.map (\_ -> ())

@@ -41,7 +41,6 @@ import Page.Loading
 import Page.NewGroup
 import Page.NotFound
 import Page.Welcome
-import PocketBase
 import Process
 import PwaState
 import Random
@@ -81,7 +80,7 @@ port receiveTask : (Json.Decode.Value -> msg) -> Sub msg
 port onClipboardCopy : (() -> msg) -> Sub msg
 
 
-port onPocketbaseEvent : (Json.Decode.Value -> msg) -> Sub msg
+port onServerEvent : (Json.Decode.Value -> msg) -> Sub msg
 
 
 port pwaIn : (Json.Decode.Value -> msg) -> Sub msg
@@ -122,7 +121,6 @@ type alias Model =
     , pendingJoinAction : Maybe { groupId : Group.Id, action : Page.JoinGroup.JoinAction, newMemberName : String }
     , serverUrl : String
     , origin : String
-    , pbClient : Maybe PocketBase.Client
     , pendingServerCreations : Set Group.Id
     , pwaState : PwaState.Model
     , errorLog : ErrorLog.Model
@@ -155,7 +153,7 @@ type Msg
     | JoinGroupMsg Page.JoinGroup.Msg
       -- Join flow
     | OnJoinGroupFetched (ConcurrentTask.Response Server.Error Server.SyncResult)
-    | OnJoinLocalGroupLoaded (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe String, unpushedIds : Set.Set String })
+    | OnJoinLocalGroupLoaded (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set.Set String })
     | OnJoinGroupSaved Group.Id Member.Id (ConcurrentTask.Response Idb.Error ())
       -- Form submission responses
     | OnGroupCreated (ConcurrentTask.Response Idb.Error Group.Summary)
@@ -163,7 +161,6 @@ type Msg
     | HomeMsg Page.Home.Msg
     | ImportExportMsg ImportExport.Msg
       -- Server sync
-    | OnPbClientInitialized (ConcurrentTask.Response PocketBase.Error PocketBase.Client)
     | OnServerGroupCreated Group.Id (ConcurrentTask.Response Server.Error ())
       -- About / Usage stats
     | AboutMsg Page.About.Msg
@@ -186,7 +183,7 @@ subscriptions model =
         , Runner.subscription model.runner
         , Page.Group.subscription model.groupModel |> Sub.map GroupMsg
         , onClipboardCopy (\() -> ClipboardCopied)
-        , onPocketbaseEvent (GroupMsg << Page.Group.pocketbaseEventMsg)
+        , onServerEvent (GroupMsg << Page.Group.serverEventMsg)
         , PwaState.subscription pwaIn PwaStateMsg
         ]
 
@@ -285,7 +282,6 @@ init flags =
       , toastModel = Toast.init
       , serverUrl = flags.serverUrl
       , origin = flags.origin
-      , pbClient = Nothing
       , pendingServerCreations = Set.empty
       , pwaState = PwaState.init { isOnline = flags.isOnline, installHint = flags.installHint }
       , errorLog = ErrorLog.empty
@@ -317,7 +313,7 @@ buildGroupConfig model =
                     (\identity ->
                         { db = readyData.db
                         , identity = identity
-                        , pbClient = model.pbClient
+                        , serverUrl = model.serverUrl
                         , currentTime = model.currentTime
                         , timeZone = model.timeZone
                         , route = model.route
@@ -591,13 +587,10 @@ update msg model =
                     }
 
                 -- Handle group navigation if the initial route is a group route
-                -- (Join routes are deferred until PB client is ready)
                 ( modelAfterNav, navCmd_ ) =
                     case guardedRoute of
-                        GroupRoute _ (Join _) ->
-                            -- Join needs PB client, which isn't ready yet.
-                            -- Will be handled in OnPbClientInitialized.
-                            ( modelWithReadyData, Cmd.none )
+                        GroupRoute groupId (Join key) ->
+                            handleJoinRoute modelWithReadyData guardedRoute groupId key readyData.identity
 
                         GroupRoute groupId groupView ->
                             case buildGroupConfig modelWithReadyData of
@@ -612,8 +605,6 @@ update msg model =
                             ( modelWithReadyData, Cmd.none )
             in
             ( modelAfterNav.runner, Cmd.batch [ guardCmd, navCmd_, rescheduleStorageCheckTomorrow ] )
-                |> Runner.andRun OnPbClientInitialized
-                    (PocketBase.init model.serverUrl)
                 |> Runner.andRun OnStorageCheckComplete
                     (storageCheckTask readyData.db)
                 |> Tuple.mapFirst (\r -> { modelAfterNav | runner = r })
@@ -871,7 +862,7 @@ update msg model =
                                     { groupName = groupState.groupMeta.name
                                     , groupState = groupState
                                     , events = groupData.events
-                                    , syncCursor = Maybe.withDefault "" groupData.syncCursor
+                                    , syncCursor = Maybe.withDefault 0 groupData.syncCursor
                                     , selectedAction = Page.JoinGroup.defaultAction groupState
                                     , newMemberName = ""
                                     }
@@ -1027,47 +1018,6 @@ update msg model =
                     ( model, Cmd.none )
 
         -- Server sync
-        OnPbClientInitialized (ConcurrentTask.Success client) ->
-            let
-                modelWithClient : Model
-                modelWithClient =
-                    { model | pbClient = Just client }
-            in
-            -- If the initial route is a Join route, now that PB client is ready, trigger the join flow
-            case model.route of
-                GroupRoute groupId (Join key) ->
-                    let
-                        maybeIdentity : Maybe Identity
-                        maybeIdentity =
-                            case modelWithClient.appState of
-                                Ready data ->
-                                    data.identity
-
-                                _ ->
-                                    Nothing
-                    in
-                    handleJoinRoute modelWithClient model.route groupId key maybeIdentity
-
-                _ ->
-                    -- Check if the currently loaded group needs server creation
-                    case modelWithClient.groupModel.loadedGroup of
-                        Just loaded ->
-                            if loaded.syncCursor == Nothing then
-                                attemptServerGroupCreation loaded.summary.id (Just loaded.groupKey) modelWithClient
-
-                            else
-                                ( modelWithClient, Cmd.none )
-
-                        Nothing ->
-                            ( modelWithClient, Cmd.none )
-
-        OnPbClientInitialized (ConcurrentTask.Error err) ->
-            -- Server unavailable — continue in offline mode
-            addToast Toast.Error ("Server: " ++ Server.errorToString (Server.PbError err)) model
-
-        OnPbClientInitialized (ConcurrentTask.UnexpectedError _) ->
-            ( logError ErrorLog.ServerSource ErrorLog.Err "Unexpected error initializing PocketBase client" model, Cmd.none )
-
         OnServerGroupCreated groupId (ConcurrentTask.Success _) ->
             -- Server group created; now sync (push initial events + pull + subscribe)
             let
@@ -1386,45 +1336,30 @@ handleJoinRoute model route groupId key maybeIdentity =
             else
                 case maybeIdentity of
                     Just _ ->
-                        case model.pbClient of
-                            Just client ->
-                                -- Has identity + server: fetch group data
-                                let
-                                    groupKey : Symmetric.Key
-                                    groupKey =
-                                        Symmetric.importKey key
+                        -- Has identity: fetch group data from the server
+                        let
+                            serverCtx : Server.ServerContext
+                            serverCtx =
+                                { serverUrl = model.serverUrl
+                                , groupId = groupId
+                                , groupKey = Symmetric.importKey key
+                                }
 
-                                    serverCtx : Server.ServerContext
-                                    serverCtx =
-                                        { client = client
-                                        , groupId = groupId
-                                        , groupKey = groupKey
-                                        }
-
-                                    ( runner, cmd ) =
-                                        ( model.runner, Cmd.none )
-                                            |> Runner.andRun OnJoinGroupFetched
-                                                (Server.authenticateAndSync serverCtx
-                                                    ""
-                                                    { unpushedEvents = [], pullCursor = Nothing, notifyContext = Nothing }
-                                                )
-                                in
-                                ( { model
-                                    | route = route
-                                    , runner = runner
-                                    , joinGroupModel = Page.JoinGroup.init
-                                  }
-                                , cmd
-                                )
-
-                            Nothing ->
-                                -- Server not ready yet
-                                ( { model
-                                    | route = route
-                                    , joinGroupModel = Page.JoinGroup.error "Server not available"
-                                  }
-                                , Cmd.none
-                                )
+                            ( runner, cmd ) =
+                                ( model.runner, Cmd.none )
+                                    |> Runner.andRun OnJoinGroupFetched
+                                        (Server.sync serverCtx
+                                            ""
+                                            { unpushedEvents = [], pullCursor = Nothing, notifyContext = Nothing }
+                                        )
+                        in
+                        ( { model
+                            | route = route
+                            , runner = runner
+                            , joinGroupModel = Page.JoinGroup.init
+                          }
+                        , cmd
+                        )
 
                     Nothing ->
                         -- No identity: auto-generate one, then re-trigger join
@@ -1801,12 +1736,12 @@ viewReady model readyData =
 
 {-| Create a group on the server. Called after sync has already failed,
 indicating the group doesn't exist on the server yet.
-No-op if pbClient is missing or creation already in progress.
+No-op if creation is already in progress.
 -}
 attemptServerGroupCreation : Group.Id -> Maybe Symmetric.Key -> Model -> ( Model, Cmd Msg )
 attemptServerGroupCreation groupId maybeGroupKey model =
-    case ( model.pbClient, model.appState ) of
-        ( Just client, Ready readyData ) ->
+    case model.appState of
+        Ready readyData ->
             if Set.member groupId model.pendingServerCreations then
                 ( model, Cmd.none )
 
@@ -1820,12 +1755,13 @@ attemptServerGroupCreation groupId maybeGroupKey model =
 
                             Nothing ->
                                 Storage.loadGroupKeyRequired readyData.db groupId
-                                    |> ConcurrentTask.mapError (\_ -> Server.PbError (PocketBase.ServerError "Failed to load group key in IndexedDB"))
+                                    |> ConcurrentTask.mapError (\_ -> Server.InternalError "Failed to load group key in IndexedDB")
 
                     createGroup : Symmetric.Key -> ConcurrentTask Server.Error ()
                     createGroup key =
-                        Server.createGroupOnServer client
-                            { groupId = groupId
+                        Server.createGroupOnServer
+                            { serverUrl = model.serverUrl
+                            , groupId = groupId
                             , groupKey = key
                             , createdBy = actorId
                             }

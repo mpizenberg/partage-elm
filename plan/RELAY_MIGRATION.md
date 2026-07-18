@@ -6,6 +6,7 @@ Implements §10 of `plan/BACKEND_REPORT.md`: a purpose-built, zero-knowledge eve
 
 - Increment 1 done: `packages/relay/` — Hono core (4 HTTP routes), PoW ported from `auth.pb.js`, `node:sqlite` storage, Node entrypoint, 23 `node:test` tests green, curl smoke OK. WS is increment 2.
 - Increment 2 done: WS live updates in the Node adapter (`src/node-server.js` via `@hono/node-ws`, broadcast `{seq}` per group; `server.js` is now a thin CLI wrapper). 28 tests green.
+- Increment 3 done: client swapped to the relay. `Server.elm` rewritten on `ConcurrentTask.Http` (no auth round-trip), integer cursors end to end, WS glue + `onServerEvent` port in `index.js`, `vendor/elm-pocketbase` deleted, `PB_URL`→`SERVER_URL`, `pnpm dev` runs the relay. Compiles; 171 elm-tests, elm-review, full build + relay-served smoke all green. **Not yet verified in a real browser** (create group → sync → live update between two tabs) — do this before increment 5 ships.
 
 ## Decisions
 
@@ -19,6 +20,10 @@ Implements §10 of `plan/BACKEND_REPORT.md`: a purpose-built, zero-knowledge eve
 - **Self-host schema uses a `groups` table** (id, created_by, auth_verifier, pow_challenge unique, created) instead of the report §10.2 `meta` key/value sketch — that sketch fits the per-group DO; a relational table is the natural shape for the shared single file. The DO adapter (increment 4) may still use `meta`.
 - **`node:sqlite` with a Node ≥ 22.5 requirement** (user-confirmed).
 - **WebSocket auth via `?auth=<secret>` query parameter.** The browser WebSocket API cannot set an Authorization header; the alternative (smuggling the secret through `Sec-WebSocket-Protocol`) has inconsistent server-side support across the two adapters. The secret is the derived relay credential, not the group key, so a URL leak (e.g. server logs) exposes ciphertext access, never decryption. Revisit if either adapter grows first-class subprotocol handling.
+- **The PocketBase client-init round-trip is deleted, not replaced** — `PocketBase.init` never touched the network, so the `pbClient : Maybe Client` gate only marked task completion. The server URL now flows straight from flags; the join flow triggers directly at init-complete, and the pbClient-ready race (group loaded before client init → sync never triggered) disappears. Consequence: no startup "server unavailable" toast; connectivity errors surface per-operation instead.
+- **Legacy sync cursors (PocketBase timestamp strings) decode as "never synced"** rather than being migrated. Safe because the relay is a fresh domain: the pull restarts from seq 0 and `applySyncResult` dedupes by event id.
+- **`subscribeToGroup` failures are swallowed in `postSyncTasks`** (previously the subscription was `expectNoErrors` by construction) — the WS is best-effort; the JS side reconnects with capped exponential backoff and dedupes by group.
+- **Renamed `IdGen.pbId` → `IdGen.groupId`** — the 15-char alphanumeric format stays (invite-URL-friendly), only the PocketBase-named identity died with the backend.
 - **`seq` is strictly monotonic per group but not dense** — the self-host adapter uses one global autoincrement across groups, while the DO adapter will have per-group counters. The client cursor contract is therefore "opaque monotonic integer, resume with `since=<last seen>`", nothing more. Increment 3 must not assume `seq` counts a group's events. Alternative: `better-sqlite3` for older-Node support, rejected to keep the self-host adapter dependency-free. If the baseline ever needs lowering, the swap is one file behind the storage interface.
 
 ## Context (from BACKEND_REPORT.md §10)

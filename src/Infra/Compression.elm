@@ -113,7 +113,7 @@ decompress base64 =
 
 
 {-| Encode just the ciphertext and IV for storage in the eventData field.
-The compressed flag is stored separately on the PocketBase record.
+The compressed flag is stored separately on the server record.
 -}
 encodeEventData : EncryptedBatch -> Encode.Value
 encodeEventData batch =

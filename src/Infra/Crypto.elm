@@ -1,4 +1,4 @@
-module Infra.Crypto exposing (derivePassword, generateGroupKey)
+module Infra.Crypto exposing (deriveAuthVerifier, deriveRelaySecret, generateGroupKey)
 
 {-| Cryptographic helpers for group key management.
 -}
@@ -17,11 +17,24 @@ generateGroupKey =
         |> ConcurrentTask.mapError never
 
 
-{-| Derive a server password from a group key: Base64URL(SHA-256(Base64(groupKey))).
+{-| Derive the relay bearer secret from a group key: Base64URL(SHA-256(Base64(groupKey))).
+Holding this secret grants read/write access to the group's encrypted blobs on
+the relay, but never reveals the group key itself.
 -}
-derivePassword : Symmetric.Key -> ConcurrentTask WebCrypto.Error String
-derivePassword key =
+deriveRelaySecret : Symmetric.Key -> ConcurrentTask WebCrypto.Error String
+deriveRelaySecret key =
     WebCrypto.sha256 (Symmetric.exportKey key)
+        |> ConcurrentTask.map hexToBase64Url
+
+
+{-| Derive the verifier sent to the relay at group creation:
+Base64URL(SHA-256(secret)). The server stores only this hash and compares it
+against the hash of the bearer secret presented on each request.
+-}
+deriveAuthVerifier : Symmetric.Key -> ConcurrentTask WebCrypto.Error String
+deriveAuthVerifier key =
+    deriveRelaySecret key
+        |> ConcurrentTask.andThen WebCrypto.sha256
         |> ConcurrentTask.map hexToBase64Url
 
 

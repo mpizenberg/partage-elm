@@ -254,16 +254,22 @@ loadGroupEvents db groupId =
 
 {-| Save a sync cursor for a group.
 -}
-saveSyncCursor : Idb.Db -> Group.Id -> String -> ConcurrentTask Idb.Error ()
+saveSyncCursor : Idb.Db -> Group.Id -> Int -> ConcurrentTask Idb.Error ()
 saveSyncCursor db groupId cursor =
-    Idb.putAt db syncCursorsStore (Idb.StringKey groupId) (Encode.string cursor)
+    Idb.putAt db syncCursorsStore (Idb.StringKey groupId) (Encode.int cursor)
 
 
 {-| Load the sync cursor for a group, if it exists.
+Cursors written before the relay migration were PocketBase timestamp strings;
+they are meaningless against the relay and read back as "never synced".
 -}
-loadSyncCursor : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error (Maybe String)
+loadSyncCursor : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error (Maybe Int)
 loadSyncCursor db groupId =
-    Idb.get db syncCursorsStore (Idb.StringKey groupId) Decode.string
+    Idb.get db
+        syncCursorsStore
+        (Idb.StringKey groupId)
+        (Decode.oneOf [ Decode.map Just Decode.int, Decode.succeed Nothing ])
+        |> ConcurrentTask.map (Maybe.andThen identity)
 
 
 {-| Save unpushed event IDs for a group.
@@ -283,7 +289,7 @@ loadUnpushedIds db groupId =
 
 {-| Load all data needed for a group: events, encryption key, sync cursor, and unpushed IDs.
 -}
-loadGroup : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe String, unpushedIds : Set String }
+loadGroup : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set String }
 loadGroup db groupId =
     ConcurrentTask.map4 (\events key cursor unpushed -> { events = events, groupKey = key, syncCursor = cursor, unpushedIds = unpushed })
         (loadGroupEvents db groupId)
@@ -329,7 +335,7 @@ deleteGroup db groupId =
 
 {-| Save a group summary, events, optional encryption key, and optional sync cursor.
 -}
-saveGroup : Idb.Db -> Group.Summary -> Maybe String -> List Event.Envelope -> Maybe String -> ConcurrentTask Idb.Error ()
+saveGroup : Idb.Db -> Group.Summary -> Maybe String -> List Event.Envelope -> Maybe Int -> ConcurrentTask Idb.Error ()
 saveGroup db summary maybeKey events maybeCursor =
     let
         saveKeyTask : ConcurrentTask Idb.Error ()

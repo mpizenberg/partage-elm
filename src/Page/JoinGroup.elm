@@ -26,7 +26,7 @@ type alias PreviewData =
     { groupName : String
     , groupState : GroupState
     , events : List Event.Envelope
-    , syncCursor : String
+    , syncCursor : Int
     , selectedAction : JoinAction
     , newMemberName : String
     }

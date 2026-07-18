@@ -1,7 +1,6 @@
 import * as ConcurrentTask from "@andrewmacmurray/elm-concurrent-task";
 import { createTasks as createWebCryptoTasks } from "../vendor/elm-webcrypto/js/src/index.js";
 import { createTasks as createIndexedDbTasks } from "../vendor/elm-indexeddb/js/src/index.js";
-import { createTasks as createPocketBaseTasks } from "../vendor/elm-pocketbase/js/src/index.js";
 import {
   init as initPwa,
   evaluateInstallHint,
@@ -88,7 +87,7 @@ var app = Elm.Main.init({
     language: navigator.language || "en",
     randomSeed: Array.from(crypto.getRandomValues(new Uint32Array(4))),
     currentTime: Date.now(),
-    serverUrl: __PB_URL__,
+    serverUrl: __SERVER_URL__,
     origin: location.origin,
     isOnline: navigator.onLine,
     installHint: evaluateInstallHint(installHintOptions),
@@ -100,9 +99,52 @@ initNavigation({
   onNavEvent: app.ports.onNavEvent,
 });
 
-var pbTasks = createPocketBaseTasks();
-pbTasks.setEventCallback(function (event) {
-  app.ports.onPocketbaseEvent.send(event);
+// Live-update WebSockets: one connection per group, auto-reconnecting with
+// capped backoff. Incoming messages only signal "something new" — the Elm side
+// reacts with a normal authenticated pull.
+function createRelayTasks(notify) {
+  var sockets = new Map();
+
+  function connect(url, groupId, secret) {
+    var entry = sockets.get(groupId);
+    if (!entry) return;
+    var wsUrl =
+      url.replace(/^http/, "ws") +
+      "/api/groups/" +
+      groupId +
+      "/ws?auth=" +
+      encodeURIComponent(secret);
+    var ws = new WebSocket(wsUrl);
+    entry.ws = ws;
+    ws.onopen = function () {
+      entry.attempts = 0;
+    };
+    ws.onmessage = function () {
+      notify({ groupId: groupId });
+    };
+    ws.onclose = function () {
+      entry.ws = null;
+      var delay = Math.min(30000, 1000 * Math.pow(2, entry.attempts));
+      entry.attempts += 1;
+      entry.timer = setTimeout(function () {
+        connect(url, groupId, secret);
+      }, delay);
+    };
+  }
+
+  return {
+    "relay:subscribe": function ({ url, groupId, secret }) {
+      if (!sockets.has(groupId)) {
+        sockets.set(groupId, { ws: null, timer: null, attempts: 0 });
+        connect(url, groupId, secret);
+      }
+      return null;
+    },
+  };
+}
+
+var relayTasks = createRelayTasks(function (event) {
+  app.ports.onServerEvent.send(event);
 });
 
 function createUsageStatsTasks() {
@@ -278,7 +320,7 @@ ConcurrentTask.register({
   tasks: {
     ...createWebCryptoTasks(),
     ...createIndexedDbTasks(),
-    ...pbTasks,
+    ...relayTasks,
     ...createUsageStatsTasks(),
     ...createCompressionTasks(),
     ...createExportTasks(),

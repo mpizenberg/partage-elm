@@ -10,8 +10,8 @@ module Page.Group exposing
     , ViewResult
     , handleNavigation
     , init
-    , pocketbaseEventMsg
     , resetLoadedGroup
+    , serverEventMsg
     , setIdentityHash
     , submitJoinEvent
     , subscription
@@ -65,8 +65,6 @@ import Page.Group.MergeMember
 import Page.Group.NewEntry
 import Page.Group.NewEntry.Shared as NewEntryShared
 import Page.JoinGroup
-import PocketBase
-import PocketBase.Realtime
 import Process
 import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
@@ -104,7 +102,7 @@ type alias InitConfig =
 type alias UpdateConfig =
     { db : Idb.Db
     , identity : Identity
-    , pbClient : Maybe PocketBase.Client
+    , serverUrl : String
     , currentTime : Time.Posix
     , timeZone : Time.Zone
     , route : Route
@@ -194,9 +192,9 @@ subscription model =
     Runner.subscription model.runner
 
 
-pocketbaseEventMsg : Json.Decode.Value -> Msg
-pocketbaseEventMsg =
-    OnPocketbaseEvent
+serverEventMsg : Json.Decode.Value -> Msg
+serverEventMsg =
+    OnServerEvent
 
 
 type
@@ -229,10 +227,10 @@ type
     | OnGroupMetadataActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnGroupRemoved Group.Id (ConcurrentTask.Response Idb.Error ())
     | OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)
-    | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe String, unpushedIds : Set String })
+    | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set String })
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
     | PostSyncTasksDone (ConcurrentTask.Response Idb.Error ())
-    | OnPocketbaseEvent Json.Decode.Value
+    | OnServerEvent Json.Decode.Value
     | ScrollToEntryResult (Result Browser.Dom.Error ())
     | OnRateFetched Currency (ConcurrentTask.Response Http.Error Float)
 
@@ -853,7 +851,11 @@ update config msg model =
 
                             ( runner, taskCmds ) =
                                 ( model.runner, Cmd.none )
-                                    |> Runner.andRun PostSyncTasksDone (GroupOps.postSyncTasks config.db groupId config.pbClient result)
+                                    |> Runner.andRun PostSyncTasksDone
+                                        (GroupOps.postSyncTasks config.db
+                                            { serverUrl = config.serverUrl, groupId = groupId, groupKey = loaded.groupKey }
+                                            result
+                                        )
 
                             ( modelAfterSync, initCmd ) =
                                 { model
@@ -885,16 +887,16 @@ update config msg model =
 
         OnGroupSynced _ _ (ConcurrentTask.Error err) ->
             -- Sync failed — check if group needs to be created on server first
-            case ( err, model.loadedGroup ) of
-                ( Server.PbError PocketBase.NotFound, Just loaded ) ->
-                    ( { model | syncInProgress = False }
-                    , Cmd.none
-                    , [ RequestServerGroupCreation loaded.summary.id loaded.groupKey ]
-                    )
-
-                ( Server.PbError PocketBase.Unauthorized, Just loaded ) ->
-                    if loaded.syncCursor == Nothing then
+            let
+                needsServerCreation : GroupOps.LoadedGroup -> Bool
+                needsServerCreation loaded =
+                    Server.isNotFound err
                         -- Never synced + auth failed → group likely doesn't exist on server
+                        || (Server.isUnauthorized err && loaded.syncCursor == Nothing)
+            in
+            case model.loadedGroup of
+                Just loaded ->
+                    if needsServerCreation loaded then
                         ( { model | syncInProgress = False }
                         , Cmd.none
                         , [ RequestServerGroupCreation loaded.summary.id loaded.groupKey ]
@@ -906,7 +908,7 @@ update config msg model =
                         , [ ShowToast Toast.Error ("Sync: " ++ Server.errorToString err), LogError ErrorLog.SyncSource ErrorLog.Err ("Sync: " ++ Server.errorToString err) ]
                         )
 
-                _ ->
+                Nothing ->
                     ( { model | syncInProgress = False }
                     , Cmd.none
                     , [ ShowToast Toast.Error ("Sync: " ++ Server.errorToString err), LogError ErrorLog.SyncSource ErrorLog.Err ("Sync: " ++ Server.errorToString err) ]
@@ -921,21 +923,20 @@ update config msg model =
         PostSyncTasksDone _ ->
             ( model, Cmd.none, [] )
 
-        OnPocketbaseEvent value ->
-            case model.loadedGroup of
-                Just loaded ->
-                    case Json.Decode.decodeValue PocketBase.Realtime.decodeEvent value of
-                        Ok ( _, PocketBase.Realtime.Created record ) ->
-                            let
-                                ( realtimeModel, realtimeCmd ) =
-                                    handleRealtimeRecord config loaded record model
-                            in
-                            ( realtimeModel, realtimeCmd, [] )
+        OnServerEvent value ->
+            case ( model.loadedGroup, Json.Decode.decodeValue Server.serverEventDecoder value ) of
+                ( Just loaded, Ok serverEvt ) ->
+                    if serverEvt.groupId == loaded.summary.id then
+                        let
+                            ( syncModel, syncCmd ) =
+                                triggerSyncInternal config loaded.summary.id model
+                        in
+                        ( syncModel, syncCmd, [] )
 
-                        _ ->
-                            ( model, Cmd.none, [] )
+                    else
+                        ( model, Cmd.none, [] )
 
-                Nothing ->
+                _ ->
                     ( model, Cmd.none, [] )
 
         ScrollToEntryResult _ ->
@@ -1378,8 +1379,8 @@ triggerSyncInternal config groupId model =
         ( model, Cmd.none )
 
     else
-        case ( config.pbClient, model.loadedGroup ) of
-            ( Just client, Just loaded ) ->
+        case model.loadedGroup of
+            Just loaded ->
                 if loaded.summary.id == groupId then
                     let
                         unpushedEvents : List Event.Envelope
@@ -1419,8 +1420,8 @@ triggerSyncInternal config groupId model =
                     in
                     ( model.runner, Cmd.none )
                         |> Runner.andRun (OnGroupSynced groupId loaded.unpushedIds)
-                            (Server.authenticateAndSync
-                                { client = client, groupId = groupId, groupKey = loaded.groupKey }
+                            (Server.sync
+                                { serverUrl = config.serverUrl, groupId = groupId, groupKey = loaded.groupKey }
                                 config.identity.publicKeyHash
                                 { unpushedEvents = unpushedEvents
                                 , pullCursor = loaded.syncCursor
@@ -1510,7 +1511,7 @@ deleteGroup config model groupId =
 
 {-| Apply loaded group data from IndexedDB, constructing a LoadedGroup.
 -}
-applyLoadedGroup : UpdateConfig -> Group.Id -> List Event.Envelope -> Symmetric.Key -> Maybe String -> Set String -> Model -> Maybe Model
+applyLoadedGroup : UpdateConfig -> Group.Id -> List Event.Envelope -> Symmetric.Key -> Maybe Int -> Set String -> Model -> Maybe Model
 applyLoadedGroup config groupId events groupKey syncCursor unpushedIds model =
     Dict.get groupId config.groups
         |> Maybe.map (\summary -> GroupOps.initLoadedGroup events summary groupKey syncCursor unpushedIds)
@@ -1624,28 +1625,6 @@ Returns Nothing if the user is not a member of this group.
 currentUserRootId : Model -> LoadedGroup -> Maybe Member.Id
 currentUserRootId model loaded =
     GroupState.resolveMemberRootId loaded.groupState model.identityHash
-
-
-{-| Handle an incoming realtime event record.
--}
-handleRealtimeRecord : UpdateConfig -> LoadedGroup -> Json.Decode.Value -> Model -> ( Model, Cmd Msg )
-handleRealtimeRecord config loaded record model =
-    case Json.Decode.decodeValue Server.realtimeEventDecoder record of
-        Ok serverEvt ->
-            if serverEvt.groupId == loaded.summary.id then
-                case Json.Decode.decodeString Symmetric.encryptedDataDecoder serverEvt.eventData of
-                    Ok _ ->
-                        -- We need to decrypt async, but for now just trigger a pull
-                        triggerSyncInternal config loaded.summary.id model
-
-                    Err _ ->
-                        ( model, Cmd.none )
-
-            else
-                ( model, Cmd.none )
-
-        Err _ ->
-            ( model, Cmd.none )
 
 
 
