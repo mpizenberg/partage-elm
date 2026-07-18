@@ -612,7 +612,7 @@ The application uses a **two-layer encryption model**:
 
 | Layer | Content | Encrypted? |
 |---|---|---|
-| **Sync metadata** | PocketBase record IDs, `groupId`, `actorId`. | No (strictly necessary for sync relay and access control). |
+| **Sync metadata** | Server sequence numbers, `groupId`, `actorId`. | No (strictly necessary for sync relay and access control). |
 | **Everything else** | Everything else. | Yes (AES-256-GCM). |
 
 ### 11.2 Cryptographic Primitives
@@ -640,14 +640,14 @@ Every event is **cryptographically signed** by its author:
 
 ### 11.5 Server Authentication
 
-- Each group has an associated **server account** for accessing the relay.
-- The account password is **deterministically derived** from the group key: `Base64URL(SHA-256(Base64(groupKey)))`.
-- This means anyone with the group key can authenticate to the server for that group, without any additional credentials.
+- There are no server accounts or sessions. Every request carries a **bearer secret deterministically derived** from the group key: `Base64URL(SHA-256(Base64(groupKey)))`.
+- At group creation the client registers a verifier, `Base64URL(SHA-256(secret))`; the server stores only this hash and compares it (in constant time) against the hash of each presented secret.
+- This means anyone with the group key can authenticate to the server for that group, without any additional credentials — and a leaked bearer secret grants relay access but never reveals the group key.
 
 ### 11.6 What the Server Can See
 
 The server can only see:
-- PocketBase record IDs and creation timestamps (automatic, used for sync cursoring).
+- Record sequence numbers and receive timestamps (used for sync cursoring).
 - The `groupId` and `actorId` fields (needed for access control and relay).
 - The size and frequency of encrypted events.
 - Which server accounts exchange data (but not the identities behind them).
@@ -732,7 +732,7 @@ The following data is stored locally per group in IndexedDB:
 | `groups` | Group summaries (name, currency, member count, balance, archive state). |
 | `groupKeys` | Symmetric encryption keys per group. |
 | `events` | The full append-only event log per group (encrypted), indexed by group ID. |
-| `syncCursors` | Last sync cursor per group (PocketBase `created` timestamp). |
+| `syncCursors` | Last sync cursor per group (server-assigned `seq` integer). |
 | `unpushedIds` | Set of event IDs created locally but not yet pushed to server. |
 | `usageStats` | Network and storage tracking data. |
 
@@ -1090,92 +1090,67 @@ This appendix documents the boundary between the client (PWA) and the server (re
 
 ### C.1 Server Overview
 
-The server is a **PocketBase** instance (Go-based backend-as-a-service) with an embedded SQLite database. It acts as a zero-knowledge relay: it stores encrypted blobs, enforces access control, and provides real-time event streaming. It has **no business logic** about entries, members, balances, or any application-level concept.
+The server is a **purpose-built minimal relay** ([`packages/relay`](../packages/relay)): a small web-standard HTTP + WebSocket app over an append-only SQLite store of encrypted blobs. It stores ciphertext, enforces per-group access control, rate-limits group creation with a proof-of-work gate, and notifies connected clients when new records arrive. It has **no business logic** about entries, members, balances, or any application-level concept.
 
-### C.2 Server Collections (Database Schema)
+One portable core runs on two adapters:
 
-**`users`** — One record per group, used for authentication.
+- **Self-host:** a single Node process (Node ≥ 22.5) with one SQLite file and in-process WebSocket topics; optionally serves the built frontend.
+- **Cloudflare:** a Worker routing each group to its own SQLite-backed Durable Object with hibernating WebSockets; the frontend is served as same-origin static assets.
 
-| Field | Type | Description |
-|---|---|---|
-| `id` | string (auto) | PocketBase record ID. |
-| `username` | string (unique) | Format: `group_{groupId}`. |
-| `password` | string (hashed) | Derived from group key (see [11.5](#115-server-authentication)). |
-| `groupId` | string (unique) | Links user account to a specific group. |
+### C.2 Server Database Schema
 
-**`groups`** — One record per group.
+**`groups`** — one row per group.
 
 | Field | Type | Description |
 |---|---|---|
-| `id` | string (auto) | PocketBase record ID, used as the group identifier. |
-| `createdBy` | string | Public key hash of the group creator (unencrypted). |
-| `powChallenge` | string (unique) | The solved PoW challenge hash (prevents reuse). |
-| `created` | datetime (auto) | PocketBase auto-generated creation timestamp. |
+| `id` | string (primary key) | Client-generated group identifier (15-character alphanumeric). |
+| `created_by` | string | Public key hash of the group creator (unencrypted). |
+| `auth_verifier` | string | Hash of the group's bearer secret (see [C.5](#c5-authentication)). |
+| `pow_challenge` | string | The solved PoW challenge (audit trail). |
+| `created` | string (ISO 8601) | Creation timestamp. |
 
-**`events`** — Append-only log of encrypted events.
+**`events`** — append-only log of encrypted event batches.
 
 | Field | Type | Description |
 |---|---|---|
-| `id` | string (auto) | PocketBase record ID. |
-| `groupId` | string | Links the event to a group. |
-| `actorId` | string | Public key hash of the user who pushed the event. |
-| `eventData` | string (max 1 MB) | Base64-encoded, AES-256-GCM encrypted event payload (may contain multiple batched events). |
-| `compressed` | bool | Whether the event data was gzip-compressed before encryption. |
-| `created` | datetime (auto) | PocketBase auto-generated creation timestamp. Used only as a sync cursor by clients. |
+| `seq` | integer (autoincrement) | Server-assigned sync cursor. Strictly monotonic per group, not necessarily dense. |
+| `group_id` | string | Links the record to a group. |
+| `actor_id` | string | Public key hash of the user who pushed the record. |
+| `data` | string (max 1 MB) | JSON `{ciphertext, iv}`: base64, AES-256-GCM encrypted payload (may contain multiple batched events). |
+| `compressed` | bool | Whether the payload was gzip-compressed before encryption. |
+| `created` | string (ISO 8601) | Server receive time (informational only). |
 
-The encrypted `eventData` payload contains all application-level data, including the **UUID v7 event identifier** used for deterministic ordering (see [14.5](#145-event-ordering--conflict-resolution)). The server never sees these values.
+The encrypted payload contains all application-level data, including the **UUID v7 event identifier** used for deterministic ordering (see [14.5](#145-event-ordering--conflict-resolution)). The server never sees these values.
 
-### C.3 Server API Endpoints
+### C.3 Server API
 
-**Authentication:**
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/pow/challenge?groupId={id}` | none | Get a PoW challenge bound to the groupId. Returns `{challenge, timestamp, difficulty, signature}`. |
+| `POST` | `/api/groups` | PoW | Create a group. Body: `{groupId, createdBy, authVerifier}` plus the solved challenge fields (`pow_challenge`, `pow_timestamp`, `pow_difficulty`, `pow_signature`, `pow_solution`). `201` on success, `400` on invalid PoW, `409` if the group already exists. |
+| `GET` | `/api/groups/{id}/events?since={seq}` | bearer | Pull records with `seq > since`, ascending, at most 200 per page. Returns `{events: [{seq, actorId, eventData, compressed, created}], hasMore}`. |
+| `POST` | `/api/groups/{id}/events` | bearer | Append one encrypted batch: `{actorId, eventData, compressed}`. Returns `{seq}` with status `201`. |
+| `WS` | `/api/groups/{id}/ws?auth={secret}` | secret | Live updates: the server sends `{seq}` whenever a record is appended to the group. A notified client reacts with a normal authenticated pull from its cursor. |
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/collections/users/records` | Create a group user account. |
-| `POST` | `/api/collections/users/auth-with-password` | Authenticate and receive a JWT token. |
-| `POST` | `/api/collections/users/auth-refresh` | Refresh an authentication token. |
+Records can never be updated or deleted through the API — the event log is append-only by construction.
 
-**Proof-of-Work:**
+### C.4 Proof-of-Work Gate (anti-spam)
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/pow/challenge` | Get a PoW challenge. Returns `{challenge, timestamp, difficulty, signature}`. |
+Group creation is public but rate-limited by a stateless PoW scheme:
 
-**Groups:**
+- The challenge endpoint returns `{challenge, timestamp, difficulty: 18, signature}` where `signature = HMAC-SHA256(challenge:groupId:timestamp:difficulty, POW_SECRET)`. The server stores nothing.
+- The client brute-forces a `solution` such that `SHA-256(challenge + solution)` has `difficulty` leading zero **bits**.
+- On group creation the server recomputes the HMAC (over the groupId being created), enforces a 10-minute TTL, and verifies the leading-zero-bits condition.
+- Replay is useless without server-side state: a signed challenge only fits one groupId, and that group can only be created once.
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/collections/groups/records` | Create a group (requires solved PoW in the request body). |
-| `GET` | `/api/collections/groups/records/{id}` | Retrieve a group by ID. |
+### C.5 Authentication
 
-**Event Sync:**
+There are no accounts and no sessions:
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/collections/events/records` | Push an encrypted event (possibly batched and compressed). |
-| `GET` | `/api/collections/events/records?filter=groupId="{id}"&sort=+created` | Fetch all events for a group (initial sync), paginated. |
-| `GET` | `/api/collections/events/records?filter=groupId="{id}" && created>"{ts}"` | Fetch events since last sync (incremental sync). The `created` field is PocketBase's auto-generated timestamp, used only as a sync cursor. |
-
-**Real-time (WebSocket):**
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `WS` | `/api/realtime` | Subscribe to `events` collection for live updates. Client filters by `groupId`. |
-
-### C.4 Server Access Control Rules
-
-| Collection | List/View | Create | Update | Delete |
-|---|---|---|---|---|
-| `users` | Own record only | Public (with hook validation) | Not allowed | Admin only |
-| `groups` | Authenticated + matching `groupId` | Public (with PoW hook validation) | Not allowed (immutable) | Admin only |
-| `events` | Authenticated + matching `groupId` | Authenticated + matching `groupId` | Not allowed (append-only) | Admin only |
-
-### C.5 Server Hooks
-
-The server has two validation hooks implemented in JavaScript:
-
-1. **PoW validation** (on group creation): Verifies the PoW challenge signature (HMAC-SHA256 with server secret), checks the solution has the required leading zero bits, and ensures the challenge hasn't expired (10-minute window).
-2. **User creation validation**: Verifies that the referenced `groupId` exists in the groups collection.
+- The bearer secret is derived from the group key as `Base64URL(SHA-256(Base64(groupKey)))` (see [11.5](#115-server-authentication)).
+- At group creation the client sends `authVerifier = Base64URL(SHA-256(secret))`; the server stores only this hash.
+- Every HTTP request carries `Authorization: Bearer {secret}`; the server hashes it and compares against the stored verifier in constant time. The WebSocket route passes the secret as the `auth` query parameter instead, because the browser WebSocket API cannot set headers.
+- `401` means the credentials are wrong; `404` means the group does not exist on this server.
 
 ### C.6 Client Responsibilities
 
@@ -1183,39 +1158,10 @@ The client handles **all** application logic:
 
 | Responsibility | Details |
 |---|---|
-| **Cryptography** | Key generation (ECDSA P-256), AES-256-GCM encryption/decryption, event signing and verification, password derivation, PoW solving. |
+| **Cryptography** | Key generation (ECDSA P-256), AES-256-GCM encryption/decryption, event signing and verification, bearer-secret derivation, PoW solving. |
 | **Event sourcing** | Encoding changes as immutable events, replaying events in deterministic order (by timestamp and event ID after decryption), computing current state from the event log. |
 | **Business logic** | Entry management, member state computation, balance calculation, settlement planning, activity feed generation. |
 | **Local storage** | IndexedDB for identity, group keys, event log, computed state cache, pending events, sync cursors, and usage statistics. |
-| **Sync management** | Pushing local events (with optional compression), pulling remote events (using PocketBase `created` as sync cursor), offline queue, real-time subscription handling. |
+| **Sync management** | Pushing local events (with optional compression), pulling remote events (using the server `seq` as sync cursor), offline queue, live-update subscription handling. |
 | **Push notifications** | Sending push notifications to affected members after sync, managing subscriptions, localizing notification messages. |
 | **UI & routing** | All screens, navigation, forms, modals, i18n, PWA installation, service worker. |
-
-### C.7 Authentication Flow
-
-1. **Group creation:** Client solves PoW challenge, sends solution to server. Server validates and creates group record.
-2. **User account creation:** Client derives password from group key as `Base64URL(SHA-256(Base64(groupKey)))` and creates a user record with username `group_{groupId}`.
-3. **Session authentication:** Client authenticates with username/password to receive a JWT token. All subsequent API calls include the token as `Authorization: Bearer {token}`.
-4. **Token refresh:** Client refreshes the JWT token before expiry to maintain the session.
-
-Note: "User accounts" here are per-group server accounts for API access. They are unrelated to user identity (the cryptographic keypair). Anyone with the group key can derive the same password and authenticate.
-
-### C.8 Event Payload Types
-
-The following event types can appear in encrypted event payloads:
-
-| Event Type | Description |
-|---|---|
-| `GroupCreated` | Initializes a group with name and default currency. |
-| `GroupMetadataUpdated` | Partial update to group metadata (only changed fields included). |
-| `MemberCreated` | Adds a new member (real or virtual). |
-| `MemberRenamed` | Changes a member's display name. |
-| `MemberRetired` | Marks a member as inactive. |
-| `MemberUnretired` | Reactivates a retired member. |
-| `MemberReplaced` | Links a new identity to an existing member chain. |
-| `MemberMetadataUpdated` | Updates a member's contact/payment information. |
-| `SettlementPreferencesUpdated` | Updates a member's preferred payment recipients. |
-| `EntryAdded` | Creates a new expense, transfer, or income entry. |
-| `EntryModified` | Creates a new version of an existing entry. |
-| `EntryDeleted` | Soft-deletes an entry. |
-| `EntryUndeleted` | Restores a deleted entry. |

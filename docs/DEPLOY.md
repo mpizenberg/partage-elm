@@ -1,69 +1,55 @@
-# Deploying Partage on Dokploy
+# Deploying Partage
 
-Partage consists of two services:
+Partage is a static frontend plus a minimal relay backend ([`packages/relay`](../packages/relay)). The same relay core deploys either to Cloudflare Workers (hosted) or as a single self-hosted container — pick one.
 
-1. **Frontend** — Static Elm/JS app (built with Railpack)
-2. **PocketBase** — Backend API (Docker image)
-
-## 1. PocketBase Docker Image
-
-Build and push the image by triggering the GitHub Actions workflow:
+In both setups the frontend and the API share one origin, so build the frontend with an **empty** `SERVER_URL` (the client then talks to its own origin):
 
 ```sh
-gh workflow run pocketbase.yml
+SERVER_URL= pnpm build:optimize
 ```
 
-This publishes `ghcr.io/mpizenberg/partage-elm/pocketbase:latest`.
+> **Migrating from the PocketBase deployment:** the relay starts with an empty database — there is no server-side data migration. Group members move a group by exporting it to JSON in the app and importing it again once the new instance is live.
 
-> Before building, update `packages/pb_server/pb_hooks/timing.pb.js` to add your production origin to the `allowed` array.
+## Option A: Cloudflare Workers
 
-### Dokploy service configuration
-
-- **Image:** `ghcr.io/mpizenberg/partage-elm/pocketbase:latest`
-- **Port:** 8090
-- **Volume:** mount a persistent volume to `/pocketbase-data`
-- **Environment variables:**
-
-| Variable                    | Value                                   |
-| --------------------------- | --------------------------------------- |
-| `POCKETBASE_ADMIN_EMAIL`    | your admin email                        |
-| `POCKETBASE_ADMIN_PASSWORD` | a secure password                       |
-| `POCKETBASE_ADMIN_UPSERT`   | `true`                                  |
-| `POCKETBASE_PORT_NUMBER`    | `8090`                                  |
-| `POCKETBASE_WORKDIR`        | `/pocketbase-data`                      |
-| `POCKETBASE_HOOK_DIR`       | `/pocketbase/pb_hooks`                  |
-| `POW_SECRET`                | generate with `openssl rand -base64 32` |
-
-### Set up collections
-
-Once PocketBase is running, create the collections from your local machine:
+The Worker serves the API (one SQLite Durable Object per group, WebSockets hibernate while idle) and the frontend as static assets. This typically fits the free plan.
 
 ```sh
-cd packages/pb_server
-PB_URL=https://your-pb-domain.com \
-PB_ADMIN_EMAIL=your-admin@email.com \
-PB_ADMIN_PASSWORD=your-password \
-node setup-collections.js
+SERVER_URL= pnpm build:optimize
+cd packages/relay
+npx wrangler secret put POW_SECRET     # generate with: openssl rand -base64 32
+npx wrangler deploy
 ```
 
-### Reset the database from scratch
+`wrangler.jsonc` in `packages/relay` is the full configuration.
 
-1. Stop the PocketBase container in Dokploy
-2. Delete the persistent volume (or clear `/pocketbase-data/pb_data`)
-3. Restart the container — a fresh DB is created automatically
-4. Re-run `setup-collections.js` as above
-5. On prod, alternatively manually erase the PocketBase tables, and import from an exported schema generated on your local PocketBase instance.
+## Option B: Self-hosted container
 
-## 2. Frontend (Railpack)
+One container, one volume. Works on any container host (Dokploy, Fly.io, a VPS with Docker).
 
-The frontend is a static site built by `pnpm build:optimize` and served from `dist/`.
+```sh
+SERVER_URL= pnpm build:optimize
+docker build -t partage-relay -f packages/relay/Dockerfile .
+docker run -d -p 8090:8090 -v partage-data:/data -e POW_SECRET="$(openssl rand -base64 32)" partage-relay
+```
 
-### Dokploy environment variables
+Configuration (all optional except `POW_SECRET`):
 
-| Variable                  | Value                                                           |
-| ------------------------- | --------------------------------------------------------------- |
-| `PB_URL`                  | URL of your deployed PocketBase (e.g. `https://pb.example.com`) |
-| `RAILPACK_BUILD_CMD`      | `pnpm build:optimize`                                           |
-| `RAILPACK_SPA_OUTPUT_DIR` | `dist`                                                          |
+| Variable | Default | Description |
+| --- | --- | --- |
+| `POW_SECRET` | — (required) | HMAC secret for proof-of-work challenges. |
+| `PORT` | `8090` | Listen port. |
+| `RELAY_DB` | `/data/relay.db` | SQLite file path — mount a persistent volume there. |
+| `STATIC_DIR` | `./static` | Frontend directory to serve; unset to serve the API only. |
 
-The `PB_URL` variable is injected at build time by esbuild into the JS bundle. When unset, it defaults to `http://127.0.0.1:8090` (local dev).
+Put the container behind your TLS-terminating reverse proxy as usual. WebSocket upgrades on `/api/groups/*/ws` must be allowed.
+
+## Separate frontend hosting
+
+To host the frontend elsewhere (a static host, CDN, …), build it with `SERVER_URL` pointing at the relay instead:
+
+```sh
+SERVER_URL=https://relay.example.com pnpm build:optimize
+```
+
+The relay already answers cross-origin requests (permissive CORS), so no server-side change is needed.

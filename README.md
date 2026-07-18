@@ -34,21 +34,21 @@ See [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md) for the canonical feature s
 | Frontend | [Elm](https://elm-lang.org) 0.19.1, `elm-ui`, `elm-concurrent-task` |
 | Crypto | Web Crypto API (AES-256-GCM, ECDSA P-256, SHA-256) |
 | Local storage | IndexedDB |
-| Backend | [PocketBase](https://pocketbase.io) (zero-knowledge relay over SQLite) |
+| Backend | Minimal zero-knowledge relay ([Hono](https://hono.dev) over SQLite; Cloudflare Workers or one self-hosted container) |
 | Build | `elm-watch`, `esbuild`, `travelm-agency` (i18n) |
 
-The PocketBase backend lives in [`packages/pb_server`](packages/pb_server). It stores only encrypted blobs and signed metadata — it cannot decrypt anything.
+The relay backend lives in [`packages/relay`](packages/relay). It stores only encrypted blobs and signed metadata — it cannot decrypt anything.
 
 ## Getting started
 
-Requirements: Node.js ≥ 20 and pnpm ≥ 10.
+Requirements: Node.js ≥ 22.5 and pnpm ≥ 10.
 
 ```sh
 pnpm install
 pnpm dev
 ```
 
-`pnpm dev` runs PocketBase, elm-watch, esbuild, the i18n watcher, and the service worker builder concurrently via `run-pty`. The app is served by elm-watch (Elm dev server) and the backend at <http://localhost:8090>.
+`pnpm dev` runs the relay, elm-watch, esbuild, the i18n watcher, and the service worker builder concurrently via `run-pty`. The app is served by elm-watch (Elm dev server) and the backend at <http://localhost:8090>.
 
 ### Build for production
 
@@ -68,14 +68,14 @@ pnpm format:check  # elm-format --validate
 
 ## Deployment
 
-See [`docs/DEPLOY.md`](docs/DEPLOY.md) for the Dokploy + GitHub Actions setup used by the hosted instance.
+See [`docs/DEPLOY.md`](docs/DEPLOY.md) for deployment (Cloudflare Workers, or one self-hosted container).
 
 ## Repository layout
 
 ```
 src/              Elm source (Domain, Page, Infra, ...)
 vendor/           Vendored Elm packages
-packages/pb_server/   PocketBase backend (Apache-2.0)
+packages/relay/   Minimal relay backend (Apache-2.0)
 public/           index.html, manifest, icons, JS glue
 translations/     travelm-agency translation files
 tests/            elm-test suites
@@ -87,6 +87,6 @@ docs/             Specification and deployment docs
 
 The Partage frontend is licensed under the **Mozilla Public License 2.0** — see [`LICENSE`](LICENSE).
 
-The `packages/pb_server` subproject is licensed under Apache-2.0 (see its own `package.json`).
+The `packages/relay` subproject is licensed under Apache-2.0 (see its own `package.json`).
 
 This project depends on third-party Elm and JavaScript libraries under BSD-3-Clause, MIT, and MPL-2.0 licenses; their copyright notices are preserved in their respective sources.

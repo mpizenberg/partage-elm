@@ -87,7 +87,7 @@ var app = Elm.Main.init({
     language: navigator.language || "en",
     randomSeed: Array.from(crypto.getRandomValues(new Uint32Array(4))),
     currentTime: Date.now(),
-    serverUrl: __SERVER_URL__,
+    serverUrl: __SERVER_URL__ || location.origin,
     origin: location.origin,
     isOnline: navigator.onLine,
     installHint: evaluateInstallHint(installHintOptions),
