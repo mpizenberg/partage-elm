@@ -42,6 +42,7 @@ type Output
     | UnretireOutput Member.Id
     | EditMetadataOutput Member.Id
     | MergeOutput Member.Id
+    | LinkSelfOutput Member.Id
 
 
 type Msg
@@ -52,6 +53,7 @@ type Msg
     | Unretire Member.Id
     | EditMetadata Member.Id
     | Merge Member.Id
+    | LinkSelf Member.Id
 
 
 update : Msg -> Model -> ( Model, Maybe Output )
@@ -86,6 +88,9 @@ update msg model =
 
         Merge memberId ->
             ( model, Just (MergeOutput memberId) )
+
+        LinkSelf memberId ->
+            ( model, Just (LinkSelfOutput memberId) )
 
 
 {-| Callback messages for member interactions on this tab.
@@ -658,6 +663,18 @@ memberDetail i18n toMsg isCurrentUser maybeUserRootId member =
             else
                 Ui.none
 
+        linkSelfButton : Ui.Element msg
+        linkSelfButton =
+            if isMember && not isCurrentUser && not member.isRetired then
+                UI.Components.btnOutline []
+                    { label = T.memberLinkSelfButton i18n
+                    , icon = Just (UI.Components.featherIcon 16 FeatherIcons.userCheck)
+                    , onPress = toMsg (LinkSelf member.rootId)
+                    }
+
+            else
+                Ui.none
+
         notesSection : String -> Ui.Element msg
         notesSection notes =
             Ui.column []
@@ -751,6 +768,7 @@ memberDetail i18n toMsg isCurrentUser maybeUserRootId member =
 
           else
             Ui.none
+        , linkSelfButton
         , mergeButton
         , retireButton
         ]

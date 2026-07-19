@@ -220,6 +220,7 @@
   "memberRetireButton": "Retirer",
   "memberUnretireButton": "Réactiver",
   "memberMergeButton": "Fusionner avec un autre membre",
+  "memberLinkSelfButton": "C'est moi — lier mon appareil",
   "mergePageTitle": "Fusionner des membres",
   "mergeStep1Title": "Choisir le membre à conserver",
   "mergeStep1Subtitle": "Toutes les dépenses et préférences de remboursement du membre retiré seront déplacées vers le membre conservé.",

@@ -1320,6 +1320,21 @@ handleMembersTabOutput config model output =
                         _ ->
                             ( model, Cmd.none, [] )
 
+                Page.Group.MembersTab.LinkSelfOutput memberId ->
+                    let
+                        deviceId : Member.Id
+                        deviceId =
+                            config.identity.publicKeyHash
+                    in
+                    submit
+                        (Event.MemberLinked
+                            { rootId = memberId
+                            , deviceId = deviceId
+                            , publicKey = config.identity.signingKeyPair.publicKey
+                            , seq = GroupState.nextLinkSeq loaded.groupState deviceId
+                            }
+                        )
+
         Nothing ->
             ( model, Cmd.none, [] )
 
