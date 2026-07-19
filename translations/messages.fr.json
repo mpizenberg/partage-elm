@@ -79,6 +79,7 @@
   "activityGroupMetadataUpdated": "a mis à jour les paramètres du groupe",
   "activitySettlementPreferencesUpdated": "a mis à jour les préférences de remboursement pour {name}",
   "activityUnknown": "a fait une modification que cette version de l'application ne peut pas afficher — mettez à jour l'application pour la voir",
+  "groupUnknownEventsBanner": "Certaines modifications ne peuvent pas être lues par cette version de l'application, les soldes peuvent donc être incomplets. Mettez à jour l'application pour les voir.",
   "changeFieldDescription": "description",
   "changeFieldAmount": "montant",
   "changeFieldDate": "date",

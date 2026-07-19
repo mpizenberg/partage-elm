@@ -37,6 +37,8 @@ ship in the launch build:
    a translated "can't display — update" line); pull skips and counts
    undecryptable records and undecodable envelopes (`PullResult.undecodable`)
    and logs the count to ErrorLog on sync success.
+3. Done — persistent warning banner in the group view while any loaded
+   event has an Unknown payload (EN/FR).
 
 ## Increments
 

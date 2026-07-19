@@ -11,7 +11,7 @@ module UI.Components exposing
     , fab
     , featherIcon, featherIconColored, animatedChevron
     , appLogo
-    , languageSelector, pwaBanners, readOnlyBanner
+    , languageSelector, pwaBanners, readOnlyBanner, unknownEventsBanner
     )
 
 {-| Reusable UI components.
@@ -55,7 +55,7 @@ module UI.Components exposing
 
 # Domain components
 
-@docs languageSelector, pwaBanners, readOnlyBanner
+@docs languageSelector, pwaBanners, readOnlyBanner, unknownEventsBanner
 
 -}
 
@@ -1015,6 +1015,19 @@ pwaBanner message { bgColor, textColor, action, dismiss } =
 readOnlyBanner : I18n -> Ui.Element msg
 readOnlyBanner i18n =
     pwaBanner (T.readOnlyBanner i18n)
+        { bgColor = Theme.warning.tint
+        , textColor = Theme.warning.text
+        , action = Nothing
+        , dismiss = Nothing
+        }
+
+
+{-| Banner displayed while the loaded group contains events this app
+version cannot decode (authored by a newer version).
+-}
+unknownEventsBanner : I18n -> Ui.Element msg
+unknownEventsBanner i18n =
+    pwaBanner (T.groupUnknownEventsBanner i18n)
         { bgColor = Theme.warning.tint
         , textColor = Theme.warning.text
         , action = Nothing

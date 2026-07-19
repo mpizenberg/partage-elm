@@ -1867,15 +1867,28 @@ viewTabs config maybeUserRootId loaded model =
             , subtitle = ""
             , onBack = config.onNavigateHome
             , content =
-                case maybeUserRootId of
-                    Just _ ->
-                        tabContent config maybeUserRootId loaded model
+                let
+                    banners : List (Ui.Element msg)
+                    banners =
+                        List.concat
+                            [ if maybeUserRootId == Nothing then
+                                [ UI.Components.readOnlyBanner config.i18n ]
 
-                    Nothing ->
-                        Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
-                            [ UI.Components.readOnlyBanner config.i18n
-                            , tabContent config maybeUserRootId loaded model
+                              else
+                                []
+                            , if List.any (\e -> e.payload == Event.Unknown) loaded.events then
+                                [ UI.Components.unknownEventsBanner config.i18n ]
+
+                              else
+                                []
                             ]
+                in
+                if List.isEmpty banners then
+                    tabContent config maybeUserRootId loaded model
+
+                else
+                    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+                        (banners ++ [ tabContent config maybeUserRootId loaded model ])
             }
     , overlay =
         Just <|
