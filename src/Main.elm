@@ -2,6 +2,7 @@ port module Main exposing (AppState, Flags, Model, Msg, main)
 
 import AppUrl
 import Browser
+import Browser.Dom
 import ConcurrentTask exposing (ConcurrentTask)
 import ConcurrentTask.Http as Http
 import Dict
@@ -451,6 +452,7 @@ update msg model =
                 ( (GroupRoute groupId (Join key)) as route, guardCmd ) ->
                     handleJoinRoute model route groupId key maybeIdentity
                         |> Update.addCmd guardCmd
+                        |> Update.addCmd (navScrollCmd route)
 
                 ( (GroupRoute groupId groupView) as route, guardCmd ) ->
                     let
@@ -463,12 +465,13 @@ update msg model =
                             Page.Group.handleNavigation config groupId groupView model.groupModel
                                 |> Update.wrap GroupMsg (\gm -> { routedModel | groupModel = gm })
                                 |> Update.addCmd guardCmd
+                                |> Update.addCmd (navScrollCmd route)
 
                         Nothing ->
-                            ( routedModel, guardCmd )
+                            ( routedModel, Cmd.batch [ guardCmd, navScrollCmd route ] )
 
                 ( route, guardCmd ) ->
-                    ( { model | route = route }, guardCmd )
+                    ( { model | route = route }, Cmd.batch [ guardCmd, navScrollCmd route ] )
 
         NavigateTo route ->
             ( model, Navigation.pushUrl navCmd (Route.toAppUrl route) )
@@ -1298,6 +1301,19 @@ dropFileExtension name =
 
         [] ->
             name
+
+
+{-| Reset scroll to the top when navigating to a new page. Routes that scroll
+to a specific element handle their own viewport instead.
+-}
+navScrollCmd : Route -> Cmd Msg
+navScrollCmd route =
+    case route of
+        GroupRoute _ (HighlightEntry _) ->
+            Cmd.none
+
+        _ ->
+            Task.perform (\_ -> NoOp) (Browser.Dom.setViewport 0 0)
 
 
 applyRouteGuard : Maybe Identity -> Route -> ( Route, Cmd Msg )
