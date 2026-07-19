@@ -36,6 +36,7 @@ suite =
         , settlementPreferenceTests
         , payloadTests
         , envelopeTests
+        , forwardCompatTests
         ]
 
 
@@ -250,7 +251,7 @@ payloadFuzzer =
 
 envelopeFuzzer : Fuzzer Event.Envelope
 envelopeFuzzer =
-    Fuzz.map5 Event.Envelope
+    Fuzz.map5 Event.wrap
         Fuzz.string
         posixFuzzer
         Fuzz.string
@@ -380,3 +381,41 @@ envelopeTests : Test
 envelopeTests =
     fuzz envelopeFuzzer "Envelope roundtrips" <|
         roundtrip Event.encodeEnvelope Event.envelopeDecoder
+
+
+forwardCompatTests : Test
+forwardCompatTests =
+    let
+        -- Envelope as a newer app version might author it: an extra field at
+        -- both the envelope level ("extra") and inside the payload ("future").
+        wireJson : String
+        wireJson =
+            """{"id":"e1","ts":123,"by":"m1","v":1,"p":{"t":"ed","r":"entry1","future":"x"},"extra":true,"sig":"s"}"""
+
+        decoded : Result Decode.Error Event.Envelope
+        decoded =
+            Decode.decodeString Event.envelopeDecoder wireJson
+    in
+    describe "Envelope forward compatibility"
+        [ Test.test "unknown fields survive re-encoding" <|
+            \_ ->
+                decoded
+                    |> Result.map (Event.encodeEnvelope >> Encode.encode 0)
+                    |> Expect.equal (Ok wireJson)
+        , Test.test "canonicalize keeps unknown fields and drops only sig" <|
+            \_ ->
+                decoded
+                    |> Result.map Event.canonicalize
+                    |> Expect.equal (Ok """{"id":"e1","ts":123,"by":"m1","v":1,"p":{"t":"ed","r":"entry1","future":"x"},"extra":true}""")
+        , Test.test "locally-authored envelopes sign the same shape they encode" <|
+            \_ ->
+                let
+                    envelope : Event.Envelope
+                    envelope =
+                        Event.wrap "e1" (Time.millisToPosix 123) "m1" (EntryDeleted { rootId = "entry1" }) ""
+                            |> Event.withSignature "s"
+                in
+                Decode.decodeString Event.envelopeDecoder (Encode.encode 0 (Event.encodeEnvelope envelope))
+                    |> Result.map Event.canonicalize
+                    |> Expect.equal (Ok (Event.canonicalize envelope))
+        ]

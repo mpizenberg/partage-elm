@@ -149,7 +149,7 @@ signEnvelope : Signature.SigningKeyPair -> Event.Envelope -> ConcurrentTask Idb.
 signEnvelope signingKeyPair envelope =
     Signature.signText signingKeyPair (Event.canonicalize envelope)
         |> ConcurrentTask.mapError (\_ -> Idb.DatabaseError "Signing failed")
-        |> ConcurrentTask.map (\sig -> { envelope | signature = sig })
+        |> ConcurrentTask.map (\sig -> Event.withSignature sig envelope)
 
 
 

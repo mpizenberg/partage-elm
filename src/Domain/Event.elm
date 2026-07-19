@@ -1,4 +1,4 @@
-module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), canonicalize, compareEnvelopes, createGroup, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents, wrap)
+module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), canonicalize, compareEnvelopes, createGroup, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents, withSignature, wrap)
 
 {-| Event types and ordering for the event-sourced state machine.
 -}
@@ -19,14 +19,30 @@ type alias Id =
 
 
 {-| A timestamped event envelope wrapping a payload with authorship info.
+
+`raw` is the envelope's authoritative JSON: the exact value received from
+the wire (or produced locally at signing time). Encoding, storage, and
+signature verification all go through `raw`, so fields added by newer app
+versions survive round trips through clients that don't understand them.
+
 -}
 type alias Envelope =
     { id : Id
     , clientTimestamp : Time.Posix
     , triggeredBy : Member.Id
+    , version : Int
     , payload : Payload
     , signature : String
+    , raw : Encode.Value
     }
+
+
+{-| Schema version stamped on locally-authored envelopes ("v" field).
+Envelopes without the field are read as version 1.
+-}
+currentVersion : Int
+currentVersion =
+    1
 
 
 {-| All possible event types in the system.
@@ -90,11 +106,39 @@ compareEnvelopes a b =
 -}
 wrap : Id -> Time.Posix -> Member.Id -> Payload -> String -> Envelope
 wrap eventId clientTimestamp triggeredBy payload signature =
-    { id = eventId
-    , clientTimestamp = clientTimestamp
-    , triggeredBy = triggeredBy
-    , payload = payload
-    , signature = signature
+    refreshRaw
+        { id = eventId
+        , clientTimestamp = clientTimestamp
+        , triggeredBy = triggeredBy
+        , version = currentVersion
+        , payload = payload
+        , signature = signature
+        , raw = Encode.null
+        }
+
+
+{-| Set the signature on a locally-authored envelope, keeping `raw` in sync.
+-}
+withSignature : String -> Envelope -> Envelope
+withSignature signature envelope =
+    refreshRaw { envelope | signature = signature }
+
+
+{-| Rebuild `raw` from the decoded fields. Only valid for locally-authored
+envelopes — on a received envelope this would discard unknown fields.
+-}
+refreshRaw : Envelope -> Envelope
+refreshRaw envelope =
+    { envelope
+        | raw =
+            Encode.object
+                [ ( "id", Encode.string envelope.id )
+                , ( "ts", Encode.int (Time.posixToMillis envelope.clientTimestamp) )
+                , ( "by", Encode.string envelope.triggeredBy )
+                , ( "v", Encode.int envelope.version )
+                , ( "p", encodePayload envelope.payload )
+                , ( "sig", Encode.string envelope.signature )
+                ]
     }
 
 
@@ -119,29 +163,41 @@ createGroup { name, defaultCurrency, creator, virtualMembers, publicKey } =
         :: List.map (memberPayload Member.Virtual "") virtualMembers
 
 
-{-| Encode an Envelope as a JSON object.
+{-| Encode an Envelope as a JSON object — the raw value it was decoded
+from (or built from at signing time), so unknown fields pass through.
 -}
 encodeEnvelope : Envelope -> Encode.Value
 encodeEnvelope envelope =
-    Encode.object
-        [ ( "id", Encode.string envelope.id )
-        , ( "ts", Encode.int (Time.posixToMillis envelope.clientTimestamp) )
-        , ( "by", Encode.string envelope.triggeredBy )
-        , ( "p", encodePayload envelope.payload )
-        , ( "sig", Encode.string envelope.signature )
-        ]
+    envelope.raw
 
 
-{-| Decode an Envelope from JSON.
+{-| Decode an Envelope from JSON, keeping the raw value.
 -}
 envelopeDecoder : Decode.Decoder Envelope
 envelopeDecoder =
-    Decode.map5 Envelope
-        (Decode.field "id" Decode.string)
-        (Decode.field "ts" (Decode.map Time.millisToPosix Decode.int))
-        (Decode.field "by" Decode.string)
-        (Decode.field "p" payloadDecoder)
-        (Decode.field "sig" Decode.string)
+    Decode.value
+        |> Decode.andThen
+            (\raw ->
+                Decode.map5
+                    (\id ts by v ( p, sig ) ->
+                        { id = id
+                        , clientTimestamp = ts
+                        , triggeredBy = by
+                        , version = v
+                        , payload = p
+                        , signature = sig
+                        , raw = raw
+                        }
+                    )
+                    (Decode.field "id" Decode.string)
+                    (Decode.field "ts" (Decode.map Time.millisToPosix Decode.int))
+                    (Decode.field "by" Decode.string)
+                    (Decode.oneOf [ Decode.field "v" Decode.int, Decode.succeed 1 ])
+                    (Decode.map2 Tuple.pair
+                        (Decode.field "p" payloadDecoder)
+                        (Decode.field "sig" Decode.string)
+                    )
+            )
 
 
 {-| Encode a Payload as a tagged JSON object with a "type" discriminator.
@@ -406,15 +462,22 @@ maybeFieldAsDoubleMaybe fieldName =
         )
 
 
-{-| Produce the canonical string representation of an envelope for signing.
-This is the JSON encoding of all fields except the signature.
+{-| Produce the canonical string representation of an envelope for signing:
+the raw envelope JSON with the "sig" field removed, other fields kept in
+their received order. Working from `raw` rather than re-encoding the
+decoded payload keeps signatures valid on events carrying fields this
+app version doesn't know about.
 -}
 canonicalize : Envelope -> String
 canonicalize envelope =
-    Encode.object
-        [ ( "id", Encode.string envelope.id )
-        , ( "ts", Encode.int (Time.posixToMillis envelope.clientTimestamp) )
-        , ( "by", Encode.string envelope.triggeredBy )
-        , ( "p", encodePayload envelope.payload )
-        ]
-        |> Encode.encode 0
+    case Decode.decodeValue (Decode.keyValuePairs Decode.value) envelope.raw of
+        Ok fields ->
+            fields
+                |> List.filter (\( key, _ ) -> key /= "sig")
+                |> Encode.object
+                |> Encode.encode 0
+
+        Err _ ->
+            -- Unreachable: raw is always a JSON object. An empty canonical
+            -- string can never match a signature, which is the safe failure.
+            ""

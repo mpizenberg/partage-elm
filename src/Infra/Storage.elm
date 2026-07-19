@@ -248,7 +248,7 @@ saveEvents db groupId envelopes =
 -}
 loadGroupEvents : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error (List Event.Envelope)
 loadGroupEvents db groupId =
-    Idb.getByIndex db eventsStore byGroupIdIndex (Idb.only (Idb.StringKey groupId)) Event.envelopeDecoder
+    Idb.getByIndex db eventsStore byGroupIdIndex (Idb.only (Idb.StringKey groupId)) (Decode.field "env" Event.envelopeDecoder)
         |> ConcurrentTask.map (List.map Tuple.second)
 
 
@@ -442,10 +442,7 @@ encodeEventForStorage groupId envelope =
     Encode.object
         [ ( "id", Encode.string envelope.id )
         , ( "groupId", Encode.string groupId )
-        , ( "ts", Encode.int (Time.posixToMillis envelope.clientTimestamp) )
-        , ( "by", Encode.string envelope.triggeredBy )
-        , ( "p", Event.encodePayload envelope.payload )
-        , ( "sig", Encode.string envelope.signature )
+        , ( "env", Event.encodeEnvelope envelope )
         ]
 
 

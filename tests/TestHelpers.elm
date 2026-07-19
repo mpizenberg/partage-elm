@@ -9,7 +9,7 @@ module TestHelpers exposing
 
 import Domain.Currency exposing (Currency(..))
 import Domain.Entry as Entry exposing (Beneficiary(..), Entry, Kind(..))
-import Domain.Event exposing (Envelope, Payload(..))
+import Domain.Event as Event exposing (Envelope, Payload(..))
 import Domain.Member as Member
 import Time
 
@@ -27,12 +27,7 @@ bootstrapMembers =
 
 makeEnvelope : String -> Int -> Member.Id -> Payload -> Envelope
 makeEnvelope eventId timestamp triggeredBy payload =
-    { id = eventId
-    , clientTimestamp = Time.millisToPosix timestamp
-    , triggeredBy = triggeredBy
-    , payload = payload
-    , signature = ""
-    }
+    Event.wrap eventId (Time.millisToPosix timestamp) triggeredBy payload ""
 
 
 makeEntryMeta : String -> Int -> Entry.Metadata
