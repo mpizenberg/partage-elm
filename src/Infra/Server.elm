@@ -6,6 +6,7 @@ module Infra.Server exposing
     , SyncResult
     , createGroupOnServer
     , errorToString
+    , isNetworkError
     , isNotFound
     , isUnauthorized
     , serverEventDecoder
@@ -103,6 +104,23 @@ errorToString err =
 isNotFound : Error -> Bool
 isNotFound =
     isStatus 404
+
+
+{-| Connectivity-shaped failures (no network, or a link so bad the request
+timed out). Expected during offline use and retried automatically, so they
+should not be surfaced as errors.
+-}
+isNetworkError : Error -> Bool
+isNetworkError err =
+    case err of
+        HttpError Http.NetworkError ->
+            True
+
+        HttpError Http.Timeout ->
+            True
+
+        _ ->
+            False
 
 
 {-| True when the server rejected the group credentials.

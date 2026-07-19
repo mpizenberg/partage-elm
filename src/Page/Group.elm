@@ -899,6 +899,18 @@ update config msg model =
                     Server.isNotFound err
                         -- Never synced + auth failed → group likely doesn't exist on server
                         || (Server.isUnauthorized err && loaded.syncCursor == Nothing)
+
+                -- Connectivity failures are expected offline and retried
+                -- automatically — stay silent instead of toasting per attempt.
+                failureOutputs : List Output
+                failureOutputs =
+                    if Server.isNetworkError err then
+                        []
+
+                    else
+                        [ ShowToast Toast.Error (T.toastSyncError (Server.errorToString err) config.i18n)
+                        , LogError ErrorLog.SyncSource ErrorLog.Err ("Sync: " ++ Server.errorToString err)
+                        ]
             in
             case model.loadedGroup of
                 Just loaded ->
@@ -909,16 +921,10 @@ update config msg model =
                         )
 
                     else
-                        ( { model | syncInProgress = False }
-                        , Cmd.none
-                        , [ ShowToast Toast.Error ("Sync: " ++ Server.errorToString err), LogError ErrorLog.SyncSource ErrorLog.Err ("Sync: " ++ Server.errorToString err) ]
-                        )
+                        ( { model | syncInProgress = False }, Cmd.none, failureOutputs )
 
                 Nothing ->
-                    ( { model | syncInProgress = False }
-                    , Cmd.none
-                    , [ ShowToast Toast.Error ("Sync: " ++ Server.errorToString err), LogError ErrorLog.SyncSource ErrorLog.Err ("Sync: " ++ Server.errorToString err) ]
-                    )
+                    ( { model | syncInProgress = False }, Cmd.none, failureOutputs )
 
         OnGroupSynced _ _ (ConcurrentTask.UnexpectedError _) ->
             ( { model | syncInProgress = False }, Cmd.none, [ LogError ErrorLog.SyncSource ErrorLog.Err "Unexpected error during group sync" ] )
