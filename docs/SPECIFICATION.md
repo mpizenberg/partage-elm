@@ -846,6 +846,36 @@ Push notification messages are localized in the service worker:
 - Notification permission is requested via the browser's standard permission flow.
 - The subscription state is tracked locally.
 
+### 15.6 Privacy Trade-offs and Future Directions
+
+Push is a deliberate exception to the zero-knowledge model:
+
+- Notification metadata — the group name (title), the actor's display name, and the
+  event kind — is sent in **plaintext** to the push relay, which is a shared
+  third-party server, not part of a Partage deployment.
+- The push relay's notify endpoint is **unauthenticated**: anyone who knows a topic
+  string (`{groupId}-{memberRootId}`) can send notifications to that member.
+
+Two future stages would close these gaps. In any design, recipient computation stays
+client-side: only the sending client can read events, so only it knows which members
+are affected.
+
+1. **Fold push into the relay server**, replacing the external push relay: a
+   subscriptions table stored next to the group's event log, subscribe/unsubscribe
+   and notify routes authenticated with the group bearer secret, and per-instance
+   VAPID keys (env/secrets). Sending uses the `web-push` package on Node and a
+   WebCrypto implementation of VAPID + RFC 8291 on Cloudflare (ES256 and the
+   ECDH/HKDF primitives are all available). This removes the third-party dependency
+   and keeps notification metadata within the operator's own instance.
+2. **Fully zero-knowledge push** (later hardening): distribute each member's push
+   subscription (endpoint + keys) inside the encrypted event log and have the
+   *sending client* perform the RFC 8291 payload encryption itself; the server then
+   only VAPID-signs and forwards an opaque blob, seeing endpoint URLs but no
+   content. This costs real complexity — RFC 8291 in the client, subscription churn
+   propagating through the event log, stale-subscription cleanup — and since stage 1
+   already makes the push operator the group's own relay host, the remaining trust
+   gap is small. Documented as a possibility, not planned.
+
 ---
 
 ## 16. Progressive Web App (PWA)
@@ -1075,7 +1105,7 @@ The following features are explicitly **not** in scope currently but are documen
 
 - Receipt photo attachments and OCR. In tension with open source and free app hosting.
 - Recurring expenses and budgets.
-- Push notifications enhancements (to be refined based on usage feedback).
+- Push notifications enhancements: privacy hardening (see [15.6](#156-privacy-trade-offs-and-future-directions)) and refinements based on usage feedback.
 - Analytics and spending charts.
 - Import from other bill-splitting apps (Splitwise, Tricount, etc.).
 - PDF / CSV export.
