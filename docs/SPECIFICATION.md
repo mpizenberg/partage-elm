@@ -639,7 +639,13 @@ Clients must tolerate events authored by newer app versions:
 - Envelopes carry a schema version field `"v"` (absent = 1) for future "update required" messaging.
 - An envelope is passed through encoding, local storage, and export as the raw JSON it was decoded from, so fields unknown to this client survive round trips.
 - A payload that fails to decode (unknown type, or a known type whose shape changed) becomes an **Unknown** event: it still verifies and persists, state computation ignores it, the activity feed shows a generic "update the app" line, and the group view shows a persistent warning banner. After an app update the stored raw JSON decodes normally — no data is lost.
-- A pulled record that fails to decrypt, or an envelope whose JSON shape cannot be decoded, is skipped and counted (surfaced via the error log); the sync cursor always advances, so one corrupt or malicious record can never permanently break a group's sync.
+- A pulled record that fails to decrypt, or an envelope whose JSON shape cannot be decoded, is skipped and counted (surfaced via the error log); the sync cursor always advances, so one corrupt or malicious record can never permanently break a group's sync. Records are skipped even when every record in a pull fails: the group key is immutable after joining (a wrong key would have failed at join time), so mass decrypt failure means garbage records, not a key mismatch.
+
+Deliberate limitations of this mechanism:
+
+- **Key-introducing events.** Verification learns public keys only from `MemberCreated` and `MemberLinked` events. If such an event is Unknown to an outdated client, that new member's *subsequent* events fail verification on that client and are dropped at pull time — and unlike Unknown events they are not persisted, so an app update alone does not recover them (the warning banner is shown throughout; recovery needs a full re-pull, i.e. re-joining via invite link or importing a fresh export). **Constraint on future releases: shipping a new key-introducing event type — or a new signature algorithm — must come with a healing mechanism, e.g. a one-time re-pull when stored Unknown events become decodable after an update.**
+- **Edits from outdated clients.** `EntryModified` carries the full re-encoded entry, so an outdated client editing an entry silently drops entry fields it doesn't know about. Accepted as disproportionate to fix for a fast-updating PWA fleet.
+- **Envelope-level changes.** Adding envelope fields is safe (canonicalization preserves unknown fields). A breaking change to the envelope shape itself requires bumping `"v"` and gating on it with an "update required" message.
 
 ### 11.4 Key Management
 
@@ -740,7 +746,7 @@ The following data is stored locally per group in IndexedDB:
 | `identity` | User's cryptographic keypair, language preference, notification translations. |
 | `groups` | Group summaries (name, currency, member count, balance, archive state). |
 | `groupKeys` | Symmetric encryption keys per group. |
-| `events` | The full append-only event log per group (encrypted), indexed by group ID. |
+| `events` | The full append-only event log per group, indexed by group ID. Each row is `{ id, groupId, env }` where `env` is the raw envelope JSON as received or authored — stored verbatim so events from newer app versions survive and re-decode after an update (see [11.3b](#113b-forward-compatibility)). |
 | `syncCursors` | Last sync cursor per group (server-assigned `seq` integer). |
 | `unpushedIds` | Set of event IDs created locally but not yet pushed to server. |
 | `usageStats` | Network and storage tracking data. |
