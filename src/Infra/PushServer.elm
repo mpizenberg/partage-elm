@@ -251,6 +251,9 @@ Similar to Activity.involvedMembers but without full StateContext dependency.
 involvedMembers : (Entry.Id -> Maybe Entry.Entry) -> Event.Payload -> List Member.Id
 involvedMembers entryCurrentVersion payload =
     case payload of
+        Unknown ->
+            []
+
         EntryAdded entry ->
             entryInvolvedMembers entry
 

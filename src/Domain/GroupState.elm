@@ -232,6 +232,9 @@ timestamps, no anchor timestamp) and avoids re-shuffling on transfer edits.
 isAnchorMover : Payload -> GroupState -> Bool
 isAnchorMover payload state =
     case payload of
+        Unknown ->
+            False
+
         EntryAdded entry ->
             not (isTransferEntry entry)
 
@@ -325,6 +328,9 @@ applyPayload envelope state =
             envelope.clientTimestamp
     in
     case envelope.payload of
+        Unknown ->
+            state
+
         MemberCreated data ->
             applyMemberCreated timestamp data state
 

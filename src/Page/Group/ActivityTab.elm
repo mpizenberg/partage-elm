@@ -394,6 +394,9 @@ activityItem i18n config expandedActivities activity =
 detailIcon : Detail -> FeatherIcons.Icon
 detailIcon detail =
     case detail of
+        UnknownDetail ->
+            FeatherIcons.helpCircle
+
         EntryAddedDetail _ ->
             FeatherIcons.plusCircle
 
@@ -467,6 +470,9 @@ summaryRow i18n zone resolveName activity =
 detailSummaryText : I18n -> Detail -> String
 detailSummaryText i18n detail =
     case detail of
+        UnknownDetail ->
+            T.activityUnknown i18n
+
         EntryAddedDetail data ->
             case data.entry.kind of
                 Expense expData ->
@@ -666,6 +672,9 @@ detailContent i18n config detail =
             rows ++ [ entryLinkRow i18n (config.entryLinkHref entryId) (config.onNavigateToEntry entryId) ]
     in
     case detail of
+        UnknownDetail ->
+            []
+
         EntryAddedDetail data ->
             entryDetailRows i18n config.groupDefaultCurrency resolveName data.entry
                 |> withEntryLink data.entry.meta.rootId

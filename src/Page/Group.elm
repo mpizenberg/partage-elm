@@ -884,17 +884,28 @@ update config msg model =
 
                             ( summaryModel, summaryCmd, summaryOutputs ) =
                                 syncGroupSummaryName config groupId modelAfterSync
+
+                            outputs : List Output
+                            outputs =
+                                if syncResult.pullResult.undecodable > 0 then
+                                    LogError ErrorLog.SyncSource
+                                        ErrorLog.Err
+                                        ("Sync: skipped " ++ String.fromInt syncResult.pullResult.undecodable ++ " undecodable record(s)")
+                                        :: summaryOutputs
+
+                                else
+                                    summaryOutputs
                         in
                         -- If new events were added during sync, trigger follow-up
                         if Set.isEmpty result.updatedGroup.unpushedIds then
-                            ( summaryModel, Cmd.batch [ taskCmds, summaryCmd, initCmd ], summaryOutputs )
+                            ( summaryModel, Cmd.batch [ taskCmds, summaryCmd, initCmd ], outputs )
 
                         else
                             let
                                 ( followUpModel, followUpCmd ) =
                                     triggerSyncInternal config groupId summaryModel
                             in
-                            ( followUpModel, Cmd.batch [ taskCmds, summaryCmd, followUpCmd, initCmd ], summaryOutputs )
+                            ( followUpModel, Cmd.batch [ taskCmds, summaryCmd, followUpCmd, initCmd ], outputs )
 
                     else
                         ( { model | syncInProgress = False }, Cmd.none, [] )
@@ -1464,6 +1475,7 @@ triggerSyncInternal config groupId model =
                                             | pullResult =
                                                 { events = verifiedEvents
                                                 , cursor = syncResult.pullResult.cursor
+                                                , undecodable = syncResult.pullResult.undecodable
                                                 }
                                         }
                                     )

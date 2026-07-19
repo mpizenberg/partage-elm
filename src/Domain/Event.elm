@@ -46,9 +46,16 @@ currentVersion =
 
 
 {-| All possible event types in the system.
+
+`Unknown` is any payload this app version cannot decode — typically an
+event authored by a newer version. The envelope still verifies and round
+trips via its raw JSON; state computation ignores it. Never authored
+locally.
+
 -}
 type Payload
-    = MemberCreated { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id, publicKey : String }
+    = Unknown
+    | MemberCreated { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id, publicKey : String }
     | MemberRenamed { rootId : Member.Id, oldName : String, newName : String }
     | MemberRetired { rootId : Member.Id }
     | MemberUnretired { rootId : Member.Id }
@@ -194,7 +201,10 @@ envelopeDecoder =
                     (Decode.field "by" Decode.string)
                     (Decode.oneOf [ Decode.field "v" Decode.int, Decode.succeed 1 ])
                     (Decode.map2 Tuple.pair
-                        (Decode.field "p" payloadDecoder)
+                        -- A payload that fails to decode (unknown type, or a
+                        -- known type whose shape changed) becomes Unknown
+                        -- instead of failing the envelope.
+                        (Decode.field "p" (Decode.oneOf [ payloadDecoder, Decode.succeed Unknown ]))
                         (Decode.field "sig" Decode.string)
                     )
             )
@@ -205,6 +215,11 @@ envelopeDecoder =
 encodePayload : Payload -> Encode.Value
 encodePayload payload =
     case payload of
+        Unknown ->
+            -- Never reached: Unknown is never authored locally, and received
+            -- envelopes encode via their raw JSON, not via encodePayload.
+            Encode.null
+
         MemberCreated data ->
             Encode.object
                 [ ( "t", Encode.string "mc" )

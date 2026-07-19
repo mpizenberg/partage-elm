@@ -35,7 +35,8 @@ type alias GroupMetadataSnapshot =
 {-| What happened in this activity.
 -}
 type Detail
-    = EntryAddedDetail { entry : Entry.Entry }
+    = UnknownDetail
+    | EntryAddedDetail { entry : Entry.Entry }
     | EntryModifiedDetail { entry : Entry.Entry, previousEntry : Maybe Entry.Entry, changes : List String }
     | TransferAddedDetail { entry : Entry.Entry }
     | TransferModifiedDetail { entry : Entry.Entry, previousEntry : Maybe Entry.Entry, changes : List String }
@@ -90,6 +91,9 @@ fromEnvelope ctx envelope =
 involvedMembers : StateContext -> Payload -> List Member.Id
 involvedMembers ctx payload =
     case payload of
+        Unknown ->
+            []
+
         EntryAdded entry ->
             entryInvolvedMembers entry
 
@@ -167,6 +171,9 @@ beneficiaryMemberId beneficiary =
 payloadToDetail : StateContext -> Payload -> Detail
 payloadToDetail ctx payload =
     case payload of
+        Unknown ->
+            UnknownDetail
+
         EntryAdded entry ->
             entryAddedDetail entry
 

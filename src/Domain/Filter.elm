@@ -296,6 +296,9 @@ matchesActivityTypeFilter types activity =
 classifyActivity : Activity -> ActivityType
 classifyActivity activity =
     case activity.detail of
+        UnknownDetail ->
+            GroupActivity
+
         EntryAddedDetail _ ->
             EntryActivity
 

@@ -407,6 +407,16 @@ forwardCompatTests =
                 decoded
                     |> Result.map Event.canonicalize
                     |> Expect.equal (Ok """{"id":"e1","ts":123,"by":"m1","v":1,"p":{"t":"ed","r":"entry1","future":"x"},"extra":true}""")
+        , Test.test "unknown payload type decodes to Unknown and round trips" <|
+            \_ ->
+                let
+                    json : String
+                    json =
+                        """{"id":"e2","ts":5,"by":"m1","p":{"t":"zz","x":1},"sig":"s"}"""
+                in
+                Decode.decodeString Event.envelopeDecoder json
+                    |> Result.map (\env -> ( env.payload, env.version, Encode.encode 0 (Event.encodeEnvelope env) ))
+                    |> Expect.equal (Ok ( Unknown, 1, json ))
         , Test.test "locally-authored envelopes sign the same shape they encode" <|
             \_ ->
                 let

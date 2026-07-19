@@ -78,6 +78,7 @@
   "activityGroupCreated": "created the group",
   "activityGroupMetadataUpdated": "updated group settings",
   "activitySettlementPreferencesUpdated": "updated settlement preferences for {name}",
+  "activityUnknown": "made a change this app version can't display — update the app to see it",
   "changeFieldDescription": "description",
   "changeFieldAmount": "amount",
   "changeFieldDate": "date",

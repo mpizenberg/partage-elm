@@ -33,6 +33,10 @@ ship in the launch build:
 1. Done — Envelope carries `version` + `raw`; encoding/storage/canonicalize
    go through raw; signatures verified against received bytes; tests added
    for unknown-field passthrough and canonical-shape stability.
+2. Done — `Payload.Unknown` + `Activity.UnknownDetail` (activity feed shows
+   a translated "can't display — update" line); pull skips and counts
+   undecryptable records and undecodable envelopes (`PullResult.undecodable`)
+   and logs the count to ErrorLog on sync success.
 
 ## Increments
 
@@ -55,6 +59,11 @@ ship in the launch build:
    sync sections; mark findings 2 and 3b **[FIXED]** in the review doc.
 
 ## Decisions
+
+- Unknown events appear in the activity feed as a generic translated
+  "can't display — update the app" line (`Activity.UnknownDetail`) instead
+  of being hidden. Hiding was rejected: `payloadToDetail` would need a
+  bogus neutral value anyway, and feed visibility complements the banner.
 
 - Any `"p"` decode failure becomes `Unknown` — including a *known* type
   whose fields fail to decode. Alternative (only unknown `"t"` tags) was

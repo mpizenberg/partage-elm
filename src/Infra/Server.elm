@@ -301,10 +301,14 @@ sync ctx actorId { unpushedEvents, pullCursor, notifyContext } =
 
 
 {-| Pull result with decrypted events and the new sync cursor.
+`undecodable` counts skipped items: records that failed to decrypt plus
+envelopes whose JSON shape could not be decoded. Skipping instead of
+failing keeps one bad record from bricking the group's sync forever.
 -}
 type alias PullResult =
     { events : List Event.Envelope
     , cursor : Int
+    , undecodable : Int
     }
 
 
@@ -312,11 +316,11 @@ type alias PullResult =
 -}
 pullEvents : ServerContext -> String -> Maybe Int -> ConcurrentTask Error PullResult
 pullEvents ctx secret maybeCursor =
-    pullAllPages ctx secret (Maybe.withDefault 0 maybeCursor) []
+    pullAllPages ctx secret (Maybe.withDefault 0 maybeCursor) { events = [], undecodable = 0 }
 
 
-pullAllPages : ServerContext -> String -> Int -> List Event.Envelope -> ConcurrentTask Error PullResult
-pullAllPages ctx secret cursor accEvents =
+pullAllPages : ServerContext -> String -> Int -> { events : List Event.Envelope, undecodable : Int } -> ConcurrentTask Error PullResult
+pullAllPages ctx secret cursor acc =
     Http.get
         { url = eventsUrl ctx ++ "?since=" ++ String.fromInt cursor
         , headers = [ authHeader secret ]
@@ -328,11 +332,13 @@ pullAllPages ctx secret cursor accEvents =
             (\page ->
                 decryptServerEvents ctx.groupKey page.events
                     |> ConcurrentTask.andThen
-                        (\decryptedEvents ->
+                        (\decrypted ->
                             let
-                                allEvents : List Event.Envelope
-                                allEvents =
-                                    accEvents ++ decryptedEvents
+                                newAcc : { events : List Event.Envelope, undecodable : Int }
+                                newAcc =
+                                    { events = acc.events ++ decrypted.events
+                                    , undecodable = acc.undecodable + decrypted.undecodable
+                                    }
 
                                 newCursor : Int
                                 newCursor =
@@ -341,36 +347,61 @@ pullAllPages ctx secret cursor accEvents =
                                         |> Maybe.withDefault cursor
                             in
                             if page.hasMore then
-                                pullAllPages ctx secret newCursor allEvents
+                                pullAllPages ctx secret newCursor newAcc
 
                             else
-                                ConcurrentTask.succeed { events = allEvents, cursor = newCursor }
+                                ConcurrentTask.succeed { events = newAcc.events, cursor = newCursor, undecodable = newAcc.undecodable }
                         )
             )
 
 
-decryptServerEvents : Symmetric.Key -> List ServerEventRecord -> ConcurrentTask Error (List Event.Envelope)
+decryptServerEvents : Symmetric.Key -> List ServerEventRecord -> ConcurrentTask Error { events : List Event.Envelope, undecodable : Int }
 decryptServerEvents key records =
     records
         |> List.map (decryptServerEventBatch key)
         |> ConcurrentTask.batch
-        |> ConcurrentTask.map List.concat
+        |> ConcurrentTask.map
+            (\results ->
+                { events = List.concatMap .events results
+                , undecodable = List.sum (List.map .undecodable results)
+                }
+            )
 
 
-decryptServerEventBatch : Symmetric.Key -> ServerEventRecord -> ConcurrentTask Error (List Event.Envelope)
+{-| Decrypt one pulled record (an encrypted batch of envelopes). A record
+that fails to decrypt, or an envelope that fails to decode, is counted and
+skipped rather than failing the pull — the cursor must keep advancing past
+corrupt or malicious records.
+-}
+decryptServerEventBatch : Symmetric.Key -> ServerEventRecord -> ConcurrentTask Error { events : List Event.Envelope, undecodable : Int }
 decryptServerEventBatch key record =
     case Decode.decodeString Symmetric.encryptedDataDecoder record.eventData of
         Ok encrypted ->
             Compression.decryptJson key
-                (Decode.list Event.envelopeDecoder)
+                (Decode.list Decode.value)
                 { ciphertext = encrypted.ciphertext
                 , iv = encrypted.iv
                 , compressed = record.compressed
                 }
-                |> ConcurrentTask.mapError CryptoError
+                |> ConcurrentTask.map
+                    (\values ->
+                        let
+                            decoded : List (Result Decode.Error Event.Envelope)
+                            decoded =
+                                List.map (Decode.decodeValue Event.envelopeDecoder) values
 
-        Err err ->
-            ConcurrentTask.fail (CryptoError (WebCrypto.DecryptionFailed ("Invalid eventData JSON: " ++ Decode.errorToString err)))
+                            events : List Event.Envelope
+                            events =
+                                List.filterMap Result.toMaybe decoded
+                        in
+                        { events = events
+                        , undecodable = List.length decoded - List.length events
+                        }
+                    )
+                |> ConcurrentTask.onError (\_ -> ConcurrentTask.succeed { events = [], undecodable = 1 })
+
+        Err _ ->
+            ConcurrentTask.succeed { events = [], undecodable = 1 }
 
 
 pullPageDecoder : Decode.Decoder { events : List ServerEventRecord, hasMore : Bool }
