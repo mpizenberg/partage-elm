@@ -313,7 +313,7 @@ Each entry has metadata that supports versioning:
 
 | Field | Description |
 |---|---|
-| `id` | Unique UUID v7 for this version. |
+| `id` | Unique UUID v4 for this version. |
 | `rootId` | UUID of the original entry in the chain. |
 | `previousVersionId` | UUID of the prior version (if this is a modification). |
 | `depth` | Chain depth (0 for the original, incremented for each modification). |
@@ -323,7 +323,7 @@ Each entry has metadata that supports versioning:
 
 - Entries can be **modified** by creating a new entry linked to the original.
 - The modification records: who modified it, when, and the full new data.
-- **Current version rule:** For a given `rootId`, the current version is the **non-deleted version with the latest UUID v7** (which encodes creation timestamp). This makes concurrent modifications resolve deterministically via last-writer-wins. The `previousVersionId` is used for audit trail display and diff computation, not for determining the current version.
+- **Current version rule:** For a given `rootId`, the current version is the version with the **greatest `depth`** (the longest modification chain); equal depths are broken by the **greater version `id`** (string comparison). Deliberately **not** last-writer-wins: comparing wall-clock timestamps would let the device with the fastest clock win every concurrent-edit conflict, whereas depth is intrinsic to the chain and clock-independent. Every client computes the same winner from the same set of versions. The equal-depth tie-break is arbitrary but deterministic. All versions are retained; `previousVersionId` supports audit trail display and diff computation.
 
 ### 5.8 Entry Deletion & Restoration
 
@@ -787,7 +787,7 @@ The following concurrent event pairs are **order-dependent** (their outcome depe
 | Category | Conflicting pair | Resolution |
 |---|---|---|
 | **Member lifecycle** | `retire`/`unretire` interleaving (same member) | Processed in sort order; each is validated against the member's state at that point. |
-| **Entry versioning** | Concurrent modifications (same `rootId`) | Last-writer-wins by timestamp. The current version is the non-deleted version with the latest timestamp (see [5.7](#57-entry-versioning)). |
+| **Entry versioning** | Concurrent modifications (same `rootId`) | Deepest-chain-wins. The current version is the version with the greatest `depth`; equal depths are broken by the greater version `id` (see [5.7](#57-entry-versioning)). |
 | **Entry versioning** | Modify + delete (same `rootId`) | Last-writer-wins. The event with the later timestamp determines whether the entry is modified or deleted. |
 | **Last-writer-wins** | Concurrent renames (same member) | Latest timestamp determines the current name. |
 | **Last-writer-wins** | Concurrent metadata updates (same member or group) | Latest timestamp determines the current value. |
