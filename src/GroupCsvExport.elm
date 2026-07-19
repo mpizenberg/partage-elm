@@ -112,7 +112,7 @@ entryRow state entry =
 
                 Transfer data ->
                     { kind = "transfer"
-                    , description = ""
+                    , description = data.description |> Maybe.withDefault ""
                     , amount = formatAmount data.currency data.amount
                     , currency = Currency.currencyCode data.currency
                     , defaultAmount = maybeFormatDefault state.groupMeta.defaultCurrency data.defaultCurrencyAmount

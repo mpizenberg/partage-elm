@@ -121,7 +121,8 @@ type alias ExpenseData =
 {-| Data for a direct money transfer between two members.
 -}
 type alias TransferData =
-    { amount : Int
+    { description : Maybe String
+    , amount : Int
     , currency : Currency
     , defaultCurrencyAmount : Maybe Int
     , date : Date
@@ -412,7 +413,8 @@ encodeTransferData data =
          , ( "to", Encode.string data.to )
          ]
             ++ List.filterMap identity
-                [ Maybe.map (\v -> ( "dca", Encode.int v )) data.defaultCurrencyAmount
+                [ Maybe.map (\v -> ( "desc", Encode.string v )) data.description
+                , Maybe.map (\v -> ( "dca", Encode.int v )) data.defaultCurrencyAmount
                 , Maybe.map (\v -> ( "nt", Encode.string v )) data.notes
                 ]
         )
@@ -422,14 +424,15 @@ encodeTransferData data =
 -}
 transferDataDecoder : Decode.Decoder TransferData
 transferDataDecoder =
-    Decode.map7 TransferData
-        (Decode.field "a" Decode.int)
-        (Decode.field "cur" Currency.currencyDecoder)
-        (Decode.maybe (Decode.field "dca" Decode.int))
-        (Decode.field "dt" Date.dateDecoder)
-        (Decode.field "f" Decode.string)
-        (Decode.field "to" Decode.string)
-        (Decode.maybe (Decode.field "nt" Decode.string))
+    Decode.succeed TransferData
+        |> andMap (Decode.maybe (Decode.field "desc" Decode.string))
+        |> andMap (Decode.field "a" Decode.int)
+        |> andMap (Decode.field "cur" Currency.currencyDecoder)
+        |> andMap (Decode.maybe (Decode.field "dca" Decode.int))
+        |> andMap (Decode.field "dt" Date.dateDecoder)
+        |> andMap (Decode.field "f" Decode.string)
+        |> andMap (Decode.field "to" Decode.string)
+        |> andMap (Decode.maybe (Decode.field "nt" Decode.string))
 
 
 {-| Encode IncomeData as a JSON object, omitting Nothing fields.

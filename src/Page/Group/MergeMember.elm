@@ -542,8 +542,8 @@ entryRow i18n entry isSelfTransferDelete =
                 Entry.Expense data ->
                     ( FeatherIcons.shoppingBag, data.description )
 
-                Entry.Transfer _ ->
-                    ( FeatherIcons.arrowRight, T.entryTransfer i18n )
+                Entry.Transfer data ->
+                    ( FeatherIcons.arrowRight, Maybe.withDefault (T.entryTransfer i18n) data.description )
 
                 Entry.Income _ ->
                     ( FeatherIcons.gift, T.entryIncome i18n )

@@ -250,6 +250,7 @@ matchesSearch i18n resolveName query entry =
 
             Entry.Transfer data ->
                 contains (T.entryTransfer i18n)
+                    || Maybe.withDefault False (Maybe.map contains data.description)
                     || Maybe.withDefault False (Maybe.map contains data.notes)
                     || matchesMemberName data.from
                     || matchesMemberName data.to
@@ -834,13 +835,13 @@ expenseCardHeader i18n resolveName data =
 transferCardHeader : I18n -> (Member.Id -> String) -> Entry.TransferData -> Ui.Element msg
 transferCardHeader i18n resolveName data =
     Ui.column [ Ui.width Ui.fill ]
-        [ -- Top row: "Transfer" + amount
+        [ -- Top row: description (or "Transfer") + amount
           Ui.row [ Ui.width Ui.fill ]
             [ Ui.el
                 [ Ui.Font.weight Theme.fontWeight.semibold
                 , Ui.Font.size Theme.font.md
                 ]
-                (Ui.text (T.entryTransfer i18n))
+                (Ui.text (Maybe.withDefault (T.entryTransfer i18n) data.description))
             , Ui.el
                 [ Ui.alignRight
                 , Ui.Font.weight Theme.fontWeight.bold
@@ -1094,7 +1095,8 @@ transferContent : I18n -> Currency.Currency -> (Member.Id -> String) -> Entry.Tr
 transferContent i18n groupDefaultCurrency resolveName data =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         (List.concat
-            [ [ detailRow (T.entryDetailDate i18n) (Date.toString data.date)
+            [ optionalRow (T.newEntryDescriptionLabel i18n) data.description
+            , [ detailRow (T.entryDetailDate i18n) (Date.toString data.date)
               , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount data.currency)
               ]
             , defaultCurrencyAmountRow i18n groupDefaultCurrency data.defaultCurrencyAmount

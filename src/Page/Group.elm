@@ -441,7 +441,8 @@ update config msg model =
                     let
                         transferData : Entry.TransferData
                         transferData =
-                            { amount = payData.amountCents
+                            { description = Nothing
+                            , amount = payData.amountCents
                             , currency = loaded.summary.defaultCurrency
                             , defaultCurrencyAmount = Nothing
                             , date = Date.posixToDate config.timeZone config.currentTime
@@ -650,7 +651,8 @@ update config msg model =
                         output : NewEntryShared.Output
                         output =
                             NewEntryShared.TransferOutput
-                                { amountCents = tx.amount
+                                { description = Nothing
+                                , amountCents = tx.amount
                                 , currency = loaded.summary.defaultCurrency
                                 , defaultCurrencyAmount = Nothing
                                 , fromMemberId = tx.from

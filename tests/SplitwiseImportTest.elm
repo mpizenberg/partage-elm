@@ -182,6 +182,7 @@ reconstructStructureTests =
                             [ \d -> Expect.equal "Matthieu Pizenberg" d.from
                             , \d -> Expect.equal "Simon Prieul" d.to
                             , \d -> Expect.equal 5419 d.amount
+                            , \d -> Expect.equal (Just "Matthieu P. paid Simon P.") d.description
                             ]
                             data
 

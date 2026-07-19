@@ -155,6 +155,7 @@
   "newEntryBeneficiariesHint": "Select the members who benefit from this expense.",
   "newEntryPartsLabel": "Shares",
   "newEntryTransferLabel": "Transfer between",
+  "newEntryTransferDescriptionPlaceholder": "e.g. Reimbursement for the trip",
   "newEntrySelectBoth": "Please select both a sender and a receiver.",
   "newEntryCurrencyLabel": "Currency",
   "newEntryDefaultCurrencyAmountLabel": "Amount in {currency}",

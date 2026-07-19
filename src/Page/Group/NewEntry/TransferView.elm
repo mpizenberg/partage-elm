@@ -21,13 +21,26 @@ import Ui.Input
 
 transferFields : I18n -> List Member.ChainState -> ModelData -> List (Ui.Element Msg)
 transferFields i18n activeMembers data =
-    [ Shared.amountCurrencyField i18n data
+    [ descriptionField i18n data
+    , Shared.amountCurrencyField i18n data
     , Shared.defaultCurrencyAmountField i18n data
     , Shared.dateField i18n data
     , transferMembersField i18n activeMembers data
     , Shared.notesField i18n data
     , transferSummary i18n activeMembers data
     ]
+
+
+descriptionField : I18n -> ModelData -> Ui.Element Msg
+descriptionField i18n data =
+    Shared.formField { label = T.newEntryDescriptionLabel i18n, required = False }
+        [ Ui.Input.text [ Ui.width Ui.fill ]
+            { onChange = InputDescription
+            , text = Field.toRawString (Form.get .description data.form)
+            , placeholder = Just (T.newEntryTransferDescriptionPlaceholder i18n)
+            , label = Ui.Input.labelHidden (T.newEntryDescriptionLabel i18n)
+            }
+        ]
 
 
 type TransferRole

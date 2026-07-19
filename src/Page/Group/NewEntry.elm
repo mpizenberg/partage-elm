@@ -190,6 +190,7 @@ initFromTransferData config editing data =
     Model
         { form =
             NewEntry.form config.language data.currency
+                |> NewEntry.initDescription (Maybe.withDefault "" data.description)
                 |> NewEntry.initAmount data.amount
                 |> NewEntry.initDate data.date
         , submitted = False
@@ -665,11 +666,24 @@ submitTransfer data =
 
                                 else
                                     Just (String.trim data.notes)
+
+                            -- Transfers bypass Form.validate (the description
+                            -- field type is non-blank, i.e. required), so the
+                            -- optional description is read from the raw input.
+                            description : Maybe String
+                            description =
+                                case String.trim (Field.toRawString (Form.get .description data.form)) of
+                                    "" ->
+                                        Nothing
+
+                                    trimmed ->
+                                        Just trimmed
                         in
                         ( Model { data | submitted = False }
                         , Just
                             (TransferOutput
-                                { amountCents = amountCents
+                                { description = description
+                                , amountCents = amountCents
                                 , currency = data.currency
                                 , defaultCurrencyAmount = defaultCurrencyAmount
                                 , fromMemberId = fromId
@@ -914,7 +928,8 @@ outputToKind output =
 
         TransferOutput data ->
             Entry.Transfer
-                { amount = data.amountCents
+                { description = data.description
+                , amount = data.amountCents
                 , currency = data.currency
                 , defaultCurrencyAmount = data.defaultCurrencyAmount
                 , date = data.date

@@ -769,7 +769,8 @@ entryDetailRows i18n groupCurrency resolveName entry =
 
         Transfer data ->
             List.concat
-                [ [ detailRow (T.entryDetailDate i18n) (Date.toString data.date)
+                [ optionalRow (T.newEntryDescriptionLabel i18n) data.description
+                , [ detailRow (T.entryDetailDate i18n) (Date.toString data.date)
                   , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount data.currency)
                   ]
                 , defaultCurrencyAmountRow i18n groupCurrency data.defaultCurrencyAmount
@@ -841,21 +842,22 @@ expenseDiffRows i18n groupCurrency resolveName old new =
         , [ payerDiffOrDetailRow i18n resolveName old.payers new.payers ]
         , [ beneficiaryDiffOrDetailRow i18n resolveName old.beneficiaries new.beneficiaries ]
         , categoryDiffRow i18n old.category new.category
-        , notesDiffRow i18n old.notes new.notes
+        , optionalDiffRow i18n (T.entryDetailNotes i18n) old.notes new.notes
         ]
 
 
 transferDiffRows : I18n -> Currency -> (Member.Id -> String) -> Entry.TransferData -> Entry.TransferData -> List (Ui.Element msg)
 transferDiffRows i18n groupCurrency resolveName old new =
     List.concat
-        [ [ maybeDiffOrDetailRow (T.entryDetailDate i18n) (Date.toString old.date) (Date.toString new.date) ]
+        [ optionalDiffRow i18n (T.newEntryDescriptionLabel i18n) old.description new.description
+        , [ maybeDiffOrDetailRow (T.entryDetailDate i18n) (Date.toString old.date) (Date.toString new.date) ]
         , amountCurrencyDiffRows i18n
             groupCurrency
             { oldAmount = old.amount, oldCurrency = old.currency, oldDefaultCurrencyAmount = old.defaultCurrencyAmount }
             { newAmount = new.amount, newCurrency = new.currency, newDefaultCurrencyAmount = new.defaultCurrencyAmount }
         , [ maybeDiffOrDetailRow (T.entryDetailFrom i18n) (resolveName old.from) (resolveName new.from) ]
         , [ maybeDiffOrDetailRow (T.entryDetailTo i18n) (resolveName old.to) (resolveName new.to) ]
-        , notesDiffRow i18n old.notes new.notes
+        , optionalDiffRow i18n (T.entryDetailNotes i18n) old.notes new.notes
         ]
 
 
@@ -870,7 +872,7 @@ incomeDiffRows i18n groupCurrency resolveName old new =
             { newAmount = new.amount, newCurrency = new.currency, newDefaultCurrencyAmount = new.defaultCurrencyAmount }
         , [ maybeDiffOrDetailRow (T.entryDetailReceivedBy i18n) (resolveName old.receivedBy) (resolveName new.receivedBy) ]
         , [ beneficiaryDiffOrDetailRow i18n resolveName old.beneficiaries new.beneficiaries ]
-        , notesDiffRow i18n old.notes new.notes
+        , optionalDiffRow i18n (T.entryDetailNotes i18n) old.notes new.notes
         ]
 
 
@@ -1031,24 +1033,20 @@ categoryDiffRow i18n oldCat newCat =
         [ diffRow (T.entryDetailCategory i18n) oldLabel newLabel ]
 
 
-notesDiffRow : I18n -> Maybe String -> Maybe String -> List (Ui.Element msg)
-notesDiffRow i18n oldNotes newNotes =
-    if oldNotes == newNotes then
-        optionalRow (T.entryDetailNotes i18n) newNotes
+optionalDiffRow : I18n -> String -> Maybe String -> Maybe String -> List (Ui.Element msg)
+optionalDiffRow i18n label oldValue newValue =
+    if oldValue == newValue then
+        optionalRow label newValue
 
     else
         let
-            label : String
-            label =
-                T.entryDetailNotes i18n
-
             oldText : String
             oldText =
-                Maybe.withDefault (T.activityDetailNoValue i18n) oldNotes
+                Maybe.withDefault (T.activityDetailNoValue i18n) oldValue
 
             newText : String
             newText =
-                Maybe.withDefault (T.activityDetailRemoved i18n) newNotes
+                Maybe.withDefault (T.activityDetailRemoved i18n) newValue
         in
         [ diffRow label oldText newText ]
 

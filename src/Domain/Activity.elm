@@ -358,7 +358,12 @@ transferChanges maybePrev newData =
             case prev.kind of
                 Transfer oldData ->
                     List.filterMap identity
-                        [ if oldData.amount /= newData.amount || oldData.currency /= newData.currency then
+                        [ if oldData.description /= newData.description then
+                            Just "description"
+
+                          else
+                            Nothing
+                        , if oldData.amount /= newData.amount || oldData.currency /= newData.currency then
                             Just "amount"
 
                           else

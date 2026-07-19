@@ -109,7 +109,8 @@ type Output
         , date : Date
         }
     | TransferOutput
-        { amountCents : Int
+        { description : Maybe String
+        , amountCents : Int
         , currency : Currency
         , defaultCurrencyAmount : Maybe Int
         , fromMemberId : Member.Id

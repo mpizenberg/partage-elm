@@ -60,7 +60,8 @@ defaultExpenseData =
 
 defaultTransferData : Entry.TransferData
 defaultTransferData =
-    { amount = 500
+    { description = Nothing
+    , amount = 500
     , currency = EUR
     , defaultCurrencyAmount = Nothing
     , date = { year = 2025, month = 1, day = 1 }

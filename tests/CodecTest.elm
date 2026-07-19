@@ -146,7 +146,8 @@ entryMetadataFuzzer =
 
 transferDataFuzzer : Fuzzer Entry.TransferData
 transferDataFuzzer =
-    Fuzz.map7 Entry.TransferData
+    Fuzz.map8 Entry.TransferData
+        (Fuzz.maybe Fuzz.string)
         Fuzz.int
         currencyFuzzer
         (Fuzz.maybe Fuzz.int)

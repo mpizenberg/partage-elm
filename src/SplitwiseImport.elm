@@ -326,7 +326,13 @@ reconstruct config row =
             ( [ ( fromId, amt ) ], [ ( toId, _ ) ] ) ->
                 Just
                     (Transfer
-                        { amount = amt
+                        { description =
+                            if String.isEmpty row.description then
+                                Nothing
+
+                            else
+                                Just row.description
+                        , amount = amt
                         , currency = row.currency
                         , defaultCurrencyAmount = dcaFor amt
                         , date = row.date

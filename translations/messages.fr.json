@@ -155,6 +155,7 @@
   "newEntryBeneficiariesHint": "Sélectionne les membres concernés par cette dépense.",
   "newEntryPartsLabel": "Parts",
   "newEntryTransferLabel": "Transfert entre",
+  "newEntryTransferDescriptionPlaceholder": "ex. Remboursement du séjour",
   "newEntrySelectBoth": "Sélectionne un émetteur et un destinataire.",
   "newEntryCurrencyLabel": "Devise",
   "newEntryDefaultCurrencyAmountLabel": "Montant en {currency}",
