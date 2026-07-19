@@ -30,6 +30,7 @@ expenseFields i18n activeMembers data =
     , beneficiariesField i18n activeMembers data
     , categoryField i18n data
     , Shared.notesField i18n data
+    , Shared.attachmentsField i18n data
     ]
 
 

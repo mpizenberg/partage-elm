@@ -273,7 +273,7 @@ groupInfoSection i18n isMember editHref onEditGroupMetadata state =
 
                 else
                     Ui.column [ Ui.spacing Theme.spacing.sm ]
-                        (List.map (linkItem FeatherIcons.externalLink) meta.links)
+                        (List.map (UI.Components.linkItem FeatherIcons.externalLink) meta.links)
         in
         Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
             [ Maybe.map viewSubtitle meta.subtitle
@@ -303,64 +303,6 @@ groupInfoSection i18n isMember editHref onEditGroupMetadata state =
               else
                 Ui.none
             ]
-
-
-linkItem : FeatherIcons.Icon -> { label : String, url : String } -> Ui.Element msg
-linkItem icon link =
-    let
-        displayLabel : String
-        displayLabel =
-            if String.isEmpty link.label then
-                shortenUrl link.url
-
-            else if String.length link.label > 40 then
-                String.left 37 link.label ++ "..."
-
-            else
-                link.label
-
-        displayUrl : String
-        displayUrl =
-            shortenUrl link.url
-    in
-    Ui.row
-        [ Ui.linkNewTab link.url
-        , Ui.spacing Theme.spacing.sm
-        , Ui.contentCenterY
-        , Ui.pointer
-        , Ui.clipWithEllipsis
-        , Ui.Font.size Theme.font.sm
-        ]
-        [ Ui.el [ Ui.Font.color Theme.primary.text, Ui.width Ui.shrink ] (UI.Components.featherIcon 14 icon)
-        , Ui.el
-            [ Ui.Font.color Theme.primary.text
-            , Ui.Font.underline
-            , Ui.Font.noWrap
-            , Ui.width Ui.shrink
-            ]
-            (Ui.text displayLabel)
-        , Ui.el
-            [ Ui.Font.color Theme.base.textSubtle
-            , Ui.Font.noWrap
-
-            -- , Ui.clipWithEllipsis
-            ]
-            (Ui.text displayUrl)
-        ]
-
-
-shortenUrl : String -> String
-shortenUrl url =
-    url
-        |> String.replace "https://" ""
-        |> String.replace "http://" ""
-        |> (\s ->
-                if String.endsWith "/" s then
-                    String.dropRight 1 s
-
-                else
-                    s
-           )
 
 
 

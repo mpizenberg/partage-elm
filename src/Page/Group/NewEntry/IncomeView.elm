@@ -28,6 +28,7 @@ incomeFields i18n activeMembers data =
     , receiverField i18n activeMembers data
     , beneficiariesField i18n activeMembers data
     , Shared.notesField i18n data
+    , Shared.attachmentsField i18n data
     ]
 
 

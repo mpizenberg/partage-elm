@@ -10,6 +10,7 @@ import Field
 import Form
 import Form.NewEntry as NewEntry
 import Format
+import List.Extra
 import Page.Group.NewEntry.ExpenseView as ExpenseView
 import Page.Group.NewEntry.IncomeView as IncomeView
 import Page.Group.NewEntry.Shared as Shared
@@ -58,6 +59,7 @@ init config =
         , receiverMemberId = Just config.currentUserRootId
         , category = Nothing
         , notes = ""
+        , attachments = []
         , currency = config.defaultCurrency
         , groupDefaultCurrency = config.defaultCurrency
         , defaultCurrencyAmount = ""
@@ -172,6 +174,7 @@ initFromExpenseData config editing data =
         , receiverMemberId = Nothing
         , category = data.category
         , notes = Maybe.withDefault "" data.notes
+        , attachments = data.attachments
         , currency = data.currency
         , groupDefaultCurrency = config.defaultCurrency
         , defaultCurrencyAmount =
@@ -206,6 +209,7 @@ initFromTransferData config editing data =
         , receiverMemberId = Nothing
         , category = Nothing
         , notes = Maybe.withDefault "" data.notes
+        , attachments = data.attachments
         , currency = data.currency
         , groupDefaultCurrency = config.defaultCurrency
         , defaultCurrencyAmount =
@@ -291,6 +295,7 @@ initFromIncomeData config editing data =
         , receiverMemberId = Just data.receivedBy
         , category = Nothing
         , notes = Maybe.withDefault "" data.notes
+        , attachments = data.attachments
         , currency = data.currency
         , groupDefaultCurrency = config.defaultCurrency
         , defaultCurrencyAmount =
@@ -324,6 +329,26 @@ update language msg (Model data) =
 
         InputNotes s ->
             ( Model { data | notes = s }, Shared.NoEffect )
+
+        AddAttachment ->
+            ( Model { data | attachments = data.attachments ++ [ { label = "", url = "" } ] }
+            , Shared.NoEffect
+            )
+
+        RemoveAttachment index ->
+            ( Model { data | attachments = List.Extra.removeAt index data.attachments }
+            , Shared.NoEffect
+            )
+
+        InputAttachmentLabel index s ->
+            ( Model { data | attachments = List.Extra.updateAt index (\a -> { a | label = s }) data.attachments }
+            , Shared.NoEffect
+            )
+
+        InputAttachmentUrl index s ->
+            ( Model { data | attachments = List.Extra.updateAt index (\a -> { a | url = s }) data.attachments }
+            , Shared.NoEffect
+            )
 
         SelectEntryKind kind ->
             ( Model { data | kind = kind }, Shared.NoEffect )
@@ -588,8 +613,8 @@ submitExpense data =
                         else
                             Ok Nothing
                 in
-                case ( splitResult, payersResult, defaultCurrencyAmountResult ) of
-                    ( Ok splitData, Ok payers, Ok defaultCurrencyAmount ) ->
+                case ( splitResult, payersResult, Result.map2 Tuple.pair defaultCurrencyAmountResult (Shared.cleanAttachments data.attachments) ) of
+                    ( Ok splitData, Ok payers, Ok ( defaultCurrencyAmount, attachments ) ) ->
                         let
                             notes : Maybe String
                             notes =
@@ -611,6 +636,7 @@ submitExpense data =
                                 , split = splitData
                                 , category = data.category
                                 , date = formOutput.date
+                                , attachments = attachments
                                 }
                             )
                         )
@@ -656,8 +682,8 @@ submitTransfer data =
                         else
                             Ok Nothing
                 in
-                case defaultCurrencyAmountResult of
-                    Ok defaultCurrencyAmount ->
+                case Result.map2 Tuple.pair defaultCurrencyAmountResult (Shared.cleanAttachments data.attachments) of
+                    Ok ( defaultCurrencyAmount, attachments ) ->
                         let
                             notes : Maybe String
                             notes =
@@ -690,6 +716,7 @@ submitTransfer data =
                                 , toMemberId = toId
                                 , notes = notes
                                 , date = date
+                                , attachments = attachments
                                 }
                             )
                         )
@@ -765,8 +792,8 @@ submitIncome data =
                         else
                             Ok Nothing
                 in
-                case ( splitResult, data.receiverMemberId, defaultCurrencyAmountResult ) of
-                    ( Ok splitData, Just receiverId, Ok defaultCurrencyAmount ) ->
+                case ( splitResult, data.receiverMemberId, Result.map2 Tuple.pair defaultCurrencyAmountResult (Shared.cleanAttachments data.attachments) ) of
+                    ( Ok splitData, Just receiverId, Ok ( defaultCurrencyAmount, attachments ) ) ->
                         let
                             notes : Maybe String
                             notes =
@@ -787,6 +814,7 @@ submitIncome data =
                                 , receivedBy = receiverId
                                 , split = splitData
                                 , date = formOutput.date
+                                , attachments = attachments
                                 }
                             )
                         )
@@ -924,6 +952,7 @@ outputToKind output =
                 , category = data.category
                 , location = Nothing
                 , notes = data.notes
+                , attachments = data.attachments
                 }
 
         TransferOutput data ->
@@ -936,6 +965,7 @@ outputToKind output =
                 , from = data.fromMemberId
                 , to = data.toMemberId
                 , notes = data.notes
+                , attachments = data.attachments
                 }
 
         IncomeOutput data ->
@@ -958,4 +988,5 @@ outputToKind output =
                                 (\b -> Entry.ExactBeneficiary { memberId = b.memberId, amount = b.amount })
                                 items
                 , notes = data.notes
+                , attachments = data.attachments
                 }

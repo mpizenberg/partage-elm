@@ -607,6 +607,9 @@ translateField i18n field =
         "notes" ->
             T.changeFieldNotes i18n
 
+        "attachments" ->
+            T.changeFieldAttachments i18n
+
         "from" ->
             T.changeFieldFrom i18n
 
@@ -765,6 +768,7 @@ entryDetailRows i18n groupCurrency resolveName entry =
                   ]
                 , categoryRow i18n data.category
                 , optionalRow (T.entryDetailNotes i18n) data.notes
+                , attachmentRows i18n data.attachments
                 ]
 
         Transfer data ->
@@ -778,6 +782,7 @@ entryDetailRows i18n groupCurrency resolveName entry =
                   , detailRow (T.entryDetailTo i18n) (resolveName data.to)
                   ]
                 , optionalRow (T.entryDetailNotes i18n) data.notes
+                , attachmentRows i18n data.attachments
                 ]
 
         Income data ->
@@ -791,6 +796,7 @@ entryDetailRows i18n groupCurrency resolveName entry =
                   , detailRow (T.entryDetailSplitAmong i18n) (beneficiaryNames resolveName data.beneficiaries)
                   ]
                 , optionalRow (T.entryDetailNotes i18n) data.notes
+                , attachmentRows i18n data.attachments
                 ]
 
 
@@ -843,6 +849,7 @@ expenseDiffRows i18n groupCurrency resolveName old new =
         , [ beneficiaryDiffOrDetailRow i18n resolveName old.beneficiaries new.beneficiaries ]
         , categoryDiffRow i18n old.category new.category
         , optionalDiffRow i18n (T.entryDetailNotes i18n) old.notes new.notes
+        , attachmentsDiffRow i18n old.attachments new.attachments
         ]
 
 
@@ -858,6 +865,7 @@ transferDiffRows i18n groupCurrency resolveName old new =
         , [ maybeDiffOrDetailRow (T.entryDetailFrom i18n) (resolveName old.from) (resolveName new.from) ]
         , [ maybeDiffOrDetailRow (T.entryDetailTo i18n) (resolveName old.to) (resolveName new.to) ]
         , optionalDiffRow i18n (T.entryDetailNotes i18n) old.notes new.notes
+        , attachmentsDiffRow i18n old.attachments new.attachments
         ]
 
 
@@ -873,6 +881,7 @@ incomeDiffRows i18n groupCurrency resolveName old new =
         , [ maybeDiffOrDetailRow (T.entryDetailReceivedBy i18n) (resolveName old.receivedBy) (resolveName new.receivedBy) ]
         , [ beneficiaryDiffOrDetailRow i18n resolveName old.beneficiaries new.beneficiaries ]
         , optionalDiffRow i18n (T.entryDetailNotes i18n) old.notes new.notes
+        , attachmentsDiffRow i18n old.attachments new.attachments
         ]
 
 
@@ -1122,6 +1131,32 @@ optionalRow label maybeValue =
 
         Nothing ->
             []
+
+
+attachmentRows : I18n -> List { label : String, url : String } -> List (Ui.Element msg)
+attachmentRows i18n attachments =
+    if List.isEmpty attachments then
+        []
+
+    else
+        [ Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+            (Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.base.textSubtle
+                ]
+                (Ui.text (T.newEntryAttachmentsLabel i18n))
+                :: List.map (UI.Components.linkItem FeatherIcons.paperclip) attachments
+            )
+        ]
+
+
+attachmentsDiffRow : I18n -> List { label : String, url : String } -> List { label : String, url : String } -> List (Ui.Element msg)
+attachmentsDiffRow i18n old new =
+    if old == new then
+        attachmentRows i18n new
+
+    else
+        [ diffRow (T.newEntryAttachmentsLabel i18n) (linksToString old) (linksToString new) ]
 
 
 

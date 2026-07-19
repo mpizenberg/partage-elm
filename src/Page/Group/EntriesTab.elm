@@ -1087,6 +1087,7 @@ expenseContent i18n groupDefaultCurrency resolveName data =
               ]
             , detailCategoryRow i18n data.category
             , optionalRow (T.entryDetailNotes i18n) data.notes
+            , attachmentRows i18n data.attachments
             ]
         )
 
@@ -1104,6 +1105,7 @@ transferContent i18n groupDefaultCurrency resolveName data =
               , detailRow (T.entryDetailTo i18n) (resolveName data.to)
               ]
             , optionalRow (T.entryDetailNotes i18n) data.notes
+            , attachmentRows i18n data.attachments
             ]
         )
 
@@ -1121,6 +1123,7 @@ incomeContent i18n groupDefaultCurrency resolveName data =
               , beneficiariesSection i18n data.currency resolveName data.beneficiaries
               ]
             , optionalRow (T.entryDetailNotes i18n) data.notes
+            , attachmentRows i18n data.attachments
             ]
         )
 
@@ -1164,6 +1167,23 @@ optionalRow label maybeValue =
 
         Nothing ->
             []
+
+
+attachmentRows : I18n -> List { label : String, url : String } -> List (Ui.Element msg)
+attachmentRows i18n attachments =
+    if List.isEmpty attachments then
+        []
+
+    else
+        [ Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+            (Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.base.textSubtle
+                ]
+                (Ui.text (T.newEntryAttachmentsLabel i18n))
+                :: List.map (UI.Components.linkItem FeatherIcons.paperclip) attachments
+            )
+        ]
 
 
 payerNames : (Member.Id -> String) -> List Entry.Payer -> String

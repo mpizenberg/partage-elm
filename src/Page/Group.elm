@@ -449,6 +449,7 @@ update config msg model =
                             , from = currentUserRootId model loaded |> Maybe.withDefault ""
                             , to = payData.toMemberId
                             , notes = Nothing
+                            , attachments = []
                             }
                     in
                     ( { model | pendingEntry = Just (PendingTransfer transferData) }, Cmd.none, [ NavigateTo (GroupRoute groupId NewEntry) ] )
@@ -659,6 +660,7 @@ update config msg model =
                                 , toMemberId = tx.to
                                 , notes = Nothing
                                 , date = Date.posixToDate config.timeZone config.currentTime
+                                , attachments = []
                                 }
                     in
                     runSubmit (OnEntrySaved loaded.summary.id) config model (\ctx -> GroupOps.newEntry ctx loaded output)

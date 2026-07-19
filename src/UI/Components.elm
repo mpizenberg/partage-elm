@@ -5,6 +5,7 @@ module UI.Components exposing
     , iconButton
     , spaLinkAttrs
     , chip, toggle, expandTrigger, toggleMemberBtn
+    , linkItem
     , filterToggleButton, filterSection, filterSummaryChip, clearAllFiltersButton
     , avatar, AvatarColor(..)
     , fab
@@ -32,6 +33,7 @@ module UI.Components exposing
 # Interactive
 
 @docs chip, toggle, expandTrigger, toggleMemberBtn
+@docs linkItem
 @docs filterToggleButton, filterSection, filterSummaryChip, clearAllFiltersButton
 
 
@@ -494,6 +496,69 @@ avatarIcon color icon =
         , Ui.contentCenterY
         ]
         (featherIcon 20 icon)
+
+
+
+-- LINK ITEM
+
+
+{-| Clickable external-link row: icon, underlined label (falling back to the
+shortened URL when the label is empty), and the shortened URL alongside.
+-}
+linkItem : FeatherIcons.Icon -> { label : String, url : String } -> Ui.Element msg
+linkItem icon link =
+    let
+        displayLabel : String
+        displayLabel =
+            if String.isEmpty link.label then
+                shortenUrl link.url
+
+            else if String.length link.label > 40 then
+                String.left 37 link.label ++ "..."
+
+            else
+                link.label
+
+        displayUrl : String
+        displayUrl =
+            shortenUrl link.url
+    in
+    Ui.row
+        [ Ui.linkNewTab link.url
+        , Ui.spacing Theme.spacing.sm
+        , Ui.contentCenterY
+        , Ui.pointer
+        , Ui.clipWithEllipsis
+        , Ui.Font.size Theme.font.sm
+        ]
+        [ Ui.el [ Ui.Font.color Theme.primary.text, Ui.width Ui.shrink ] (featherIcon 14 icon)
+        , Ui.el
+            [ Ui.Font.color Theme.primary.text
+            , Ui.Font.underline
+            , Ui.Font.noWrap
+            , Ui.width Ui.shrink
+            ]
+            (Ui.text displayLabel)
+        , Ui.el
+            [ Ui.Font.color Theme.base.textSubtle
+            , Ui.Font.noWrap
+            ]
+            (Ui.text displayUrl)
+        ]
+
+
+shortenUrl : String -> String
+shortenUrl url =
+    url
+        |> String.replace "https://" ""
+        |> String.replace "http://" ""
+        |> (\s ->
+                if String.endsWith "/" s then
+                    String.dropRight 1 s
+
+                else
+                    s
+           )
 
 
 

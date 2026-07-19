@@ -27,6 +27,7 @@ transferFields i18n activeMembers data =
     , Shared.dateField i18n data
     , transferMembersField i18n activeMembers data
     , Shared.notesField i18n data
+    , Shared.attachmentsField i18n data
     , transferSummary i18n activeMembers data
     ]
 

@@ -55,6 +55,7 @@ defaultExpenseData =
     , category = Nothing
     , location = Nothing
     , notes = Nothing
+    , attachments = []
     }
 
 
@@ -68,6 +69,7 @@ defaultTransferData =
     , from = "alice"
     , to = "bob"
     , notes = Nothing
+    , attachments = []
     }
 
 

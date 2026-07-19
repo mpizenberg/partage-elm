@@ -35,6 +35,7 @@ module Domain.Entry exposing
 
 import Domain.Currency as Currency exposing (Currency)
 import Domain.Date as Date exposing (Date)
+import Domain.Group as Group
 import Domain.Member as Member
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -115,6 +116,7 @@ type alias ExpenseData =
     , category : Maybe Category
     , location : Maybe String
     , notes : Maybe String
+    , attachments : List Group.Link
     }
 
 
@@ -129,6 +131,7 @@ type alias TransferData =
     , from : Member.Id
     , to : Member.Id
     , notes : Maybe String
+    , attachments : List Group.Link
     }
 
 
@@ -144,6 +147,7 @@ type alias IncomeData =
     , receivedBy : Member.Id
     , beneficiaries : List Beneficiary
     , notes : Maybe String
+    , attachments : List Group.Link
     }
 
 
@@ -183,6 +187,21 @@ type Category
 andMap : Decode.Decoder a -> Decode.Decoder (a -> b) -> Decode.Decoder b
 andMap =
     Decode.map2 (|>)
+
+
+encodeAttachments : List Group.Link -> Maybe ( String, Encode.Value )
+encodeAttachments attachments =
+    if List.isEmpty attachments then
+        Nothing
+
+    else
+        Just ( "att", Encode.list Group.encodeLink attachments )
+
+
+attachmentsDecoder : Decode.Decoder (List Group.Link)
+attachmentsDecoder =
+    Decode.maybe (Decode.field "att" (Decode.list Group.linkDecoder))
+        |> Decode.map (Maybe.withDefault [])
 
 
 {-| Encode a Category as a JSON string.
@@ -380,6 +399,7 @@ encodeExpenseData data =
                 , Maybe.map (\v -> ( "cat", encodeCategory v )) data.category
                 , Maybe.map (\v -> ( "loc", Encode.string v )) data.location
                 , Maybe.map (\v -> ( "nt", Encode.string v )) data.notes
+                , encodeAttachments data.attachments
                 ]
         )
 
@@ -399,6 +419,7 @@ expenseDataDecoder =
         |> andMap (Decode.maybe (Decode.field "cat" categoryDecoder))
         |> andMap (Decode.maybe (Decode.field "loc" Decode.string))
         |> andMap (Decode.maybe (Decode.field "nt" Decode.string))
+        |> andMap attachmentsDecoder
 
 
 {-| Encode TransferData as a JSON object, omitting Nothing fields.
@@ -416,6 +437,7 @@ encodeTransferData data =
                 [ Maybe.map (\v -> ( "desc", Encode.string v )) data.description
                 , Maybe.map (\v -> ( "dca", Encode.int v )) data.defaultCurrencyAmount
                 , Maybe.map (\v -> ( "nt", Encode.string v )) data.notes
+                , encodeAttachments data.attachments
                 ]
         )
 
@@ -433,6 +455,7 @@ transferDataDecoder =
         |> andMap (Decode.field "f" Decode.string)
         |> andMap (Decode.field "to" Decode.string)
         |> andMap (Decode.maybe (Decode.field "nt" Decode.string))
+        |> andMap attachmentsDecoder
 
 
 {-| Encode IncomeData as a JSON object, omitting Nothing fields.
@@ -450,6 +473,7 @@ encodeIncomeData data =
             ++ List.filterMap identity
                 [ Maybe.map (\v -> ( "dca", Encode.int v )) data.defaultCurrencyAmount
                 , Maybe.map (\v -> ( "nt", Encode.string v )) data.notes
+                , encodeAttachments data.attachments
                 ]
         )
 
@@ -467,6 +491,7 @@ incomeDataDecoder =
         |> andMap (Decode.field "rb" Decode.string)
         |> andMap (Decode.field "ben" (Decode.list beneficiaryDecoder))
         |> andMap (Decode.maybe (Decode.field "nt" Decode.string))
+        |> andMap attachmentsDecoder
 
 
 {-| Encode a Kind as a tagged JSON object with "type" and "data" fields.

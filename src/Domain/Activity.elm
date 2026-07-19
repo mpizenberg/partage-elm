@@ -339,6 +339,11 @@ expenseChanges maybePrev newData =
 
                           else
                             Nothing
+                        , if oldData.attachments /= newData.attachments then
+                            Just "attachments"
+
+                          else
+                            Nothing
                         ]
 
                 Transfer _ ->
@@ -388,6 +393,11 @@ transferChanges maybePrev newData =
 
                           else
                             Nothing
+                        , if oldData.attachments /= newData.attachments then
+                            Just "attachments"
+
+                          else
+                            Nothing
                         ]
 
                 Expense _ ->
@@ -434,6 +444,11 @@ incomeChanges maybePrev newData =
                             Nothing
                         , if oldData.notes /= newData.notes then
                             Just "notes"
+
+                          else
+                            Nothing
+                        , if oldData.attachments /= newData.attachments then
+                            Just "attachments"
 
                           else
                             Nothing

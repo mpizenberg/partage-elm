@@ -146,15 +146,16 @@ entryMetadataFuzzer =
 
 transferDataFuzzer : Fuzzer Entry.TransferData
 transferDataFuzzer =
-    Fuzz.map8 Entry.TransferData
-        (Fuzz.maybe Fuzz.string)
-        Fuzz.int
-        currencyFuzzer
-        (Fuzz.maybe Fuzz.int)
-        dateFuzzer
-        Fuzz.string
-        Fuzz.string
-        (Fuzz.maybe Fuzz.string)
+    Fuzz.constant Entry.TransferData
+        |> Fuzz.andMap (Fuzz.maybe Fuzz.string)
+        |> Fuzz.andMap Fuzz.int
+        |> Fuzz.andMap currencyFuzzer
+        |> Fuzz.andMap (Fuzz.maybe Fuzz.int)
+        |> Fuzz.andMap dateFuzzer
+        |> Fuzz.andMap Fuzz.string
+        |> Fuzz.andMap Fuzz.string
+        |> Fuzz.andMap (Fuzz.maybe Fuzz.string)
+        |> Fuzz.andMap (Fuzz.list linkFuzzer)
 
 
 expenseDataFuzzer : Fuzzer Entry.ExpenseData
@@ -170,6 +171,21 @@ expenseDataFuzzer =
         |> Fuzz.andMap (Fuzz.maybe categoryFuzzer)
         |> Fuzz.andMap (Fuzz.maybe Fuzz.string)
         |> Fuzz.andMap (Fuzz.maybe Fuzz.string)
+        |> Fuzz.andMap (Fuzz.list linkFuzzer)
+
+
+incomeDataFuzzer : Fuzzer Entry.IncomeData
+incomeDataFuzzer =
+    Fuzz.constant Entry.IncomeData
+        |> Fuzz.andMap Fuzz.string
+        |> Fuzz.andMap Fuzz.int
+        |> Fuzz.andMap currencyFuzzer
+        |> Fuzz.andMap (Fuzz.maybe Fuzz.int)
+        |> Fuzz.andMap dateFuzzer
+        |> Fuzz.andMap Fuzz.string
+        |> Fuzz.andMap (Fuzz.list beneficiaryFuzzer)
+        |> Fuzz.andMap (Fuzz.maybe Fuzz.string)
+        |> Fuzz.andMap (Fuzz.list linkFuzzer)
 
 
 kindFuzzer : Fuzzer Kind
@@ -177,6 +193,7 @@ kindFuzzer =
     Fuzz.oneOf
         [ Fuzz.map Expense expenseDataFuzzer
         , Fuzz.map Transfer transferDataFuzzer
+        , Fuzz.map Income incomeDataFuzzer
         ]
 
 

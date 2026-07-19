@@ -339,6 +339,7 @@ reconstruct config row =
                         , from = fromId
                         , to = toId
                         , notes = Nothing
+                        , attachments = []
                         }
                     )
 
@@ -434,6 +435,7 @@ makeExpense row amount payers beneficiaries dca =
         , category = mapCategory row.category
         , location = Nothing
         , notes = Nothing
+        , attachments = []
         }
 
 

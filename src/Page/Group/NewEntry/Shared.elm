@@ -9,6 +9,8 @@ module Page.Group.NewEntry.Shared exposing
     , SplitData(..)
     , SplitMode(..)
     , amountCurrencyField
+    , attachmentsField
+    , cleanAttachments
     , dateField
     , decimalInputAttr
     , defaultCurrencyAmountField
@@ -33,6 +35,7 @@ import Dict exposing (Dict)
 import Domain.Currency as Currency exposing (Currency)
 import Domain.Date exposing (Date)
 import Domain.Entry as Entry
+import Domain.Group as Group
 import Domain.Member as Member
 import FeatherIcons
 import Field
@@ -107,6 +110,7 @@ type Output
         , split : SplitData
         , category : Maybe Entry.Category
         , date : Date
+        , attachments : List Group.Link
         }
     | TransferOutput
         { description : Maybe String
@@ -117,6 +121,7 @@ type Output
         , toMemberId : Member.Id
         , notes : Maybe String
         , date : Date
+        , attachments : List Group.Link
         }
     | IncomeOutput
         { description : String
@@ -127,6 +132,7 @@ type Output
         , receivedBy : Member.Id
         , split : SplitData
         , date : Date
+        , attachments : List Group.Link
         }
 
 
@@ -145,6 +151,7 @@ type alias ModelData =
     , receiverMemberId : Maybe Member.Id
     , category : Maybe Entry.Category
     , notes : String
+    , attachments : List Group.Link
     , currency : Currency
     , groupDefaultCurrency : Currency
     , defaultCurrencyAmount : String
@@ -170,6 +177,10 @@ type Msg
     | InputDescription String
     | InputAmount String
     | InputNotes String
+    | AddAttachment
+    | RemoveAttachment Int
+    | InputAttachmentLabel Int String
+    | InputAttachmentUrl Int String
     | TogglePayer Member.Id
     | InputPayerAmount Member.Id String
     | ToggleBeneficiary Member.Id
@@ -191,6 +202,30 @@ type Msg
 
 
 -- UTILITY FUNCTIONS
+
+
+{-| Prepare raw attachment rows for submission: fully blank rows are dropped,
+the rest are trimmed and must have an http(s) URL (label stays optional).
+-}
+cleanAttachments : List Group.Link -> Result () (List Group.Link)
+cleanAttachments raw =
+    let
+        kept : List Group.Link
+        kept =
+            raw
+                |> List.map (\a -> { label = String.trim a.label, url = String.trim a.url })
+                |> List.filter (\a -> a /= { label = "", url = "" })
+    in
+    if List.all (\a -> isValidAttachmentUrl a.url) kept then
+        Ok kept
+
+    else
+        Err ()
+
+
+isValidAttachmentUrl : String -> Bool
+isValidAttachmentUrl url =
+    String.startsWith "http://" url || String.startsWith "https://" url
 
 
 parseAmountCents : Currency -> String -> Maybe Int
@@ -455,6 +490,52 @@ dateField i18n data =
             , label = Ui.Input.labelHidden (T.newEntryDateLabel i18n)
             }
         , fieldError i18n data.submitted field
+        ]
+
+
+attachmentsField : I18n -> ModelData -> Ui.Element Msg
+attachmentsField i18n data =
+    formField { label = T.newEntryAttachmentsLabel i18n, required = False }
+        (List.indexedMap (attachmentRow i18n data.submitted) data.attachments
+            ++ [ UI.Components.btnOutline [ Ui.width Ui.shrink, Ui.paddingXY Theme.spacing.md Theme.spacing.sm ]
+                    { label = T.groupSettingsAddLink i18n
+                    , icon = Just (UI.Components.featherIcon 16 FeatherIcons.plus)
+                    , onPress = AddAttachment
+                    }
+               , formHint (T.newEntryAttachmentsHint i18n)
+               ]
+        )
+
+
+attachmentRow : I18n -> Bool -> Int -> Group.Link -> Ui.Element Msg
+attachmentRow i18n submitted index attachment =
+    let
+        invalidUrl : Bool
+        invalidUrl =
+            not (isValidAttachmentUrl (String.trim attachment.url))
+                && (String.trim attachment.label /= "" || String.trim attachment.url /= "")
+    in
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill, Ui.contentCenterY ]
+            [ Ui.Input.text [ Ui.width Ui.fill ]
+                { onChange = InputAttachmentLabel index
+                , text = attachment.label
+                , placeholder = Just (T.newEntryAttachmentLabelPlaceholder i18n)
+                , label = Ui.Input.labelHidden (T.newEntryAttachmentLabelPlaceholder i18n)
+                }
+            , UI.Components.btnOutline [ Ui.width Ui.shrink, Ui.paddingXY Theme.spacing.md Theme.spacing.sm ]
+                { label = T.groupSettingsRemoveLink i18n
+                , icon = Just (UI.Components.featherIcon 14 FeatherIcons.trash2)
+                , onPress = RemoveAttachment index
+                }
+            ]
+        , Ui.Input.text [ Ui.width Ui.fill ]
+            { onChange = InputAttachmentUrl index
+            , text = attachment.url
+            , placeholder = Just (T.groupSettingsLinkUrlPlaceholder i18n)
+            , label = Ui.Input.labelHidden (T.groupSettingsLinkUrlPlaceholder i18n)
+            }
+        , errorWhen (submitted && invalidUrl) (T.fieldInvalidUrl i18n)
         ]
 
 
