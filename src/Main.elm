@@ -21,6 +21,7 @@ import Html.Attributes
 import ImportExport
 import IndexedDb as Idb
 import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
+import Infra.EventVerification as EventVerification
 import Infra.ExchangeRate as ExchangeRate
 import Infra.Identity as Identity exposing (Identity)
 import Infra.PushServer as PushServer
@@ -1367,6 +1368,19 @@ handleJoinRoute model route groupId key maybeIdentity =
                                         (Server.sync serverCtx
                                             ""
                                             { unpushedEvents = [], pullCursor = Nothing, notifyContext = Nothing }
+                                            |> ConcurrentTask.andThen
+                                                (\syncResult ->
+                                                    EventVerification.filterVerifiedEvents GroupState.empty syncResult.pullResult.events
+                                                        |> ConcurrentTask.map
+                                                            (\verified ->
+                                                                let
+                                                                    pull : Server.PullResult
+                                                                    pull =
+                                                                        syncResult.pullResult
+                                                                in
+                                                                { syncResult | pullResult = { pull | events = verified } }
+                                                            )
+                                                )
                                         )
                         in
                         ( { model

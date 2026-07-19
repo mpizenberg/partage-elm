@@ -22,6 +22,7 @@ import GroupExport
 import IndexedDb as Idb
 import Infra.Compression as Compression
 import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
+import Infra.EventVerification as EventVerification
 import Infra.Storage as Storage
 import Set
 import Time
@@ -167,7 +168,10 @@ update config msg runnerCmd =
                 Ok exportData ->
                     ( runnerCmd
                         |> Runner.andRun (config.toMsg << OnGroupImported exportData.group)
-                            (Storage.saveGroup config.db exportData.group exportData.groupKey exportData.events Nothing)
+                            (EventVerification.filterVerifiedEvents GroupState.empty exportData.events
+                                |> ConcurrentTask.andThen
+                                    (\verified -> Storage.saveGroup config.db exportData.group exportData.groupKey verified Nothing)
+                            )
                     , Nothing
                     )
 
