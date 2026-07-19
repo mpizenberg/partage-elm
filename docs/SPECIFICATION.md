@@ -138,11 +138,11 @@ Members are managed through an **immutable event log**. The current state of eac
 
 | Event | Description |
 |---|---|
-| `MemberCreated` | A new member is added (real or virtual). Records member ID, name, member type, who added them, and public key. |
+| `MemberCreated` | A new member is added (real or virtual). Records member ID, name, member type, and who added them. When a member creates themselves, the envelope also carries their signing public key (see [11.3](#113-event-signing)). |
 | `MemberRenamed` | A member's display name is changed. Records root ID, old and new names. |
 | `MemberRetired` | A member is marked as departed/inactive. Records root ID. |
 | `MemberUnretired` | A retired member is reactivated. Records root ID. |
-| `MemberLinked` | A device claims an existing member's identity (see [Device Links](#44-device-links-identity-claiming)). Records root ID, device ID, public key, and a per-device sequence number. |
+| `MemberLinked` | A device claims an existing member's identity (see [Device Links](#44-device-links-identity-claiming)). Records root ID, device ID, and a per-device sequence number; the envelope carries the device's signing public key (see [11.3](#113-event-signing)). |
 | `MemberMetadataUpdated` | A member's contact or payment information is updated. Records root ID and full metadata. |
 | `SettlementPreferencesUpdated` | A member's settlement preferences are updated (preferred payment recipients). Records member root ID and ordered list of preferred recipients. |
 
@@ -158,7 +158,7 @@ From the event log, each member has a computed state:
 | `joinedAt` | Timestamp when the member was created. |
 | `metadata` | Contact and payment information (see [4.6](#46-member-metadata-encrypted)). |
 | `memberType` | The **effective** type: real if the member was created real or at least one device currently links to it; virtual otherwise. |
-| `publicKey` | The creating device's public key (real members only; empty for virtual members). |
+| `publicKey` | The creating device's public key, taken from the envelope-level `key` field of the member's self-`MemberCreated` event (empty for virtual members). |
 
 Alongside the members, the group state maintains a **device-link map**: for each device that has emitted `MemberLinked` events, the winning link (see [4.4](#44-device-links-identity-claiming)) with its root ID, public key, and sequence number.
 
@@ -628,7 +628,8 @@ The application uses a **two-layer encryption model**:
 Every event is **cryptographically signed** by its author:
 
 - **Canonicalization:** the received envelope JSON with the `sig` field removed, other fields kept verbatim in their received order. Verifiers never re-encode the decoded payload, so events carrying fields or types from a newer app version keep valid signatures on older clients.
-- **Signing:** the author serializes the envelope (event ID, timestamp `ts`, author `by`, schema version `v`, payload `p`) to compact JSON and signs it with its ECDSA P-256 private key (SHA-256).
+- **Signing:** the author serializes the envelope (event ID, timestamp `ts`, author `by`, schema version `v`, optional author key `key`, payload `p`) to compact JSON and signs it with its ECDSA P-256 private key (SHA-256).
+- **Key introduction:** an envelope that establishes its author's signing key — the author's own `MemberCreated` or `MemberLinked` — carries that key in the envelope-level `key` field. Verifiers collect keys only from this field (plus existing group state), never from payloads, so key learning is part of the frozen envelope contract and works even when the payload is a newer type the client cannot decode.
 - **Verification:** on receipt, the signature is verified against the author's stored public key. Events with invalid signatures are rejected during state computation.
 - **Genesis exception:** `GroupCreated` events bypass signature verification (no prior state to look up public keys).
 
@@ -643,7 +644,7 @@ Clients must tolerate events authored by newer app versions:
 
 Deliberate limitations of this mechanism:
 
-- **Key-introducing events.** Verification learns public keys only from `MemberCreated` and `MemberLinked` events. If such an event is Unknown to an outdated client, that new member's *subsequent* events fail verification on that client and are dropped at pull time — and unlike Unknown events they are not persisted, so an app update alone does not recover them (the warning banner is shown throughout; recovery needs a full re-pull, i.e. re-joining via invite link or importing a fresh export). **Constraint on future releases: shipping a new key-introducing event type — or a new signature algorithm — must come with a healing mechanism, e.g. a one-time re-pull when stored Unknown events become decodable after an update.**
+- **Signature-algorithm changes.** Key introduction is envelope-level (see [11.3](#113-event-signing)), so a member who joins via an event type unknown to an outdated client still gets their key registered there and their subsequent events verify. What this cannot absorb is a new *signature algorithm*: an outdated client cannot verify signatures it doesn't implement, and events failing verification are dropped at pull time without being persisted, so an app update alone does not recover them (recovery needs a full re-pull, i.e. re-joining via invite link or importing a fresh export). **Constraint on future releases: shipping a new signature algorithm must come with a healing mechanism, e.g. a one-time full re-pull.**
 - **Edits from outdated clients.** `EntryModified` carries the full re-encoded entry, so an outdated client editing an entry silently drops entry fields it doesn't know about. Accepted as disproportionate to fix for a fast-updating PWA fleet.
 - **Envelope-level changes.** Adding envelope fields is safe (canonicalization preserves unknown fields). A breaking change to the envelope shape itself requires bumping `"v"` and gating on it with an "update required" message.
 

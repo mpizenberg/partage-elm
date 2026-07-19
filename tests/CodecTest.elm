@@ -224,11 +224,10 @@ groupMetadataChangeFuzzer =
 payloadFuzzer : Fuzzer Payload
 payloadFuzzer =
     Fuzz.oneOf
-        [ Fuzz.map5 (\mid name mt addedBy pk -> MemberCreated { memberId = mid, name = name, memberType = mt, addedBy = addedBy, publicKey = pk })
+        [ Fuzz.map4 (\mid name mt addedBy -> MemberCreated { memberId = mid, name = name, memberType = mt, addedBy = addedBy })
             Fuzz.string
             Fuzz.string
             memberTypeFuzzer
-            Fuzz.string
             Fuzz.string
         , Fuzz.map3 (\rid oldN newN -> MemberRenamed { rootId = rid, oldName = oldN, newName = newN })
             Fuzz.string
@@ -236,7 +235,7 @@ payloadFuzzer =
             Fuzz.string
         , Fuzz.map (\rid -> MemberRetired { rootId = rid }) Fuzz.string
         , Fuzz.map (\rid -> MemberUnretired { rootId = rid }) Fuzz.string
-        , Fuzz.map4 (\rid deviceId pk seq -> MemberLinked { rootId = rid, deviceId = deviceId, publicKey = pk, seq = seq }) Fuzz.string Fuzz.string Fuzz.string Fuzz.int
+        , Fuzz.map3 (\rid deviceId seq -> MemberLinked { rootId = rid, deviceId = deviceId, seq = seq }) Fuzz.string Fuzz.string Fuzz.int
         , Fuzz.map2 (\rid meta -> MemberMetadataUpdated { rootId = rid, metadata = meta }) Fuzz.string memberMetadataFuzzer
         , Fuzz.map EntryAdded entryFuzzer
         , Fuzz.map EntryModified entryFuzzer
@@ -254,7 +253,7 @@ envelopeFuzzer =
     Fuzz.map5 Event.wrap
         Fuzz.string
         posixFuzzer
-        Fuzz.string
+        (Fuzz.map2 (\authorId pk -> { id = authorId, publicKey = pk }) Fuzz.string Fuzz.string)
         payloadFuzzer
         Fuzz.string
 
@@ -422,10 +421,36 @@ forwardCompatTests =
                 let
                     envelope : Event.Envelope
                     envelope =
-                        Event.wrap "e1" (Time.millisToPosix 123) "m1" (EntryDeleted { rootId = "entry1" }) ""
+                        Event.wrap "e1" (Time.millisToPosix 123) { id = "m1", publicKey = "pk1" } (EntryDeleted { rootId = "entry1" }) ""
                             |> Event.withSignature "s"
                 in
                 Decode.decodeString Event.envelopeDecoder (Encode.encode 0 (Event.encodeEnvelope envelope))
                     |> Result.map Event.canonicalize
                     |> Expect.equal (Ok (Event.canonicalize envelope))
+        , Test.test "self member-creation introduces the author key at the envelope level" <|
+            \_ ->
+                let
+                    envelope : Event.Envelope
+                    envelope =
+                        Event.wrap "e1"
+                            (Time.millisToPosix 1)
+                            { id = "m1", publicKey = "pk1" }
+                            (MemberCreated { memberId = "m1", name = "Me", memberType = Member.Real, addedBy = "m1" })
+                            "s"
+                in
+                ( envelope.authorKey
+                , Encode.encode 0 (Event.encodeEnvelope envelope)
+                    |> String.contains "\"key\":\"pk1\""
+                )
+                    |> Expect.equal ( Just "pk1", True )
+        , Test.test "author key survives an unknown payload type" <|
+            \_ ->
+                let
+                    json : String
+                    json =
+                        """{"id":"e3","ts":5,"by":"m1","v":1,"key":"pk1","p":{"t":"zz"},"sig":"s"}"""
+                in
+                Decode.decodeString Event.envelopeDecoder json
+                    |> Result.map (\env -> ( env.payload, env.authorKey, Encode.encode 0 (Event.encodeEnvelope env) ))
+                    |> Expect.equal (Ok ( Unknown, Just "pk1", json ))
         ]

@@ -25,12 +25,19 @@ the wire (or produced locally at signing time). Encoding, storage, and
 signature verification all go through `raw`, so fields added by newer app
 versions survive round trips through clients that don't understand them.
 
+`authorKey` (wire field "key") is the author's signing public key,
+present only on envelopes that introduce it: the author's own
+MemberCreated or MemberLinked. Keeping it at the envelope level — part of
+the frozen envelope contract rather than the evolvable payload — lets
+signature verification learn keys even from payloads it cannot decode.
+
 -}
 type alias Envelope =
     { id : Id
     , clientTimestamp : Time.Posix
     , triggeredBy : Member.Id
     , version : Int
+    , authorKey : Maybe String
     , payload : Payload
     , signature : String
     , raw : Encode.Value
@@ -55,11 +62,11 @@ locally.
 -}
 type Payload
     = Unknown
-    | MemberCreated { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id, publicKey : String }
+    | MemberCreated { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id }
     | MemberRenamed { rootId : Member.Id, oldName : String, newName : String }
     | MemberRetired { rootId : Member.Id }
     | MemberUnretired { rootId : Member.Id }
-    | MemberLinked { rootId : Member.Id, deviceId : Member.Id, publicKey : String, seq : Int }
+    | MemberLinked { rootId : Member.Id, deviceId : Member.Id, seq : Int }
     | MemberMetadataUpdated { rootId : Member.Id, metadata : Member.Metadata }
     | EntryAdded Entry
     | EntryModified Entry
@@ -109,19 +116,41 @@ compareEnvelopes a b =
             order
 
 
-{-| Wrap a payload into an envelope.
+{-| Wrap a payload into an envelope authored by the given device.
+The author's signing key is stamped on the envelope ("key" field) exactly
+when the payload introduces it: the author's own MemberCreated or
+MemberLinked.
 -}
-wrap : Id -> Time.Posix -> Member.Id -> Payload -> String -> Envelope
-wrap eventId clientTimestamp triggeredBy payload signature =
+wrap : Id -> Time.Posix -> { id : Member.Id, publicKey : String } -> Payload -> String -> Envelope
+wrap eventId clientTimestamp author payload signature =
     refreshRaw
         { id = eventId
         , clientTimestamp = clientTimestamp
-        , triggeredBy = triggeredBy
+        , triggeredBy = author.id
         , version = currentVersion
+        , authorKey =
+            if author.publicKey /= "" && introducesAuthorKey author.id payload then
+                Just author.publicKey
+
+            else
+                Nothing
         , payload = payload
         , signature = signature
         , raw = Encode.null
         }
+
+
+introducesAuthorKey : Member.Id -> Payload -> Bool
+introducesAuthorKey authorId payload =
+    case payload of
+        MemberCreated data ->
+            data.memberId == authorId
+
+        MemberLinked data ->
+            data.deviceId == authorId
+
+        _ ->
+            False
 
 
 {-| Set the signature on a locally-authored envelope, keeping `raw` in sync.
@@ -139,35 +168,43 @@ refreshRaw envelope =
     { envelope
         | raw =
             Encode.object
-                [ ( "id", Encode.string envelope.id )
-                , ( "ts", Encode.int (Time.posixToMillis envelope.clientTimestamp) )
-                , ( "by", Encode.string envelope.triggeredBy )
-                , ( "v", Encode.int envelope.version )
-                , ( "p", encodePayload envelope.payload )
-                , ( "sig", Encode.string envelope.signature )
-                ]
+                ([ ( "id", Encode.string envelope.id )
+                 , ( "ts", Encode.int (Time.posixToMillis envelope.clientTimestamp) )
+                 , ( "by", Encode.string envelope.triggeredBy )
+                 , ( "v", Encode.int envelope.version )
+                 ]
+                    ++ (case envelope.authorKey of
+                            Just publicKey ->
+                                [ ( "key", Encode.string publicKey ) ]
+
+                            Nothing ->
+                                []
+                       )
+                    ++ [ ( "p", encodePayload envelope.payload )
+                       , ( "sig", Encode.string envelope.signature )
+                       ]
+                )
     }
 
 
 {-| Build the list of payloads for creating a new group:
 GroupCreated + MemberCreated for the creator + MemberCreated for each virtual member.
 -}
-createGroup : { name : String, defaultCurrency : Currency, creator : ( Member.Id, String ), virtualMembers : List ( Member.Id, String ), publicKey : String } -> List Payload
-createGroup { name, defaultCurrency, creator, virtualMembers, publicKey } =
+createGroup : { name : String, defaultCurrency : Currency, creator : ( Member.Id, String ), virtualMembers : List ( Member.Id, String ) } -> List Payload
+createGroup { name, defaultCurrency, creator, virtualMembers } =
     let
-        memberPayload : Member.Type -> String -> ( Member.Id, String ) -> Payload
-        memberPayload memberType pk ( memberId, memberName ) =
+        memberPayload : Member.Type -> ( Member.Id, String ) -> Payload
+        memberPayload memberType ( memberId, memberName ) =
             MemberCreated
                 { memberId = memberId
                 , name = memberName
                 , memberType = memberType
                 , addedBy = Tuple.first creator
-                , publicKey = pk
                 }
     in
     GroupCreated { name = name, defaultCurrency = defaultCurrency }
-        :: memberPayload Member.Real publicKey creator
-        :: List.map (memberPayload Member.Virtual "") virtualMembers
+        :: memberPayload Member.Real creator
+        :: List.map (memberPayload Member.Virtual) virtualMembers
 
 
 {-| Encode an Envelope as a JSON object — the raw value it was decoded
@@ -185,12 +222,13 @@ envelopeDecoder =
     Decode.value
         |> Decode.andThen
             (\raw ->
-                Decode.map5
-                    (\id ts by v ( p, sig ) ->
+                Decode.map6
+                    (\id ts by v key ( p, sig ) ->
                         { id = id
                         , clientTimestamp = ts
                         , triggeredBy = by
                         , version = v
+                        , authorKey = key
                         , payload = p
                         , signature = sig
                         , raw = raw
@@ -200,6 +238,7 @@ envelopeDecoder =
                     (Decode.field "ts" (Decode.map Time.millisToPosix Decode.int))
                     (Decode.field "by" Decode.string)
                     (Decode.oneOf [ Decode.field "v" Decode.int, Decode.succeed 1 ])
+                    (Decode.oneOf [ Decode.map Just (Decode.field "key" Decode.string), Decode.succeed Nothing ])
                     (Decode.map2 Tuple.pair
                         -- A payload that fails to decode (unknown type, or a
                         -- known type whose shape changed) becomes Unknown
@@ -227,7 +266,6 @@ encodePayload payload =
                 , ( "n", Encode.string data.name )
                 , ( "mt", Member.encodeType data.memberType )
                 , ( "ab", Encode.string data.addedBy )
-                , ( "pk", Encode.string data.publicKey )
                 ]
 
         MemberRenamed data ->
@@ -255,7 +293,6 @@ encodePayload payload =
                 [ ( "t", Encode.string "ml" )
                 , ( "r", Encode.string data.rootId )
                 , ( "d", Encode.string data.deviceId )
-                , ( "pk", Encode.string data.publicKey )
                 , ( "sq", Encode.int data.seq )
                 ]
 
@@ -320,21 +357,19 @@ payloadDecoder =
             (\t ->
                 case t of
                     "mc" ->
-                        Decode.map5
-                            (\mid name mt addedBy pk ->
+                        Decode.map4
+                            (\mid name mt addedBy ->
                                 MemberCreated
                                     { memberId = mid
                                     , name = name
                                     , memberType = mt
                                     , addedBy = addedBy
-                                    , publicKey = pk
                                     }
                             )
                             (Decode.field "m" Decode.string)
                             (Decode.field "n" Decode.string)
                             (Decode.field "mt" Member.typeDecoder)
                             (Decode.field "ab" Decode.string)
-                            (Decode.field "pk" Decode.string)
 
                     "mr" ->
                         Decode.map3
@@ -358,18 +393,16 @@ payloadDecoder =
                             (Decode.field "r" Decode.string)
 
                     "ml" ->
-                        Decode.map4
-                            (\rid deviceId pk seq ->
+                        Decode.map3
+                            (\rid deviceId seq ->
                                 MemberLinked
                                     { rootId = rid
                                     , deviceId = deviceId
-                                    , publicKey = pk
                                     , seq = seq
                                     }
                             )
                             (Decode.field "r" Decode.string)
                             (Decode.field "d" Decode.string)
-                            (Decode.field "pk" Decode.string)
                             (Decode.field "sq" Decode.int)
 
                     "mmu" ->

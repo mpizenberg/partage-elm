@@ -152,6 +152,15 @@ signEnvelope signingKeyPair envelope =
         |> ConcurrentTask.map (\sig -> Event.withSignature sig envelope)
 
 
+{-| The local device as an event author, for `Event.wrap`.
+-}
+author : Context msg -> { id : Member.Id, publicKey : String }
+author ctx =
+    { id = ctx.identity.publicKeyHash
+    , publicKey = ctx.identity.signingKeyPair.publicKey
+    }
+
+
 
 -- New Group
 
@@ -177,7 +186,6 @@ newGroup ctx onComplete output =
                 , defaultCurrency = output.currency
                 , creator = ( ctx.identity.publicKeyHash, output.creatorName )
                 , virtualMembers = List.map2 Tuple.pair virtualMemberIds output.virtualMembers
-                , publicKey = ctx.identity.signingKeyPair.publicKey
                 }
 
         summary : Group.Summary
@@ -201,7 +209,7 @@ newGroup ctx onComplete output =
             ConcurrentTask.Time.now
                 |> ConcurrentTask.map
                     (\now ->
-                        List.map2 (\eventId payload -> Event.wrap eventId now ctx.identity.publicKeyHash payload "")
+                        List.map2 (\eventId payload -> Event.wrap eventId now (author ctx) payload "")
                             eventIds
                             payloads
                     )
@@ -331,7 +339,6 @@ importSplitwiseGroup ctx onComplete cfg =
                 , defaultCurrency = cfg.defaultCurrency
                 , creator = ( ctx.identity.publicKeyHash, cfg.creatorName )
                 , virtualMembers = virtualMembers
-                , publicKey = ctx.identity.signingKeyPair.publicKey
                 }
                 ++ List.map2
                     (\entryId kind ->
@@ -364,7 +371,7 @@ importSplitwiseGroup ctx onComplete cfg =
             ConcurrentTask.Time.now
                 |> ConcurrentTask.map
                     (\now ->
-                        List.map2 (\eventId payload -> Event.wrap eventId now ctx.identity.publicKeyHash payload "")
+                        List.map2 (\eventId payload -> Event.wrap eventId now (author ctx) payload "")
                             eventIds
                             payloads
                     )
@@ -420,7 +427,7 @@ newEntry ctx loaded output =
                 }
     in
     attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter }
-        (\now -> Event.wrap eventId now ctx.identity.publicKeyHash (payload now) "")
+        (\now -> Event.wrap eventId now (author ctx) (payload now) "")
         loaded.summary.id
 
 
@@ -451,7 +458,7 @@ editEntry ctx loaded originalEntryId output =
             in
             Just
                 (attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter }
-                    (\now -> Event.wrap eventId now ctx.identity.publicKeyHash (Event.EntryModified entry) "")
+                    (\now -> Event.wrap eventId now (author ctx) (Event.EntryModified entry) "")
                     loaded.summary.id
                 )
 
@@ -481,7 +488,7 @@ simpleEvent ctx loaded payload =
             IdGen.v7 ctx.currentTime ctx.uuidState
     in
     attempt { ctx | uuidState = uuidStateAfter }
-        (\now -> Event.wrap eventId now ctx.identity.publicKeyHash payload "")
+        (\now -> Event.wrap eventId now (author ctx) payload "")
         loaded.summary.id
 
 
@@ -508,7 +515,7 @@ eventWithId ctx loaded payload =
 
         ( state, cmd ) =
             attempt { ctx | uuidState = uuidStateAfter }
-                (\now -> Event.wrap eventId now ctx.identity.publicKeyHash payload "")
+                (\now -> Event.wrap eventId now (author ctx) payload "")
                 loaded.summary.id
     in
     ( state, cmd, eventId )
@@ -536,11 +543,10 @@ addMember ctx loaded output =
                 , name = output.name
                 , memberType = Member.Virtual
                 , addedBy = ctx.identity.publicKeyHash
-                , publicKey = ""
                 }
     in
     attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter }
-        (\now -> Event.wrap eventId now ctx.identity.publicKeyHash payload "")
+        (\now -> Event.wrap eventId now (author ctx) payload "")
         loaded.summary.id
 
 

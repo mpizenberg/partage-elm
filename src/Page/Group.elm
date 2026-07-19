@@ -386,7 +386,7 @@ submitJoinEvent : UpdateConfig -> { action : Page.JoinGroup.JoinAction, newMembe
 submitJoinEvent config joinData model =
     case model.loadedGroup of
         Just loaded ->
-            case joinPayload config.identity.publicKeyHash config.identity.signingKeyPair.publicKey joinData loaded of
+            case joinPayload config.identity.publicKeyHash joinData loaded of
                 Just payload ->
                     let
                         ( newModel, cmd, _ ) =
@@ -401,8 +401,8 @@ submitJoinEvent config joinData model =
             ( model, Cmd.none )
 
 
-joinPayload : Member.Id -> String -> { action : Page.JoinGroup.JoinAction, newMemberName : String } -> LoadedGroup -> Maybe Event.Payload
-joinPayload selfId publicKey joinData loaded =
+joinPayload : Member.Id -> { action : Page.JoinGroup.JoinAction, newMemberName : String } -> LoadedGroup -> Maybe Event.Payload
+joinPayload selfId joinData loaded =
     case joinData.action of
         Page.JoinGroup.ClaimMember rootId ->
             if Dict.member rootId loaded.groupState.members then
@@ -410,7 +410,6 @@ joinPayload selfId publicKey joinData loaded =
                     (Event.MemberLinked
                         { rootId = rootId
                         , deviceId = selfId
-                        , publicKey = publicKey
                         , seq = GroupState.nextLinkSeq loaded.groupState selfId
                         }
                     )
@@ -425,7 +424,6 @@ joinPayload selfId publicKey joinData loaded =
                     , name = joinData.newMemberName
                     , memberType = Member.Real
                     , addedBy = selfId
-                    , publicKey = publicKey
                     }
                 )
 
@@ -1370,7 +1368,6 @@ handleMembersTabOutput config model output =
                         (Event.MemberLinked
                             { rootId = memberId
                             , deviceId = deviceId
-                            , publicKey = config.identity.signingKeyPair.publicKey
                             , seq = GroupState.nextLinkSeq loaded.groupState deviceId
                             }
                         )

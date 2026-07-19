@@ -27,7 +27,7 @@ suite =
 -}
 adminBootstrap : Envelope
 adminBootstrap =
-    makeEnvelope "e0" 0 "admin" (MemberCreated { memberId = "admin", name = "Admin", memberType = Member.Real, addedBy = "admin", publicKey = "" })
+    makeEnvelope "e0" 0 "admin" (MemberCreated { memberId = "admin", name = "Admin", memberType = Member.Real, addedBy = "admin" })
 
 
 createAliceEvents : List Envelope
@@ -36,7 +36,7 @@ createAliceEvents =
     , makeEnvelope "e1"
         1000
         "admin"
-        (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin", publicKey = "" })
+        (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin" })
     ]
 
 
@@ -87,7 +87,7 @@ memberCreationTests =
                             ++ [ makeEnvelope "e2"
                                     2000
                                     "admin"
-                                    (MemberCreated { memberId = "alice", name = "Alice2", memberType = Member.Virtual, addedBy = "admin", publicKey = "" })
+                                    (MemberCreated { memberId = "alice", name = "Alice2", memberType = Member.Virtual, addedBy = "admin" })
                                ]
 
                     state =
@@ -104,7 +104,7 @@ memberCreationTests =
                             ++ [ makeEnvelope "e2"
                                     2000
                                     "admin"
-                                    (MemberCreated { memberId = "bob", name = "Bob", memberType = Member.Virtual, addedBy = "admin", publicKey = "" })
+                                    (MemberCreated { memberId = "bob", name = "Bob", memberType = Member.Virtual, addedBy = "admin" })
                                ]
 
                     state =
@@ -274,7 +274,7 @@ createVirtualMember eventId name timestamp =
     makeEnvelope eventId
         timestamp
         "admin"
-        (MemberCreated { memberId = String.toLower name, name = name, memberType = Member.Virtual, addedBy = "admin", publicKey = "" })
+        (MemberCreated { memberId = String.toLower name, name = name, memberType = Member.Virtual, addedBy = "admin" })
 
 
 linkAliceEvents : List Envelope
@@ -284,7 +284,7 @@ linkAliceEvents =
     , makeEnvelope "e2"
         2000
         "bob-device"
-        (MemberLinked { rootId = "alice", deviceId = "bob-device", publicKey = "pk-bob", seq = 0 })
+        (MemberLinked { rootId = "alice", deviceId = "bob-device", seq = 0 })
     ]
 
 
@@ -345,11 +345,11 @@ memberLinkTests =
                         , makeEnvelope "e3"
                             5000
                             "bob-device"
-                            (MemberLinked { rootId = "alice", deviceId = "bob-device", publicKey = "pk-bob", seq = 1 })
+                            (MemberLinked { rootId = "alice", deviceId = "bob-device", seq = 1 })
                         , makeEnvelope "e4"
                             6000
                             "bob-device"
-                            (MemberLinked { rootId = "carol", deviceId = "bob-device", publicKey = "pk-bob", seq = 0 })
+                            (MemberLinked { rootId = "carol", deviceId = "bob-device", seq = 0 })
                         ]
 
                     state =
@@ -365,7 +365,7 @@ memberLinkTests =
                         , makeEnvelope "e1"
                             1000
                             "bob-device"
-                            (MemberLinked { rootId = "ghost", deviceId = "bob-device", publicKey = "pk-bob", seq = 0 })
+                            (MemberLinked { rootId = "ghost", deviceId = "bob-device", seq = 0 })
                         ]
 
                     state =
@@ -382,7 +382,7 @@ memberLinkTests =
                         , makeEnvelope "e2"
                             2000
                             "admin"
-                            (MemberLinked { rootId = "alice", deviceId = "bob-device", publicKey = "pk-bob", seq = 0 })
+                            (MemberLinked { rootId = "alice", deviceId = "bob-device", seq = 0 })
                         ]
 
                     state =
@@ -400,11 +400,11 @@ memberLinkTests =
                         , makeEnvelope "e2"
                             2000
                             "bob-device"
-                            (MemberCreated { memberId = "bob-device", name = "Bob", memberType = Member.Real, addedBy = "bob-device", publicKey = "pk-bob" })
+                            (MemberCreated { memberId = "bob-device", name = "Bob", memberType = Member.Real, addedBy = "bob-device" })
                         , makeEnvelope "e3"
                             3000
                             "bob-device"
-                            (MemberLinked { rootId = "alice", deviceId = "bob-device", publicKey = "pk-bob", seq = 0 })
+                            (MemberLinked { rootId = "alice", deviceId = "bob-device", seq = 0 })
                         ]
 
                     state =
@@ -436,7 +436,7 @@ relinkToCarolEvents =
            , makeEnvelope "e3"
                 3000
                 "bob-device"
-                (MemberLinked { rootId = "carol", deviceId = "bob-device", publicKey = "pk-bob", seq = 1 })
+                (MemberLinked { rootId = "carol", deviceId = "bob-device", seq = 1 })
            ]
 
 
@@ -523,7 +523,7 @@ eventOrderingTests =
                         , makeEnvelope "e1"
                             1000
                             "admin"
-                            (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin", publicKey = "" })
+                            (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin" })
                         ]
 
                     state =
@@ -540,7 +540,7 @@ eventOrderingTests =
                         , makeEnvelope "e1"
                             1000
                             "admin"
-                            (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin", publicKey = "" })
+                            (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin" })
                         , makeEnvelope "e3"
                             2000
                             "alice"
@@ -566,7 +566,7 @@ eventOrderingTests =
                         , makeEnvelope "e0b"
                             1
                             "admin"
-                            (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin", publicKey = "" })
+                            (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin" })
                         ]
 
                     renameEvents =

@@ -2,7 +2,7 @@ module Infra.EventVerification exposing (filterVerifiedEvents)
 
 {-| Signature verification for event envelopes.
 
-Collects public keys from MemberCreated/MemberLinked events and existing
+Collects public keys from the envelopes' "key" field and existing
 GroupState, then verifies signatures. Events with invalid or unverifiable
 signatures are silently dropped. GroupCreated events are exempt (genesis
 events with no prior public key).
@@ -71,26 +71,21 @@ collectKeysFromState state =
         state.deviceLinks
 
 
-{-| Extract public key from a MemberCreated or MemberLinked event payload.
+{-| Collect the author's signing key introduced by an envelope ("key"
+field). Envelope-level, so it works even when the payload is one this app
+version cannot decode.
 -}
 collectKeyFromEvent : Envelope -> Dict Member.Id String -> Dict Member.Id String
 collectKeyFromEvent envelope keys =
-    case envelope.payload of
-        MemberCreated data ->
-            if data.publicKey /= "" then
-                Dict.insert data.memberId data.publicKey keys
+    case envelope.authorKey of
+        Just publicKey ->
+            if publicKey /= "" then
+                Dict.insert envelope.triggeredBy publicKey keys
 
             else
                 keys
 
-        MemberLinked data ->
-            if data.publicKey /= "" then
-                Dict.insert data.deviceId data.publicKey keys
-
-            else
-                keys
-
-        _ ->
+        Nothing ->
             keys
 
 

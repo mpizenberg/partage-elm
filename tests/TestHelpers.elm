@@ -19,15 +19,15 @@ Use this at the start of test event lists so that isAuthorized passes.
 -}
 bootstrapMembers : List Envelope
 bootstrapMembers =
-    [ makeEnvelope "boot-admin" 0 "admin" (MemberCreated { memberId = "admin", name = "Admin", memberType = Member.Real, addedBy = "admin", publicKey = "pk-admin" })
-    , makeEnvelope "boot-alice" 1 "admin" (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin", publicKey = "pk-alice" })
-    , makeEnvelope "boot-bob" 2 "admin" (MemberCreated { memberId = "bob", name = "Bob", memberType = Member.Real, addedBy = "admin", publicKey = "pk-bob" })
+    [ makeEnvelope "boot-admin" 0 "admin" (MemberCreated { memberId = "admin", name = "Admin", memberType = Member.Real, addedBy = "admin" })
+    , makeEnvelope "boot-alice" 1 "admin" (MemberCreated { memberId = "alice", name = "Alice", memberType = Member.Real, addedBy = "admin" })
+    , makeEnvelope "boot-bob" 2 "admin" (MemberCreated { memberId = "bob", name = "Bob", memberType = Member.Real, addedBy = "admin" })
     ]
 
 
 makeEnvelope : String -> Int -> Member.Id -> Payload -> Envelope
 makeEnvelope eventId timestamp triggeredBy payload =
-    Event.wrap eventId (Time.millisToPosix timestamp) triggeredBy payload ""
+    Event.wrap eventId (Time.millisToPosix timestamp) { id = triggeredBy, publicKey = "" } payload ""
 
 
 makeEntryMeta : String -> Int -> Entry.Metadata

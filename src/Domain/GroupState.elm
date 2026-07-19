@@ -332,7 +332,7 @@ applyPayload envelope state =
             state
 
         MemberCreated data ->
-            applyMemberCreated timestamp data state
+            applyMemberCreated timestamp (introducedKey data.memberId envelope) data state
 
         MemberRenamed data ->
             applyMemberRenamed data state
@@ -344,7 +344,7 @@ applyPayload envelope state =
             applyMemberUnretired data state
 
         MemberLinked data ->
-            applyMemberLinked timestamp envelope.id data state
+            applyMemberLinked timestamp envelope.id (introducedKey data.deviceId envelope) data state
 
         MemberMetadataUpdated data ->
             applyMemberMetadataUpdated data state
@@ -375,8 +375,21 @@ applyPayload envelope state =
 -- MEMBER HANDLERS
 
 
-applyMemberCreated : Time.Posix -> { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id, publicKey : String } -> GroupState -> GroupState
-applyMemberCreated timestamp data state =
+{-| The signing key an envelope introduces for `holderId`: the envelope's
+"key" field certifies the author's own key only, so it applies just when
+the holder is the author.
+-}
+introducedKey : Member.Id -> Envelope -> String
+introducedKey holderId envelope =
+    if holderId == envelope.triggeredBy then
+        Maybe.withDefault "" envelope.authorKey
+
+    else
+        ""
+
+
+applyMemberCreated : Time.Posix -> String -> { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id } -> GroupState -> GroupState
+applyMemberCreated timestamp publicKey data state =
     if Dict.member data.memberId state.members then
         -- Member with this rootId already exists, ignore
         state
@@ -388,7 +401,7 @@ applyMemberCreated timestamp data state =
                 { rootId = data.memberId
                 , name = data.name
                 , memberType = data.memberType
-                , publicKey = data.publicKey
+                , publicKey = publicKey
                 , isRetired = False
                 , joinedAt = timestamp
                 , metadata = Member.emptyMetadata
@@ -457,8 +470,8 @@ losing claim changes nothing and application is order-independent. The
 effective member type of the claimed root — and of the root the device
 previously pointed at — is refreshed from the updated link map.
 -}
-applyMemberLinked : Time.Posix -> Event.Id -> { rootId : Member.Id, deviceId : Member.Id, publicKey : String, seq : Int } -> GroupState -> GroupState
-applyMemberLinked timestamp eventId data state =
+applyMemberLinked : Time.Posix -> Event.Id -> String -> { rootId : Member.Id, deviceId : Member.Id, seq : Int } -> GroupState -> GroupState
+applyMemberLinked timestamp eventId publicKey data state =
     if not (Dict.member data.rootId state.members) then
         state
 
@@ -467,7 +480,7 @@ applyMemberLinked timestamp eventId data state =
             newLink : Member.DeviceLink
             newLink =
                 { rootId = data.rootId
-                , publicKey = data.publicKey
+                , publicKey = publicKey
                 , seq = data.seq
                 , timestamp = timestamp
                 , eventId = eventId
