@@ -67,7 +67,7 @@
 
 - **There is no password recovery mechanism.** If the browser data is lost, the identity is lost.
 - The user can rejoin groups via a new invite link, but they will appear as a new member.
-- The user can link their new identity to any previous member entry (see [Member Aliases](#44-member-aliases)).
+- The user can link their new identity to any previous member entry (see [Device Links](#44-device-links-identity-claiming)).
 
 ### 2.4 Identity Guarantees
 
@@ -142,37 +142,37 @@ Members are managed through an **immutable event log**. The current state of eac
 | `MemberRenamed` | A member's display name is changed. Records root ID, old and new names. |
 | `MemberRetired` | A member is marked as departed/inactive. Records root ID. |
 | `MemberUnretired` | A retired member is reactivated. Records root ID. |
-| `MemberReplaced` | A new real member claims an existing member's identity (see [Member Aliases](#44-member-aliases)). Records root ID, previous member ID, new member ID, and public key. |
+| `MemberLinked` | A device claims an existing member's identity (see [Device Links](#44-device-links-identity-claiming)). Records root ID, device ID, public key, and a per-device sequence number. |
 | `MemberMetadataUpdated` | A member's contact or payment information is updated. Records root ID and full metadata. |
 | `SettlementPreferencesUpdated` | A member's settlement preferences are updated (preferred payment recipients). Records member root ID and ordered list of preferred recipients. |
 
 ### 4.3 Computed Member State
 
-From the event log, each member chain has a computed state:
+From the event log, each member has a computed state:
 
 | Property | Description |
 |---|---|
-| `rootId` | The ID of the first member in the replacement chain. Equals the member's own ID if they have not replaced anyone. Serves as the stable identifier for the chain. |
+| `rootId` | The member's own ID, assigned at creation. Serves as the stable identifier for the person. |
 | `name` | Current display name (latest rename, or creation name). |
 | `isRetired` | True if the latest lifecycle event is `MemberRetired`. |
 | `joinedAt` | Timestamp when the member was created. |
 | `metadata` | Contact and payment information (see [4.6](#46-member-metadata-encrypted)). |
-| `currentMember` | The winning device identity in the chain (determined by depth, then ID as tiebreaker). |
-| `allMembers` | Dictionary of all device identities in the chain, keyed by member ID. |
+| `memberType` | The **effective** type: real if the member was created real or at least one device currently links to it; virtual otherwise. |
+| `publicKey` | The creating device's public key (real members only; empty for virtual members). |
 
-A member is considered **active** if they are not retired and not replaced (i.e., no other member's `previousId` points to them).
+Alongside the members, the group state maintains a **device-link map**: for each device that has emitted `MemberLinked` events, the winning link (see [4.4](#44-device-links-identity-claiming)) with its root ID, public key, and sequence number.
 
-### 4.4 Member Aliases (Identity Claiming)
+A member is considered **active** if they are not retired.
 
-When a real user joins a group, they can **claim the identity of any existing group member** (virtual or real):
+### 4.4 Device Links (Identity Claiming)
 
-- A `MemberReplaced` event records the link between the new member and the claimed member. The new member stores a **backward pointer** (`previousId`) to the member it replaced.
-- The new member inherits the **rootId** of the claimed member. This links the entire replacement chain to a single stable identifier — the rootId — which is always the ID of the **first member** in the chain.
-- Each member in the chain has a **depth** (0 for the original, incremented for each replacement). When multiple replacements exist concurrently, the **current member** is determined by highest depth, with member ID as a lexicographic tiebreaker.
-- **Example:** If member A (rootId=A) is replaced by B, then B.rootId=A and B.previousId=A. If B is later replaced by C, then C.rootId=A and C.previousId=B. All three share the same rootId. Whether A or B is replaced is computed by checking if any member's `previousId` points to them.
-- The rootId is used throughout the application as the **stable identifier** for a member chain: balance calculations, activity feeds, entry displays, and settlement plans all aggregate by rootId.
-- **Name resolution:** Although the rootId identifies the chain, the **display name** is always resolved to the newest active (non-replaced) member's current name in the chain. For example, if virtual member "Alice" (rootId=A) was claimed by real member "Alice R." (rootId=A), the display name everywhere is "Alice R." — even for historical entries originally involving the virtual member.
-- In the join UI, claiming a **virtual member** is the primary path (prominently displayed). Claiming a **real member** is available in a separate section, intended for device migration or identity recovery scenarios.
+A **root** is a person; a **link** is a device claim. When a real user joins a group, they can **claim the identity of any existing group member** (virtual or real) by emitting a `MemberLinked` event asserting "this device acts as this root":
+
+- A device has at most one effective link — its **latest** — so a device can only ever point at one root. Emitting a new link atomically vacates the previously claimed member: fixing a wrong claim needs no revert event and no terminal states.
+- Per device, the winning link is the one with the highest `(seq, timestamp, event ID)`, compared in that order. `seq` is a per-device monotonic counter (next = current winner's seq + 1, starting at 0), which makes a device's own re-links robust to its clock jumping backwards. Event IDs are unique, so the order is total and replay is deterministic.
+- **ID resolution** checks the device-link map first, then falls back to root identity: a device that joined as a new member (its device ID is a root ID) but later linked elsewhere resolves to the link target. Its own root remains in the group with its history; moving entries between roots remains the job of [member merging](#47-member-merging).
+- The rootId is used throughout the application as the **stable identifier** for a member: balance calculations, activity feeds, entry displays, and settlement plans all aggregate by rootId. Names, retirement, and metadata are properties of the root, unaffected by which device claims it.
+- In the join UI, claiming a **virtual member** is the primary path (prominently displayed). Claiming a **real member** is available in a separate section, intended for device migration or identity recovery scenarios. After joining, the member detail view offers **"This is me"** to re-link the device to a different member, which is how a wrong claim is corrected.
 
 ### 4.5 Member Operation Rules
 
@@ -180,21 +180,21 @@ Member operations follow strict validation rules. Invalid events are **silently 
 
 | Operation | Valid When | Invalid When |
 |---|---|---|
-| **Create** | No chain with this rootId already exists. | Duplicate member ID. |
-| **Rename** | Chain with the given rootId exists. | Chain does not exist. |
-| **Retire** | Chain exists and member is not already retired. | Chain does not exist, or is already retired. |
-| **Unretire** | Chain exists and member is currently retired. | Chain does not exist, or is not retired. |
-| **Replace** | Chain exists, `previousId` exists in chain, `newId` is not already in chain, and `previousId != newId`. | Chain does not exist, previous member not found, new ID already in chain, or self-replacement. |
+| **Create** | No member with this rootId already exists. | Duplicate member ID. |
+| **Rename** | Member with the given rootId exists. | Member does not exist. |
+| **Retire** | Member exists and is not already retired. | Member does not exist, or is already retired. |
+| **Unretire** | Member exists and is currently retired. | Member does not exist, or is not retired. |
+| **Link** | Member with the target rootId exists, and the link beats the device's current winning link (higher `(seq, timestamp, event ID)`). | Member does not exist, or an existing link for the device wins. |
 
 **Authorization rules:**
 - `GroupCreated`: Always allowed.
 - `MemberCreated`: Allowed if the member is creating themselves, or the actor is an existing group member.
-- `MemberReplaced`: Allowed if the actor is the new member (asserting their own identity).
+- `MemberLinked`: Allowed if the actor is the linked device itself (asserting its own identity).
 - All other operations: The actor must be an existing group member.
 
 Key design principles:
-- **State transitions**: Active members can be retired or replaced. Retired members can be unretired. Replaced members are terminal (cannot be retired, unretired, or replaced again).
-- **Root ID resolution**: Replacement chains share a stable rootId (the first member's ID). The display name is always resolved to the newest active member's name in the chain.
+- **State transitions**: Active members can be retired; retired members can be unretired. There are no terminal states — links can always be re-emitted.
+- **Root ID resolution**: The device-link map takes precedence, then root identity. The display name is the root's current name, regardless of which device claims it.
 
 ### 4.6 Member Metadata (Encrypted)
 
@@ -214,7 +214,7 @@ Each member can have optional contact and payment information:
 
 ### 4.7 Member Merging
 
-In addition to identity claiming (which links a new join to an existing chain), the app supports **merging one existing member chain into another**, primarily to clean up duplicates created when someone joined as a new member instead of claiming a virtual placeholder.
+In addition to identity claiming (which links a device to an existing member), the app supports **merging one existing member into another**, primarily to clean up duplicates created when someone joined as a new member instead of claiming a virtual placeholder.
 
 - The merge is a two-step flow: pick the **target** member to keep, then preview the effects before confirming.
 - Confirmation requires typing a sentinel string (type-to-confirm) to guard against accidental merges.
@@ -369,7 +369,7 @@ For each member, the application computes:
 
 - Only **active** entries are included (deleted entries are excluded).
 - All amounts are normalized to the **group's default currency** using the stored `defaultCurrencyAmount`.
-- Member IDs are resolved to their **root member IDs** (accounting for aliases/replacements, see [Member Aliases](#44-member-aliases)).
+- Member IDs are resolved to their **root member IDs** (accounting for device links, see [Device Links](#44-device-links-identity-claiming)).
 - Rounding uses **cent-based integer arithmetic** for deterministic, exact results.
 
 #### Entry Type Contributions
@@ -452,7 +452,7 @@ The activity feed tracks all significant actions in a group. Activities are spli
 | Activity Type | Trigger |
 |---|---|
 | `MemberCreated` | A new member joins the group (real or virtual). Records name and member type. |
-| `MemberReplaced` | A real member claims another member's identity. Records name and root ID. |
+| `MemberLinked` | A device claims a member's identity. Records name and root ID. |
 | `MemberRenamed` | A member changes their display name. Shows old and new names. |
 | `MemberRetired` | A member is marked as departed. |
 | `MemberUnretired` | A retired member is reactivated. |
@@ -768,8 +768,6 @@ The following concurrent event pairs are **order-dependent** (their outcome depe
 
 | Category | Conflicting pair | Resolution |
 |---|---|---|
-| **Member lifecycle** | `retire` vs `replace` (same member) | First in sort order succeeds; the other is silently ignored (state is now terminal or incompatible). |
-| **Member lifecycle** | `replace` vs `replace` (same member, different claimers) | First in sort order succeeds; the other is silently ignored (member already replaced). |
 | **Member lifecycle** | `retire`/`unretire` interleaving (same member) | Processed in sort order; each is validated against the member's state at that point. |
 | **Entry versioning** | Concurrent modifications (same `rootId`) | Last-writer-wins by timestamp. The current version is the non-deleted version with the latest timestamp (see [5.7](#57-entry-versioning)). |
 | **Entry versioning** | Modify + delete (same `rootId`) | Last-writer-wins. The event with the later timestamp determines whether the entry is modified or deleted. |
@@ -780,6 +778,7 @@ The following concurrent event pairs are **order-dependent** (their outcome depe
 
 - Creating new entries (different `rootId`s).
 - Creating new members (different member IDs).
+- Device links: the winning link per device is the maximum by `(seq, timestamp, event ID)` — a total order, so the outcome is the same regardless of processing order.
 - Any events targeting different entities.
 
 ### 14.6 Incremental Sync Optimization
@@ -789,7 +788,7 @@ When new events arrive via sync, a **full replay** from scratch is not always ne
 - **In-order events** (timestamp ≥ max existing timestamp): Always safe to apply directly on top of current state. No replay needed.
 - **Late-arriving events** (timestamp < max existing timestamp): Safe to apply directly **only if** they target entities with no later-timestamped events in the conflict categories above (member lifecycle or same-entry versioning). Otherwise, a replay from scratch is required.
 
-In practice, late arrivals involving lifecycle conflicts are extremely rare (they require two users to retire/replace the same member within a short offline window). The vast majority of syncs hit the fast path.
+In practice, late arrivals involving lifecycle conflicts are extremely rare (they require two users to retire/unretire the same member within a short offline window). The vast majority of syncs hit the fast path.
 
 **Computed state caching:** The materialized group state is cached locally. On app load, if the event log has not changed, the cached state is used directly. Otherwise, the state is recomputed from the full event log.
 
@@ -997,7 +996,7 @@ The app estimates the user's share of infrastructure costs:
 | **NewEntryScreen** | Entry creation/editing form. Supports expense, transfer, and income entry types with type switcher. Also reached via the **Duplicate** action on an entry. |
 | **AddMemberScreen** | Form to add a virtual (placeholder) member to the group. Prevents duplicate names. |
 | **EditMemberMetadataScreen** | Form to edit a member's display name, contact info, and payment methods. For the current user, also exposes **Pre-fill from saved profile** and **Save as my profile** actions to share metadata across groups. Prevents duplicate names on rename. |
-| **MergeMemberScreen** | Two-step page to merge one member chain into another (pick target, then preview effects and type-to-confirm). |
+| **MergeMemberScreen** | Two-step page to merge one member into another (pick target, then preview effects and type-to-confirm). |
 | **EditGroupMetadataScreen** | Form to edit group name, subtitle, description, links, and archive state. |
 | **AboutScreen** | App information, motivation, privacy info, usage statistics, language switcher, and links to GitHub, Sponsors, and Discussions (each opening in a new tab). |
 | **ErrorLogScreen** | Displays in-memory error entries collected during the session. Provides **Copy** and **Share** buttons to send a debug report (via the Web Share API when available). |
