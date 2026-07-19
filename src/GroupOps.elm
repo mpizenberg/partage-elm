@@ -7,6 +7,7 @@ module GroupOps exposing
     , addUnpushedId
     , appendEvent
     , applySyncResult
+    , clampAfterLatest
     , deleteEntry
     , editEntry
     , event
@@ -112,16 +113,20 @@ initLoadedGroup events summary key cursor unpushed =
     }
 
 
-attempt : Context msg -> (Time.Posix -> Event.Envelope) -> Group.Id -> ( State msg, Cmd msg )
-attempt ctx makeUnsignedEnvelope groupId =
+attempt : Context msg -> (Time.Posix -> Event.Envelope) -> LoadedGroup -> ( State msg, Cmd msg )
+attempt ctx makeUnsignedEnvelope loaded =
     let
         signingKeyPair : Signature.SigningKeyPair
         signingKeyPair =
             Signature.importSigningKeyPair ctx.identity.signingKeyPair
 
+        groupId : Group.Id
+        groupId =
+            loaded.summary.id
+
         task : ConcurrentTask Idb.Error Event.Envelope
         task =
-            ConcurrentTask.map makeUnsignedEnvelope ConcurrentTask.Time.now
+            ConcurrentTask.map (clampAfterLatest loaded.events >> makeUnsignedEnvelope) ConcurrentTask.Time.now
                 |> ConcurrentTask.andThen (signEnvelope signingKeyPair)
                 |> ConcurrentTask.andThen
                     (\envelope ->
@@ -150,6 +155,24 @@ signEnvelope signingKeyPair envelope =
     Signature.signText signingKeyPair (Event.canonicalize envelope)
         |> ConcurrentTask.mapError (\_ -> Idb.DatabaseError "Signing failed")
         |> ConcurrentTask.map (\sig -> Event.withSignature sig envelope)
+
+
+{-| Clamp a wall-clock time to sort strictly after every event in the given
+newest-first list. A device with a slow clock could otherwise author an event
+that sorts before state it has already applied — kept by the incremental fast
+path but dropped by every full replay, so devices would disagree until the
+edit silently vanished. Clamping also guarantees `appendEvent`'s prepend
+preserves the sort order of the event list.
+-}
+clampAfterLatest : List Event.Envelope -> Time.Posix -> Time.Posix
+clampAfterLatest newestFirst now =
+    case newestFirst of
+        [] ->
+            now
+
+        latest :: _ ->
+            Time.millisToPosix
+                (max (Time.posixToMillis now) (Time.posixToMillis latest.clientTimestamp + 1))
 
 
 {-| The local device as an event author, for `Event.wrap`.
@@ -428,7 +451,7 @@ newEntry ctx loaded output =
     in
     attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter }
         (\now -> Event.wrap eventId now (author ctx) (payload now) "")
-        loaded.summary.id
+        loaded
 
 
 
@@ -459,7 +482,7 @@ editEntry ctx loaded originalEntryId output =
             Just
                 (attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter }
                     (\now -> Event.wrap eventId now (author ctx) (Event.EntryModified entry) "")
-                    loaded.summary.id
+                    loaded
                 )
 
 
@@ -489,7 +512,7 @@ simpleEvent ctx loaded payload =
     in
     attempt { ctx | uuidState = uuidStateAfter }
         (\now -> Event.wrap eventId now (author ctx) payload "")
-        loaded.summary.id
+        loaded
 
 
 
@@ -516,7 +539,7 @@ eventWithId ctx loaded payload =
         ( state, cmd ) =
             attempt { ctx | uuidState = uuidStateAfter }
                 (\now -> Event.wrap eventId now (author ctx) payload "")
-                loaded.summary.id
+                loaded
     in
     ( state, cmd, eventId )
 
@@ -547,7 +570,7 @@ addMember ctx loaded output =
     in
     attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter }
         (\now -> Event.wrap eventId now (author ctx) payload "")
-        loaded.summary.id
+        loaded
 
 
 
@@ -643,18 +666,23 @@ hasConflicts newEvents overlapEvents =
     List.any (\new -> List.any (areConflicting new) overlapEvents) newEvents
 
 
-{-| Two events conflict if they modify the same entity in an order-dependent way.
+{-| Two events conflict if their application order changes the outcome.
 -}
 areConflicting : Event.Envelope -> Event.Envelope -> Bool
 areConflicting a b =
-    case ( a.payload, b.payload ) of
+    orderDependent a.payload b.payload || orderDependent b.payload a.payload
+
+
+{-| Order-dependent payload pairs, listed in one orientation;
+`areConflicting` checks both.
+-}
+orderDependent : Event.Payload -> Event.Payload -> Bool
+orderDependent a b =
+    case ( a, b ) of
         ( Event.MemberRenamed r1, Event.MemberRenamed r2 ) ->
             r1.rootId == r2.rootId
 
         ( Event.MemberRetired r1, Event.MemberUnretired r2 ) ->
-            r1.rootId == r2.rootId
-
-        ( Event.MemberUnretired r1, Event.MemberRetired r2 ) ->
             r1.rootId == r2.rootId
 
         ( Event.MemberMetadataUpdated r1, Event.MemberMetadataUpdated r2 ) ->
@@ -669,20 +697,40 @@ areConflicting a b =
         ( Event.EntryDeleted r1, Event.EntryUndeleted r2 ) ->
             r1.rootId == r2.rootId
 
-        ( Event.EntryUndeleted r1, Event.EntryDeleted r2 ) ->
-            r1.rootId == r2.rootId
-
-        ( Event.EntryDeleted r1, Event.EntryModified e2 ) ->
-            r1.rootId == e2.meta.rootId
-
         ( Event.EntryModified e1, Event.EntryDeleted r2 ) ->
             e1.meta.rootId == r2.rootId
 
-        ( Event.EntryUndeleted r1, Event.EntryModified e2 ) ->
-            r1.rootId == e2.meta.rootId
-
         ( Event.EntryModified e1, Event.EntryUndeleted r2 ) ->
             e1.meta.rootId == r2.rootId
+
+        -- An event referencing an entity (or an entry version) is ignored by
+        -- replay when it sorts before the event creating what it references.
+        ( Event.EntryModified e1, Event.EntryModified e2 ) ->
+            e1.meta.rootId == e2.meta.rootId
+
+        ( Event.EntryAdded e1, Event.EntryModified e2 ) ->
+            e1.meta.rootId == e2.meta.rootId
+
+        ( Event.EntryAdded e1, Event.EntryDeleted r2 ) ->
+            e1.meta.rootId == r2.rootId
+
+        ( Event.EntryAdded e1, Event.EntryUndeleted r2 ) ->
+            e1.meta.rootId == r2.rootId
+
+        ( Event.MemberCreated m1, Event.MemberRenamed r2 ) ->
+            m1.memberId == r2.rootId
+
+        ( Event.MemberCreated m1, Event.MemberRetired r2 ) ->
+            m1.memberId == r2.rootId
+
+        ( Event.MemberCreated m1, Event.MemberUnretired r2 ) ->
+            m1.memberId == r2.rootId
+
+        ( Event.MemberCreated m1, Event.MemberMetadataUpdated r2 ) ->
+            m1.memberId == r2.rootId
+
+        ( Event.MemberCreated m1, Event.MemberLinked l2 ) ->
+            m1.memberId == l2.rootId
 
         _ ->
             False

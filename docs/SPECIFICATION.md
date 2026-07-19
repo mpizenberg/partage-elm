@@ -776,6 +776,8 @@ All group state is derived by replaying the **immutable event log** in a determi
 
 **Ordering rule:** Each event is assigned a **UUID v7** identifier at creation time. UUID v7 embeds a millisecond-precision timestamp in its most significant bits, followed by random bits. Events are sorted by timestamp then event ID, providing a deterministic total order that naturally reflects creation time. Since groups are trusted, client-generated UUIDs are authoritative. All clients use the same comparison function after decryption, guaranteeing convergence.
 
+**Timestamp clamping:** When authoring an event, a device clamps its timestamp to sort strictly after the latest event it has already applied (a Lamport-style clock). A device whose wall clock runs behind another member's therefore cannot produce an event that sorts before state it has already seen — such an event would take effect on live devices but be ignored by every subsequent full replay.
+
 **State computation:** Events are replayed in sort order. Each event is validated against the current state at the point of replay. Invalid events are **silently ignored** (see [4.5](#45-member-operation-rules)). This ensures all clients converge to identical state regardless of the order in which events were received over the network.
 
 **Conflict categories:**
@@ -789,6 +791,7 @@ The following concurrent event pairs are **order-dependent** (their outcome depe
 | **Entry versioning** | Modify + delete (same `rootId`) | Last-writer-wins. The event with the later timestamp determines whether the entry is modified or deleted. |
 | **Last-writer-wins** | Concurrent renames (same member) | Latest timestamp determines the current name. |
 | **Last-writer-wins** | Concurrent metadata updates (same member or group) | Latest timestamp determines the current value. |
+| **Target vs. create** | Any event referencing an entry or member vs. the event creating it | The referencing event is ignored when it sorts before the create. Timestamp clamping prevents honest clients from producing this ordering. |
 
 **Non-conflicting operations** (always commutative, order-independent):
 
@@ -802,7 +805,7 @@ The following concurrent event pairs are **order-dependent** (their outcome depe
 When new events arrive via sync, a **full replay** from scratch is not always necessary:
 
 - **In-order events** (timestamp ≥ max existing timestamp): Always safe to apply directly on top of current state. No replay needed.
-- **Late-arriving events** (timestamp < max existing timestamp): Safe to apply directly **only if** they target entities with no later-timestamped events in the conflict categories above (member lifecycle or same-entry versioning). Otherwise, a replay from scratch is required.
+- **Late-arriving events** (timestamp < max existing timestamp): Safe to apply directly **only if** they target entities with no later-timestamped events in the conflict categories above (member lifecycle, same-entry versioning, or target vs. create). Otherwise, a replay from scratch is required.
 
 In practice, late arrivals involving lifecycle conflicts are extremely rare (they require two users to retire/unretire the same member within a short offline window). The vast majority of syncs hit the fast path.
 
