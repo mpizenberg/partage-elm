@@ -70,6 +70,9 @@ export function startServer({ storage, powSecret, port = 8090, staticDir }) {
 
   if (staticDir) {
     app.use('/*', serveStatic({ root: staticDir }));
+    // SPA fallback: client-side routes like /join/<id> must serve the app.
+    app.get('*', (c, next) => (c.req.path.startsWith('/api/') ? c.notFound() : next()));
+    app.get('*', serveStatic({ root: staticDir, path: 'index.html' }));
   }
 
   return new Promise((resolve) => {

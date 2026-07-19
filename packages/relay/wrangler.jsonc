@@ -11,5 +11,9 @@
     "bindings": [{ "name": "GROUP", "class_name": "GroupDo" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GroupDo"] }],
-  "assets": { "directory": "../../dist", "binding": "ASSETS" }
+  "assets": {
+    "directory": "../../dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  }
 }
