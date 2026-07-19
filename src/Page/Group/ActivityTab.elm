@@ -415,7 +415,7 @@ detailIcon detail =
         MemberCreatedDetail _ ->
             FeatherIcons.userPlus
 
-        MemberReplacedDetail _ ->
+        MemberLinkedDetail _ ->
             FeatherIcons.userCheck
 
         MemberRenamedDetail _ ->
@@ -546,8 +546,8 @@ detailSummaryText i18n detail =
                 Member.Virtual ->
                     T.activityMemberCreatedVirtual data.name i18n
 
-        MemberReplacedDetail data ->
-            T.activityMemberReplaced data.name i18n
+        MemberLinkedDetail data ->
+            T.activityMemberLinked data.name i18n
 
         MemberRenamedDetail data ->
             T.activityMemberRenamed { oldName = data.oldName, newName = data.newName } i18n
@@ -712,7 +712,7 @@ detailContent i18n config detail =
                 )
             ]
 
-        MemberReplacedDetail data ->
+        MemberLinkedDetail data ->
             [ detailRow (T.changeFieldName i18n) data.name ]
 
         MemberRenamedDetail data ->

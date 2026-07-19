@@ -394,16 +394,18 @@ joinPayload : Member.Id -> String -> { action : Page.JoinGroup.JoinAction, newMe
 joinPayload selfId publicKey joinData loaded =
     case joinData.action of
         Page.JoinGroup.ClaimMember rootId ->
-            Dict.get rootId loaded.groupState.members
-                |> Maybe.map
-                    (\chain ->
-                        Event.MemberReplaced
-                            { rootId = rootId
-                            , previousId = chain.currentMember.id
-                            , newId = selfId
-                            , publicKey = publicKey
-                            }
+            if Dict.member rootId loaded.groupState.members then
+                Just
+                    (Event.MemberLinked
+                        { rootId = rootId
+                        , deviceId = selfId
+                        , publicKey = publicKey
+                        , seq = GroupState.nextLinkSeq loaded.groupState selfId
+                        }
                     )
+
+            else
+                Nothing
 
         Page.JoinGroup.JoinAsNewMember ->
             Just

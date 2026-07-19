@@ -113,17 +113,17 @@ view i18n config toMsg model maybeUserRootId state =
         isMember =
             maybeUserRootId /= Nothing
 
-        allMembers : List Member.ChainState
+        allMembers : List Member.State
         allMembers =
             Dict.values state.members
 
-        active : List Member.ChainState
+        active : List Member.State
         active =
             allMembers
                 |> List.filter (not << .isRetired)
                 |> List.sortBy (\m -> ( boolToInt (Just m.rootId /= maybeUserRootId), String.toLower m.name ))
 
-        retired : List Member.ChainState
+        retired : List Member.State
         retired =
             allMembers
                 |> List.filter .isRetired
@@ -418,7 +418,7 @@ qrCodeView link =
 -- MEMBER CARD
 
 
-memberCard : I18n -> Time.Zone -> (Msg -> msg) -> Set Member.Id -> Maybe Member.Id -> Member.ChainState -> Ui.Element msg
+memberCard : I18n -> Time.Zone -> (Msg -> msg) -> Set Member.Id -> Maybe Member.Id -> Member.State -> Ui.Element msg
 memberCard i18n zone toMsg expandedMembers maybeUserRootId member =
     let
         isCurrentUser : Bool
@@ -439,7 +439,7 @@ memberCard i18n zone toMsg expandedMembers maybeUserRootId member =
 
         isVirtual : Bool
         isVirtual =
-            member.currentMember.memberType == Member.Virtual
+            member.memberType == Member.Virtual
 
         initials : String
         initials =
@@ -590,7 +590,7 @@ virtualTag i18n =
         (Ui.text (T.memberVirtualLabel i18n))
 
 
-memberDetail : I18n -> (Msg -> msg) -> Bool -> Maybe Member.Id -> Member.ChainState -> Ui.Element msg
+memberDetail : I18n -> (Msg -> msg) -> Bool -> Maybe Member.Id -> Member.State -> Ui.Element msg
 memberDetail i18n toMsg isCurrentUser maybeUserRootId member =
     let
         isMember : Bool

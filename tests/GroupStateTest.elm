@@ -17,7 +17,7 @@ suite =
         , memberRenameTests
         , memberRetireTests
         , memberUnretireTests
-        , memberReplacementTests
+        , memberLinkTests
         , groupMetadataTests
         , eventOrderingTests
         ]
@@ -70,33 +70,15 @@ memberCreationTests =
                 Dict.get "alice" state.members
                     |> Maybe.map .isRetired
                     |> Expect.equal (Just False)
-        , test "preserves member type in currentMember" <|
+        , test "preserves member type" <|
             \_ ->
                 let
                     state =
                         GroupState.applyEvents createAliceEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
-                    |> Maybe.map (.currentMember >> .memberType)
+                    |> Maybe.map .memberType
                     |> Expect.equal (Just Member.Real)
-        , test "currentMember has depth 0" <|
-            \_ ->
-                let
-                    state =
-                        GroupState.applyEvents createAliceEvents GroupState.empty
-                in
-                Dict.get "alice" state.members
-                    |> Maybe.map (.currentMember >> .depth)
-                    |> Expect.equal (Just 0)
-        , test "allMembers has exactly one entry" <|
-            \_ ->
-                let
-                    state =
-                        GroupState.applyEvents createAliceEvents GroupState.empty
-                in
-                Dict.get "alice" state.members
-                    |> Maybe.map (.allMembers >> Dict.size)
-                    |> Expect.equal (Just 1)
         , test "ignores duplicate member creation" <|
             \_ ->
                 let
@@ -287,208 +269,175 @@ memberUnretireTests =
         ]
 
 
-replaceAliceEvents : List Envelope
-replaceAliceEvents =
-    createAliceEvents
-        ++ [ makeEnvelope "e2"
-                2000
-                "bob-device"
-                (MemberReplaced { rootId = "alice", previousId = "alice", newId = "bob-device", publicKey = "" })
-           ]
+createVirtualMember : String -> String -> Int -> Envelope
+createVirtualMember eventId name timestamp =
+    makeEnvelope eventId
+        timestamp
+        "admin"
+        (MemberCreated { memberId = String.toLower name, name = name, memberType = Member.Virtual, addedBy = "admin", publicKey = "" })
 
 
-memberReplacementTests : Test
-memberReplacementTests =
-    describe "Member replacement"
-        [ test "currentMember is the new device after replacement" <|
+linkAliceEvents : List Envelope
+linkAliceEvents =
+    [ adminBootstrap
+    , createVirtualMember "e1" "Alice" 1000
+    , makeEnvelope "e2"
+        2000
+        "bob-device"
+        (MemberLinked { rootId = "alice", deviceId = "bob-device", publicKey = "pk-bob", seq = 0 })
+    ]
+
+
+memberLinkTests : Test
+memberLinkTests =
+    describe "Member device links"
+        [ test "device resolves to the linked root" <|
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents replaceAliceEvents GroupState.empty
+                        GroupState.applyEvents linkAliceEvents GroupState.empty
                 in
-                Dict.get "alice" state.members
-                    |> Maybe.map (.currentMember >> .id)
-                    |> Expect.equal (Just "bob-device")
-        , test "allMembers has both devices" <|
+                GroupState.resolveMemberRootId state "bob-device"
+                    |> Expect.equal (Just "alice")
+        , test "claiming makes a virtual member real" <|
             \_ ->
                 let
                     state =
-                        GroupState.applyEvents replaceAliceEvents GroupState.empty
+                        GroupState.applyEvents linkAliceEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
-                    |> Maybe.map (.allMembers >> Dict.size)
-                    |> Expect.equal (Just 2)
-        , test "new device has depth 1" <|
-            \_ ->
-                let
-                    state =
-                        GroupState.applyEvents replaceAliceEvents GroupState.empty
-                in
-                Dict.get "alice" state.members
-                    |> Maybe.andThen (.allMembers >> Dict.get "bob-device")
-                    |> Maybe.map .depth
-                    |> Expect.equal (Just 1)
-        , test "new device has previousId pointing to replaced member" <|
-            \_ ->
-                let
-                    state =
-                        GroupState.applyEvents replaceAliceEvents GroupState.empty
-                in
-                Dict.get "alice" state.members
-                    |> Maybe.andThen (.allMembers >> Dict.get "bob-device")
-                    |> Maybe.map .previousId
-                    |> Expect.equal (Just (Just "alice"))
-        , test "new device is Real type" <|
-            \_ ->
-                let
-                    state =
-                        GroupState.applyEvents replaceAliceEvents GroupState.empty
-                in
-                Dict.get "alice" state.members
-                    |> Maybe.andThen (.allMembers >> Dict.get "bob-device")
                     |> Maybe.map .memberType
                     |> Expect.equal (Just Member.Real)
-        , test "chain preserves rootId through replacements" <|
+        , test "name is preserved after claiming" <|
             \_ ->
                 let
-                    events =
-                        replaceAliceEvents
-                            ++ [ makeEnvelope "e3"
-                                    3000
-                                    "carol-device"
-                                    (MemberReplaced { rootId = "alice", previousId = "bob-device", newId = "carol-device", publicKey = "" })
-                               ]
-
                     state =
-                        GroupState.applyEvents events GroupState.empty
+                        GroupState.applyEvents linkAliceEvents GroupState.empty
+                in
+                GroupState.resolveMemberName state "bob-device"
+                    |> Expect.equal "Alice"
+        , test "re-linking moves the device to the new root" <|
+            \_ ->
+                let
+                    state =
+                        GroupState.applyEvents relinkToCarolEvents GroupState.empty
+                in
+                GroupState.resolveMemberRootId state "bob-device"
+                    |> Expect.equal (Just "carol")
+        , test "re-linking vacates the previously claimed member" <|
+            \_ ->
+                let
+                    state =
+                        GroupState.applyEvents relinkToCarolEvents GroupState.empty
                 in
                 Dict.get "alice" state.members
-                    |> Maybe.map .rootId
-                    |> Expect.equal (Just "alice")
-        , test "deeper replacement wins as currentMember" <|
+                    |> Maybe.map .memberType
+                    |> Expect.equal (Just Member.Virtual)
+        , test "higher seq wins over a later timestamp" <|
             \_ ->
                 let
+                    -- The device's clock jumped backwards between re-links:
+                    -- the seq-1 link to alice is older in wall-clock time.
                     events =
-                        replaceAliceEvents
-                            ++ [ makeEnvelope "e3"
-                                    3000
-                                    "carol-device"
-                                    (MemberReplaced { rootId = "alice", previousId = "bob-device", newId = "carol-device", publicKey = "" })
-                               ]
-
-                    state =
-                        GroupState.applyEvents events GroupState.empty
-                in
-                Dict.get "alice" state.members
-                    |> Maybe.map (.currentMember >> .id)
-                    |> Expect.equal (Just "carol-device")
-        , test "id breaks tie at same depth" <|
-            \_ ->
-                let
-                    -- Two concurrent replacements of alice (both at depth 1)
-                    events =
-                        createAliceEvents
-                            ++ [ makeEnvelope "e2"
-                                    2000
-                                    "device-aaa"
-                                    (MemberReplaced { rootId = "alice", previousId = "alice", newId = "device-aaa", publicKey = "" })
-                               , makeEnvelope "e3"
-                                    2001
-                                    "device-zzz"
-                                    (MemberReplaced { rootId = "alice", previousId = "alice", newId = "device-zzz", publicKey = "" })
-                               ]
-
-                    state =
-                        GroupState.applyEvents events GroupState.empty
-                in
-                -- "device-zzz" > "device-aaa" lexicographically, so device-zzz wins
-                Dict.get "alice" state.members
-                    |> Maybe.map (.currentMember >> .id)
-                    |> Expect.equal (Just "device-zzz")
-        , test "ignores self-replacement" <|
-            \_ ->
-                let
-                    events =
-                        createAliceEvents
-                            ++ [ makeEnvelope "e2"
-                                    2000
-                                    "alice"
-                                    (MemberReplaced { rootId = "alice", previousId = "alice", newId = "alice", publicKey = "" })
-                               ]
-
-                    state =
-                        GroupState.applyEvents events GroupState.empty
-                in
-                Dict.get "alice" state.members
-                    |> Maybe.map (.allMembers >> Dict.size)
-                    |> Expect.equal (Just 1)
-        , test "ignores replacement for non-existent rootId" <|
-            \_ ->
-                let
-                    events =
-                        [ makeEnvelope "e1"
-                            1000
-                            "device"
-                            (MemberReplaced { rootId = "ghost", previousId = "ghost", newId = "device", publicKey = "" })
+                        [ adminBootstrap
+                        , createVirtualMember "e1" "Alice" 1000
+                        , createVirtualMember "e2" "Carol" 1001
+                        , makeEnvelope "e3"
+                            5000
+                            "bob-device"
+                            (MemberLinked { rootId = "alice", deviceId = "bob-device", publicKey = "pk-bob", seq = 1 })
+                        , makeEnvelope "e4"
+                            6000
+                            "bob-device"
+                            (MemberLinked { rootId = "carol", deviceId = "bob-device", publicKey = "pk-bob", seq = 0 })
                         ]
 
                     state =
                         GroupState.applyEvents events GroupState.empty
                 in
-                Expect.equal 0 (Dict.size state.members)
-        , test "ignores replacement when previousId not in chain" <|
-            \_ ->
-                let
-                    events =
-                        createAliceEvents
-                            ++ [ makeEnvelope "e2"
-                                    2000
-                                    "device"
-                                    (MemberReplaced { rootId = "alice", previousId = "not-in-chain", newId = "device", publicKey = "" })
-                               ]
-
-                    state =
-                        GroupState.applyEvents events GroupState.empty
-                in
-                Dict.get "alice" state.members
-                    |> Maybe.map (.allMembers >> Dict.size)
-                    |> Expect.equal (Just 1)
-        , test "ignores replacement with duplicate newId" <|
-            \_ ->
-                let
-                    events =
-                        replaceAliceEvents
-                            ++ [ makeEnvelope "e3"
-                                    3000
-                                    "bob-device"
-                                    (MemberReplaced { rootId = "alice", previousId = "bob-device", newId = "bob-device", publicKey = "" })
-                               ]
-
-                    state =
-                        GroupState.applyEvents events GroupState.empty
-                in
-                -- bob-device already in chain, so this is self-replacement and ignored
-                Dict.get "alice" state.members
-                    |> Maybe.map (.allMembers >> Dict.size)
-                    |> Expect.equal (Just 2)
-        , test "name is preserved after replacement" <|
-            \_ ->
-                let
-                    state =
-                        GroupState.applyEvents replaceAliceEvents GroupState.empty
-                in
-                Dict.get "alice" state.members
-                    |> Maybe.map .name
-                    |> Expect.equal (Just "Alice")
-        , test "resolveMemberRootId finds device within chain" <|
-            \_ ->
-                let
-                    state =
-                        GroupState.applyEvents replaceAliceEvents GroupState.empty
-                in
                 GroupState.resolveMemberRootId state "bob-device"
                     |> Expect.equal (Just "alice")
+        , test "ignores link to non-existent root" <|
+            \_ ->
+                let
+                    events =
+                        [ adminBootstrap
+                        , makeEnvelope "e1"
+                            1000
+                            "bob-device"
+                            (MemberLinked { rootId = "ghost", deviceId = "bob-device", publicKey = "pk-bob", seq = 0 })
+                        ]
+
+                    state =
+                        GroupState.applyEvents events GroupState.empty
+                in
+                GroupState.resolveMemberRootId state "bob-device"
+                    |> Expect.equal Nothing
+        , test "ignores link not emitted by the device itself" <|
+            \_ ->
+                let
+                    events =
+                        [ adminBootstrap
+                        , createVirtualMember "e1" "Alice" 1000
+                        , makeEnvelope "e2"
+                            2000
+                            "admin"
+                            (MemberLinked { rootId = "alice", deviceId = "bob-device", publicKey = "pk-bob", seq = 0 })
+                        ]
+
+                    state =
+                        GroupState.applyEvents events GroupState.empty
+                in
+                GroupState.resolveMemberRootId state "bob-device"
+                    |> Expect.equal Nothing
+        , test "link takes precedence over the device's own root" <|
+            \_ ->
+                let
+                    -- bob-device joined as a new member, then re-linked to alice
+                    events =
+                        [ adminBootstrap
+                        , createVirtualMember "e1" "Alice" 1000
+                        , makeEnvelope "e2"
+                            2000
+                            "bob-device"
+                            (MemberCreated { memberId = "bob-device", name = "Bob", memberType = Member.Real, addedBy = "bob-device", publicKey = "pk-bob" })
+                        , makeEnvelope "e3"
+                            3000
+                            "bob-device"
+                            (MemberLinked { rootId = "alice", deviceId = "bob-device", publicKey = "pk-bob", seq = 0 })
+                        ]
+
+                    state =
+                        GroupState.applyEvents events GroupState.empty
+                in
+                ( GroupState.resolveMemberRootId state "bob-device"
+                , Dict.member "bob-device" state.members
+                )
+                    |> Expect.equal ( Just "alice", True )
+        , test "nextLinkSeq starts at 0 for an unlinked device" <|
+            \_ ->
+                GroupState.nextLinkSeq GroupState.empty "bob-device"
+                    |> Expect.equal 0
+        , test "nextLinkSeq increments past the winning link" <|
+            \_ ->
+                let
+                    state =
+                        GroupState.applyEvents linkAliceEvents GroupState.empty
+                in
+                GroupState.nextLinkSeq state "bob-device"
+                    |> Expect.equal 1
         ]
+
+
+relinkToCarolEvents : List Envelope
+relinkToCarolEvents =
+    linkAliceEvents
+        ++ [ createVirtualMember "e1b" "Carol" 1001
+           , makeEnvelope "e3"
+                3000
+                "bob-device"
+                (MemberLinked { rootId = "carol", deviceId = "bob-device", publicKey = "pk-bob", seq = 1 })
+           ]
 
 
 groupMetadataTests : Test

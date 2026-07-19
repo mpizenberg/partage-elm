@@ -2,7 +2,7 @@ module Infra.EventVerification exposing (filterVerifiedEvents)
 
 {-| Signature verification for event envelopes.
 
-Collects public keys from MemberCreated/MemberReplaced events and existing
+Collects public keys from MemberCreated/MemberLinked events and existing
 GroupState, then verifies signatures. Events with invalid or unverifiable
 signatures are silently dropped. GroupCreated events are exempt (genesis
 events with no prior public key).
@@ -46,28 +46,32 @@ isGenesisEvent envelope =
             False
 
 
-{-| Collect all known public keys from existing group state members.
+{-| Collect all known public keys from existing group state: real roots'
+own keys plus the keys of linked devices.
 -}
 collectKeysFromState : GroupState.GroupState -> Dict Member.Id String
 collectKeysFromState state =
-    Dict.foldl
-        (\_ chain acc ->
-            Dict.foldl
-                (\memberId info innerAcc ->
-                    if info.publicKey /= "" then
-                        Dict.insert memberId info.publicKey innerAcc
+    let
+        insertKey : Member.Id -> String -> Dict Member.Id String -> Dict Member.Id String
+        insertKey memberId publicKey acc =
+            if publicKey /= "" then
+                Dict.insert memberId publicKey acc
 
-                    else
-                        innerAcc
-                )
+            else
                 acc
-                chain.allMembers
-        )
-        Dict.empty
-        state.members
+
+        rootKeys : Dict Member.Id String
+        rootKeys =
+            Dict.foldl (\rootId member acc -> insertKey rootId member.publicKey acc)
+                Dict.empty
+                state.members
+    in
+    Dict.foldl (\deviceId link acc -> insertKey deviceId link.publicKey acc)
+        rootKeys
+        state.deviceLinks
 
 
-{-| Extract public key from a MemberCreated or MemberReplaced event payload.
+{-| Extract public key from a MemberCreated or MemberLinked event payload.
 -}
 collectKeyFromEvent : Envelope -> Dict Member.Id String -> Dict Member.Id String
 collectKeyFromEvent envelope keys =
@@ -79,9 +83,9 @@ collectKeyFromEvent envelope keys =
             else
                 keys
 
-        MemberReplaced data ->
+        MemberLinked data ->
             if data.publicKey /= "" then
-                Dict.insert data.newId data.publicKey keys
+                Dict.insert data.deviceId data.publicKey keys
 
             else
                 keys

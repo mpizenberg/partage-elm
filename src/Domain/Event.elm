@@ -36,7 +36,7 @@ type Payload
     | MemberRenamed { rootId : Member.Id, oldName : String, newName : String }
     | MemberRetired { rootId : Member.Id }
     | MemberUnretired { rootId : Member.Id }
-    | MemberReplaced { rootId : Member.Id, previousId : Member.Id, newId : Member.Id, publicKey : String }
+    | MemberLinked { rootId : Member.Id, deviceId : Member.Id, publicKey : String, seq : Int }
     | MemberMetadataUpdated { rootId : Member.Id, metadata : Member.Metadata }
     | EntryAdded Entry
     | EntryModified Entry
@@ -179,13 +179,13 @@ encodePayload payload =
                 , ( "r", Encode.string data.rootId )
                 ]
 
-        MemberReplaced data ->
+        MemberLinked data ->
             Encode.object
-                [ ( "t", Encode.string "mrp" )
+                [ ( "t", Encode.string "ml" )
                 , ( "r", Encode.string data.rootId )
-                , ( "pi", Encode.string data.previousId )
-                , ( "ni", Encode.string data.newId )
+                , ( "d", Encode.string data.deviceId )
                 , ( "pk", Encode.string data.publicKey )
+                , ( "sq", Encode.int data.seq )
                 ]
 
         MemberMetadataUpdated data ->
@@ -286,20 +286,20 @@ payloadDecoder =
                         Decode.map (\rid -> MemberUnretired { rootId = rid })
                             (Decode.field "r" Decode.string)
 
-                    "mrp" ->
+                    "ml" ->
                         Decode.map4
-                            (\rid prevId newId pk ->
-                                MemberReplaced
+                            (\rid deviceId pk seq ->
+                                MemberLinked
                                     { rootId = rid
-                                    , previousId = prevId
-                                    , newId = newId
+                                    , deviceId = deviceId
                                     , publicKey = pk
+                                    , seq = seq
                                     }
                             )
                             (Decode.field "r" Decode.string)
-                            (Decode.field "pi" Decode.string)
-                            (Decode.field "ni" Decode.string)
+                            (Decode.field "d" Decode.string)
                             (Decode.field "pk" Decode.string)
+                            (Decode.field "sq" Decode.int)
 
                     "mmu" ->
                         Decode.map2

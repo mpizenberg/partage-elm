@@ -70,7 +70,7 @@
   "activityIncomeModified": "modified income \"{description}\"",
   "activityMemberCreated": "added member {name}",
   "activityMemberCreatedVirtual": "added virtual member {name}",
-  "activityMemberReplaced": "linked a device for {name}",
+  "activityMemberLinked": "linked a device for {name}",
   "activityMemberRenamed": "renamed {oldName} to {newName}",
   "activityMemberRetired": "retired {name}",
   "activityMemberUnretired": "reactivated {name}",

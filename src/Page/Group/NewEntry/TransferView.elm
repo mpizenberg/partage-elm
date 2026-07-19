@@ -19,7 +19,7 @@ import Ui.Font
 import Ui.Input
 
 
-transferFields : I18n -> List Member.ChainState -> ModelData -> List (Ui.Element Msg)
+transferFields : I18n -> List Member.State -> ModelData -> List (Ui.Element Msg)
 transferFields i18n activeMembers data =
     [ descriptionField i18n data
     , Shared.amountCurrencyField i18n data
@@ -49,7 +49,7 @@ type TransferRole
     | ToRole
 
 
-transferMembersField : I18n -> List Member.ChainState -> ModelData -> Ui.Element Msg
+transferMembersField : I18n -> List Member.State -> ModelData -> Ui.Element Msg
 transferMembersField i18n activeMembers data =
     let
         memberRole : Member.Id -> Maybe TransferRole
@@ -152,7 +152,7 @@ transferMemberBtn i18n config =
         ]
 
 
-transferSummary : I18n -> List Member.ChainState -> ModelData -> Ui.Element Msg
+transferSummary : I18n -> List Member.State -> ModelData -> Ui.Element Msg
 transferSummary i18n activeMembers data =
     case ( data.fromMemberId, data.toMemberId ) of
         ( Just fromId, Just toId ) ->

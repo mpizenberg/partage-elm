@@ -7,6 +7,7 @@ module Domain.GroupState exposing
     , activeMembers
     , applyEvents
     , empty
+    , nextLinkSeq
     , resolveMemberName
     , resolveMemberRootId
     , summarize
@@ -39,7 +40,8 @@ the plan visually stable between expense edits.
 
 -}
 type alias GroupState =
-    { members : Dict Member.Id Member.ChainState
+    { members : Dict Member.Id Member.State
+    , deviceLinks : Dict Member.Id Member.DeviceLink
     , entries : Dict Entry.Id EntryState
     , balances : Dict Member.Id MemberBalance
     , expenseShares : Dict Member.Id Int
@@ -96,6 +98,7 @@ type alias GroupMetadata =
 empty : GroupState
 empty =
     { members = Dict.empty
+    , deviceLinks = Dict.empty
     , entries = Dict.empty
     , balances = Dict.empty
     , expenseShares = Dict.empty
@@ -200,7 +203,7 @@ applyEvent envelope state =
 
             newState : GroupState
             newState =
-                applyPayload envelope.clientTimestamp envelope.payload state
+                applyPayload envelope state
 
             withSnapshot : GroupState
             withSnapshot =
@@ -256,7 +259,7 @@ isAnchorMover payload state =
         MemberUnretired _ ->
             False
 
-        MemberReplaced _ ->
+        MemberLinked _ ->
             False
 
         MemberMetadataUpdated _ ->
@@ -300,23 +303,28 @@ isAuthorized state envelope =
         MemberCreated data ->
             data.memberId == envelope.triggeredBy || isMember state envelope.triggeredBy
 
-        MemberReplaced data ->
-            data.newId == envelope.triggeredBy
+        MemberLinked data ->
+            data.deviceId == envelope.triggeredBy
 
         _ ->
             isMember state envelope.triggeredBy
 
 
-{-| Check if an ID is a known member (root ID or device ID in any chain).
+{-| Check if an ID is a known member (root ID or linked device ID).
 -}
 isMember : GroupState -> Member.Id -> Bool
 isMember state memberId =
     resolveMemberRootId state memberId /= Nothing
 
 
-applyPayload : Time.Posix -> Payload -> GroupState -> GroupState
-applyPayload timestamp payload state =
-    case payload of
+applyPayload : Envelope -> GroupState -> GroupState
+applyPayload envelope state =
+    let
+        timestamp : Time.Posix
+        timestamp =
+            envelope.clientTimestamp
+    in
+    case envelope.payload of
         MemberCreated data ->
             applyMemberCreated timestamp data state
 
@@ -329,8 +337,8 @@ applyPayload timestamp payload state =
         MemberUnretired data ->
             applyMemberUnretired data state
 
-        MemberReplaced data ->
-            applyMemberReplaced data state
+        MemberLinked data ->
+            applyMemberLinked timestamp envelope.id data state
 
         MemberMetadataUpdated data ->
             applyMemberMetadataUpdated data state
@@ -364,32 +372,23 @@ applyPayload timestamp payload state =
 applyMemberCreated : Time.Posix -> { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id, publicKey : String } -> GroupState -> GroupState
 applyMemberCreated timestamp data state =
     if Dict.member data.memberId state.members then
-        -- Chain with this rootId already exists, ignore
+        -- Member with this rootId already exists, ignore
         state
 
     else
         let
-            memberInfo : Member.Info
-            memberInfo =
-                { id = data.memberId
-                , previousId = Nothing
-                , depth = 0
-                , memberType = data.memberType
-                , publicKey = data.publicKey
-                }
-
-            chain : Member.ChainState
-            chain =
+            member : Member.State
+            member =
                 { rootId = data.memberId
                 , name = data.name
+                , memberType = data.memberType
+                , publicKey = data.publicKey
                 , isRetired = False
                 , joinedAt = timestamp
                 , metadata = Member.emptyMetadata
-                , currentMember = memberInfo
-                , allMembers = Dict.singleton data.memberId memberInfo
                 }
         in
-        { state | members = Dict.insert data.memberId chain state.members }
+        { state | members = Dict.insert data.memberId member state.members }
 
 
 applyMemberRenamed : { rootId : Member.Id, oldName : String, newName : String } -> GroupState -> GroupState
@@ -398,11 +397,11 @@ applyMemberRenamed data state =
         Nothing ->
             state
 
-        Just chain ->
+        Just member ->
             let
-                updated : Member.ChainState
+                updated : Member.State
                 updated =
-                    { chain | name = data.newName }
+                    { member | name = data.newName }
             in
             { state | members = Dict.insert data.rootId updated state.members }
 
@@ -413,12 +412,12 @@ applyMemberRetired data state =
         Nothing ->
             state
 
-        Just chain ->
-            if not chain.isRetired then
+        Just member ->
+            if not member.isRetired then
                 let
-                    updated : Member.ChainState
+                    updated : Member.State
                     updated =
-                        { chain | isRetired = True }
+                        { member | isRetired = True }
                 in
                 { state | members = Dict.insert data.rootId updated state.members }
 
@@ -433,12 +432,12 @@ applyMemberUnretired data state =
         Nothing ->
             state
 
-        Just chain ->
-            if chain.isRetired then
+        Just member ->
+            if member.isRetired then
                 let
-                    updated : Member.ChainState
+                    updated : Member.State
                     updated =
-                        { chain | isRetired = False }
+                        { member | isRetired = False }
                 in
                 { state | members = Dict.insert data.rootId updated state.members }
 
@@ -446,56 +445,74 @@ applyMemberUnretired data state =
                 state
 
 
-applyMemberReplaced : { rootId : Member.Id, previousId : Member.Id, newId : Member.Id, publicKey : String } -> GroupState -> GroupState
-applyMemberReplaced data state =
-    if data.previousId == data.newId then
-        -- Cannot replace self
+{-| Apply a device's claim on a member root. Per device only the winning link
+is kept (highest seq, timestamp, event id — see `Member.pickLink`), so a
+losing claim changes nothing and application is order-independent. The
+effective member type of the claimed root — and of the root the device
+previously pointed at — is refreshed from the updated link map.
+-}
+applyMemberLinked : Time.Posix -> Event.Id -> { rootId : Member.Id, deviceId : Member.Id, publicKey : String, seq : Int } -> GroupState -> GroupState
+applyMemberLinked timestamp eventId data state =
+    if not (Dict.member data.rootId state.members) then
         state
 
     else
-        case Dict.get data.rootId state.members of
-            Nothing ->
-                -- Chain doesn't exist
-                state
+        let
+            newLink : Member.DeviceLink
+            newLink =
+                { rootId = data.rootId
+                , publicKey = data.publicKey
+                , seq = data.seq
+                , timestamp = timestamp
+                , eventId = eventId
+                }
 
-            Just chain ->
-                case Dict.get data.previousId chain.allMembers of
-                    Nothing ->
-                        -- previousId not in chain
-                        state
+            previousLink : Maybe Member.DeviceLink
+            previousLink =
+                Dict.get data.deviceId state.deviceLinks
 
-                    Just prev ->
-                        if Dict.member data.newId chain.allMembers then
-                            -- Duplicate newId in chain
-                            state
+            winner : Member.DeviceLink
+            winner =
+                previousLink
+                    |> Maybe.map (\existing -> Member.pickLink existing newLink)
+                    |> Maybe.withDefault newLink
 
-                        else
-                            let
-                                newMemberInfo : Member.Info
-                                newMemberInfo =
-                                    { id = data.newId
-                                    , previousId = Just data.previousId
-                                    , depth = prev.depth + 1
-                                    , memberType = Member.Real
-                                    , publicKey = data.publicKey
-                                    }
+            updatedLinks : Dict Member.Id Member.DeviceLink
+            updatedLinks =
+                Dict.insert data.deviceId winner state.deviceLinks
 
-                                updatedAllMembers : Dict Member.Id Member.Info
-                                updatedAllMembers =
-                                    Dict.insert data.newId newMemberInfo chain.allMembers
+            affectedRoots : List Member.Id
+            affectedRoots =
+                winner.rootId
+                    :: List.filterMap (Maybe.map .rootId) [ previousLink ]
+        in
+        { state
+            | deviceLinks = updatedLinks
+            , members = List.foldl (refreshEffectiveType updatedLinks) state.members affectedRoots
+        }
 
-                                current : Member.Info
-                                current =
-                                    Member.pickCurrent chain.currentMember newMemberInfo
 
-                                updatedChain : Member.ChainState
-                                updatedChain =
-                                    { chain
-                                        | allMembers = updatedAllMembers
-                                        , currentMember = current
-                                    }
-                            in
-                            { state | members = Dict.insert data.rootId updatedChain state.members }
+{-| Recompute a root's effective member type from the device-link map:
+Real when created real (it has a public key) or some device links to it.
+-}
+refreshEffectiveType : Dict Member.Id Member.DeviceLink -> Member.Id -> Dict Member.Id Member.State -> Dict Member.Id Member.State
+refreshEffectiveType links rootId members =
+    let
+        isClaimed : Bool
+        isClaimed =
+            Dict.foldl (\_ link found -> found || link.rootId == rootId) False links
+
+        effectiveType : Member.State -> Member.Type
+        effectiveType member =
+            if member.publicKey /= "" || isClaimed then
+                Member.Real
+
+            else
+                Member.Virtual
+    in
+    Dict.update rootId
+        (Maybe.map (\member -> { member | memberType = effectiveType member }))
+        members
 
 
 applyMemberMetadataUpdated : { rootId : Member.Id, metadata : Member.Metadata } -> GroupState -> GroupState
@@ -504,11 +521,11 @@ applyMemberMetadataUpdated data state =
         Nothing ->
             state
 
-        Just chain ->
+        Just member ->
             let
-                updated : Member.ChainState
+                updated : Member.State
                 updated =
-                    { chain | metadata = data.metadata }
+                    { member | metadata = data.metadata }
             in
             { state | members = Dict.insert data.rootId updated state.members }
 
@@ -788,32 +805,33 @@ lookupSettlementPreference state memberRootId =
 -- QUERY FUNCTIONS
 
 
-{-| Resolve a device member ID to its root ID.
-First checks if it's a root ID directly, then scans allMembers dicts.
-Returns Nothing if the ID is not found in any member chain.
+{-| Resolve a device or root ID to a root ID. The device-link map takes
+precedence over root identity, so a device that joined as its own member but
+later linked elsewhere resolves to the link target. Returns Nothing for
+unknown IDs.
 -}
 resolveMemberRootId : GroupState -> Member.Id -> Maybe Member.Id
-resolveMemberRootId state deviceId =
-    if Dict.member deviceId state.members then
-        Just deviceId
+resolveMemberRootId state memberId =
+    case Dict.get memberId state.deviceLinks of
+        Just link ->
+            Just link.rootId
 
-    else
-        -- Scan allMembers dicts to find which chain contains this device ID
-        Dict.foldl
-            (\rootId chain found ->
-                case found of
-                    Just _ ->
-                        found
+        Nothing ->
+            if Dict.member memberId state.members then
+                Just memberId
 
-                    Nothing ->
-                        if Dict.member deviceId chain.allMembers then
-                            Just rootId
+            else
+                Nothing
 
-                        else
-                            Nothing
-            )
-            Nothing
-            state.members
+
+{-| The sequence number the next MemberLinked event from this device must
+carry to beat the device's current winning link.
+-}
+nextLinkSeq : GroupState -> Member.Id -> Int
+nextLinkSeq state deviceId =
+    Dict.get deviceId state.deviceLinks
+        |> Maybe.map (\link -> link.seq + 1)
+        |> Maybe.withDefault 0
 
 
 {-| Resolve a member ID (root or device) to a display name. Falls back to the raw ID if not found.
@@ -853,7 +871,7 @@ mergeActivitiesHelp new existing acc =
 
 {-| Get all active (non-retired) members.
 -}
-activeMembers : GroupState -> List Member.ChainState
+activeMembers : GroupState -> List Member.State
 activeMembers state =
     Dict.values state.members
         |> List.filter (not << .isRetired)

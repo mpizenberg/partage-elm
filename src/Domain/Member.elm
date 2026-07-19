@@ -1,9 +1,8 @@
-module Domain.Member exposing (ChainState, Id, Info, Metadata, PaymentInfo, Type(..), emptyMetadata, emptyPaymentInfo, encodeMetadata, encodePaymentInfo, encodeType, metadataDecoder, paymentInfoDecoder, pickCurrent, typeDecoder)
+module Domain.Member exposing (DeviceLink, Id, Metadata, PaymentInfo, State, Type(..), emptyMetadata, emptyPaymentInfo, encodeMetadata, encodePaymentInfo, encodeType, metadataDecoder, paymentInfoDecoder, pickLink, typeDecoder)
 
 {-| Group members, their lifecycle, and contact metadata.
 -}
 
-import Dict exposing (Dict)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Time
@@ -23,48 +22,48 @@ type Type
     | Virtual
 
 
-{-| A member chain's computed state, grouping all device identities under one rootId.
-Chain-level fields describe the person; device-level fields are in Info.
+{-| A member's computed state. The rootId identifies the person; the devices
+claiming it live in the group-level device-link map. `memberType` is the
+effective type: Real when created real or currently claimed by a device.
+`publicKey` is the creating device's key, empty for virtual members.
 -}
-type alias ChainState =
+type alias State =
     { rootId : Id
     , name : String
+    , memberType : Type
+    , publicKey : String
     , isRetired : Bool
     , joinedAt : Time.Posix
     , metadata : Metadata
-    , currentMember : Info
-    , allMembers : Dict Id Info
     }
 
 
-{-| A single device identity within a member chain.
+{-| A device's claim on a member root. The group state keeps one per device:
+its winning link, resolved by `pickLink`.
 -}
-type alias Info =
-    { id : Id
-    , previousId : Maybe Id
-    , depth : Int
-    , memberType : Type
+type alias DeviceLink =
+    { rootId : Id
     , publicKey : String
+    , seq : Int
+    , timestamp : Time.Posix
+    , eventId : String
     }
 
 
-{-| Pick the winning member between two. Deeper wins. ID breaks ties.
+{-| Pick the winning link between two claims by the same device.
+Higher (seq, timestamp, event id) wins — seq keeps a device's own re-links
+robust to its clock jumping backwards; the unique event id makes the order total.
 -}
-pickCurrent : Info -> Info -> Info
-pickCurrent a b =
-    case compare a.depth b.depth of
-        GT ->
-            a
+pickLink : DeviceLink -> DeviceLink -> DeviceLink
+pickLink a b =
+    if
+        ( a.seq, Time.posixToMillis a.timestamp, a.eventId )
+            >= ( b.seq, Time.posixToMillis b.timestamp, b.eventId )
+    then
+        a
 
-        LT ->
-            b
-
-        EQ ->
-            if a.id >= b.id then
-                a
-
-            else
-                b
+    else
+        b
 
 
 {-| Optional contact and payment information for a member.

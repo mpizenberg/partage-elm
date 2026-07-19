@@ -832,10 +832,10 @@ submitIncome data =
 
 {-| Render the new entry form, adapting fields based on expense vs transfer mode.
 -}
-view : I18n -> List Member.ChainState -> (Shared.Msg -> msg) -> Model -> Ui.Element msg
+view : I18n -> List Member.State -> (Shared.Msg -> msg) -> Model -> Ui.Element msg
 view i18n activeMembers toMsg (Model data) =
     let
-        sortedMembers : List Member.ChainState
+        sortedMembers : List Member.State
         sortedMembers =
             List.sortBy (\m -> String.toLower m.name) activeMembers
 

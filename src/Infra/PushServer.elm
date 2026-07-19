@@ -238,7 +238,7 @@ notificationBodyAndData actorName payloads =
             else
                 result "new_activity" "New activity"
 
-        [ MemberReplaced _ ] ->
+        [ MemberLinked _ ] ->
             result "member_joined" (actorName ++ " joined the group")
 
         _ ->
@@ -276,7 +276,7 @@ involvedMembers entryCurrentVersion payload =
         MemberCreated data ->
             [ data.memberId ]
 
-        MemberReplaced data ->
+        MemberLinked data ->
             [ data.rootId ]
 
         MemberRenamed data ->

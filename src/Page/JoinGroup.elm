@@ -78,7 +78,7 @@ getPreview model =
 defaultAction : GroupState -> JoinAction
 defaultAction groupState =
     Dict.values groupState.members
-        |> List.filter (\m -> m.currentMember.memberType == Member.Virtual && not m.isRetired)
+        |> List.filter (\m -> m.memberType == Member.Virtual && not m.isRetired)
         |> List.sortBy (\m -> String.toLower m.name)
         |> List.head
         |> Maybe.map (\m -> ClaimMember m.rootId)
@@ -193,16 +193,16 @@ view i18n config model =
 viewPreview : I18n -> PreviewData -> List (Ui.Element Msg)
 viewPreview i18n preview =
     let
-        virtualMembers : List Member.ChainState
+        virtualMembers : List Member.State
         virtualMembers =
             Dict.values preview.groupState.members
-                |> List.filter (\m -> m.currentMember.memberType == Member.Virtual && not m.isRetired)
+                |> List.filter (\m -> m.memberType == Member.Virtual && not m.isRetired)
                 |> List.sortBy (\m -> String.toLower m.name)
 
-        realMembers : List Member.ChainState
+        realMembers : List Member.State
         realMembers =
             Dict.values preview.groupState.members
-                |> List.filter (\m -> m.currentMember.memberType == Member.Real && not m.isRetired)
+                |> List.filter (\m -> m.memberType == Member.Real && not m.isRetired)
                 |> List.sortBy (\m -> String.toLower m.name)
 
         isJoinAsNew : Bool
@@ -302,11 +302,11 @@ viewPreview i18n preview =
                 case preview.selectedAction of
                     ClaimMember memberId ->
                         let
-                            member : Maybe Member.ChainState
+                            member : Maybe Member.State
                             member =
                                 Dict.get memberId preview.groupState.members
                         in
-                        case Maybe.map (\m -> ( m.name, m.currentMember.memberType )) member of
+                        case Maybe.map (\m -> ( m.name, m.memberType )) member of
                             Just ( name, Member.Virtual ) ->
                                 T.joinGroupConfirmClaim name i18n
 
@@ -329,7 +329,7 @@ viewPreview i18n preview =
     ]
 
 
-viewMemberToggle : JoinAction -> Member.ChainState -> Ui.Element Msg
+viewMemberToggle : JoinAction -> Member.State -> Ui.Element Msg
 viewMemberToggle selectedAction member =
     let
         isSelected : Bool

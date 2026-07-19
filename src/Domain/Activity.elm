@@ -42,7 +42,7 @@ type Detail
     | EntryDeletedDetail { entryDescription : String, entry : Maybe Entry.Entry }
     | EntryUndeletedDetail { entryDescription : String, entry : Maybe Entry.Entry }
     | MemberCreatedDetail { name : String, memberType : Member.Type }
-    | MemberReplacedDetail { name : String, rootId : Member.Id }
+    | MemberLinkedDetail { name : String, rootId : Member.Id }
     | MemberRenamedDetail { oldName : String, newName : String, rootId : Member.Id }
     | MemberRetiredDetail { name : String, rootId : Member.Id }
     | MemberUnretiredDetail { name : String, rootId : Member.Id }
@@ -115,7 +115,7 @@ involvedMembers ctx payload =
         MemberCreated data ->
             [ data.memberId ]
 
-        MemberReplaced data ->
+        MemberLinked data ->
             [ data.rootId ]
 
         MemberRenamed data ->
@@ -188,8 +188,8 @@ payloadToDetail ctx payload =
         MemberCreated data ->
             MemberCreatedDetail { name = data.name, memberType = data.memberType }
 
-        MemberReplaced { rootId } ->
-            MemberReplacedDetail { name = ctx.resolveName rootId, rootId = rootId }
+        MemberLinked { rootId } ->
+            MemberLinkedDetail { name = ctx.resolveName rootId, rootId = rootId }
 
         MemberRenamed data ->
             MemberRenamedDetail { oldName = data.oldName, newName = data.newName, rootId = data.rootId }

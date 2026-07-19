@@ -44,7 +44,7 @@ rewriting of late-arriving events, and a single audit entry per merge.
 # Member ids
 
 All ids accepted by this module MUST be member _root_ ids
-(`Member.ChainState.rootId`). Entries and settlement preferences in
+(`Member.State.rootId`). Entries and settlement preferences in
 `GroupState` only ever store root ids, so matching is by exact equality.
 Passing a device id would silently match nothing.
 

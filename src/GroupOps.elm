@@ -657,9 +657,6 @@ areConflicting a b =
         ( Event.GroupMetadataUpdated _, Event.GroupMetadataUpdated _ ) ->
             True
 
-        ( Event.MemberReplaced r1, Event.MemberReplaced r2 ) ->
-            r1.rootId == r2.rootId
-
         ( Event.SettlementPreferencesUpdated r1, Event.SettlementPreferencesUpdated r2 ) ->
             r1.memberRootId == r2.memberRootId
 

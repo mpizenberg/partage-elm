@@ -117,7 +117,7 @@ update state msg (Model data) =
             case data.targetRootId of
                 Just targetId ->
                     let
-                        sourceMember : Maybe Member.ChainState
+                        sourceMember : Maybe Member.State
                         sourceMember =
                             Dict.get data.sourceRootId state.members
 
@@ -168,7 +168,7 @@ viewStep1 i18n state data =
 
         Just sourceMember ->
             let
-                activeCandidates : List Member.ChainState
+                activeCandidates : List Member.State
                 activeCandidates =
                     Dict.values state.members
                         |> List.filter (\m -> m.rootId /= data.sourceRootId && not m.isRetired)
@@ -196,12 +196,12 @@ viewStep1 i18n state data =
                 ]
 
 
-candidateRow : I18n -> Member.ChainState -> Ui.Element Msg
+candidateRow : I18n -> Member.State -> Ui.Element Msg
 candidateRow i18n member =
     let
         isVirtual : Bool
         isVirtual =
-            member.currentMember.memberType == Member.Virtual
+            member.memberType == Member.Virtual
     in
     UI.Components.card
         [ Ui.Input.button (PickTarget member.rootId)
@@ -308,7 +308,7 @@ isPref action =
             False
 
 
-pairView : I18n -> Member.ChainState -> Member.ChainState -> Ui.Element Msg
+pairView : I18n -> Member.State -> Member.State -> Ui.Element Msg
 pairView i18n source target =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         [ Ui.row [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill, Ui.contentCenterY ]
@@ -347,16 +347,16 @@ swapButton =
         }
 
 
-suggestionBanner : I18n -> Member.ChainState -> Member.ChainState -> Ui.Element Msg
+suggestionBanner : I18n -> Member.State -> Member.State -> Ui.Element Msg
 suggestionBanner i18n source target =
     let
         sourceIsReal : Bool
         sourceIsReal =
-            source.currentMember.memberType == Member.Real
+            source.memberType == Member.Real
 
         targetIsReal : Bool
         targetIsReal =
-            target.currentMember.memberType == Member.Real
+            target.memberType == Member.Real
     in
     case ( sourceIsReal, targetIsReal ) of
         ( False, True ) ->
@@ -437,8 +437,8 @@ effectsSection :
     I18n
     -> ModelData
     -> GroupState
-    -> Member.ChainState
-    -> Member.ChainState
+    -> Member.State
+    -> Member.State
     -> List Merge.Action
     -> List Merge.Action
     -> List Merge.Action
@@ -504,7 +504,7 @@ effectsSection i18n data state sourceMember targetMember modifyActions deleteAct
         ]
 
 
-retireLine : I18n -> Member.ChainState -> Member.ChainState -> Ui.Element Msg
+retireLine : I18n -> Member.State -> Member.State -> Ui.Element Msg
 retireLine i18n source target =
     Ui.row
         [ Ui.spacing Theme.spacing.sm
@@ -632,7 +632,7 @@ warningCallout message =
         ]
 
 
-confirmSection : I18n -> ModelData -> Member.ChainState -> Ui.Element Msg
+confirmSection : I18n -> ModelData -> Member.State -> Ui.Element Msg
 confirmSection i18n data sourceMember =
     let
         canSubmit : Bool
@@ -694,7 +694,7 @@ type SlotTone
 
 memberSlot :
     { label : String
-    , member : Member.ChainState
+    , member : Member.State
     , tone : SlotTone
     }
     -> Ui.Element Msg
@@ -736,7 +736,7 @@ memberSlot config =
         ]
 
 
-initialsOf : Member.ChainState -> String
+initialsOf : Member.State -> String
 initialsOf member =
     String.left 2 (String.toUpper member.name)
 

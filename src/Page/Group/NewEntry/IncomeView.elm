@@ -19,7 +19,7 @@ import Ui.Font
 import Ui.Input
 
 
-incomeFields : I18n -> List Member.ChainState -> ModelData -> List (Ui.Element Msg)
+incomeFields : I18n -> List Member.State -> ModelData -> List (Ui.Element Msg)
 incomeFields i18n activeMembers data =
     [ descriptionField i18n data
     , Shared.amountCurrencyField i18n data
@@ -51,7 +51,7 @@ descriptionField i18n data =
         ]
 
 
-receiverField : I18n -> List Member.ChainState -> ModelData -> Ui.Element Msg
+receiverField : I18n -> List Member.State -> ModelData -> Ui.Element Msg
 receiverField i18n activeMembers data =
     Shared.formField { label = T.newEntryReceivedByLabel i18n, required = True }
         [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.wrap ]
@@ -70,7 +70,7 @@ receiverField i18n activeMembers data =
         ]
 
 
-beneficiariesField : I18n -> List Member.ChainState -> ModelData -> Ui.Element Msg
+beneficiariesField : I18n -> List Member.State -> ModelData -> Ui.Element Msg
 beneficiariesField i18n activeMembers data =
     let
         exactMismatchError : Ui.Element Msg
@@ -130,7 +130,7 @@ toggleSplitMode mode =
             ShareSplit
 
 
-beneficiaryRow : I18n -> ModelData -> Member.ChainState -> Ui.Element Msg
+beneficiaryRow : I18n -> ModelData -> Member.State -> Ui.Element Msg
 beneficiaryRow i18n data member =
     let
         isSelected : Bool

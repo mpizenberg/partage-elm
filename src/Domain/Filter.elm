@@ -317,7 +317,7 @@ classifyActivity activity =
         MemberCreatedDetail _ ->
             MemberActivity
 
-        MemberReplacedDetail _ ->
+        MemberLinkedDetail _ ->
             MemberActivity
 
         MemberRenamedDetail _ ->

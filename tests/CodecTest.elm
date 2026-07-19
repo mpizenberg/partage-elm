@@ -235,7 +235,7 @@ payloadFuzzer =
             Fuzz.string
         , Fuzz.map (\rid -> MemberRetired { rootId = rid }) Fuzz.string
         , Fuzz.map (\rid -> MemberUnretired { rootId = rid }) Fuzz.string
-        , Fuzz.map4 (\rid prev new pk -> MemberReplaced { rootId = rid, previousId = prev, newId = new, publicKey = pk }) Fuzz.string Fuzz.string Fuzz.string Fuzz.string
+        , Fuzz.map4 (\rid deviceId pk seq -> MemberLinked { rootId = rid, deviceId = deviceId, publicKey = pk, seq = seq }) Fuzz.string Fuzz.string Fuzz.string Fuzz.int
         , Fuzz.map2 (\rid meta -> MemberMetadataUpdated { rootId = rid, metadata = meta }) Fuzz.string memberMetadataFuzzer
         , Fuzz.map EntryAdded entryFuzzer
         , Fuzz.map EntryModified entryFuzzer
