@@ -691,6 +691,14 @@ orderDependent a b =
         ( Event.GroupMetadataUpdated _, Event.GroupMetadataUpdated _ ) ->
             True
 
+        -- Only the first GroupCreated in sort order applies, and it resets
+        -- the metadata fields GroupMetadataUpdated edits.
+        ( Event.GroupCreated _, Event.GroupCreated _ ) ->
+            True
+
+        ( Event.GroupCreated _, Event.GroupMetadataUpdated _ ) ->
+            True
+
         ( Event.SettlementPreferencesUpdated r1, Event.SettlementPreferencesUpdated r2 ) ->
             r1.memberRootId == r2.memberRootId
 

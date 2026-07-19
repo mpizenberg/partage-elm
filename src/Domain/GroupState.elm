@@ -696,16 +696,22 @@ applyEntryUndeleted data state =
 
 applyGroupCreated : Time.Posix -> { name : String, defaultCurrency : Currency } -> GroupState -> GroupState
 applyGroupCreated timestamp data state =
-    { state
-        | groupMeta =
-            { name = data.name
-            , subtitle = Nothing
-            , description = Nothing
-            , links = []
-            , defaultCurrency = data.defaultCurrency
-            , createdAt = timestamp
-            }
-    }
+    -- Only the genesis event may set group metadata: a duplicate GroupCreated
+    -- would silently rewrite the default currency, re-basing every balance.
+    if state.groupMeta.createdAt /= Time.millisToPosix 0 then
+        state
+
+    else
+        { state
+            | groupMeta =
+                { name = data.name
+                , subtitle = Nothing
+                , description = Nothing
+                , links = []
+                , defaultCurrency = data.defaultCurrency
+                , createdAt = timestamp
+                }
+        }
 
 
 applyGroupMetadataUpdated : Event.GroupMetadataChange -> GroupState -> GroupState

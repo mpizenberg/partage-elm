@@ -1,6 +1,7 @@
 module GroupStateTest exposing (suite)
 
 import Dict
+import Domain.Currency exposing (Currency(..))
 import Domain.Event exposing (Envelope, Payload(..))
 import Domain.GroupState as GroupState
 import Domain.Member as Member
@@ -478,6 +479,23 @@ groupMetadataTests =
                         GroupState.applyEvents partialUpdateEvents GroupState.empty
                 in
                 Expect.equal (Just "Summer 2025") state.groupMeta.subtitle
+        , test "a second GroupCreated is ignored" <|
+            \_ ->
+                let
+                    genesis =
+                        makeEnvelope "e-genesis" 500 "admin" (GroupCreated { name = "Trip", defaultCurrency = EUR })
+
+                    duplicate =
+                        makeEnvelope "e-dup" 1000 "admin" (GroupCreated { name = "Hijacked", defaultCurrency = USD })
+
+                    state =
+                        GroupState.applyEvents [ genesis, adminBootstrap, duplicate ] GroupState.empty
+                in
+                state.groupMeta
+                    |> Expect.all
+                        [ .name >> Expect.equal "Trip"
+                        , .defaultCurrency >> Expect.equal EUR
+                        ]
         ]
 
 

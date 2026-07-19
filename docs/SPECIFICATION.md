@@ -187,7 +187,7 @@ Member operations follow strict validation rules. Invalid events are **silently 
 | **Link** | Member with the target rootId exists, and the link beats the device's current winning link (higher `(seq, timestamp, event ID)`). | Member does not exist, or an existing link for the device wins. |
 
 **Authorization rules:**
-- `GroupCreated`: Always allowed.
+- `GroupCreated`: Allowed once — only the first `GroupCreated` in sort order applies; later ones are ignored (a duplicate would rewrite the default currency, re-basing every balance).
 - `MemberCreated`: Allowed if the member is creating themselves, or the actor is an existing group member.
 - `MemberLinked`: Allowed if the actor is the linked device itself (asserting its own identity).
 - All other operations: The actor must be an existing group member.
