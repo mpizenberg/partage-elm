@@ -117,6 +117,9 @@ function createRelayTasks(notify) {
     var ws = new WebSocket(wsUrl);
     entry.ws = ws;
     ws.onopen = function () {
+      // A reconnect means notifications may have been missed while the
+      // socket was down — signal Elm so it pulls.
+      if (entry.attempts > 0) notify({ groupId: groupId });
       entry.attempts = 0;
     };
     ws.onmessage = function () {

@@ -189,7 +189,17 @@ type alias PendingMerge =
 
 subscription : Model -> Sub Msg
 subscription model =
-    Runner.subscription model.runner
+    Sub.batch
+        [ Runner.subscription model.runner
+        , -- Periodic flush/pull safety net: heals failed syncs and missed
+          -- WebSocket notifications that no event-driven trigger can see.
+          case model.loadedGroup of
+            Just _ ->
+                Time.every (100 * 1000) (\_ -> SyncTick)
+
+            Nothing ->
+                Sub.none
+        ]
 
 
 serverEventMsg : Json.Decode.Value -> Msg
@@ -231,6 +241,7 @@ type
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
     | PostSyncTasksDone (ConcurrentTask.Response Idb.Error ())
     | OnServerEvent Json.Decode.Value
+    | SyncTick
     | ScrollToEntryResult (Result Browser.Dom.Error ())
     | OnRateFetched Currency (ConcurrentTask.Response Http.Error Float)
 
@@ -949,6 +960,18 @@ update config msg model =
                         ( model, Cmd.none, [] )
 
                 _ ->
+                    ( model, Cmd.none, [] )
+
+        SyncTick ->
+            case model.loadedGroup of
+                Just loaded ->
+                    let
+                        ( syncModel, syncCmd ) =
+                            triggerSyncInternal config loaded.summary.id model
+                    in
+                    ( syncModel, syncCmd, [] )
+
+                Nothing ->
                     ( model, Cmd.none, [] )
 
         ScrollToEntryResult _ ->

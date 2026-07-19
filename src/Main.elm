@@ -1429,7 +1429,14 @@ processPwaOutMsgs model pwaCmd outMsgs =
                                             |> Tuple.mapSecond (\cmd -> cmd :: cmds)
 
                                     else
-                                        ( m, cmds )
+                                        case buildGroupConfig m of
+                                            Just config ->
+                                                Page.Group.triggerSync config loaded.summary.id m.groupModel
+                                                    |> Update.wrap GroupMsg (\gm -> { m | groupModel = gm })
+                                                    |> Tuple.mapSecond (\cmd -> cmd :: cmds)
+
+                                            Nothing ->
+                                                ( m, cmds )
 
                                 Nothing ->
                                     ( m, cmds )

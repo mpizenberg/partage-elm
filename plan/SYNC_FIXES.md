@@ -14,6 +14,9 @@ toast-per-tick spam.
 
 1. Done — network-shaped sync failures silent; other sync failures toast via
    translated `toastSyncError` (EN/FR) and still log to ErrorLog.
+2. Done — `CameOnline` triggers a sync for the loaded group; WS `onopen`
+   after a reconnect notifies Elm via the `onServerEvent` port; 100 s
+   `Time.every` tick in `Page.Group.subscription` while a group is loaded.
 
 ## Increments
 
@@ -44,3 +47,8 @@ toast-per-tick spam.
   technical detail from `Server.errorToString` stays English inside it.
   Translating every error branch was rejected — these toasts are now rare
   (non-network failures only) and the detail is diagnostic.
+- WS `onopen` notifies Elm only on a *reconnect* (`attempts > 0`). The
+  initial open stays silent because `subscribeToGroup` runs right after a
+  completed sync, so an initial-open notify would only duplicate that pull.
+- The periodic tick lives in `Page.Group.subscription`, active only while a
+  group is loaded — no app-wide timer, no ticks on the home screen.
