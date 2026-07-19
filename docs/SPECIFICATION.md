@@ -627,10 +627,19 @@ The application uses a **two-layer encryption model**:
 
 Every event is **cryptographically signed** by its author:
 
-- **Canonicalization:** The event is serialized to a deterministic JSON text (excluding the signature field) containing: event ID, timestamp, triggered-by member ID, and encoded payload.
-- **Signing:** The canonical text is signed using the author's ECDSA P-256 private key with SHA-256 hashing.
-- **Verification:** On receipt, the signature is verified against the author's stored public key. Events with invalid signatures are rejected during state computation.
+- **Canonicalization:** the received envelope JSON with the `sig` field removed, other fields kept verbatim in their received order. Verifiers never re-encode the decoded payload, so events carrying fields or types from a newer app version keep valid signatures on older clients.
+- **Signing:** the author serializes the envelope (event ID, timestamp `ts`, author `by`, schema version `v`, payload `p`) to compact JSON and signs it with its ECDSA P-256 private key (SHA-256).
+- **Verification:** on receipt, the signature is verified against the author's stored public key. Events with invalid signatures are rejected during state computation.
 - **Genesis exception:** `GroupCreated` events bypass signature verification (no prior state to look up public keys).
+
+### 11.3b Forward Compatibility
+
+Clients must tolerate events authored by newer app versions:
+
+- Envelopes carry a schema version field `"v"` (absent = 1) for future "update required" messaging.
+- An envelope is passed through encoding, local storage, and export as the raw JSON it was decoded from, so fields unknown to this client survive round trips.
+- A payload that fails to decode (unknown type, or a known type whose shape changed) becomes an **Unknown** event: it still verifies and persists, state computation ignores it, the activity feed shows a generic "update the app" line, and the group view shows a persistent warning banner. After an app update the stored raw JSON decodes normally — no data is lost.
+- A pulled record that fails to decrypt, or an envelope whose JSON shape cannot be decoded, is skipped and counted (surfaced via the error log); the sync cursor always advances, so one corrupt or malicious record can never permanently break a group's sync.
 
 ### 11.4 Key Management
 

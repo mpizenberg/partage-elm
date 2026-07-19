@@ -39,6 +39,8 @@ ship in the launch build:
    and logs the count to ErrorLog on sync success.
 3. Done — persistent warning banner in the group view while any loaded
    event has an Unknown payload (EN/FR).
+4. Done — spec §11.3 rewritten (raw canonicalization) + new §11.3b
+   (forward compatibility); findings 2 and 3b marked [FIXED].
 
 ## Increments
 
