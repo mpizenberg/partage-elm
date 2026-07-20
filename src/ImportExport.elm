@@ -176,7 +176,7 @@ update config msg runnerCmd =
                                 group =
                                     exportData.group
                             in
-                            { group | lastSyncedAt = config.currentTime }
+                            { group | lastSyncedAt = config.currentTime, supersededBy = Nothing }
                     in
                     ( runnerCmd
                         |> Runner.andRun (config.toMsg << OnGroupImported importedSummary)

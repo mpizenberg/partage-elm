@@ -59,6 +59,10 @@ type alias Summary =
     -- (docs/SPECIFICATION.md §14.8) that the home list can read without
     -- loading events.
     , lastSyncedAt : Time.Posix
+
+    -- Set when this group was abandoned to a migration (spec §11.7): the id of
+    -- the fresh group that replaced it. The old group is then read-only.
+    , supersededBy : Maybe Id
     }
 
 
@@ -74,12 +78,13 @@ encodeSummary summary =
         , ( "mc", Encode.int summary.memberCount )
         , ( "mb", Encode.int summary.myBalanceCents )
         , ( "ls", Encode.int <| Time.posixToMillis summary.lastSyncedAt )
+        , ( "sup", Maybe.withDefault Encode.null (Maybe.map Encode.string summary.supersededBy) )
         ]
 
 
 summaryDecoder : Decode.Decoder Summary
 summaryDecoder =
-    Decode.succeed (\id name dc sub ar ca mc mb ls -> { id = id, name = name, defaultCurrency = dc, isSubscribed = sub, isArchived = ar, createdAt = ca, memberCount = mc, myBalanceCents = mb, lastSyncedAt = Maybe.withDefault ca ls })
+    Decode.succeed (\id name dc sub ar ca mc mb ls sup -> { id = id, name = name, defaultCurrency = dc, isSubscribed = sub, isArchived = ar, createdAt = ca, memberCount = mc, myBalanceCents = mb, lastSyncedAt = Maybe.withDefault ca ls, supersededBy = sup })
         |> andMap (Decode.field "id" Decode.string)
         |> andMap (Decode.field "n" Decode.string)
         |> andMap (Decode.field "dc" Currency.currencyDecoder)
@@ -89,6 +94,7 @@ summaryDecoder =
         |> andMap (Decode.field "mc" Decode.int)
         |> andMap (Decode.field "mb" Decode.int)
         |> andMap (Decode.maybe (Decode.field "ls" Decode.int |> Decode.map Time.millisToPosix))
+        |> andMap (Decode.maybe (Decode.field "sup" Decode.string))
 
 
 andMap : Decode.Decoder a -> Decode.Decoder (a -> b) -> Decode.Decoder b

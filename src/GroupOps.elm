@@ -3,6 +3,7 @@ module GroupOps exposing
     , CompactionStep(..)
     , Context
     , LoadedGroup
+    , MigrationResult
     , State
     , SyncApplyResult
     , addMember
@@ -17,6 +18,7 @@ module GroupOps exposing
     , eventWithId
     , importSplitwiseGroup
     , initLoadedGroup
+    , migrateGroup
     , newEntry
     , newGroup
     , postSyncTasks
@@ -38,6 +40,7 @@ import Form.NewGroup
 import IndexedDb as Idb
 import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
 import Infra.Crypto as Crypto
+import Infra.EventVerification as EventVerification
 import Infra.IdGen as IdGen
 import Infra.Identity exposing (Identity)
 import Infra.Server as Server
@@ -230,6 +233,7 @@ newGroup ctx onComplete output =
             , memberCount = 1 + List.length output.virtualMembers
             , myBalanceCents = 0
             , lastSyncedAt = ctx.currentTime
+            , supersededBy = Nothing
             }
 
         signingKeyPair : Signature.SigningKeyPair
@@ -295,6 +299,80 @@ type alias SplitwiseImportConfig =
     , rate : Currency -> Float
     , parsed : SplitwiseImport.Parsed
     }
+
+
+{-| The two summaries a migration touches: the fresh group it minted and the old
+group it superseded (now archived, pointing at the new one).
+-}
+type alias MigrationResult =
+    { newSummary : Group.Summary
+    , oldSummary : Group.Summary
+    }
+
+
+{-| Migrate a compromised group to a fresh one (spec §11.7). Mint a new id and
+key, re-home the local verified history verbatim — the signature covers the
+envelope, not the group id, so identical event ids replay to identical state —
+and queue every event for push so the new group registers on the relay on its
+first sync. The old group is marked superseded and archived; it is left to the
+relay TTL. The new key must reach only trusted members, out of band.
+-}
+migrateGroup : Context msg -> (ConcurrentTask.Response Idb.Error MigrationResult -> msg) -> LoadedGroup -> ( State msg, Cmd msg )
+migrateGroup ctx onComplete loaded =
+    let
+        ( newId, seedAfter ) =
+            IdGen.groupId ctx.randomSeed
+
+        state : GroupState.GroupState
+        state =
+            loaded.groupState
+
+        newSummary : Group.Summary
+        newSummary =
+            { id = newId
+            , name = state.groupMeta.name
+            , defaultCurrency = loaded.summary.defaultCurrency
+            , isSubscribed = False
+            , isArchived = False
+            , createdAt = state.groupMeta.createdAt
+            , memberCount = Dict.size state.members
+            , myBalanceCents = loaded.summary.myBalanceCents
+            , lastSyncedAt = ctx.currentTime
+            , supersededBy = Nothing
+            }
+
+        oldSummary : Group.Summary
+        oldSummary =
+            { loadedSummary | isArchived = True, supersededBy = Just newId }
+
+        loadedSummary : Group.Summary
+        loadedSummary =
+            loaded.summary
+
+        task : ConcurrentTask Idb.Error MigrationResult
+        task =
+            ConcurrentTask.map2 Tuple.pair
+                (EventVerification.filterVerifiedEvents GroupState.empty loaded.events)
+                Crypto.generateGroupKey
+                |> ConcurrentTask.andThen
+                    (\( verified, key ) ->
+                        ConcurrentTask.batch
+                            [ Storage.saveGroup ctx.db newSummary (Just (Symmetric.exportKey key)) verified Nothing
+                            , Storage.addUnpushedIds ctx.db newId (List.map .id verified)
+                            , Storage.saveGroupSummary ctx.db oldSummary |> ConcurrentTask.map (\_ -> ())
+                            ]
+                            |> ConcurrentTask.map (\_ -> { newSummary = newSummary, oldSummary = oldSummary })
+                    )
+    in
+    ( ctx.runner, Cmd.none )
+        |> Runner.andRun onComplete task
+        |> Tuple.mapFirst
+            (\r ->
+                { runner = r
+                , randomSeed = seedAfter
+                , uuidState = ctx.uuidState
+                }
+            )
 
 
 {-| Create a new group from a parsed Splitwise export. The importer is the (Real)
@@ -393,6 +471,7 @@ importSplitwiseGroup ctx onComplete cfg =
             , memberCount = 1 + List.length virtualMembers
             , myBalanceCents = 0
             , lastSyncedAt = ctx.currentTime
+            , supersededBy = Nothing
             }
 
         signingKeyPair : Signature.SigningKeyPair

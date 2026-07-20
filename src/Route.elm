@@ -35,6 +35,7 @@ type GroupView
     | EditMemberMetadata Member.Id
     | MergeMember Member.Id (Maybe Member.Id)
     | EditGroupMetadata
+    | Migrate
     | Diagnostics
 
 
@@ -127,6 +128,9 @@ fromAppUrl appUrl =
         [ "groups", groupId, "settings" ] ->
             GroupRoute groupId EditGroupMetadata
 
+        [ "groups", groupId, "migrate" ] ->
+            GroupRoute groupId Migrate
+
         [ "groups", groupId, "diagnostics" ] ->
             GroupRoute groupId Diagnostics
 
@@ -217,6 +221,9 @@ toPathSegments route =
         GroupRoute groupId EditGroupMetadata ->
             [ "groups", groupId, "settings" ]
 
+        GroupRoute groupId Migrate ->
+            [ "groups", groupId, "migrate" ]
+
         GroupRoute groupId Diagnostics ->
             [ "groups", groupId, "diagnostics" ]
 
@@ -289,6 +296,9 @@ toPath route =
 
         GroupRoute groupId EditGroupMetadata ->
             "/groups/" ++ groupId ++ "/settings"
+
+        GroupRoute groupId Migrate ->
+            "/groups/" ++ groupId ++ "/migrate"
 
         GroupRoute groupId Diagnostics ->
             "/groups/" ++ groupId ++ "/diagnostics"

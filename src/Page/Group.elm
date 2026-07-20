@@ -65,6 +65,7 @@ import Page.Group.EditMemberMetadata
 import Page.Group.EntriesTab
 import Page.Group.MembersTab
 import Page.Group.MergeMember
+import Page.Group.Migrate
 import Page.Group.NewEntry
 import Page.Group.NewEntry.Shared as NewEntryShared
 import Page.JoinGroup
@@ -250,6 +251,10 @@ type
     | PostSyncTasksDone (ConcurrentTask.Response Idb.Error ())
     | DismissTamperSignals
     | OnTamperSignalsSaved (ConcurrentTask.Response Idb.Error ())
+    | ConfirmMigration
+    | OnGroupMigrated (ConcurrentTask.Response Idb.Error GroupOps.MigrationResult)
+    | OpenGroupRoute Route
+    | NoOp
     | OnDiagnosticsLoaded (ConcurrentTask.Response Idb.Error Page.Group.Diagnostics.Stats)
     | OnServerEvent Json.Decode.Value
     | SyncTick
@@ -1103,6 +1108,45 @@ update config msg model =
         OnTamperSignalsSaved _ ->
             ( model, Cmd.none, [ LogError ErrorLog.StorageSource ErrorLog.Err "Failed to save tamper signals" ] )
 
+        ConfirmMigration ->
+            case model.loadedGroup of
+                Just loaded ->
+                    let
+                        ( state, cmd ) =
+                            GroupOps.migrateGroup (submitContext (\_ -> NoOp) config model) OnGroupMigrated loaded
+                    in
+                    ( { model | runner = state.runner, randomSeed = state.randomSeed, uuidState = state.uuidState }
+                    , cmd
+                    , []
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none, [] )
+
+        OnGroupMigrated (ConcurrentTask.Success result) ->
+            ( model
+            , Cmd.none
+            , [ UpdateGroupSummary result.oldSummary
+              , UpdateGroupSummary result.newSummary
+              , ShowToast Toast.Success (T.toastMigrated config.i18n)
+              , NavigateTo (GroupRoute result.newSummary.id (Tab BalanceTab))
+              ]
+            )
+
+        OnGroupMigrated _ ->
+            ( model
+            , Cmd.none
+            , [ ShowToast Toast.Error (T.toastGroupCreateError config.i18n)
+              , LogError ErrorLog.StorageSource ErrorLog.Err "Group migration failed"
+              ]
+            )
+
+        OpenGroupRoute route ->
+            ( model, Cmd.none, [ NavigateTo route ] )
+
+        NoOp ->
+            ( model, Cmd.none, [] )
+
         OnDiagnosticsLoaded (ConcurrentTask.Success stats) ->
             case model.loadedGroup of
                 Just loaded ->
@@ -1713,6 +1757,7 @@ syncGroupSummaryName config groupId model =
                             |> Maybe.map .netBalance
                             |> Maybe.withDefault 0
                     , lastSyncedAt = config.currentTime
+                    , supersededBy = loaded.summary.supersededBy
                     }
 
                 updatedModel : Model
@@ -1741,6 +1786,7 @@ toggleArchiveGroup config model loaded =
             , memberCount = loaded.summary.memberCount
             , myBalanceCents = loaded.summary.myBalanceCents
             , lastSyncedAt = loaded.summary.lastSyncedAt
+            , supersededBy = loaded.summary.supersededBy
             }
 
         updatedModel : Model
@@ -1963,7 +2009,13 @@ viewGroupPage config groupView loaded model =
 
         maybeUserRootId : Maybe Member.Id
         maybeUserRootId =
-            currentUserRootId model loaded
+            -- A superseded group is read-only: nulling the root id reuses the
+            -- non-member gate that already hides every mutating action.
+            if loaded.summary.supersededBy == Nothing then
+                currentUserRootId model loaded
+
+            else
+                Nothing
     in
     case ( groupView, maybeUserRootId ) of
         ( Tab tab, _ ) ->
@@ -2036,18 +2088,34 @@ viewGroupPage config groupView loaded model =
             in
             noOverlay <|
                 pageShell config (T.groupSettingsTitle config.i18n) <|
-                    if config.devMode then
-                        Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill ]
-                            [ settingsForm
-                            , UI.Components.btnOutline []
-                                { label = T.diagTitle config.i18n
-                                , icon = Nothing
-                                , onPress = config.toMsg (RequestNavigation Diagnostics)
-                                }
-                            ]
+                    Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill ]
+                        ([ settingsForm
+                         , UI.Components.btnOutline []
+                            { label = T.migrateTitle config.i18n
+                            , icon = Nothing
+                            , onPress = config.toMsg (RequestNavigation Migrate)
+                            }
+                         ]
+                            ++ (if config.devMode then
+                                    [ UI.Components.btnOutline []
+                                        { label = T.diagTitle config.i18n
+                                        , icon = Nothing
+                                        , onPress = config.toMsg (RequestNavigation Diagnostics)
+                                        }
+                                    ]
 
-                    else
-                        settingsForm
+                                else
+                                    []
+                               )
+                        )
+
+        ( Migrate, Just _ ) ->
+            noOverlay <|
+                pageShell config (T.migrateTitle config.i18n) <|
+                    Page.Group.Migrate.view config.i18n
+                        { onConfirm = config.toMsg ConfirmMigration
+                        , onCancel = config.toMsg (RequestNavigation (Tab BalanceTab))
+                        }
 
         ( Diagnostics, _ ) ->
             if config.devMode then
@@ -2098,16 +2166,27 @@ viewTabs config maybeUserRootId loaded model =
                     banners : List (Ui.Element msg)
                     banners =
                         List.concat
-                            [ if TamperSignals.bannerWorthy loaded.tamperSignals then
-                                [ UI.Components.tamperBanner config.i18n { onDismiss = config.toMsg DismissTamperSignals } ]
+                            [ if TamperSignals.bannerWorthy loaded.tamperSignals && loaded.summary.supersededBy == Nothing then
+                                [ UI.Components.tamperBanner config.i18n
+                                    { onMigrate = config.toMsg (RequestNavigation Migrate)
+                                    , onDismiss = config.toMsg DismissTamperSignals
+                                    }
+                                ]
 
                               else
                                 []
-                            , if maybeUserRootId == Nothing then
-                                [ UI.Components.readOnlyBanner config.i18n ]
+                            , case loaded.summary.supersededBy of
+                                Just newId ->
+                                    [ UI.Components.supersededBanner config.i18n
+                                        { onOpenNew = config.toMsg (OpenGroupRoute (GroupRoute newId (Tab BalanceTab))) }
+                                    ]
 
-                              else
-                                []
+                                Nothing ->
+                                    if maybeUserRootId == Nothing then
+                                        [ UI.Components.readOnlyBanner config.i18n ]
+
+                                    else
+                                        []
                             , if List.any (\e -> e.payload == Event.Unknown) loaded.events then
                                 [ UI.Components.unknownEventsBanner config.i18n ]
 

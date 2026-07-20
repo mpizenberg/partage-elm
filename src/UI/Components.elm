@@ -11,7 +11,7 @@ module UI.Components exposing
     , fab
     , featherIcon, featherIconColored, animatedChevron
     , appLogo
-    , languageSelector, pwaBanners, readOnlyBanner, tamperBanner, unknownEventsBanner
+    , languageSelector, pwaBanners, readOnlyBanner, supersededBanner, tamperBanner, unknownEventsBanner
     )
 
 {-| Reusable UI components.
@@ -55,7 +55,7 @@ module UI.Components exposing
 
 # Domain components
 
-@docs languageSelector, pwaBanners, readOnlyBanner, tamperBanner, unknownEventsBanner
+@docs languageSelector, pwaBanners, readOnlyBanner, supersededBanner, tamperBanner, unknownEventsBanner
 
 -}
 
@@ -1039,11 +1039,24 @@ unknownEventsBanner i18n =
 (forged signatures or rate-limit anomalies, spec §11.7). Dismissable — the
 counters reset, and re-fire if interference continues.
 -}
-tamperBanner : I18n -> { onDismiss : msg } -> Ui.Element msg
-tamperBanner i18n { onDismiss } =
+tamperBanner : I18n -> { onMigrate : msg, onDismiss : msg } -> Ui.Element msg
+tamperBanner i18n { onMigrate, onDismiss } =
     pwaBanner (T.groupTamperWarning i18n)
         { bgColor = Theme.danger.tint
         , textColor = Theme.danger.text
-        , action = Nothing
+        , action = Just ( T.groupTamperMigrate i18n, onMigrate )
         , dismiss = Just onDismiss
+        }
+
+
+{-| Banner shown on a group that was migrated away (spec §11.7): it is now
+read-only and points to the fresh group that replaced it.
+-}
+supersededBanner : I18n -> { onOpenNew : msg } -> Ui.Element msg
+supersededBanner i18n { onOpenNew } =
+    pwaBanner (T.groupSupersededBanner i18n)
+        { bgColor = Theme.warning.tint
+        , textColor = Theme.warning.text
+        , action = Just ( T.groupSupersededOpen i18n, onOpenNew )
+        , dismiss = Nothing
         }

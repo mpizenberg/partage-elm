@@ -309,6 +309,7 @@ summaryTests =
                         , memberCount = 4
                         , myBalanceCents = -250
                         , lastSyncedAt = Time.millisToPosix 987654321
+                        , supersededBy = Just "g-migrated"
                         }
                 in
                 Group.encodeSummary summary
