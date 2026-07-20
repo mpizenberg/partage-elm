@@ -151,10 +151,20 @@ usageSection i18n model =
                         ]
                         (Ui.text (T.aboutUsageTrackingSince trackingSince i18n))
                     , persistRow i18n persistStatus
+                    , retentionRow i18n
                     , fundingSection i18n
                     , resetSection i18n confirmingReset
                     ]
         ]
+
+
+retentionRow : I18n -> Ui.Element msg
+retentionRow i18n =
+    Ui.el
+        [ Ui.Font.size Theme.font.sm
+        , Ui.Font.color Theme.base.textSubtle
+        ]
+        (Ui.text (T.aboutRetentionNotice i18n))
 
 
 persistRow : I18n -> UsageStats.PersistedStatus -> Ui.Element msg

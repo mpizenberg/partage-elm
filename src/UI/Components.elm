@@ -11,7 +11,7 @@ module UI.Components exposing
     , fab
     , featherIcon, featherIconColored, animatedChevron
     , appLogo
-    , languageSelector, pwaBanners, readOnlyBanner, unknownEventsBanner
+    , archivalNudgeBanner, languageSelector, pwaBanners, readOnlyBanner, unknownEventsBanner
     )
 
 {-| Reusable UI components.
@@ -55,7 +55,7 @@ module UI.Components exposing
 
 # Domain components
 
-@docs languageSelector, pwaBanners, readOnlyBanner, unknownEventsBanner
+@docs archivalNudgeBanner, languageSelector, pwaBanners, readOnlyBanner, unknownEventsBanner
 
 -}
 
@@ -1030,6 +1030,19 @@ unknownEventsBanner i18n =
     pwaBanner (T.groupUnknownEventsBanner i18n)
         { bgColor = Theme.warning.tint
         , textColor = Theme.warning.text
+        , action = Nothing
+        , dismiss = Nothing
+        }
+
+
+{-| Banner nudging an archival export for a group with no recent activity,
+which the relay's inactivity purge could eventually reach.
+-}
+archivalNudgeBanner : I18n -> Ui.Element msg
+archivalNudgeBanner i18n =
+    pwaBanner (T.groupArchivalNudge i18n)
+        { bgColor = Theme.base.tint
+        , textColor = Theme.base.text
         , action = Nothing
         , dismiss = Nothing
         }

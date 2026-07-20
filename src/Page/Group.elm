@@ -1892,6 +1892,27 @@ pageShell config title content =
     UI.Shell.pageShell { title = title, onBack = config.onGoBack } content
 
 
+{-| A loaded group whose newest event predates this many days is likely
+dormant. The threshold sits just inside the relay's 12-month inactivity
+window (docs/SPECIFICATION.md §14.8), so the export nudge shows before a
+purge can plausibly reach the group.
+-}
+archivalNudgeThresholdDays : Int
+archivalNudgeThresholdDays =
+    334
+
+
+isLongIdle : Date -> Time.Zone -> LoadedGroup -> Bool
+isLongIdle today zone loaded =
+    case loaded.events of
+        newest :: _ ->
+            Date.toComparable (Date.posixToDate zone newest.clientTimestamp)
+                < Date.toComparable (Date.addDays -archivalNudgeThresholdDays today)
+
+        [] ->
+            False
+
+
 viewTabs : ViewConfig msg -> Maybe Member.Id -> LoadedGroup -> Model -> ViewResult msg
 viewTabs config maybeUserRootId loaded model =
     let
@@ -1929,6 +1950,11 @@ viewTabs config maybeUserRootId loaded model =
                                 []
                             , if List.any (\e -> e.payload == Event.Unknown) loaded.events then
                                 [ UI.Components.unknownEventsBanner config.i18n ]
+
+                              else
+                                []
+                            , if isLongIdle config.today config.timeZone loaded then
+                                [ UI.Components.archivalNudgeBanner config.i18n ]
 
                               else
                                 []
