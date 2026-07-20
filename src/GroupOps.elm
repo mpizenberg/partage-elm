@@ -1,5 +1,6 @@
 module GroupOps exposing
-    ( CompactionStep(..)
+    ( CompactionOutcome
+    , CompactionStep(..)
     , Context
     , LoadedGroup
     , State
@@ -599,6 +600,17 @@ type CompactionStep
     | ExecutedCompaction Server.CompactOutcome
 
 
+{-| A compaction step plus the orthogonal tamper signal: `manifestMismatch` is
+True when a quorum-approved proposal reached this replica but its recomputed
+manifest hash disagrees with the claimed one (spec §11.7). The replica then
+declines to execute and falls back to `step` (propose/approve/nothing).
+-}
+type alias CompactionOutcome =
+    { step : CompactionStep
+    , manifestMismatch : Bool
+    }
+
+
 compactionStep :
     { serverCtx : Server.ServerContext
     , actorId : String
@@ -607,7 +619,7 @@ compactionStep :
     , now : Time.Posix
     }
     -> LoadedGroup
-    -> ConcurrentTask Server.Error CompactionStep
+    -> ConcurrentTask Server.Error CompactionOutcome
 compactionStep cfg loaded =
     let
         state : GroupState.GroupState
@@ -627,6 +639,10 @@ compactionStep cfg loaded =
         relayWorthCompacting : Bool
         relayWorthCompacting =
             cfg.recordCount >= Compaction.recordCountTrigger
+
+        clean : CompactionStep -> CompactionOutcome
+        clean step =
+            { step = step, manifestMismatch = False }
 
         approveOrPropose : ConcurrentTask Server.Error CompactionStep
         approveOrPropose =
@@ -657,21 +673,23 @@ compactionStep cfg loaded =
         ( Just executable, True ) ->
             -- Execute only when this replica's manifest matches the quorumed
             -- claim: an executor never consolidates a history it disagrees
-            -- with, no matter how many others signed it.
+            -- with, no matter how many others signed it. Disagreement here is
+            -- the advisory manifest-mismatch signal.
             WebCrypto.sha256 executable.manifestInput
                 |> ConcurrentTask.mapError Server.CryptoError
                 |> ConcurrentTask.andThen
                     (\hash ->
                         if hash == executable.claimedHash then
                             Server.compact cfg.serverCtx cfg.actorId executable.prefix
-                                |> ConcurrentTask.map ExecutedCompaction
+                                |> ConcurrentTask.map (\outcome -> clean (ExecutedCompaction outcome))
 
                         else
                             approveOrPropose
+                                |> ConcurrentTask.map (\step -> { step = step, manifestMismatch = True })
                     )
 
         _ ->
-            approveOrPropose
+            ConcurrentTask.map clean approveOrPropose
 
 
 {-| The ids of compaction proposals the member `myRoot` should approve:
@@ -724,35 +742,42 @@ applySyncResult now pushedIds syncResult loaded =
         pullResult =
             syncResult.pullResult
 
-        tamperSignals : TamperSignals
-        tamperSignals =
-            TamperSignals.recordForgedSignatures pullResult.forgedSignatures now loaded.tamperSignals
-
         existingIds : Set String
         existingIds =
             List.map .id loaded.events |> Set.fromList
+
+        -- Local events the relay no longer holds after a reset: lost to a
+        -- purge, truncation, or unsanctioned compaction.
+        lostOnReset : Set String
+        lostOnReset =
+            if pullResult.didReset then
+                Set.diff existingIds (Set.fromList (List.map .id pullResult.events))
+
+            else
+                Set.empty
+
+        tamperSignals : TamperSignals
+        tamperSignals =
+            loaded.tamperSignals
+                |> TamperSignals.recordForgedAuthors pullResult.forgedAuthors now
+                |> (if Set.isEmpty lostOnReset then
+                        identity
+
+                    else
+                        TamperSignals.recordResetWithLoss now
+                   )
 
         newEvents : List Event.Envelope
         newEvents =
             List.filter (\e -> not (Set.member e.id existingIds)) pullResult.events
 
         -- Heal re-push: a reset pull returns everything the relay still holds,
-        -- so any local event absent from it was lost (purge, truncation,
-        -- unsanctioned compaction) and must be re-pushed. `unpushedIds` only
-        -- tracks never-pushed events, so the gap is computed here; the
-        -- follow-up sync it triggers does the actual pushing.
+        -- so any local event absent from it was lost and must be re-pushed.
+        -- `unpushedIds` only tracks never-pushed events, so the gap is added
+        -- here; the follow-up sync it triggers does the actual pushing.
         remainingUnpushedIds : Set String
         remainingUnpushedIds =
-            if pullResult.didReset then
-                let
-                    relayIds : Set String
-                    relayIds =
-                        List.map .id pullResult.events |> Set.fromList
-                in
-                Set.union (Set.diff loaded.unpushedIds pushedIds) (Set.diff existingIds relayIds)
-
-            else
-                Set.diff loaded.unpushedIds pushedIds
+            Set.union (Set.diff loaded.unpushedIds pushedIds) lostOnReset
 
         -- Sort only new events, then merge with existing (already sorted) events.
         -- loaded.events is newest-first; new events need sorting before merge.

@@ -4,8 +4,12 @@ module Domain.TamperSignals exposing
     , decoder
     , empty
     , encode
+    , forgedCount
     , isClean
-    , recordForgedSignatures
+    , recordForgedAuthors
+    , recordManifestMismatch
+    , recordRateLimitHit
+    , recordResetWithLoss
     )
 
 {-| Per-group compromise-detection counters (spec §11.7).
@@ -21,15 +25,20 @@ concurrent interleaving). Advisory signals are counted and shown in the
 diagnostics detail but never alarm on their own; only a climbing count, read
 there, distinguishes active interference from a one-off.
 
+Forged envelopes are tallied by their _claimed_ author id (`triggeredBy`), so
+the diagnostics detail can attribute the forgery attempts — informing, not
+proving, who to distrust when migrating.
+
 -}
 
+import Dict exposing (Dict)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Time
 
 
 type alias TamperSignals =
-    { forgedSignatures : Int
+    { forgedAuthors : Dict String Int
     , rateLimitHits : Int
     , resetsWithLoss : Int
     , manifestMismatches : Int
@@ -39,7 +48,7 @@ type alias TamperSignals =
 
 empty : TamperSignals
 empty =
-    { forgedSignatures = 0
+    { forgedAuthors = Dict.empty
     , rateLimitHits = 0
     , resetsWithLoss = 0
     , manifestMismatches = 0
@@ -47,11 +56,18 @@ empty =
     }
 
 
+{-| Total envelopes dropped by signature verification across all claimed authors.
+-}
+forgedCount : TamperSignals -> Int
+forgedCount s =
+    Dict.foldl (\_ n acc -> acc + n) 0 s.forgedAuthors
+
+
 {-| No signal has ever fired (or the counters were dismissed).
 -}
 isClean : TamperSignals -> Bool
 isClean s =
-    s.forgedSignatures == 0 && s.rateLimitHits == 0 && s.resetsWithLoss == 0 && s.manifestMismatches == 0
+    Dict.isEmpty s.forgedAuthors && s.rateLimitHits == 0 && s.resetsWithLoss == 0 && s.manifestMismatches == 0
 
 
 {-| Whether the high-confidence signals warrant the user-facing banner. The
@@ -60,25 +76,46 @@ benign causes would make it cry wolf.
 -}
 bannerWorthy : TamperSignals -> Bool
 bannerWorthy s =
-    s.forgedSignatures > 0 || s.rateLimitHits > 0
+    not (Dict.isEmpty s.forgedAuthors) || s.rateLimitHits > 0
 
 
-{-| Add `n` envelopes dropped by signature verification, stamping the detection
-time. A non-positive count leaves the record (and its timestamp) untouched.
+{-| Tally envelopes dropped by signature verification, keyed by their claimed
+author id, stamping the detection time. An empty list leaves the record (and
+its timestamp) untouched.
 -}
-recordForgedSignatures : Int -> Time.Posix -> TamperSignals -> TamperSignals
-recordForgedSignatures n at s =
-    if n <= 0 then
-        s
+recordForgedAuthors : List String -> Time.Posix -> TamperSignals -> TamperSignals
+recordForgedAuthors authors at s =
+    case authors of
+        [] ->
+            s
 
-    else
-        { s | forgedSignatures = s.forgedSignatures + n, lastDetectedAt = Just at }
+        _ ->
+            { s
+                | forgedAuthors =
+                    List.foldl (\a d -> Dict.update a (\c -> Just (Maybe.withDefault 0 c + 1)) d) s.forgedAuthors authors
+                , lastDetectedAt = Just at
+            }
+
+
+recordRateLimitHit : Time.Posix -> TamperSignals -> TamperSignals
+recordRateLimitHit at s =
+    { s | rateLimitHits = s.rateLimitHits + 1, lastDetectedAt = Just at }
+
+
+recordResetWithLoss : Time.Posix -> TamperSignals -> TamperSignals
+recordResetWithLoss at s =
+    { s | resetsWithLoss = s.resetsWithLoss + 1, lastDetectedAt = Just at }
+
+
+recordManifestMismatch : Time.Posix -> TamperSignals -> TamperSignals
+recordManifestMismatch at s =
+    { s | manifestMismatches = s.manifestMismatches + 1, lastDetectedAt = Just at }
 
 
 encode : TamperSignals -> Encode.Value
 encode s =
     Encode.object
-        ([ ( "fs", Encode.int s.forgedSignatures )
+        ([ ( "fa", Encode.dict identity Encode.int s.forgedAuthors )
          , ( "rl", Encode.int s.rateLimitHits )
          , ( "rw", Encode.int s.resetsWithLoss )
          , ( "mm", Encode.int s.manifestMismatches )
@@ -96,13 +133,13 @@ encode s =
 decoder : Decode.Decoder TamperSignals
 decoder =
     Decode.map5 TamperSignals
-        (optionalInt "fs")
-        (optionalInt "rl")
-        (optionalInt "rw")
-        (optionalInt "mm")
+        (optional "fa" (Decode.dict Decode.int) Dict.empty)
+        (optional "rl" Decode.int 0)
+        (optional "rw" Decode.int 0)
+        (optional "mm" Decode.int 0)
         (Decode.maybe (Decode.field "at" Decode.int |> Decode.map Time.millisToPosix))
 
 
-optionalInt : String -> Decode.Decoder Int
-optionalInt key =
-    Decode.oneOf [ Decode.field key Decode.int, Decode.succeed 0 ]
+optional : String -> Decode.Decoder a -> a -> Decode.Decoder a
+optional key inner fallback =
+    Decode.oneOf [ Decode.field key inner, Decode.succeed fallback ]

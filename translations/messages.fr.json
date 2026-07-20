@@ -421,6 +421,7 @@
   "diagTamperTitle": "Signaux d'altération",
   "diagTamperClean": "Aucun signal détecté.",
   "diagTamperForged": "Signatures falsifiées",
+  "diagTamperForgedClaimed": "Auteurs revendiqués (pas une preuve de responsabilité) :",
   "diagTamperRateLimit": "Anomalies de débit",
   "diagTamperReset": "Réinitialisations avec perte",
   "diagTamperManifest": "Incohérences de compaction",

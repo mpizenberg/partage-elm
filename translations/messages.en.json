@@ -421,6 +421,7 @@
   "diagTamperTitle": "Tamper signals",
   "diagTamperClean": "No signals detected.",
   "diagTamperForged": "Forged signatures",
+  "diagTamperForgedClaimed": "Claimed authors (not proof of responsibility):",
   "diagTamperRateLimit": "Rate-limit anomalies",
   "diagTamperReset": "History resets with loss",
   "diagTamperManifest": "Compaction mismatches",

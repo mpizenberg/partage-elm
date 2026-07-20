@@ -363,7 +363,7 @@ view i18n loaded model =
     Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.md ]
         [ eventsSection i18n loaded
         , syncSection i18n loaded
-        , tamperSection i18n loaded.tamperSignals
+        , tamperSection i18n loaded
         , sizesSection i18n model
         , storageSection i18n model
         , perfSection i18n model
@@ -395,19 +395,43 @@ syncSection i18n loaded =
         ]
 
 
-tamperSection : I18n -> TamperSignals -> Ui.Element msg
-tamperSection i18n signals =
+tamperSection : I18n -> LoadedGroup -> Ui.Element msg
+tamperSection i18n loaded =
+    let
+        signals : TamperSignals
+        signals =
+            loaded.tamperSignals
+    in
     section (T.diagTamperTitle i18n)
         (if Domain.TamperSignals.isClean signals then
             [ subtleText (T.diagTamperClean i18n) ]
 
          else
-            [ metricRow (T.diagTamperForged i18n) (String.fromInt signals.forgedSignatures)
-            , metricRow (T.diagTamperRateLimit i18n) (String.fromInt signals.rateLimitHits)
-            , metricRow (T.diagTamperReset i18n) (String.fromInt signals.resetsWithLoss)
-            , metricRow (T.diagTamperManifest i18n) (String.fromInt signals.manifestMismatches)
-            ]
+            metricRow (T.diagTamperForged i18n) (String.fromInt (Domain.TamperSignals.forgedCount signals))
+                :: forgedByAuthor i18n loaded signals
+                ++ [ metricRow (T.diagTamperRateLimit i18n) (String.fromInt signals.rateLimitHits)
+                   , metricRow (T.diagTamperReset i18n) (String.fromInt signals.resetsWithLoss)
+                   , metricRow (T.diagTamperManifest i18n) (String.fromInt signals.manifestMismatches)
+                   ]
         )
+
+
+{-| The claimed author (`triggeredBy`) of each rejected envelope, resolved to a
+name where known. A forger can stamp any id, so this only informs the trust
+call — it is not proof of who is responsible.
+-}
+forgedByAuthor : I18n -> LoadedGroup -> TamperSignals -> List (Ui.Element msg)
+forgedByAuthor i18n loaded signals =
+    if Dict.isEmpty signals.forgedAuthors then
+        []
+
+    else
+        subtleText (T.diagTamperForgedClaimed i18n)
+            :: List.map
+                (\( authorId, count ) ->
+                    metricRow (GroupState.resolveMemberName loaded.groupState authorId) (String.fromInt count)
+                )
+                (Dict.toList signals.forgedAuthors)
 
 
 sizesSection : I18n -> Model -> Ui.Element msg

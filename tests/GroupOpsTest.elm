@@ -50,7 +50,7 @@ cursorResetTests =
                 result =
                     GroupOps.applySyncResult (Time.millisToPosix 0)
                         Set.empty
-                        { pullResult = { events = existing ++ [ fresh ], cursor = 4, undecodable = 0, didReset = True, recordCount = 0, forgedSignatures = 0 }, pushedCount = 0 }
+                        { pullResult = { events = existing ++ [ fresh ], cursor = 4, undecodable = 0, didReset = True, recordCount = 0, forgedAuthors = [] }, pushedCount = 0 }
                         loaded
             in
             result
@@ -80,7 +80,7 @@ healRepushTests =
         healAfter { events, didReset } =
             GroupOps.applySyncResult (Time.millisToPosix 0)
                 Set.empty
-                { pullResult = { events = events, cursor = 0, undecodable = 0, didReset = didReset, recordCount = 0, forgedSignatures = 0 }, pushedCount = 0 }
+                { pullResult = { events = events, cursor = 0, undecodable = 0, didReset = didReset, recordCount = 0, forgedAuthors = [] }, pushedCount = 0 }
                 (loadedFrom localLog)
     in
     [ test "a purge (reset pull returns nothing) queues every local event for re-push" <|
@@ -101,23 +101,23 @@ healRepushTests =
 tamperSignalTests : List Test
 tamperSignalTests =
     let
-        syncWithForged : Int -> GroupOps.SyncApplyResult
-        syncWithForged forged =
+        syncWithForged : List String -> GroupOps.SyncApplyResult
+        syncWithForged forgedAuthors =
             GroupOps.applySyncResult (Time.millisToPosix 1000)
                 Set.empty
-                { pullResult = { events = [], cursor = 0, undecodable = 0, didReset = False, recordCount = 0, forgedSignatures = forged }, pushedCount = 0 }
+                { pullResult = { events = [], cursor = 0, undecodable = 0, didReset = False, recordCount = 0, forgedAuthors = forgedAuthors }, pushedCount = 0 }
                 (loadedFrom bootstrapMembers)
     in
-    [ test "a pull carrying forged signatures bumps the counter and raises the banner" <|
+    [ test "a pull carrying forged signatures tallies the claimed authors and raises the banner" <|
         \_ ->
-            (syncWithForged 2).updatedGroup.tamperSignals
+            (syncWithForged [ "impostor", "impostor" ]).updatedGroup.tamperSignals
                 |> Expect.all
-                    [ .forgedSignatures >> Expect.equal 2
+                    [ TamperSignals.forgedCount >> Expect.equal 2
                     , TamperSignals.bannerWorthy >> Expect.equal True
                     ]
     , test "a clean pull leaves the counters untouched" <|
         \_ ->
-            (syncWithForged 0).updatedGroup.tamperSignals
+            (syncWithForged []).updatedGroup.tamperSignals
                 |> TamperSignals.isClean
                 |> Expect.equal True
     ]
@@ -213,7 +213,7 @@ syncWith : List Event.Envelope -> GroupOps.LoadedGroup -> GroupOps.SyncApplyResu
 syncWith newEvents loaded =
     GroupOps.applySyncResult (Time.millisToPosix 0)
         Set.empty
-        { pullResult = { events = newEvents, cursor = 1, undecodable = 0, didReset = False, recordCount = 0, forgedSignatures = 0 }, pushedCount = 0 }
+        { pullResult = { events = newEvents, cursor = 1, undecodable = 0, didReset = False, recordCount = 0, forgedAuthors = [] }, pushedCount = 0 }
         loaded
 
 

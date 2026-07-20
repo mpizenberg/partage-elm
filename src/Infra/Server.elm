@@ -337,9 +337,9 @@ failing keeps one bad record from bricking the group's sync forever.
 `didReset` is set when the pull restarted from 0 on a `resetCursor` — the
 relay lost events this client has seen, so the caller re-pushes the gap.
 `recordCount` is the relay's total record count for the group, the
-compaction-trigger signal (spec §14.9). `forgedSignatures` counts envelopes
-the caller's signature verification later dropped (spec §11.7); the pull
-itself never fills it, so it starts at zero.
+compaction-trigger signal (spec §14.9). `forgedAuthors` lists the claimed
+author id of every envelope the caller's signature verification later dropped
+(spec §11.7); the pull itself never fills it, so it starts empty.
 -}
 type alias PullResult =
     { events : List Event.Envelope
@@ -347,7 +347,7 @@ type alias PullResult =
     , undecodable : Int
     , didReset : Bool
     , recordCount : Int
-    , forgedSignatures : Int
+    , forgedAuthors : List String
     }
 
 
@@ -406,7 +406,7 @@ pullAllPages ctx secret allowReset cursor acc =
                                         , undecodable = newAcc.undecodable
                                         , didReset = newAcc.didReset
                                         , recordCount = page.recordCount
-                                        , forgedSignatures = 0
+                                        , forgedAuthors = []
                                         }
                             )
             )

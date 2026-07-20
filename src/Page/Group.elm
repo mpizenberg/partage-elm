@@ -245,7 +245,7 @@ type
     | OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)
     | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set String, tamperSignals : TamperSignals })
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
-    | OnCompactionStep Group.Id (ConcurrentTask.Response Server.Error GroupOps.CompactionStep)
+    | OnCompactionStep Group.Id (ConcurrentTask.Response Server.Error GroupOps.CompactionOutcome)
     | OnCompactionEventSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | PostSyncTasksDone (ConcurrentTask.Response Idb.Error ())
     | DismissTamperSignals
@@ -896,7 +896,7 @@ update config msg model =
                                                     result.updatedGroup
 
                                             Nothing ->
-                                                ConcurrentTask.succeed GroupOps.NoCompactionStep
+                                                ConcurrentTask.succeed { step = GroupOps.NoCompactionStep, manifestMismatch = False }
                                         )
 
                             ( modelAfterSync, initCmd ) =
@@ -979,6 +979,13 @@ update config msg model =
                         , [ RequestServerGroupCreation loaded.summary.id loaded.groupKey ]
                         )
 
+                    else if Server.isRateLimited err then
+                        let
+                            ( bumpedModel, saveCmd ) =
+                                recordTamper config (TamperSignals.recordRateLimitHit config.currentTime) loaded model
+                        in
+                        ( { bumpedModel | syncInProgress = False }, saveCmd, failureOutputs )
+
                     else
                         ( { model | syncInProgress = False }, Cmd.none, failureOutputs )
 
@@ -988,55 +995,67 @@ update config msg model =
         OnGroupSynced _ _ (ConcurrentTask.UnexpectedError _) ->
             ( { model | syncInProgress = False }, Cmd.none, [ LogError ErrorLog.SyncSource ErrorLog.Err "Unexpected error during group sync" ] )
 
-        OnCompactionStep groupId (ConcurrentTask.Success step) ->
+        OnCompactionStep groupId (ConcurrentTask.Success outcome) ->
             case model.loadedGroup of
                 Just loaded ->
                     if loaded.summary.id == groupId then
-                        case step of
-                            GroupOps.NoCompactionStep ->
-                                ( model, Cmd.none, [] )
+                        let
+                            ( stepModel, stepCmd, stepOutputs ) =
+                                case outcome.step of
+                                    GroupOps.NoCompactionStep ->
+                                        ( model, Cmd.none, [] )
 
-                            GroupOps.ApproveProposals proposalIds ->
-                                List.foldl
-                                    (\proposalId ( mdl, cmd, outs ) ->
+                                    GroupOps.ApproveProposals proposalIds ->
+                                        List.foldl
+                                            (\proposalId ( mdl, cmd, outs ) ->
+                                                let
+                                                    ( mdl2, cmd2, outs2 ) =
+                                                        runSubmit (OnCompactionEventSaved groupId)
+                                                            config
+                                                            mdl
+                                                            (\ctx -> GroupOps.event ctx loaded (Event.CompactionApproved { proposalId = proposalId }))
+                                                in
+                                                ( mdl2, Cmd.batch [ cmd, cmd2 ], outs ++ outs2 )
+                                            )
+                                            ( model, Cmd.none, [] )
+                                            proposalIds
+
+                                    GroupOps.ProposalReady proposal ->
+                                        runSubmit (OnCompactionEventSaved groupId)
+                                            config
+                                            model
+                                            (\ctx -> GroupOps.event ctx loaded (Event.CompactionProposed proposal))
+
+                                    GroupOps.ExecutedCompaction (Server.Compacted maxSeq) ->
+                                        -- The appended records hold exactly what this
+                                        -- executor sent: fast-forward the cursor so the
+                                        -- next pull skips re-downloading them.
                                         let
-                                            ( mdl2, cmd2, outs2 ) =
-                                                runSubmit (OnCompactionEventSaved groupId)
-                                                    config
-                                                    mdl
-                                                    (\ctx -> GroupOps.event ctx loaded (Event.CompactionApproved { proposalId = proposalId }))
+                                            ( runner, cursorCmd ) =
+                                                ( model.runner, Cmd.none )
+                                                    |> Runner.andRun PostSyncTasksDone
+                                                        (Storage.saveSyncCursor config.db groupId maxSeq)
                                         in
-                                        ( mdl2, Cmd.batch [ cmd, cmd2 ], outs ++ outs2 )
-                                    )
-                                    ( model, Cmd.none, [] )
-                                    proposalIds
+                                        ( { model
+                                            | loadedGroup = Just { loaded | syncCursor = Just maxSeq }
+                                            , runner = runner
+                                          }
+                                        , cursorCmd
+                                        , []
+                                        )
 
-                            GroupOps.ProposalReady proposal ->
-                                runSubmit (OnCompactionEventSaved groupId)
-                                    config
-                                    model
-                                    (\ctx -> GroupOps.event ctx loaded (Event.CompactionProposed proposal))
+                                    GroupOps.ExecutedCompaction Server.CompactRaced ->
+                                        ( model, Cmd.none, [] )
 
-                            GroupOps.ExecutedCompaction (Server.Compacted maxSeq) ->
-                                -- The appended records hold exactly what this
-                                -- executor sent: fast-forward the cursor so the
-                                -- next pull skips re-downloading them.
-                                let
-                                    ( runner, cursorCmd ) =
-                                        ( model.runner, Cmd.none )
-                                            |> Runner.andRun PostSyncTasksDone
-                                                (Storage.saveSyncCursor config.db groupId maxSeq)
-                                in
-                                ( { model
-                                    | loadedGroup = Just { loaded | syncCursor = Just maxSeq }
-                                    , runner = runner
-                                  }
-                                , cursorCmd
-                                , []
-                                )
+                            ( finalModel, mismatchCmd ) =
+                                case ( outcome.manifestMismatch, stepModel.loadedGroup ) of
+                                    ( True, Just loadedAfter ) ->
+                                        recordTamper config (TamperSignals.recordManifestMismatch config.currentTime) loadedAfter stepModel
 
-                            GroupOps.ExecutedCompaction Server.CompactRaced ->
-                                ( model, Cmd.none, [] )
+                                    _ ->
+                                        ( stepModel, Cmd.none )
+                        in
+                        ( finalModel, Cmd.batch [ stepCmd, mismatchCmd ], stepOutputs )
 
                     else
                         ( model, Cmd.none, [] )
@@ -1616,12 +1635,22 @@ triggerSyncInternal config groupId model =
                                             pull : Server.PullResult
                                             pull =
                                                 syncResult.pullResult
+
+                                            verifiedIds : Set String
+                                            verifiedIds =
+                                                Set.fromList (List.map .id verifiedEvents)
+
+                                            forgedAuthors : List String
+                                            forgedAuthors =
+                                                pull.events
+                                                    |> List.filter (\e -> not (Set.member e.id verifiedIds))
+                                                    |> List.map .triggeredBy
                                         in
                                         { syncResult
                                             | pullResult =
                                                 { pull
                                                     | events = verifiedEvents
-                                                    , forgedSignatures = List.length pull.events - List.length verifiedEvents
+                                                    , forgedAuthors = forgedAuthors
                                                 }
                                         }
                                     )
@@ -1644,6 +1673,22 @@ triggerSyncInternal config groupId model =
 
             _ ->
                 ( model, Cmd.none )
+
+
+{-| Bump a tamper signal on the loaded group: update in-memory state and
+persist it. For the live detection sites (rate-limit, manifest mismatch) whose
+signal arrives outside the sync-apply path.
+-}
+recordTamper : UpdateConfig -> (TamperSignals -> TamperSignals) -> GroupOps.LoadedGroup -> Model -> ( Model, Cmd Msg )
+recordTamper config bump loaded model =
+    let
+        bumped : TamperSignals
+        bumped =
+            bump loaded.tamperSignals
+    in
+    ( model.runner, Cmd.none )
+        |> Runner.andRun OnTamperSignalsSaved (Storage.saveTamperSignals config.db loaded.summary.id bumped)
+        |> Tuple.mapFirst (\r -> { model | runner = r, loadedGroup = Just { loaded | tamperSignals = bumped } })
 
 
 {-| After a group event is applied, sync the summary fields and persist to IndexedDB.

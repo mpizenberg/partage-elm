@@ -1,5 +1,6 @@
 module TamperSignalsTest exposing (suite)
 
+import Dict
 import Domain.TamperSignals as TamperSignals
 import Expect
 import Json.Decode as Decode
@@ -16,40 +17,63 @@ suite =
                     |> Expect.all
                         [ TamperSignals.isClean >> Expect.equal True
                         , TamperSignals.bannerWorthy >> Expect.equal False
+                        , TamperSignals.forgedCount >> Expect.equal 0
                         ]
-        , test "recording forged signatures bumps the count, stamps the time, and raises the banner" <|
+        , test "recording forged authors tallies per claimed author, stamps the time, and raises the banner" <|
             \_ ->
                 let
                     at : Time.Posix
                     at =
                         Time.millisToPosix 1234
                 in
-                TamperSignals.recordForgedSignatures 2 at TamperSignals.empty
+                TamperSignals.recordForgedAuthors [ "bob", "carol", "bob" ] at TamperSignals.empty
                     |> Expect.all
-                        [ .forgedSignatures >> Expect.equal 2
+                        [ .forgedAuthors >> Expect.equal (Dict.fromList [ ( "bob", 2 ), ( "carol", 1 ) ])
+                        , TamperSignals.forgedCount >> Expect.equal 3
                         , .lastDetectedAt >> Expect.equal (Just at)
                         , TamperSignals.isClean >> Expect.equal False
                         , TamperSignals.bannerWorthy >> Expect.equal True
                         ]
-        , test "recording zero (or fewer) forged signatures is a no-op that leaves no timestamp" <|
+        , test "recording an empty author list is a no-op that leaves no timestamp" <|
             \_ ->
-                TamperSignals.recordForgedSignatures 0 (Time.millisToPosix 9) TamperSignals.empty
+                TamperSignals.recordForgedAuthors [] (Time.millisToPosix 9) TamperSignals.empty
                     |> Expect.equal TamperSignals.empty
-        , test "forged counts accumulate across recordings" <|
+        , test "forged tallies accumulate across recordings" <|
             \_ ->
                 TamperSignals.empty
-                    |> TamperSignals.recordForgedSignatures 1 (Time.millisToPosix 1)
-                    |> TamperSignals.recordForgedSignatures 3 (Time.millisToPosix 5)
+                    |> TamperSignals.recordForgedAuthors [ "bob" ] (Time.millisToPosix 1)
+                    |> TamperSignals.recordForgedAuthors [ "bob", "dave" ] (Time.millisToPosix 5)
                     |> Expect.all
-                        [ .forgedSignatures >> Expect.equal 4
+                        [ .forgedAuthors >> Expect.equal (Dict.fromList [ ( "bob", 2 ), ( "dave", 1 ) ])
                         , .lastDetectedAt >> Expect.equal (Just (Time.millisToPosix 5))
                         ]
-        , test "encode/decode round-trips a non-empty record" <|
+        , test "a rate-limit hit raises the banner" <|
+            \_ ->
+                TamperSignals.recordRateLimitHit (Time.millisToPosix 1) TamperSignals.empty
+                    |> Expect.all
+                        [ .rateLimitHits >> Expect.equal 1
+                        , TamperSignals.bannerWorthy >> Expect.equal True
+                        ]
+        , test "advisory signals count but never raise the banner" <|
+            \_ ->
+                TamperSignals.empty
+                    |> TamperSignals.recordResetWithLoss (Time.millisToPosix 1)
+                    |> TamperSignals.recordManifestMismatch (Time.millisToPosix 2)
+                    |> Expect.all
+                        [ .resetsWithLoss >> Expect.equal 1
+                        , .manifestMismatches >> Expect.equal 1
+                        , TamperSignals.isClean >> Expect.equal False
+                        , TamperSignals.bannerWorthy >> Expect.equal False
+                        ]
+        , test "encode/decode round-trips a populated record" <|
             \_ ->
                 let
                     signals : TamperSignals.TamperSignals
                     signals =
-                        TamperSignals.recordForgedSignatures 7 (Time.millisToPosix 42) TamperSignals.empty
+                        TamperSignals.empty
+                            |> TamperSignals.recordForgedAuthors [ "bob", "bob", "eve" ] (Time.millisToPosix 42)
+                            |> TamperSignals.recordRateLimitHit (Time.millisToPosix 50)
+                            |> TamperSignals.recordResetWithLoss (Time.millisToPosix 60)
                 in
                 TamperSignals.encode signals
                     |> Decode.decodeValue TamperSignals.decoder
