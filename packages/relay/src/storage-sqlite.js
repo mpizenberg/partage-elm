@@ -157,15 +157,17 @@ export function openStorage(path) {
       return { status: 'ok', seq: Number(result.lastInsertRowid) };
     },
 
-    compact(groupId, uptoSeq, records, created, limits) {
+    compact(groupId, uptoSeq, expectedCount, records, created, limits) {
       db.exec('BEGIN IMMEDIATE');
       try {
         const maxSeq = selectMaxSeq.get(groupId).max_seq ?? 0;
         const deletable = selectDeletable.get(groupId, uptoSeq);
-        // A boundary beyond the history, or one whose records are already
-        // gone, means this compactor lost a race (or retries a compaction
-        // that already succeeded): reject rather than delete blind.
-        if (uptoSeq > maxSeq || deletable.n === 0) {
+        // The delete range must hold exactly the records the caller pulled:
+        // fewer means another compaction landed since its snapshot (a lost
+        // race, or a retry of one that already succeeded) — reject rather
+        // than delete blind. Concurrent pushes sit above uptoSeq and never
+        // trip this.
+        if (uptoSeq > maxSeq || deletable.n !== expectedCount) {
           db.exec('ROLLBACK');
           return { status: 'stale' };
         }

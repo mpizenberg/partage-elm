@@ -164,7 +164,7 @@ export function createDoStorage(sql) {
     // event-loop task commits as one atomic batch, so the delete + inserts +
     // counter update can never be observed (or survive a crash) partially
     // applied.
-    compact(groupId, uptoSeq, records, created, limits) {
+    compact(groupId, uptoSeq, expectedCount, records, created, limits) {
       const maxSeq = sql.exec('SELECT MAX(seq) AS max_seq FROM events WHERE group_id = ?', groupId).one().max_seq ?? 0;
       const deletable = sql
         .exec(
@@ -173,10 +173,12 @@ export function createDoStorage(sql) {
           uptoSeq,
         )
         .one();
-      // A boundary beyond the history, or one whose records are already
-      // gone, means this compactor lost a race (or retries a compaction
-      // that already succeeded): reject rather than delete blind.
-      if (uptoSeq > maxSeq || deletable.n === 0) {
+      // The delete range must hold exactly the records the caller pulled:
+      // fewer means another compaction landed since its snapshot (a lost
+      // race, or a retry of one that already succeeded) — reject rather
+      // than delete blind. Concurrent pushes sit above uptoSeq and never
+      // trip this.
+      if (uptoSeq > maxSeq || deletable.n !== expectedCount) {
         return { status: 'stale' };
       }
       // A record whose recordId survives above the boundary already holds

@@ -970,14 +970,19 @@ so authorization lives in the log where clients can verify it:
 **Execution.** Once the quorum is visible in the log, any member may call:
 
 ```
-POST /api/groups/:id/compact   { uptoSeq, records: [...] }
+POST /api/groups/:id/compact   { uptoSeq, expectedCount, records: [...] }
 ```
 
-The server, in one transaction: verifies `uptoSeq` ≤ current max seq, deletes
-records with `seq ≤ uptoSeq`, and appends the consolidation records at fresh,
-strictly higher seqs (AUTOINCREMENT never reuses). Racing compactors
-serialize: the loser's `uptoSeq` now covers deleted rows and is rejected with
-409 (re-pull and retry or give up). The uploaded records must contain every
+The caller takes `uptoSeq` as the highest seq of its own fresh pull and
+`expectedCount` as how many records that pull held at or below it. The
+server, in one transaction: verifies `uptoSeq` ≤ current max seq **and that
+exactly `expectedCount` records remain in the delete range**, deletes
+records with `seq ≤ uptoSeq`, and appends the consolidation records at
+fresh, strictly higher seqs (AUTOINCREMENT never reuses). Racing compactors
+serialize: the loser's snapshot is stale — its range covers deleted rows or
+a count that no longer matches — and is rejected with 409 (re-pull and
+retry or give up). Concurrent pushes sit above `uptoSeq` and never trip the
+count check. The uploaded records must contain every
 event from the deleted records — including the proposal and approval events,
 so the authorization travels with the result; events beyond the manifest
 boundary ride along unmanifested, with the same status as fresh appends.
@@ -1361,7 +1366,7 @@ The encrypted payload contains all application-level data, including the **UUID 
 | `POST` | `/api/groups` | PoW | Create a group. Body: `{groupId, createdBy, authVerifier}` plus the solved challenge fields (`pow_challenge`, `pow_timestamp`, `pow_difficulty`, `pow_signature`, `pow_solution`). `201` on success, `400` on invalid PoW, `409` if the group already exists. |
 | `GET` | `/api/groups/{id}/events?since={seq}` | bearer | Pull records with `seq > since`, ascending, at most 200 per page. Returns `{events: [{seq, actorId, eventData, compressed, created}], hasMore, recordCount}` — `recordCount` is the group's total record count, the client-side compaction-trigger signal ([14.9](#149-log-consolidation-compaction)). |
 | `POST` | `/api/groups/{id}/events` | bearer | Append one encrypted batch: `{actorId, eventData, compressed}` (optional `recordId` for idempotent retry). Returns `{seq}` with `201`; `413` over the 1 MB record cap, `507` over the group storage quota, `429` (with `Retry-After`) over the monthly rate limit ([14.8](#148-relay-retention--storage-limits)). |
-| `POST` | `/api/groups/{id}/compact` | bearer | Consolidate the log ([14.9](#149-log-consolidation-compaction)): `{uptoSeq, records}` transactionally deletes records with `seq ≤ uptoSeq` and appends `records` at fresh higher seqs. Returns `{maxSeq}`; `409` when `uptoSeq` no longer matches the history (lost race — re-pull and retry or give up); `507`/`429` accounted net, growth only. |
+| `POST` | `/api/groups/{id}/compact` | bearer | Consolidate the log ([14.9](#149-log-consolidation-compaction)): `{uptoSeq, expectedCount, records}` transactionally deletes records with `seq ≤ uptoSeq` and appends `records` at fresh higher seqs, provided the delete range still holds exactly `expectedCount` records. Returns `{maxSeq}`; `409` when the caller's snapshot went stale (lost race — re-pull and retry or give up); `507`/`429` accounted net, growth only. |
 | `WS` | `/api/groups/{id}/ws?auth={secret}` | secret | Live updates: the server sends `{seq}` whenever a record is appended to the group. A notified client reacts with a normal authenticated pull from its cursor. |
 
 Records can never be updated or deleted through the API except through consensus-gated consolidation ([14.9](#149-log-consolidation-compaction)), which re-packs the same events — the event log is append-only by construction.

@@ -88,14 +88,14 @@ export function pullEvents(app, groupId, secret, since = 0) {
   });
 }
 
-export function compactGroup(app, groupId, secret, uptoSeq, records) {
+export function compactGroup(app, groupId, secret, uptoSeq, expectedCount, records) {
   return app.request(`/api/groups/${groupId}/compact`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${secret}`,
     },
-    body: JSON.stringify({ uptoSeq, records }),
+    body: JSON.stringify({ uptoSeq, expectedCount, records }),
   });
 }
 

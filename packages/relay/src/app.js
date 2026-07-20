@@ -73,14 +73,16 @@ export async function verifyGroupSecret(storage, groupId, secret) {
  *     that record's seq is returned and nothing is inserted (idempotent push).
  *     A re-push of a counted record is always 'ok'; only genuinely new records
  *     are checked against `limits` and add to the group's counters.
- * - compact(groupId, uptoSeq, records, created, limits)
+ * - compact(groupId, uptoSeq, expectedCount, records, created, limits)
  *     → {status: 'ok', maxSeq} | {status: 'stale'} | {status: 'quota'}
  *       | {status: 'rate', retryAfterMs}
  *     In one transaction: deletes records with seq ≤ uptoSeq and appends
  *     `records` at fresh higher seqs, skipping ones whose recordId already
  *     survives above the boundary. 'stale' when uptoSeq exceeds the max seq
- *     or covers no records (a lost compaction race). Accounted net against
- *     `limits`: the rate window only pays for growth, never gets refunds.
+ *     or when the delete range does not hold exactly `expectedCount` records
+ *     — the caller's pulled snapshot went stale (a lost compaction race).
+ *     Accounted net against `limits`: the rate window only pays for growth,
+ *     never gets refunds.
  * - getGroupStats(groupId)
  *     → {recordCount, totalBytes, bytesThisWindow, windowStart} | null
  * - listEventsSince(groupId, sinceSeq, limit)
@@ -258,9 +260,16 @@ export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
 
-    const { uptoSeq, records } = body;
-    if (!Number.isInteger(uptoSeq) || uptoSeq <= 0 || !Array.isArray(records) || records.length === 0) {
-      return c.json({ error: 'uptoSeq and a non-empty records array are required' }, 400);
+    const { uptoSeq, expectedCount, records } = body;
+    if (
+      !Number.isInteger(uptoSeq) ||
+      uptoSeq <= 0 ||
+      !Number.isInteger(expectedCount) ||
+      expectedCount <= 0 ||
+      !Array.isArray(records) ||
+      records.length === 0
+    ) {
+      return c.json({ error: 'uptoSeq, expectedCount and a non-empty records array are required' }, 400);
     }
     for (const record of records) {
       if (
@@ -287,6 +296,7 @@ export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT
     const result = await storage.compact(
       groupId,
       uptoSeq,
+      expectedCount,
       records.map((record) => ({
         recordId: record.recordId ?? null,
         actorId: record.actorId,

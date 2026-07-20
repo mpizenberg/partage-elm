@@ -259,7 +259,7 @@ export function conformanceSuite({ describe, it, makeApp }) {
       const { groupId, secret } = await createGroup(app, { groupId: uid() });
       const seqs = await seed(app, 3, secret, groupId);
 
-      const res = await compactGroup(app, groupId, secret, seqs[2], [
+      const res = await compactGroup(app, groupId, secret, seqs[2], 3, [
         record('consolidated-1-2', { recordId: 'c1' }),
         record('consolidated-3', { recordId: 'c2' }),
       ]);
@@ -281,7 +281,7 @@ export function conformanceSuite({ describe, it, makeApp }) {
       const { groupId, secret } = await createGroup(app, { groupId: uid() });
       const seqs = await seed(app, 3, secret, groupId);
 
-      const res = await compactGroup(app, groupId, secret, seqs[1], [record('consolidated-1-2')]);
+      const res = await compactGroup(app, groupId, secret, seqs[1], 2, [record('consolidated-1-2')]);
       assert.equal(res.status, 200);
 
       const pulled = await (await pullEvents(app, groupId, secret)).json();
@@ -295,7 +295,7 @@ export function conformanceSuite({ describe, it, makeApp }) {
       const app = await makeApp();
       const { groupId, secret } = await createGroup(app, { groupId: uid() });
       const seqs = await seed(app, 3, secret, groupId);
-      await compactGroup(app, groupId, secret, seqs[2], [record('consolidated')]);
+      await compactGroup(app, groupId, secret, seqs[2], 3, [record('consolidated')]);
 
       const pulled = await (await pullEvents(app, groupId, secret, seqs[0])).json();
       assert.equal('resetCursor' in pulled, false);
@@ -306,7 +306,7 @@ export function conformanceSuite({ describe, it, makeApp }) {
       const app = await makeApp();
       const { groupId, secret } = await createGroup(app, { groupId: uid() });
       const seqs = await seed(app, 1, secret, groupId);
-      const res = await compactGroup(app, groupId, secret, seqs[0] + 10, [record('consolidated')]);
+      const res = await compactGroup(app, groupId, secret, seqs[0] + 10, 1, [record('consolidated')]);
       assert.equal(res.status, 409);
     });
 
@@ -314,12 +314,28 @@ export function conformanceSuite({ describe, it, makeApp }) {
       const app = await makeApp();
       const { groupId, secret } = await createGroup(app, { groupId: uid() });
       const seqs = await seed(app, 2, secret, groupId);
-      assert.equal((await compactGroup(app, groupId, secret, seqs[1], [record('winner')])).status, 200);
+      assert.equal((await compactGroup(app, groupId, secret, seqs[1], 2, [record('winner')])).status, 200);
       // The loser's boundary now covers only deleted rows.
-      const res = await compactGroup(app, groupId, secret, seqs[1], [record('loser')]);
+      const res = await compactGroup(app, groupId, secret, seqs[1], 2, [record('loser')]);
       assert.equal(res.status, 409);
       const pulled = await (await pullEvents(app, groupId, secret)).json();
       assert.deepEqual(pulled.events.map((e) => e.eventData), ['winner']);
+    });
+
+    it('rejects a compaction whose snapshot went stale even over a non-empty range', async () => {
+      const app = await makeApp();
+      const { groupId, secret } = await createGroup(app, { groupId: uid() });
+      const seqs = await seed(app, 3, secret, groupId);
+      assert.equal((await compactGroup(app, groupId, secret, seqs[2], 3, [record('winner')])).status, 200);
+      const riderSeq = (await (await pushEvent(app, groupId, secret, { eventData: 'rider', recordId: 'rr' })).json())
+        .seq;
+      // A racer that pulled before the winner's compaction: its boundary
+      // covers the fresh rider, so the delete range is non-empty, but the
+      // record count betrays the stale snapshot.
+      const res = await compactGroup(app, groupId, secret, riderSeq, 5, [record('stale-loser')]);
+      assert.equal(res.status, 409);
+      const pulled = await (await pullEvents(app, groupId, secret)).json();
+      assert.deepEqual(pulled.events.map((e) => e.eventData), ['winner', 'rider']);
     });
 
     it('skips an uploaded record whose recordId survives above the boundary', async () => {
@@ -327,7 +343,7 @@ export function conformanceSuite({ describe, it, makeApp }) {
       const { groupId, secret } = await createGroup(app, { groupId: uid() });
       const seqs = await seed(app, 2, secret, groupId);
 
-      const res = await compactGroup(app, groupId, secret, seqs[0], [
+      const res = await compactGroup(app, groupId, secret, seqs[0], 1, [
         record('duplicate-of-2', { recordId: 'r2' }),
         record('consolidated-1', { recordId: 'c1' }),
       ]);
@@ -342,7 +358,7 @@ export function conformanceSuite({ describe, it, makeApp }) {
     it('requires authentication', async () => {
       const app = await makeApp();
       const { groupId } = await createGroup(app, { groupId: uid() });
-      const res = await compactGroup(app, groupId, 'wrong-secret', 1, [record('x')]);
+      const res = await compactGroup(app, groupId, 'wrong-secret', 1, 1, [record('x')]);
       assert.equal(res.status, 401);
     });
 
@@ -350,11 +366,11 @@ export function conformanceSuite({ describe, it, makeApp }) {
       const app = await makeApp();
       const { groupId, secret } = await createGroup(app, { groupId: uid() });
       await seed(app, 1, secret, groupId);
-      assert.equal((await compactGroup(app, groupId, secret, 0, [record('x')])).status, 400);
-      assert.equal((await compactGroup(app, groupId, secret, 1, [])).status, 400);
-      assert.equal((await compactGroup(app, groupId, secret, 1, [{ eventData: 'x' }])).status, 400);
+      assert.equal((await compactGroup(app, groupId, secret, 0, 1, [record('x')])).status, 400);
+      assert.equal((await compactGroup(app, groupId, secret, 1, 1, [])).status, 400);
+      assert.equal((await compactGroup(app, groupId, secret, 1, 1, [{ eventData: 'x' }])).status, 400);
       assert.equal(
-        (await compactGroup(app, groupId, secret, 1, [record('x'.repeat(1024 * 1024 + 1))])).status,
+        (await compactGroup(app, groupId, secret, 1, 1, [record('x'.repeat(1024 * 1024 + 1))])).status,
         413,
       );
     });

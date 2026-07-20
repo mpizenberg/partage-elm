@@ -535,7 +535,8 @@ compact ctx actorId prefix =
                                     (Compaction.chunkEnvelopes maxChunkBytes prefix ++ Compaction.chunkEnvelopes maxChunkBytes riders)
                                         |> List.map (packRecord ctx.groupKey actorId)
                                         |> ConcurrentTask.batch
-                                        |> ConcurrentTask.andThen (postCompact ctx secret uptoSeq)
+                                        |> ConcurrentTask.andThen
+                                            (postCompact ctx secret { uptoSeq = uptoSeq, expectedCount = List.length records })
                         )
             )
 
@@ -619,12 +620,24 @@ packRecord groupKey actorId envelopes =
         |> ConcurrentTask.mapError CryptoError
 
 
-postCompact : ServerContext -> String -> Int -> List Encode.Value -> ConcurrentTask Error CompactOutcome
-postCompact ctx secret uptoSeq records =
+{-| `expectedCount` is how many records the executor's snapshot held at or
+below `uptoSeq` — the relay refuses the compact when the range no longer
+holds exactly that many, so a stale snapshot can never blindly rewrite a
+history someone else just consolidated.
+-}
+postCompact : ServerContext -> String -> { uptoSeq : Int, expectedCount : Int } -> List Encode.Value -> ConcurrentTask Error CompactOutcome
+postCompact ctx secret { uptoSeq, expectedCount } records =
     Http.post
         { url = ctx.serverUrl ++ "/api/groups/" ++ ctx.groupId ++ "/compact"
         , headers = [ authHeader secret ]
-        , body = Http.jsonBody (Encode.object [ ( "uptoSeq", Encode.int uptoSeq ), ( "records", Encode.list identity records ) ])
+        , body =
+            Http.jsonBody
+                (Encode.object
+                    [ ( "uptoSeq", Encode.int uptoSeq )
+                    , ( "expectedCount", Encode.int expectedCount )
+                    , ( "records", Encode.list identity records )
+                    ]
+                )
         , expect = Http.expectJson (Decode.field "maxSeq" Decode.int)
         , timeout = Nothing
         }

@@ -109,7 +109,7 @@ describe('storage limits', () => {
     }
     assert.equal(storage.getGroupStats(groupId).bytesThisWindow, 30);
 
-    const res = await compactGroup(app, groupId, secret, lastSeq, [record('consolidated', { recordId: 'c1' })]);
+    const res = await compactGroup(app, groupId, secret, lastSeq, 3, [record('consolidated', { recordId: 'c1' })]);
     assert.equal(res.status, 200);
     const stats = storage.getGroupStats(groupId);
     assert.equal(stats.recordCount, 1);
@@ -122,7 +122,7 @@ describe('storage limits', () => {
     const { groupId, secret } = await createGroup(app);
     const seq = (await (await pushEvent(app, groupId, secret, { eventData: '0123456789' })).json()).seq;
     // Net growth of 20 bytes on top of the 10 already spent exceeds 25.
-    const res = await compactGroup(app, groupId, secret, seq, [record('0123456789012345678901234567890')]);
+    const res = await compactGroup(app, groupId, secret, seq, 1, [record('0123456789012345678901234567890')]);
     assert.equal(res.status, 429);
     // The rejected compaction changed nothing.
     const pulled = await (await pullEvents(app, groupId, secret)).json();
@@ -133,7 +133,7 @@ describe('storage limits', () => {
     const { app } = makeApp({ appendLimits: { ...GENEROUS, maxTotalBytes: 15 } });
     const { groupId, secret } = await createGroup(app);
     const seq = (await (await pushEvent(app, groupId, secret, { eventData: '0123456789' })).json()).seq;
-    const res = await compactGroup(app, groupId, secret, seq, [record('0123456789012345678901234567890')]);
+    const res = await compactGroup(app, groupId, secret, seq, 1, [record('0123456789012345678901234567890')]);
     assert.equal(res.status, 507);
   });
 });
