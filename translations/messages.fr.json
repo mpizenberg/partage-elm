@@ -387,7 +387,7 @@
   "aboutPersistGranted": "Stockage persistant : accordé — le navigateur ne supprimera pas tes données.",
   "aboutPersistDenied": "Stockage persistant : non accordé — le navigateur peut supprimer les données locales s'il manque de place. Sur iPhone/iPad, installe l'appli sur l'écran d'accueil pour les protéger.",
   "aboutPersistUnsupported": "Stockage persistant : non pris en charge par ce navigateur.",
-  "aboutRetentionNotice": "Vos groupes résident sur cet appareil. Le serveur ne fait que relayer des événements chiffrés et peut supprimer un groupe laissé inactif par tous ses membres pendant 12 mois — toute synchronisation réinitialise ce délai. Exportez une sauvegarde des groupes importants pour les conserver quoi qu'il arrive.",
+  "aboutRetentionNotice": "Vos groupes résident sur cet appareil. Le serveur ne fait que relayer des événements chiffrés, et supprime sa copie d'un groupe laissé inactif par tous ses membres pendant 12 mois — toute synchronisation réinitialise ce délai. Votre copie reste sur cet appareil, mais exportez une sauvegarde des groupes importants pour qu'elle ne soit pas la seule.",
   "aboutDevModeLabel": "Mode développeur",
   "aboutDevModeHint": "Ajoute une vue diagnostics dans les paramètres de chaque groupe.",
   "diagTitle": "Diagnostics",

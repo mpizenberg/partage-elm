@@ -387,7 +387,7 @@
   "aboutPersistGranted": "Persistent storage: granted — the browser will not evict your data.",
   "aboutPersistDenied": "Persistent storage: not granted — the browser may delete local data under storage pressure. On iPhone/iPad, install the app to your home screen to protect it.",
   "aboutPersistUnsupported": "Persistent storage: not supported by this browser.",
-  "aboutRetentionNotice": "Your groups live on this device. The server only relays encrypted events and may remove a group left untouched by every member for 12 months — any sync resets that clock. Export a backup of important groups to keep them regardless.",
+  "aboutRetentionNotice": "Your groups live on this device. The server only relays encrypted events, and deletes its copy of a group left untouched by every member for 12 months — any sync resets that clock. Your copy stays on this device, but export a backup of important groups so it isn't the only one.",
   "aboutDevModeLabel": "Developer mode",
   "aboutDevModeHint": "Adds a diagnostics view to each group's settings.",
   "diagTitle": "Diagnostics",
