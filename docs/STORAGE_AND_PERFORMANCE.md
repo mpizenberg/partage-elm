@@ -32,10 +32,11 @@ and compaction designs.
   itself, and anchored for new joiners by an attestation carried in the
   invite link.
 - On the client, storage is not the problem — **durability and replay
-  cost** are. The app never calls `navigator.storage.persist()`, so the
-  browser may evict the local event log (the actual system of record).
-  Every group open replays the full log from scratch; spec §14.6
-  promises a persisted computed-state cache that the code does not have.
+  cost** are. The browser may evict the local event log (the actual
+  system of record) unless persistence is granted — now requested at
+  first group creation/join (§6). Every group open replays the full log
+  from scratch; a computed-state cache is planned pending measurement
+  (§8, spec §14.6).
 - Guiding principle: **the relay is a cache; the clients are the system
   of record.** Every member holds the full log and the key, so honest
   members can restore a purged or truncated relay copy by re-pushing.
@@ -181,12 +182,14 @@ Ordered by value/effort. All are additive protocol changes.
 
 ### 4.1 Idempotent append
 
-Client sends a `recordId` (fresh UUID per batch) with each push; server
-adds `UNIQUE(group_id, record_id)` and, on conflict, returns the
-existing `seq` instead of inserting. This closes the storage side of
-finding 11 and every future retry bug in one stroke: pushes become
-retry-safe by construction instead of by careful client bookkeeping.
-Old clients that omit the field keep today's behavior.
+**Implemented.** Client sends a `recordId` with each push — derived from
+the batch content (SHA-256 of the sorted event ids) rather than a fresh
+UUID, so the id survives the cross-sync retry that actually causes
+duplicates; server adds `UNIQUE(group_id, record_id)` and, on conflict,
+returns the existing `seq` instead of inserting. This closes the storage
+side of finding 11 and every future retry bug in one stroke: pushes
+become retry-safe by construction instead of by careful client
+bookkeeping. Old clients that omit the field keep today's behavior.
 
 ### 4.2 No member-triggered deletion
 
@@ -228,7 +231,7 @@ keeps idle groups for 12 months; any sync renews") _before_ it is
 enforced — it changes what users should expect from the relay and
 motivates the client durability work in §6.
 
-### 4.4 Cursor reset-and-heal (protocol reservation — do this pre-launch)
+### 4.4 Cursor reset-and-heal
 
 TTL purges (§4.3), resurrection, and compaction (§5.2) create one
 dangerous state: a re-created group starts `seq` back at 1, while
@@ -238,9 +241,8 @@ desync. The fix is one additive rule: **when `since` exceeds the
 group's current max seq, the pull response says so** (e.g.
 `{resetCursor: true}`); the client resets its cursor to 0, re-pulls,
 and dedups by event id (which the merge in `src/GroupOps.elm` already
-does). Reserve this response field _now_, before launch, so every
-deployed client handles it by the time any TTL or compaction feature
-ships. This is the only server item with a hard deadline.
+does). **Implemented** — reserved pre-launch, so every deployed client
+handles it by the time any TTL or compaction feature ships.
 
 **Heal** is the second half, and it is what makes §3's rung 3 real:
 after a reset re-pull completes, the client diffs the relay's content
@@ -336,10 +338,10 @@ _can_ verify it:
 
 - Two new event types. `CompactionProposed { uptoEventId, eventCount,
 manifestHash }` — the manifest hash commits to the exact envelope
-  contents of the sorted history up to the boundary (canonical form to
-  be pinned down in the spec; hash envelope bytes, not just event ids,
-  so an author cannot swap their own event's content behind a reused
-  id). `CompactionApproved { proposalId }` — a co-signature. Both are
+  contents of the sorted history up to the boundary (canonical form
+  pinned in spec §14.9; hash envelope bytes, not just event ids, so an
+  author cannot swap their own event's content behind a reused id).
+  `CompactionApproved { proposalId }` — a co-signature. Both are
   ordinary signed events: replicated, auditable, and preserved verbatim
   by the consolidation they authorize.
 - **Approval is computed, not asked.** An honest client, on sync,
@@ -352,9 +354,8 @@ manifestHash }` — the manifest hash commits to the exact envelope
   authored at least one event in the compacted range — with a floor of
   strictly more than 50% of them** to keep retired members, lost
   devices, and long-offline users from blocking forever. The proposer's
-  signature is always required. Whether the 50% denominator counts all
-  involved actors or only non-retired ones is an open parameter to
-  ratify in the spec (recommendation: non-retired ones).
+  signature is always required. The 50% denominator counts non-retired
+  involved actors (ratified in spec §14.9).
 - Only once the quorum is present in the log may any member call the
   compact route, and the consolidation records must contain the
   proposal and approval events themselves, so the authorization travels
@@ -429,16 +430,14 @@ honest replicas are both the backup _and_ the tamper resistance: every
 durable honest copy is a check on history rewriting. Today that record
 is evictable:
 
-- **`navigator.storage.persist()` is never requested** (only
-  `estimate()` is used, `public/index.js:155`). Under storage pressure
-  the browser may silently wipe IndexedDB — combined with a server TTL
-  purge, that is real data loss; combined with §3, fewer replicas means
-  weaker healing. Request persistence at first group creation/join;
-  surface the denied case in the About/usage screen. Implementation
-  rides the existing app-glue task pattern
-  (`usageStats:estimateStorage`, `public/index.js:155`) — a sibling
-  handler calling `navigator.storage.persist()`/`persisted()`; the
-  vendored `elm-indexeddb` package itself needs no change.
+- **`navigator.storage.persist()` — implemented.** Under storage
+  pressure the browser may silently wipe IndexedDB — combined with a
+  server TTL purge, that is real data loss; combined with §3, fewer
+  replicas means weaker healing. The app now requests persistence at
+  first group creation/join and surfaces the status (including the
+  denied case) in the About/usage screen, via sibling handlers to the
+  `usageStats:estimateStorage` app-glue task (`public/index.js`); the
+  vendored `elm-indexeddb` package needed no change.
 - **Export is the offline backup** and already exists; once a retention
   policy is announced (§4.3), nudge archival exports for long-idle
   groups ("this group hasn't synced in 10 months — download a backup").
@@ -460,10 +459,9 @@ fatal, and linear in history. Two mitigations, in order:
    - max sort key, or last event id): on open, load state + verify
      fingerprint; on mismatch or decode failure, fall back to full
      replay. The cache is pure derived data — always safe to discard.
-     Note: **spec §14.6 already claims this exists; the code does not do
-     it.** Either implement it or fix the spec — today the spec
-     over-promises. Cost: encoders/decoders for `GroupState` including
-     activities; moderate, mechanical.
+     Spec §14.6 now marks this as planned, pending measurement (§8).
+     Cost: encoders/decoders for `GroupState` including activities;
+     moderate, mechanical.
 2. Store/load events pre-sorted to skip the `sortEvents` pass on load —
    only worth it if measurement (§8) shows the sort matters; the merge
    path already maintains sorted order in memory.

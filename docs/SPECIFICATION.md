@@ -671,6 +671,45 @@ The server can only see:
 
 Everything else is encrypted and opaque to the server.
 
+### 11.7 Compromised-Member Threat Model
+
+Any member's device — and with it their signing key and the group key — may
+fall into hostile hands. Read access is then unpreventable (keys are immutable,
+there is no rotation). The line defended is the **history**: a compromised
+member must not be able to destroy or rewrite it.
+
+The shaping constraint: **the relay authenticates the group, not the member**
+(see [11.5](#115-server-authentication)). Every key holder looks identical to
+the server, and signatures live inside encrypted blobs the server cannot read
+— so any destructive relay operation is available to every key holder or to
+nobody. Server-side member identities were considered and rejected as a
+membership-metadata leak. This yields an enforcement ladder, best rung first:
+
+1. **Impossible** — the operation is not shipped. There is no member-triggered
+   group deletion route; the relay copy of a group dies only by unanimous
+   neglect (the inactivity TTL, [14.8](#148-relay-retention--storage-limits)).
+2. **Consensus-gated, client-verified** — destruction-shaped operations are
+   authorized by multi-signed events in the log, verified by clients, never by
+   the server (compaction, [14.9](#149-log-consolidation-compaction)).
+3. **Detect and heal** — relay-level truncation that cannot be prevented (a
+   bearer holder abusing the compact route, a hostile relay) is detected and
+   repaired by honest members, whose full local replicas are the system of
+   record: the relay is only a cache
+   ([14.8](#148-relay-retention--storage-limits)).
+4. **Respond** — detection signals (envelopes rejected by signature
+   verification, an unexpected cursor reset, a compaction-manifest mismatch,
+   abnormal data volume) feed a per-group tamper indicator in the UI. The
+   endgame for a confirmed compromise is **migration**: create a fresh group
+   with a new key, seed it from the local verified history via the
+   export→import path (which re-verifies every event), re-invite members
+   out-of-band, and abandon the old group to the TTL.
+
+Within this model, content vandalism (junk entries, renames, mass tombstoning)
+remains possible but is signed, attributed in the activity feed, and
+reversible from the log — the trusted-group model working as intended. The
+sync merge only ever adds events (dedup by id), so no relay response can make
+a client discard local history.
+
 ---
 
 ## 12. Invitation & Group Joining
@@ -686,6 +725,11 @@ https://<app-domain>/join/<groupId>#<base64url-encoded-group-key>
 - The **group ID** is in the URL path (sent to the server).
 - The **group key** is in the URL **fragment** (after `#`), which is **never sent to the server** by the browser.
 - The key uses **Base64URL encoding** (URL-safe characters, no padding).
+- **Fragment grammar:** the fragment is `key[.extra]`. Parsers take everything
+  before the first `.` as the key and ignore the tail, which is reserved for
+  future use — specifically the inviter's head attestation for compaction
+  verification ([14.9](#149-log-consolidation-compaction)). The dot can never
+  appear in a Base64URL key, and links generated today are bare-key.
 
 ### 12.2 Invite Link Sharing
 
@@ -738,6 +782,12 @@ Two export formats are available per group from the home screen:
 - All operations (add, modify, delete entries; manage members) are **applied immediately to local state**.
 - The application is fully functional without an internet connection.
 - Data is persisted in **IndexedDB** across sessions.
+- **Durability:** the local event log is the system of record (the relay is a
+  cache — see [14.8](#148-relay-retention--storage-limits)), so the app asks
+  the browser to protect it from storage-pressure eviction: when the first
+  group is created or joined, it calls `navigator.storage.persist()` once.
+  The resulting status (granted / denied / unsupported) is shown on the About
+  screen; the denied case on iOS suggests installing to the home screen.
 
 ### 14.2 Local Storage
 
@@ -760,6 +810,19 @@ The following data is stored locally per group in IndexedDB:
 - **Incremental sync**: Pushes local unpushed events and pulls remote events since last cursor.
 - **Real-time subscriptions**: The app subscribes to server-sent events via WebSocket for live updates from other devices/users.
 - **Offline queue**: Events created while offline are queued (tracked in `unpushedIds`) and synced when connectivity returns. Groups **created** while offline are also queued and registered on the server when connectivity returns (the server account is created on the first successful push).
+- **Idempotent push**: each pushed batch carries a `recordId` derived from its
+  content (SHA-256 of the sorted event ids). The relay enforces
+  `UNIQUE(group_id, record_id)` and answers a replayed push with the original
+  record's `seq` instead of storing a duplicate — so a push whose response was
+  lost can be safely retried by a later sync. Pushes without a `recordId` (old
+  clients) are stored unconditionally.
+- **Cursor reset**: when a pull's `since` cursor exceeds the group's current
+  max `seq` — the group was purged and re-created, or compacted away from
+  under a stale cursor — the relay answers `{resetCursor: true}` instead of a
+  silent empty page. The client restarts the pull from 0 (at most once per
+  sync); the dedup-by-event-id merge makes the restart loss-free. A forged
+  `resetCursor` cannot cause data loss — the merge never deletes — so the
+  worst case is a redundant re-pull.
 
 ### 14.4 Event Compression & Batching
 
@@ -810,13 +873,125 @@ When new events arrive via sync, a **full replay** from scratch is not always ne
 
 In practice, late arrivals involving lifecycle conflicts are extremely rare (they require two users to retire/unretire the same member within a short offline window). The vast majority of syncs hit the fast path.
 
-**Computed state caching:** The materialized group state is cached locally. On app load, if the event log has not changed, the cached state is used directly. Otherwise, the state is recomputed from the full event log.
+**Computed state caching (planned, not implemented):** opening a group today always replays the full event log from scratch. A persisted materialized-state cache — keyed by a log fingerprint, falling back to full replay on any mismatch — is planned, pending measurement that replay time warrants it.
 
 ### 14.7 Connectivity Indicators
 
 - An **offline banner** (with Wi-Fi icon) appears when the app detects loss of connectivity.
 - The banner is accessible (`role="alert"`, `aria-live="polite"`).
 - The app automatically re-subscribes and syncs the offline queue when connectivity is restored.
+
+### 14.8 Relay Retention & Storage Limits
+
+**The relay is a cache; the clients are the system of record.** Every member
+holds the full event log and the group key, so an honest member can restore a
+purged or truncated relay copy by re-pushing. This licenses an aggressive
+server retention policy, and makes honest replicas the tamper resistance of
+[11.7](#117-compromised-member-threat-model).
+
+- **Inactivity TTL.** The relay tracks `last_access` per group (updated at
+  most once per day on any authenticated request) and purges groups idle
+  longer than the retention window — **12 months** (may shorten for very
+  large groups). Any member's sync renews the window, so a purge requires
+  *every* member to stay away: no single member can starve a live group into
+  deletion. The policy is surfaced in-app before enforcement, with an
+  archival-export nudge for long-idle groups.
+- **Resurrection.** A purged group is re-registered through the normal
+  offline-group machinery (PoW + create) on a member's next sync, followed by
+  a re-push of local history. Surviving stale cursors recover via the
+  `resetCursor` flow ([14.3](#143-synchronization)).
+- **Heal re-push.** After a cursor-reset re-pull completes, the client diffs
+  its full local log against what the relay returned and re-pushes every
+  event the relay lacks. This is computed from the log itself — `unpushedIds`
+  only tracks never-pushed events. With it, any relay truncation (purge,
+  botched resurrection, unsanctioned compaction, hostile relay) converges
+  back to full history as soon as one honest member syncs.
+- **Absolute quota.** The relay maintains `record_count` and `total_bytes`
+  per group and rejects appends beyond a generous cap (**50 MB or 50 000
+  records**) with a distinct error the client surfaces ("group is full —
+  compact or export"). Honest groups sit orders of magnitude below it.
+- **Monthly rate limit.** At most **~10 MB of new data per group per month**
+  (tracked as `bytes_this_window`/`window_start` on the group row), rejected
+  with a distinct error and a retry-after hint. The quota bounds total abuse
+  damage; the rate cap bounds its *speed*, buying months of detection time.
+  The compact route ([14.9](#149-log-consolidation-compaction)) is accounted
+  **net** — bytes inserted minus bytes deleted, floored at zero — never
+  exempted, so consolidation is free while tunneling spam through compact
+  calls gains nothing. A full-history heal re-push fits within one month's
+  allowance.
+- **Accepted residual:** a compromised member can fill the quota and block
+  honest *sync* (never local operation) — denial of service, not destruction
+  — stretched over months by the rate cap, and squeezed out again by the next
+  consensus compaction.
+
+### 14.9 Log Consolidation (Compaction)
+
+Long-lived active groups accumulate one relay record per trickle-flushed
+batch, so record count approaches event count and per-record gzip cannot
+exploit cross-event redundancy. Consolidation **re-batches, never
+summarizes**: a member holding the full verified log re-packs the same raw
+envelopes — verbatim, per [11.3b](#113b-forward-compatibility) — sorted, into
+a few large batches (up to the 1 MB record cap), gzipped as a whole and
+encrypted with the group key. Replay, signatures, audit trail, and activity
+feed are unchanged; state snapshots were rejected (one-member-signed history,
+audit-trail erasure, breaking wire change).
+
+**Consensus gate.** The compact route deletes relay records, and the server
+cannot restrict who calls it ([11.7](#117-compromised-member-threat-model)),
+so authorization lives in the log where clients can verify it:
+
+- Two event types: `CompactionProposed { uptoEventId, eventCount,
+  manifestHash }` and `CompactionApproved { proposalId }` — ordinary signed
+  events, replicated and preserved verbatim by the consolidation they
+  authorize.
+- **Manifest canonical form:** `manifestHash` is the SHA-256 over the
+  concatenation of the raw envelope JSON bytes (as stored/received, not
+  re-encoded) of every event up to and including `uptoEventId`, in the
+  deterministic sort order of [14.5](#145-event-ordering--conflict-resolution),
+  each envelope followed by a `\n` separator. Hashing envelope bytes — not
+  event ids — prevents an author from swapping an event's content behind a
+  reused id.
+- **Approval is computed, not asked.** On sync, a client recomputes the
+  manifest from its own local log and auto-signs an approval only on exact
+  match. A proposer who omitted or altered anything gets no honest
+  signatures.
+- **Quorum:** every *involved actor* (author of at least one event in the
+  compacted range) should co-sign, with a floor of **strictly more than 50%
+  of the non-retired involved actors**; the proposer's signature is always
+  required.
+
+**Execution.** Once the quorum is visible in the log, any member may call:
+
+```
+POST /api/groups/:id/compact   { uptoSeq, records: [...] }
+```
+
+The server, in one transaction: verifies `uptoSeq` ≤ current max seq, deletes
+records with `seq ≤ uptoSeq`, and appends the consolidation records at fresh,
+strictly higher seqs (AUTOINCREMENT never reuses). Racing compactors
+serialize: the loser's `uptoSeq` now covers deleted rows and is rejected with
+409 (re-pull and retry or give up). The uploaded records must contain every
+event from the deleted records — including the proposal and approval events,
+so the authorization travels with the result; events beyond the manifest
+boundary ride along unmanifested, with the same status as fresh appends.
+Cursors survive: no live cursor can exceed the new max seq, and a cursor
+predating `uptoSeq` re-pulls history the dedup merge drops.
+
+**Verification.** The server never sees the quorum; enforcement is
+client-side:
+
+- *Existing members* need none: compaction abuse deletes nothing locally, and
+  an unsanctioned compaction is undone by the first honest heal re-push
+  ([14.8](#148-relay-retention--storage-limits)).
+- *New joiners* recompute the manifest over the received pre-boundary
+  envelopes and check the quorum signatures (signer keys are in the log per
+  [11.3](#113-event-signing)). Mismatch or missing quorum → the history is
+  flagged untrusted.
+- The joiner cannot distinguish "truncated" from "never compacted", so the
+  invite link carries the **inviter's head attestation** in the fragment tail
+  ([12.1](#121-invite-link-structure)): the joiner requires the fetched
+  history to reach it. An inviter is trusted by the joiner by construction —
+  that trust is what an invitation is.
 
 ---
 
