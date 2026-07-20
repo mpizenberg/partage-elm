@@ -1,5 +1,6 @@
 module Infra.UsageStats exposing
     ( CostBreakdown
+    , PersistedStatus(..)
     , StorageEstimate
     , UsageStats
     , calculateCosts
@@ -8,6 +9,8 @@ module Infra.UsageStats exposing
     , encode
     , estimateStorage
     , formatDollars
+    , persistedStatus
+    , requestPersistentStorage
     , updateStorageCost
     )
 
@@ -88,6 +91,57 @@ estimateStorage =
                 (Decode.map2 StorageEstimate
                     (Decode.field "usage" Decode.int)
                     (Decode.field "quota" Decode.int)
+                )
+        , errors = ConcurrentTask.expectNoErrors
+        , args = Encode.null
+        }
+
+
+{-| Whether the origin's storage bucket is protected from browser eviction.
+An evicted replica silently degrades the member to joiner-level trust, so
+the status is surfaced rather than only requested.
+-}
+type PersistedStatus
+    = Persisted
+    | NotPersisted
+    | PersistUnsupported
+
+
+{-| Ask the browser to make the origin's storage persistent
+(`navigator.storage.persist()`). May prompt the user in some browsers.
+-}
+requestPersistentStorage : ConcurrentTask Never PersistedStatus
+requestPersistentStorage =
+    persistedTask "usageStats:persistStorage"
+
+
+{-| Read the current persistence status (`navigator.storage.persisted()`)
+without triggering any prompt.
+-}
+persistedStatus : ConcurrentTask Never PersistedStatus
+persistedStatus =
+    persistedTask "usageStats:persistedStatus"
+
+
+persistedTask : String -> ConcurrentTask Never PersistedStatus
+persistedTask function =
+    ConcurrentTask.define
+        { function = function
+        , expect =
+            ConcurrentTask.expectJson
+                (Decode.map2
+                    (\supported persisted ->
+                        if not supported then
+                            PersistUnsupported
+
+                        else if persisted then
+                            Persisted
+
+                        else
+                            NotPersisted
+                    )
+                    (Decode.field "supported" Decode.bool)
+                    (Decode.field "persisted" Decode.bool)
                 )
         , errors = ConcurrentTask.expectNoErrors
         , args = Encode.null

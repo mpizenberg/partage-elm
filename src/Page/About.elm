@@ -15,12 +15,13 @@ type Model
     | Loaded
         { breakdown : CostBreakdown
         , trackingSince : String
+        , persistStatus : UsageStats.PersistedStatus
         , confirmingReset : Bool
         }
 
 
 type Msg
-    = StatsLoaded CostBreakdown String
+    = StatsLoaded CostBreakdown String UsageStats.PersistedStatus
     | ToggleResetConfirm
     | ConfirmReset
 
@@ -44,7 +45,7 @@ init =
     Loading
 
 
-statsLoaded : CostBreakdown -> String -> Msg
+statsLoaded : CostBreakdown -> String -> UsageStats.PersistedStatus -> Msg
 statsLoaded =
     StatsLoaded
 
@@ -52,10 +53,11 @@ statsLoaded =
 update : Msg -> Model -> ( Model, Maybe Output )
 update msg model =
     case msg of
-        StatsLoaded breakdown trackingSince ->
+        StatsLoaded breakdown trackingSince persistStatus ->
             ( Loaded
                 { breakdown = breakdown
                 , trackingSince = trackingSince
+                , persistStatus = persistStatus
                 , confirmingReset = False
                 }
             , Nothing
@@ -129,7 +131,7 @@ usageSection i18n model =
                 Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
                     (Ui.text (T.aboutUsageLoading i18n))
 
-            Loaded { breakdown, trackingSince, confirmingReset } ->
+            Loaded { breakdown, trackingSince, persistStatus, confirmingReset } ->
                 Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
                     [ UI.Components.card [ Ui.padding Theme.spacing.lg ]
                         [ costTable i18n breakdown ]
@@ -138,10 +140,31 @@ usageSection i18n model =
                         , Ui.Font.color Theme.base.textSubtle
                         ]
                         (Ui.text (T.aboutUsageTrackingSince trackingSince i18n))
+                    , persistRow i18n persistStatus
                     , fundingSection i18n
                     , resetSection i18n confirmingReset
                     ]
         ]
+
+
+persistRow : I18n -> UsageStats.PersistedStatus -> Ui.Element msg
+persistRow i18n status =
+    Ui.el
+        [ Ui.Font.size Theme.font.sm
+        , Ui.Font.color Theme.base.textSubtle
+        ]
+        (Ui.text
+            (case status of
+                UsageStats.Persisted ->
+                    T.aboutPersistGranted i18n
+
+                UsageStats.NotPersisted ->
+                    T.aboutPersistDenied i18n
+
+                UsageStats.PersistUnsupported ->
+                    T.aboutPersistUnsupported i18n
+            )
+        )
 
 
 costTable : I18n -> CostBreakdown -> Ui.Element msg

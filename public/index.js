@@ -151,6 +151,16 @@ var relayTasks = createRelayTasks(function (event) {
 });
 
 function createUsageStatsTasks() {
+  function persistCall(method) {
+    if (navigator.storage && navigator.storage[method]) {
+      return navigator.storage[method]().then(
+        (persisted) => ({ supported: true, persisted: persisted }),
+        () => ({ supported: true, persisted: false }),
+      );
+    }
+    return Promise.resolve({ supported: false, persisted: false });
+  }
+
   return {
     "usageStats:estimateStorage": () => {
       if (navigator.storage && navigator.storage.estimate) {
@@ -161,6 +171,8 @@ function createUsageStatsTasks() {
       }
       return Promise.resolve({ usage: 0, quota: 0 });
     },
+    "usageStats:persistStorage": () => persistCall("persist"),
+    "usageStats:persistedStatus": () => persistCall("persisted"),
   };
 }
 

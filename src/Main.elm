@@ -166,8 +166,8 @@ type Msg
     | OnServerGroupCreated Group.Id (ConcurrentTask.Response Server.Error ())
       -- About / Usage stats
     | AboutMsg Page.About.Msg
-    | OnStorageCheckComplete (ConcurrentTask.Response Never ( Maybe UsageStats, UsageStats.StorageEstimate ))
-    | OnAboutStatsReset (ConcurrentTask.Response Idb.Error ())
+    | OnStorageCheckComplete (ConcurrentTask.Response Never ( Maybe UsageStats, UsageStats.StorageEstimate, UsageStats.PersistedStatus ))
+    | OnAboutStatsReset (ConcurrentTask.Response Idb.Error UsageStats.PersistedStatus)
     | OnSelfProfileSaved (ConcurrentTask.Response Idb.Error ())
     | ScheduleStorageCheck
       -- Toast notifications
@@ -668,6 +668,7 @@ update msg model =
                     ( modelAfterAttempt
                     , Cmd.batch [ Navigation.pushUrl navCmd (Route.toAppUrl newRoute), serverCmd ]
                     )
+                        |> requestPersistOnFirstGroup readyData.groups
 
                 _ ->
                     ( model, Cmd.none )
@@ -936,6 +937,7 @@ update msg model =
                             , groupModel = Page.Group.resetLoadedGroup model.groupModel
                         }
                         |> Update.addCmd (Navigation.pushUrl navCmd (Route.toAppUrl balanceTabRoute))
+                        |> requestPersistOnFirstGroup readyData.groups
 
                 _ ->
                     ( model, Cmd.none )
@@ -1073,7 +1075,10 @@ update msg model =
                     case model.appState of
                         Ready readyData ->
                             ( model.runner, Cmd.none )
-                                |> Runner.andRun OnAboutStatsReset (Storage.resetUsageStats readyData.db)
+                                |> Runner.andRun OnAboutStatsReset
+                                    (Storage.resetUsageStats readyData.db
+                                        |> ConcurrentTask.andThenDo (UsageStats.persistedStatus |> ConcurrentTask.mapError never)
+                                    )
                                 |> Tuple.mapFirst (\r -> { model | aboutModel = aboutModel, runner = r })
 
                         _ ->
@@ -1082,7 +1087,7 @@ update msg model =
                 Nothing ->
                     ( { model | aboutModel = aboutModel }, Cmd.none )
 
-        OnStorageCheckComplete (ConcurrentTask.Success ( maybeStats, storageEstimate )) ->
+        OnStorageCheckComplete (ConcurrentTask.Success ( maybeStats, storageEstimate, persistStatus )) ->
             case model.appState of
                 Ready readyData ->
                     let
@@ -1103,7 +1108,7 @@ update msg model =
                             Date.toString (Date.posixToDate model.timeZone updatedStats.trackingStartDate)
 
                         ( aboutModel, _ ) =
-                            Page.About.update (Page.About.statsLoaded breakdown trackingSince) model.aboutModel
+                            Page.About.update (Page.About.statsLoaded breakdown trackingSince persistStatus) model.aboutModel
                     in
                     -- If needs save, save usage stats to IndexedDB
                     if updatedStats /= stats || maybeStats == Nothing then
@@ -1121,7 +1126,7 @@ update msg model =
         OnStorageCheckComplete _ ->
             ( model, Cmd.none )
 
-        OnAboutStatsReset (ConcurrentTask.Success ()) ->
+        OnAboutStatsReset (ConcurrentTask.Success persistStatus) ->
             case model.appState of
                 Ready readyData ->
                     let
@@ -1138,7 +1143,7 @@ update msg model =
                             Date.toString (Date.posixToDate model.timeZone freshStats.trackingStartDate)
 
                         ( aboutModel, _ ) =
-                            Page.About.update (Page.About.statsLoaded breakdown trackingSince) model.aboutModel
+                            Page.About.update (Page.About.statsLoaded breakdown trackingSince persistStatus) model.aboutModel
                     in
                     ( model.runner, Cmd.none )
                         |> Runner.andRun (\_ -> NoOp)
@@ -1201,13 +1206,29 @@ update msg model =
             addToast Toast.Error (T.toastPushError model.i18n) model
 
 
-storageCheckTask : Idb.Db -> ConcurrentTask Never ( Maybe UsageStats, UsageStats.StorageEstimate )
+{-| On the first group (create, import, or join), ask the browser to protect
+the origin's storage from eviction. Later groups skip the request: once
+granted it stays granted, and re-asking after a denial would only re-prompt.
+-}
+requestPersistOnFirstGroup : Dict.Dict Group.Id Group.Summary -> ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+requestPersistOnFirstGroup groupsBefore ( model, cmd ) =
+    if Dict.isEmpty groupsBefore then
+        ( model.runner, cmd )
+            |> Runner.andRun (\_ -> NoOp) UsageStats.requestPersistentStorage
+            |> Tuple.mapFirst (\runner -> { model | runner = runner })
+
+    else
+        ( model, cmd )
+
+
+storageCheckTask : Idb.Db -> ConcurrentTask Never ( Maybe UsageStats, UsageStats.StorageEstimate, UsageStats.PersistedStatus )
 storageCheckTask db =
-    ConcurrentTask.map2 Tuple.pair
+    ConcurrentTask.map3 (\stats estimate persisted -> ( stats, estimate, persisted ))
         (Storage.loadUsageStats db
             |> ConcurrentTask.onError (\_ -> ConcurrentTask.succeed Nothing)
         )
         UsageStats.estimateStorage
+        UsageStats.persistedStatus
 
 
 rescheduleStorageCheckTomorrow : Cmd Msg
