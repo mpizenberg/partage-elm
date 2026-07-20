@@ -1,9 +1,11 @@
 module Infra.Server exposing
-    ( Error(..)
+    ( CompactOutcome(..)
+    , Error(..)
     , PullResult
     , ServerContext
     , SyncData
     , SyncResult
+    , compact
     , createGroupOnServer
     , errorToString
     , isNetworkError
@@ -26,6 +28,7 @@ carries a bearer secret derived from the group key.
 
 import ConcurrentTask exposing (ConcurrentTask)
 import ConcurrentTask.Http as Http
+import Domain.Compaction as Compaction
 import Domain.Event as Event
 import Domain.Group as Group
 import Infra.Compression as Compression
@@ -33,6 +36,7 @@ import Infra.Crypto as Crypto
 import Infra.PushServer as PushServer
 import Json.Decode as Decode
 import Json.Encode as Encode
+import Set exposing (Set)
 import WebCrypto
 import WebCrypto.ProofOfWork as PoW
 import WebCrypto.Symmetric as Symmetric
@@ -332,12 +336,15 @@ envelopes whose JSON shape could not be decoded. Skipping instead of
 failing keeps one bad record from bricking the group's sync forever.
 `didReset` is set when the pull restarted from 0 on a `resetCursor` — the
 relay lost events this client has seen, so the caller re-pushes the gap.
+`recordCount` is the relay's total record count for the group, the
+compaction-trigger signal (spec §14.9).
 -}
 type alias PullResult =
     { events : List Event.Envelope
     , cursor : Int
     , undecodable : Int
     , didReset : Bool
+    , recordCount : Int
     }
 
 
@@ -390,7 +397,13 @@ pullAllPages ctx secret allowReset cursor acc =
                                     pullAllPages ctx secret allowReset newCursor newAcc
 
                                 else
-                                    ConcurrentTask.succeed { events = newAcc.events, cursor = newCursor, undecodable = newAcc.undecodable, didReset = newAcc.didReset }
+                                    ConcurrentTask.succeed
+                                        { events = newAcc.events
+                                        , cursor = newCursor
+                                        , undecodable = newAcc.undecodable
+                                        , didReset = newAcc.didReset
+                                        , recordCount = page.recordCount
+                                        }
                             )
             )
 
@@ -444,12 +457,13 @@ decryptServerEventBatch key record =
             ConcurrentTask.succeed { events = [], undecodable = 1 }
 
 
-pullPageDecoder : Decode.Decoder { events : List ServerEventRecord, hasMore : Bool, resetCursor : Bool }
+pullPageDecoder : Decode.Decoder { events : List ServerEventRecord, hasMore : Bool, resetCursor : Bool, recordCount : Int }
 pullPageDecoder =
-    Decode.map3 (\events hasMore resetCursor -> { events = events, hasMore = hasMore, resetCursor = resetCursor })
+    Decode.map4 (\events hasMore resetCursor recordCount -> { events = events, hasMore = hasMore, resetCursor = resetCursor, recordCount = recordCount })
         (Decode.field "events" (Decode.list serverEventRecordDecoder))
         (Decode.field "hasMore" Decode.bool)
         (Decode.oneOf [ Decode.field "resetCursor" Decode.bool, Decode.succeed False ])
+        (Decode.oneOf [ Decode.field "recordCount" Decode.int, Decode.succeed 0 ])
 
 
 serverEventRecordDecoder : Decode.Decoder ServerEventRecord
@@ -458,6 +472,172 @@ serverEventRecordDecoder =
         (Decode.field "seq" Decode.int)
         (Decode.field "eventData" Decode.string)
         (Decode.field "compressed" Decode.bool)
+
+
+
+-- Compaction
+
+
+{-| Result of a compact call: the relay's new max seq (the executor may
+fast-forward its cursor to it — the appended records hold exactly what it
+sent), or a lost race (the relay's history moved; reconsidered next sync).
+-}
+type CompactOutcome
+    = Compacted Int
+    | CompactRaced
+
+
+{-| The plaintext-bytes bound per consolidation batch. Guarantees the
+encrypted record stays under the relay's 1 MB cap even for incompressible
+content (base64 expands by a third).
+-}
+maxChunkBytes : Int
+maxChunkBytes =
+    512 * 1024
+
+
+{-| Execute a quorumed compaction (spec §14.9): re-pull the full record
+list to learn `uptoSeq` and what rides beyond the manifest boundary, then
+atomically replace everything with the consolidated history — the sorted
+manifested prefix re-packed into large batches, plus every pulled event
+outside the manifest as riders, so no deleted record loses an event.
+Undecodable records cannot contribute events and are dropped with the
+compaction.
+-}
+compact : ServerContext -> String -> List Event.Envelope -> ConcurrentTask Error CompactOutcome
+compact ctx actorId prefix =
+    let
+        manifestIds : Set String
+        manifestIds =
+            Set.fromList (List.map .id prefix)
+    in
+    Crypto.deriveRelaySecret ctx.groupKey
+        |> ConcurrentTask.mapError CryptoError
+        |> ConcurrentTask.andThen
+            (\secret ->
+                pullTaggedRecords ctx secret 0 []
+                    |> ConcurrentTask.andThen
+                        (\records ->
+                            case List.maximum (List.map .seq records) of
+                                Nothing ->
+                                    ConcurrentTask.succeed CompactRaced
+
+                                Just uptoSeq ->
+                                    let
+                                        riders : List Event.Envelope
+                                        riders =
+                                            records
+                                                |> List.concatMap .events
+                                                |> List.filter (\e -> not (Set.member e.id manifestIds))
+                                                |> dedupById
+                                                |> Event.sortEvents
+                                    in
+                                    (Compaction.chunkEnvelopes maxChunkBytes prefix ++ Compaction.chunkEnvelopes maxChunkBytes riders)
+                                        |> List.map (packRecord ctx.groupKey actorId)
+                                        |> ConcurrentTask.batch
+                                        |> ConcurrentTask.andThen (postCompact ctx secret uptoSeq)
+                        )
+            )
+
+
+{-| One pull page at a time, keeping each record's seq with its decrypted
+events. Runs from 0 so no reset handling applies.
+-}
+pullTaggedRecords : ServerContext -> String -> Int -> List { seq : Int, events : List Event.Envelope } -> ConcurrentTask Error (List { seq : Int, events : List Event.Envelope })
+pullTaggedRecords ctx secret cursor acc =
+    Http.get
+        { url = eventsUrl ctx ++ "?since=" ++ String.fromInt cursor
+        , headers = [ authHeader secret ]
+        , expect = Http.expectJson pullPageDecoder
+        , timeout = Nothing
+        }
+        |> ConcurrentTask.mapError HttpError
+        |> ConcurrentTask.andThen
+            (\page ->
+                page.events
+                    |> List.map
+                        (\record ->
+                            decryptServerEventBatch ctx.groupKey record
+                                |> ConcurrentTask.map (\decrypted -> { seq = record.seq, events = decrypted.events })
+                        )
+                    |> ConcurrentTask.batch
+                    |> ConcurrentTask.andThen
+                        (\decrypted ->
+                            let
+                                newAcc : List { seq : Int, events : List Event.Envelope }
+                                newAcc =
+                                    acc ++ decrypted
+                            in
+                            if page.hasMore then
+                                let
+                                    newCursor : Int
+                                    newCursor =
+                                        List.head (List.reverse page.events)
+                                            |> Maybe.map .seq
+                                            |> Maybe.withDefault cursor
+                                in
+                                pullTaggedRecords ctx secret newCursor newAcc
+
+                            else
+                                ConcurrentTask.succeed newAcc
+                        )
+            )
+
+
+dedupById : List Event.Envelope -> List Event.Envelope
+dedupById envelopes =
+    List.foldl
+        (\envelope ( seen, kept ) ->
+            if Set.member envelope.id seen then
+                ( seen, kept )
+
+            else
+                ( Set.insert envelope.id seen, envelope :: kept )
+        )
+        ( Set.empty, [] )
+        envelopes
+        |> Tuple.second
+        |> List.reverse
+
+
+{-| Encrypt one consolidation batch, with the same content-derived
+recordId as regular pushes so retries and racing executors dedup.
+-}
+packRecord : Symmetric.Key -> String -> List Event.Envelope -> ConcurrentTask Error Encode.Value
+packRecord groupKey actorId envelopes =
+    ConcurrentTask.map2
+        (\recordId result ->
+            Encode.object
+                [ ( "actorId", Encode.string actorId )
+                , ( "recordId", Encode.string recordId )
+                , ( "eventData", Encode.string (Encode.encode 0 (Compression.encodeEventData result)) )
+                , ( "compressed", Encode.bool result.compressed )
+                ]
+        )
+        (WebCrypto.sha256 (String.join "\n" (List.sort (List.map .id envelopes))))
+        (Compression.encryptJson groupKey (Encode.list Event.encodeEnvelope envelopes))
+        |> ConcurrentTask.mapError CryptoError
+
+
+postCompact : ServerContext -> String -> Int -> List Encode.Value -> ConcurrentTask Error CompactOutcome
+postCompact ctx secret uptoSeq records =
+    Http.post
+        { url = ctx.serverUrl ++ "/api/groups/" ++ ctx.groupId ++ "/compact"
+        , headers = [ authHeader secret ]
+        , body = Http.jsonBody (Encode.object [ ( "uptoSeq", Encode.int uptoSeq ), ( "records", Encode.list identity records ) ])
+        , expect = Http.expectJson (Decode.field "maxSeq" Decode.int)
+        , timeout = Nothing
+        }
+        |> ConcurrentTask.mapError HttpError
+        |> ConcurrentTask.map Compacted
+        |> ConcurrentTask.onError
+            (\err ->
+                if isStatus 409 err then
+                    ConcurrentTask.succeed CompactRaced
+
+                else
+                    ConcurrentTask.fail err
+            )
 
 
 

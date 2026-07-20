@@ -1,5 +1,6 @@
 module GroupOps exposing
-    ( Context
+    ( CompactionStep(..)
+    , Context
     , LoadedGroup
     , State
     , SyncApplyResult
@@ -8,7 +9,7 @@ module GroupOps exposing
     , appendEvent
     , applySyncResult
     , clampAfterLatest
-    , compactionApprovalsDue
+    , compactionStep
     , deleteEntry
     , editEntry
     , event
@@ -579,13 +580,101 @@ addMember ctx loaded output =
 
 
 
--- Compaction approval
+-- Compaction
+
+
+{-| The one compaction action to take after a sync, in priority order:
+execute a quorumed proposal (only while the relay is still worth
+compacting), else sign approvals, else propose. Approvals and proposals
+are returned as data — authoring them needs the caller's submit
+machinery; execution talks to the relay right here.
+-}
+type CompactionStep
+    = NoCompactionStep
+    | ApproveProposals (List Event.Id)
+    | ProposalReady { uptoEventId : Event.Id, eventCount : Int, manifestHash : String }
+    | ExecutedCompaction Server.CompactOutcome
+
+
+compactionStep :
+    { serverCtx : Server.ServerContext
+    , actorId : String
+    , myRoot : Member.Id
+    , recordCount : Int
+    , now : Time.Posix
+    }
+    -> LoadedGroup
+    -> ConcurrentTask Server.Error CompactionStep
+compactionStep cfg loaded =
+    let
+        state : GroupState.GroupState
+        state =
+            loaded.groupState
+
+        resolvers : { resolveRoot : Member.Id -> Maybe Member.Id, isRetired : Member.Id -> Bool }
+        resolvers =
+            { resolveRoot = GroupState.resolveMemberRootId state
+            , isRetired =
+                \root ->
+                    Dict.get root state.members
+                        |> Maybe.map .isRetired
+                        |> Maybe.withDefault False
+            }
+
+        relayWorthCompacting : Bool
+        relayWorthCompacting =
+            cfg.recordCount >= Compaction.recordCountTrigger
+
+        approveOrPropose : ConcurrentTask Server.Error CompactionStep
+        approveOrPropose =
+            compactionApprovalsDue cfg.myRoot loaded
+                |> ConcurrentTask.andThen
+                    (\proposalIds ->
+                        case ( proposalIds, relayWorthCompacting, Compaction.proposalDraft cfg.now loaded.events ) of
+                            ( _ :: _, _, _ ) ->
+                                ConcurrentTask.succeed (ApproveProposals proposalIds)
+
+                            ( [], True, Just draft ) ->
+                                WebCrypto.sha256 draft.manifestInput
+                                    |> ConcurrentTask.mapError Server.CryptoError
+                                    |> ConcurrentTask.map
+                                        (\hash ->
+                                            ProposalReady
+                                                { uptoEventId = draft.uptoEventId
+                                                , eventCount = draft.eventCount
+                                                , manifestHash = hash
+                                                }
+                                        )
+
+                            _ ->
+                                ConcurrentTask.succeed NoCompactionStep
+                    )
+    in
+    case ( Compaction.executableProposal resolvers loaded.events, relayWorthCompacting ) of
+        ( Just executable, True ) ->
+            -- Execute only when this replica's manifest matches the quorumed
+            -- claim: an executor never consolidates a history it disagrees
+            -- with, no matter how many others signed it.
+            WebCrypto.sha256 executable.manifestInput
+                |> ConcurrentTask.mapError Server.CryptoError
+                |> ConcurrentTask.andThen
+                    (\hash ->
+                        if hash == executable.claimedHash then
+                            Server.compact cfg.serverCtx cfg.actorId executable.prefix
+                                |> ConcurrentTask.map ExecutedCompaction
+
+                        else
+                            approveOrPropose
+                    )
+
+        _ ->
+            approveOrPropose
 
 
 {-| The ids of compaction proposals the member `myRoot` should approve:
 pending per `Compaction.pendingApprovals`, and whose recomputed manifest
 hash equals the claimed one — the approval signature attests "my replica's
-history up to this boundary is exactly this". Run after each sync.
+history up to this boundary is exactly this".
 -}
 compactionApprovalsDue : Member.Id -> LoadedGroup -> ConcurrentTask x (List Event.Id)
 compactionApprovalsDue myRoot loaded =

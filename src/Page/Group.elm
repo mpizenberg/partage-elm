@@ -243,8 +243,8 @@ type
     | OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)
     | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set String })
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
-    | OnCompactionApprovalsChecked Group.Id (ConcurrentTask.Response Idb.Error (List Event.Id))
-    | OnCompactionApprovalSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
+    | OnCompactionStep Group.Id (ConcurrentTask.Response Server.Error GroupOps.CompactionStep)
+    | OnCompactionEventSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | PostSyncTasksDone (ConcurrentTask.Response Idb.Error ())
     | OnDiagnosticsLoaded (ConcurrentTask.Response Idb.Error Page.Group.Diagnostics.Stats)
     | OnServerEvent Json.Decode.Value
@@ -879,13 +879,20 @@ update config msg model =
                                             { serverUrl = config.serverUrl, groupId = groupId, groupKey = loaded.groupKey }
                                             result
                                         )
-                                    |> Runner.andRun (OnCompactionApprovalsChecked groupId)
+                                    |> Runner.andRun (OnCompactionStep groupId)
                                         (case currentUserRootId model result.updatedGroup of
                                             Just myRoot ->
-                                                GroupOps.compactionApprovalsDue myRoot result.updatedGroup
+                                                GroupOps.compactionStep
+                                                    { serverCtx = { serverUrl = config.serverUrl, groupId = groupId, groupKey = loaded.groupKey }
+                                                    , actorId = model.identityHash
+                                                    , myRoot = myRoot
+                                                    , recordCount = syncResult.pullResult.recordCount
+                                                    , now = config.currentTime
+                                                    }
+                                                    result.updatedGroup
 
                                             Nothing ->
-                                                ConcurrentTask.succeed []
+                                                ConcurrentTask.succeed GroupOps.NoCompactionStep
                                         )
 
                             ( modelAfterSync, initCmd ) =
@@ -977,23 +984,55 @@ update config msg model =
         OnGroupSynced _ _ (ConcurrentTask.UnexpectedError _) ->
             ( { model | syncInProgress = False }, Cmd.none, [ LogError ErrorLog.SyncSource ErrorLog.Err "Unexpected error during group sync" ] )
 
-        OnCompactionApprovalsChecked groupId (ConcurrentTask.Success proposalIds) ->
+        OnCompactionStep groupId (ConcurrentTask.Success step) ->
             case model.loadedGroup of
                 Just loaded ->
                     if loaded.summary.id == groupId then
-                        List.foldl
-                            (\proposalId ( mdl, cmd, outs ) ->
+                        case step of
+                            GroupOps.NoCompactionStep ->
+                                ( model, Cmd.none, [] )
+
+                            GroupOps.ApproveProposals proposalIds ->
+                                List.foldl
+                                    (\proposalId ( mdl, cmd, outs ) ->
+                                        let
+                                            ( mdl2, cmd2, outs2 ) =
+                                                runSubmit (OnCompactionEventSaved groupId)
+                                                    config
+                                                    mdl
+                                                    (\ctx -> GroupOps.event ctx loaded (Event.CompactionApproved { proposalId = proposalId }))
+                                        in
+                                        ( mdl2, Cmd.batch [ cmd, cmd2 ], outs ++ outs2 )
+                                    )
+                                    ( model, Cmd.none, [] )
+                                    proposalIds
+
+                            GroupOps.ProposalReady proposal ->
+                                runSubmit (OnCompactionEventSaved groupId)
+                                    config
+                                    model
+                                    (\ctx -> GroupOps.event ctx loaded (Event.CompactionProposed proposal))
+
+                            GroupOps.ExecutedCompaction (Server.Compacted maxSeq) ->
+                                -- The appended records hold exactly what this
+                                -- executor sent: fast-forward the cursor so the
+                                -- next pull skips re-downloading them.
                                 let
-                                    ( mdl2, cmd2, outs2 ) =
-                                        runSubmit (OnCompactionApprovalSaved groupId)
-                                            config
-                                            mdl
-                                            (\ctx -> GroupOps.event ctx loaded (Event.CompactionApproved { proposalId = proposalId }))
+                                    ( runner, cursorCmd ) =
+                                        ( model.runner, Cmd.none )
+                                            |> Runner.andRun PostSyncTasksDone
+                                                (Storage.saveSyncCursor config.db groupId maxSeq)
                                 in
-                                ( mdl2, Cmd.batch [ cmd, cmd2 ], outs ++ outs2 )
-                            )
-                            ( model, Cmd.none, [] )
-                            proposalIds
+                                ( { model
+                                    | loadedGroup = Just { loaded | syncCursor = Just maxSeq }
+                                    , runner = runner
+                                  }
+                                , cursorCmd
+                                , []
+                                )
+
+                            GroupOps.ExecutedCompaction Server.CompactRaced ->
+                                ( model, Cmd.none, [] )
 
                     else
                         ( model, Cmd.none, [] )
@@ -1001,15 +1040,22 @@ update config msg model =
                 Nothing ->
                     ( model, Cmd.none, [] )
 
-        OnCompactionApprovalsChecked _ _ ->
-            ( model, Cmd.none, [] )
+        OnCompactionStep _ (ConcurrentTask.Error err) ->
+            if Server.isNetworkError err then
+                ( model, Cmd.none, [] )
 
-        OnCompactionApprovalSaved groupId (ConcurrentTask.Success envelope) ->
+            else
+                ( model, Cmd.none, [ LogError ErrorLog.SyncSource ErrorLog.Err ("Compaction: " ++ Server.errorToString err) ] )
+
+        OnCompactionStep _ (ConcurrentTask.UnexpectedError _) ->
+            ( model, Cmd.none, [ LogError ErrorLog.SyncSource ErrorLog.Err "Unexpected error during compaction" ] )
+
+        OnCompactionEventSaved groupId (ConcurrentTask.Success envelope) ->
             applyAndSync config groupId envelope model
                 |> Maybe.withDefault ( model, Cmd.none, [] )
 
-        OnCompactionApprovalSaved _ _ ->
-            ( model, Cmd.none, [ LogError ErrorLog.StorageSource ErrorLog.Err "Failed to save compaction approval" ] )
+        OnCompactionEventSaved _ _ ->
+            ( model, Cmd.none, [ LogError ErrorLog.StorageSource ErrorLog.Err "Failed to save compaction event" ] )
 
         PostSyncTasksDone (ConcurrentTask.Success ()) ->
             ( model, Cmd.none, [] )

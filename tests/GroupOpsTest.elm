@@ -47,7 +47,7 @@ cursorResetTests =
                 result : GroupOps.SyncApplyResult
                 result =
                     GroupOps.applySyncResult Set.empty
-                        { pullResult = { events = existing ++ [ fresh ], cursor = 4, undecodable = 0, didReset = True }, pushedCount = 0 }
+                        { pullResult = { events = existing ++ [ fresh ], cursor = 4, undecodable = 0, didReset = True, recordCount = 0 }, pushedCount = 0 }
                         loaded
             in
             result
@@ -76,7 +76,7 @@ healRepushTests =
         healAfter : { events : List Event.Envelope, didReset : Bool } -> GroupOps.SyncApplyResult
         healAfter { events, didReset } =
             GroupOps.applySyncResult Set.empty
-                { pullResult = { events = events, cursor = 0, undecodable = 0, didReset = didReset }, pushedCount = 0 }
+                { pullResult = { events = events, cursor = 0, undecodable = 0, didReset = didReset, recordCount = 0 }, pushedCount = 0 }
                 (loadedFrom localLog)
     in
     [ test "a purge (reset pull returns nothing) queues every local event for re-push" <|
@@ -183,7 +183,7 @@ loadedFrom events =
 syncWith : List Event.Envelope -> GroupOps.LoadedGroup -> GroupOps.SyncApplyResult
 syncWith newEvents loaded =
     GroupOps.applySyncResult Set.empty
-        { pullResult = { events = newEvents, cursor = 1, undecodable = 0, didReset = False }, pushedCount = 0 }
+        { pullResult = { events = newEvents, cursor = 1, undecodable = 0, didReset = False, recordCount = 0 }, pushedCount = 0 }
         loaded
 
 
