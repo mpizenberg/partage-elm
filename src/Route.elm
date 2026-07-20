@@ -35,6 +35,7 @@ type GroupView
     | EditMemberMetadata Member.Id
     | MergeMember Member.Id (Maybe Member.Id)
     | EditGroupMetadata
+    | Diagnostics
 
 
 {-| The tabs available within a group's main view.
@@ -116,6 +117,9 @@ fromAppUrl appUrl =
 
         [ "groups", groupId, "settings" ] ->
             GroupRoute groupId EditGroupMetadata
+
+        [ "groups", groupId, "diagnostics" ] ->
+            GroupRoute groupId Diagnostics
 
         [ "about" ] ->
             About
@@ -204,6 +208,9 @@ toPathSegments route =
         GroupRoute groupId EditGroupMetadata ->
             [ "groups", groupId, "settings" ]
 
+        GroupRoute groupId Diagnostics ->
+            [ "groups", groupId, "diagnostics" ]
+
         About ->
             [ "about" ]
 
@@ -273,6 +280,9 @@ toPath route =
 
         GroupRoute groupId EditGroupMetadata ->
             "/groups/" ++ groupId ++ "/settings"
+
+        GroupRoute groupId Diagnostics ->
+            "/groups/" ++ groupId ++ "/diagnostics"
 
         About ->
             "/about"

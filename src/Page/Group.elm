@@ -57,6 +57,7 @@ import Json.Encode
 import Page.Group.ActivityTab
 import Page.Group.AddMember
 import Page.Group.BalanceTab
+import Page.Group.Diagnostics
 import Page.Group.EditGroupMetadata
 import Page.Group.EditMemberMetadata
 import Page.Group.EntriesTab
@@ -110,6 +111,7 @@ type alias UpdateConfig =
     , groups : Dict Group.Id Group.Summary
     , pendingServerCreations : Set Group.Id
     , selfProfile : Member.Metadata
+    , devMode : Bool
     }
 
 
@@ -128,6 +130,7 @@ type alias ViewConfig msg =
     , origin : String
     , pushActive : Bool
     , selfProfile : Member.Metadata
+    , devMode : Bool
     }
 
 
@@ -167,6 +170,7 @@ type alias Model =
 
     -- Group pages
     , editGroupMetadataModel : Page.Group.EditGroupMetadata.Model
+    , diagnosticsModel : Page.Group.Diagnostics.Model
     }
 
 
@@ -240,6 +244,7 @@ type
     | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set String })
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
     | PostSyncTasksDone (ConcurrentTask.Response Idb.Error ())
+    | OnDiagnosticsLoaded (ConcurrentTask.Response Never Page.Group.Diagnostics.Stats)
     | OnServerEvent Json.Decode.Value
     | SyncTick
     | ScrollToEntryResult (Result Browser.Dom.Error ())
@@ -294,6 +299,7 @@ init config =
     , newEntryModel = Page.Group.NewEntry.init { currentUserRootId = "", activeMembersRootIds = [], today = { year = 2000, month = 1, day = 1 }, defaultCurrency = EUR, language = T.En }
     , pendingEntry = Nothing
     , editGroupMetadataModel = Page.Group.EditGroupMetadata.init GroupState.empty.groupMeta
+    , diagnosticsModel = Page.Group.Diagnostics.init
     }
 
 
@@ -954,6 +960,21 @@ update config msg model =
 
         PostSyncTasksDone _ ->
             ( model, Cmd.none, [] )
+
+        OnDiagnosticsLoaded (ConcurrentTask.Success stats) ->
+            case model.loadedGroup of
+                Just loaded ->
+                    if loaded.summary.id == stats.groupId then
+                        ( { model | diagnosticsModel = Just stats }, Cmd.none, [] )
+
+                    else
+                        ( model, Cmd.none, [] )
+
+                Nothing ->
+                    ( model, Cmd.none, [] )
+
+        OnDiagnosticsLoaded _ ->
+            ( model, Cmd.none, [ LogError ErrorLog.StorageSource ErrorLog.Err "Unexpected error measuring group diagnostics" ] )
 
         OnServerEvent value ->
             case ( model.loadedGroup, Json.Decode.decodeValue Server.serverEventDecoder value ) of
@@ -1642,6 +1663,15 @@ initPagesIfNeeded config groupView model =
                 ( EditGroupMetadata, Just _ ) ->
                     ( { model | editGroupMetadataModel = Page.Group.EditGroupMetadata.init loaded.groupState.groupMeta }, Cmd.none )
 
+                ( Diagnostics, _ ) ->
+                    if config.devMode && not (Page.Group.Diagnostics.isFresh loaded model.diagnosticsModel) then
+                        ( model.runner, Cmd.none )
+                            |> Runner.andRun OnDiagnosticsLoaded (Page.Group.Diagnostics.load loaded)
+                            |> Tuple.mapFirst (\r -> { model | runner = r, diagnosticsModel = Page.Group.Diagnostics.init })
+
+                    else
+                        ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
 
@@ -1821,12 +1851,37 @@ viewGroupPage config groupView loaded model =
                         model.mergeMemberModel
 
         ( EditGroupMetadata, Just _ ) ->
-            noOverlay <|
-                pageShell config (T.groupSettingsTitle config.i18n) <|
+            let
+                settingsForm : Ui.Element msg
+                settingsForm =
                     Page.Group.EditGroupMetadata.view config.i18n
                         loaded.summary.isArchived
                         (config.toMsg << EditGroupMetadataMsg)
                         model.editGroupMetadataModel
+            in
+            noOverlay <|
+                pageShell config (T.groupSettingsTitle config.i18n) <|
+                    if config.devMode then
+                        Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill ]
+                            [ settingsForm
+                            , UI.Components.btnOutline []
+                                { label = T.diagTitle config.i18n
+                                , icon = Nothing
+                                , onPress = config.toMsg (RequestNavigation Diagnostics)
+                                }
+                            ]
+
+                    else
+                        settingsForm
+
+        ( Diagnostics, _ ) ->
+            if config.devMode then
+                noOverlay <|
+                    pageShell config (T.diagTitle config.i18n) <|
+                        Page.Group.Diagnostics.view config.i18n loaded model.diagnosticsModel
+
+            else
+                viewTabs config maybeUserRootId loaded { model | activeTab = BalanceTab }
 
         -- Non-member trying to access a mutation page: fallback to balance tab
         ( _, Nothing ) ->

@@ -170,6 +170,7 @@ type Msg
     | OnAboutStatsReset (ConcurrentTask.Response Idb.Error UsageStats.PersistedStatus)
     | OnSelfProfileSaved (ConcurrentTask.Response Idb.Error ())
     | ScheduleStorageCheck
+    | ToggleDevMode
       -- Toast notifications
     | ClipboardCopied
     | DismissToast Toast.ToastId
@@ -323,6 +324,7 @@ buildGroupConfig model =
                         , groups = readyData.groups
                         , pendingServerCreations = model.pendingServerCreations
                         , selfProfile = readyData.selfProfile
+                        , devMode = readyData.devMode
                         }
                     )
 
@@ -1162,6 +1164,22 @@ update msg model =
         OnSelfProfileSaved _ ->
             ( logError ErrorLog.StorageSource ErrorLog.Err "Unexpected error saving self profile" model, Cmd.none )
 
+        ToggleDevMode ->
+            case model.appState of
+                Ready readyData ->
+                    let
+                        updatedReadyData : Storage.InitData
+                        updatedReadyData =
+                            { readyData | devMode = not readyData.devMode }
+                    in
+                    ( model.runner, Cmd.none )
+                        |> Runner.andRun (\_ -> NoOp)
+                            (Storage.saveDevMode readyData.db updatedReadyData.devMode)
+                        |> Tuple.mapFirst (\r -> { model | runner = r, appState = Ready updatedReadyData })
+
+                _ ->
+                    ( model, Cmd.none )
+
         ScheduleStorageCheck ->
             case model.appState of
                 Ready readyData ->
@@ -1768,6 +1786,7 @@ viewReady model readyData =
                 , origin = model.origin
                 , pushActive = PwaState.pushIsActive model.pwaState
                 , selfProfile = readyData.selfProfile
+                , devMode = readyData.devMode
                 }
                 groupView
                 model.groupModel
@@ -1778,6 +1797,8 @@ viewReady model readyData =
                     (Page.About.view i18n
                         { onSwitchLanguage = SwitchLanguage
                         , toMsg = AboutMsg
+                        , devMode = readyData.devMode
+                        , onToggleDevMode = ToggleDevMode
                         }
                         model.aboutModel
                     )

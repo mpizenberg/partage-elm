@@ -176,6 +176,39 @@ function createUsageStatsTasks() {
   };
 }
 
+function createDiagnosticsTasks() {
+  async function gzipSize(bytes) {
+    return new Uint8Array(
+      await new Response(
+        new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip")),
+      ).arrayBuffer(),
+    ).length;
+  }
+
+  return {
+    // Exact UTF-8 size of each plaintext event JSON, plus two gzip totals:
+    // the whole log compressed as one JSON array vs each event compressed
+    // alone. The gap approximates what log consolidation would reclaim from
+    // per-record compression overhead.
+    "diagnostics:compressionStats": async ({ events }) => {
+      const encoder = new TextEncoder();
+      const eventBytes = events.map((e) => encoder.encode(e));
+      const plaintextBytes = eventBytes.map((b) => b.length);
+      if (typeof CompressionStream === "undefined") {
+        return { plaintextBytes, gzip: null };
+      }
+      const wholeLogBytes = await gzipSize(
+        encoder.encode("[" + events.join(",") + "]"),
+      );
+      let perEventBytes = 0;
+      for (const bytes of eventBytes) {
+        perEventBytes += await gzipSize(bytes);
+      }
+      return { plaintextBytes, gzip: { wholeLogBytes, perEventBytes } };
+    },
+  };
+}
+
 function createCompressionTasks() {
   function toBase64(uint8array) {
     let binary = "";
@@ -337,6 +370,7 @@ ConcurrentTask.register({
     ...createIndexedDbTasks(),
     ...relayTasks,
     ...createUsageStatsTasks(),
+    ...createDiagnosticsTasks(),
     ...createCompressionTasks(),
     ...createExportTasks(),
   },

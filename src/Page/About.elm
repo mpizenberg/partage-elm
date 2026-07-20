@@ -75,12 +75,22 @@ update msg model =
             ( model, Just RequestResetStats )
 
 
-view : I18n -> { onSwitchLanguage : Language -> msg, toMsg : Msg -> msg } -> Model -> Ui.Element msg
+view :
+    I18n
+    ->
+        { onSwitchLanguage : Language -> msg
+        , toMsg : Msg -> msg
+        , devMode : Bool
+        , onToggleDevMode : msg
+        }
+    -> Model
+    -> Ui.Element msg
 view i18n config model =
     Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.md ]
         [ descriptionSection i18n
         , languageSection i18n config.onSwitchLanguage
         , Ui.map config.toMsg (usageSection i18n model)
+        , devModeSection i18n config
         , sourceSection i18n
         ]
 
@@ -198,6 +208,25 @@ costRow label value =
             , Ui.alignRight
             ]
             (Ui.text value)
+        ]
+
+
+
+-- DEVELOPER MODE
+
+
+devModeSection : I18n -> { r | devMode : Bool, onToggleDevMode : msg } -> Ui.Element msg
+devModeSection i18n config =
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        [ UI.Components.sectionLabel (T.aboutDevModeLabel i18n)
+        , Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
+            [ Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.base.textSubtle
+                ]
+                (Ui.text (T.aboutDevModeHint i18n))
+            , UI.Components.toggle { isOn = config.devMode, onPress = config.onToggleDevMode }
+            ]
         ]
 
 

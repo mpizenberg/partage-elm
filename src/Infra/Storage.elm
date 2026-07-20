@@ -14,6 +14,7 @@ module Infra.Storage exposing
     , loadUsageStats
     , open
     , resetUsageStats
+    , saveDevMode
     , saveEvents
     , saveExchangeRate
     , saveGroup
@@ -50,6 +51,7 @@ type alias InitData =
     , groups : Dict Group.Id Group.Summary
     , savedLanguage : Maybe String
     , selfProfile : Member.Metadata
+    , devMode : Bool
     }
 
 
@@ -133,11 +135,12 @@ open =
 -}
 init : Idb.Db -> ConcurrentTask Idb.Error InitData
 init db =
-    ConcurrentTask.map4 (InitData db)
+    ConcurrentTask.map5 (InitData db)
         (loadIdentity db)
         (loadAllGroups db)
         (loadLanguage db)
         (loadSelfProfile db |> ConcurrentTask.map (Maybe.withDefault Member.emptyMetadata))
+        (loadDevMode db)
 
 
 {-| Save the user's identity to the database.
@@ -189,6 +192,19 @@ saveSelfProfile db meta =
 loadSelfProfile : Idb.Db -> ConcurrentTask Idb.Error (Maybe Member.Metadata)
 loadSelfProfile db =
     Idb.get db identityStore (Idb.StringKey "selfProfile") Member.metadataDecoder
+
+
+{-| Save the developer-mode preference (gates the diagnostics pages).
+-}
+saveDevMode : Idb.Db -> Bool -> ConcurrentTask Idb.Error ()
+saveDevMode db enabled =
+    Idb.putAt db identityStore (Idb.StringKey "devMode") (Encode.bool enabled)
+
+
+loadDevMode : Idb.Db -> ConcurrentTask Idb.Error Bool
+loadDevMode db =
+    Idb.get db identityStore (Idb.StringKey "devMode") Decode.bool
+        |> ConcurrentTask.map (Maybe.withDefault False)
 
 
 {-| Save a group summary to the database.
