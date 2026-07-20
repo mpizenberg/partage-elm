@@ -4,6 +4,8 @@
  * interchangeable; the group_id column simply always holds the DO's one group.
  */
 
+import { planAppend } from './quota.js';
+
 export function createDoStorage(sql) {
   sql.exec(`
     CREATE TABLE IF NOT EXISTS groups (
@@ -38,16 +40,28 @@ export function createDoStorage(sql) {
     sql.exec('ALTER TABLE groups ADD COLUMN last_access TEXT');
     sql.exec('UPDATE groups SET last_access = created WHERE last_access IS NULL');
   }
+  const hasQuota =
+    sql.exec("SELECT COUNT(*) AS n FROM pragma_table_info('groups') WHERE name = 'record_count'").one().n === 1;
+  if (!hasQuota) {
+    sql.exec('ALTER TABLE groups ADD COLUMN record_count INTEGER NOT NULL DEFAULT 0');
+    sql.exec('ALTER TABLE groups ADD COLUMN total_bytes INTEGER NOT NULL DEFAULT 0');
+    sql.exec('ALTER TABLE groups ADD COLUMN bytes_this_window INTEGER NOT NULL DEFAULT 0');
+    sql.exec('ALTER TABLE groups ADD COLUMN window_start TEXT');
+    sql.exec(
+      'UPDATE groups SET record_count = (SELECT COUNT(*) FROM events WHERE events.group_id = groups.id), total_bytes = (SELECT COALESCE(SUM(LENGTH(data)), 0) FROM events WHERE events.group_id = groups.id), window_start = created',
+    );
+  }
 
   return {
     createGroup({ groupId, createdBy, authVerifier, powChallenge, created }) {
       try {
         sql.exec(
-          'INSERT INTO groups (id, created_by, auth_verifier, pow_challenge, created, last_access) VALUES (?, ?, ?, ?, ?, ?)',
+          'INSERT INTO groups (id, created_by, auth_verifier, pow_challenge, created, last_access, window_start) VALUES (?, ?, ?, ?, ?, ?, ?)',
           groupId,
           createdBy,
           authVerifier,
           powChallenge,
+          created,
           created,
           created,
         );
@@ -92,16 +106,38 @@ export function createDoStorage(sql) {
       return rows.length === 0 ? null : { groupId: rows[0].id, lastAccess: rows[0].last_access };
     },
 
-    appendEvent(groupId, { recordId, actorId, eventData, compressed, created }) {
+    getGroupStats(groupId) {
+      const rows = sql
+        .exec('SELECT record_count, total_bytes, bytes_this_window, window_start FROM groups WHERE id = ?', groupId)
+        .toArray();
+      return rows.length === 0
+        ? null
+        : {
+            recordCount: rows[0].record_count,
+            totalBytes: rows[0].total_bytes,
+            bytesThisWindow: rows[0].bytes_this_window,
+            windowStart: rows[0].window_start,
+          };
+    },
+
+    appendEvent(groupId, { recordId, actorId, eventData, compressed, created }, limits) {
       if (recordId !== null) {
         const existing = sql
           .exec('SELECT seq FROM events WHERE group_id = ? AND record_id = ?', groupId, recordId)
           .toArray();
         if (existing.length > 0) {
-          return existing[0].seq;
+          return { status: 'ok', seq: existing[0].seq };
         }
       }
-      return sql
+      const size = eventData.length;
+      const stats = sql
+        .exec('SELECT record_count, total_bytes, bytes_this_window, window_start FROM groups WHERE id = ?', groupId)
+        .one();
+      const plan = planAppend(stats, size, created, limits);
+      if (plan.rejection) {
+        return plan.rejection;
+      }
+      const seq = sql
         .exec(
           'INSERT INTO events (group_id, record_id, actor_id, data, compressed, created) VALUES (?, ?, ?, ?, ?, ?) RETURNING seq',
           groupId,
@@ -112,6 +148,14 @@ export function createDoStorage(sql) {
           created,
         )
         .one().seq;
+      sql.exec(
+        'UPDATE groups SET record_count = record_count + 1, total_bytes = total_bytes + ?, window_start = ?, bytes_this_window = ? WHERE id = ?',
+        size,
+        plan.windowStart,
+        plan.bytesThisWindow,
+        groupId,
+      );
+      return { status: 'ok', seq };
     },
 
     listEventsSince(groupId, sinceSeq, limit) {

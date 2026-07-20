@@ -28,6 +28,16 @@ export const RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
 // costs at most one access write per day rather than one per request.
 const ACCESS_TOUCH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
+// Per-group storage caps (docs/SPECIFICATION.md §14.8). The absolute quota
+// bounds total abuse; the monthly rate cap bounds its speed. Honest groups sit
+// orders of magnitude below both. Overridable so tests can trip them cheaply.
+const DEFAULT_APPEND_LIMITS = {
+  maxRecords: 50_000,
+  maxTotalBytes: 50 * 1024 * 1024,
+  rateBytes: 10 * 1024 * 1024,
+  windowMs: 30 * 24 * 60 * 60 * 1000,
+};
+
 const encoder = new TextEncoder();
 
 async function sha256Base64Url(text) {
@@ -53,9 +63,12 @@ export async function verifyGroupSecret(storage, groupId, secret) {
  * - createGroup({groupId, createdBy, authVerifier, powChallenge, created})
  *     → null | 'group_exists'
  * - getGroupVerifier(groupId) → string | null
- * - appendEvent(groupId, {recordId, actorId, eventData, compressed, created}) → seq
+ * - appendEvent(groupId, {recordId, actorId, eventData, compressed, created}, limits)
+ *     → {status: 'ok', seq} | {status: 'quota'} | {status: 'rate', retryAfterMs}
  *     recordId may be null; when it matches an existing record of the group,
- *     that record's seq is returned and nothing is inserted (idempotent push)
+ *     that record's seq is returned and nothing is inserted (idempotent push).
+ *     A re-push of a counted record is always 'ok'; only genuinely new records
+ *     are checked against `limits` and add to the group's counters.
  * - listEventsSince(groupId, sinceSeq, limit)
  *     → [{seq, actorId, eventData, compressed, created}]
  * - getMaxSeq(groupId) → number (0 when the group has no events)
@@ -63,7 +76,7 @@ export async function verifyGroupSecret(storage, groupId, secret) {
  * `onAppend(groupId, seq)` is called after each successful event append
  * (used by adapters to notify live subscribers).
  */
-export function createApp({ storage, powSecret, onAppend }) {
+export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT_APPEND_LIMITS }) {
   const app = new Hono();
 
   app.use(
@@ -191,15 +204,27 @@ export function createApp({ storage, powSecret, onAppend }) {
     }
 
     const groupId = c.req.param('id');
-    const seq = await storage.appendEvent(groupId, {
-      recordId: recordId ?? null,
-      actorId,
-      eventData,
-      compressed,
-      created: new Date().toISOString(),
-    });
-    onAppend?.(groupId, seq);
-    return c.json({ seq }, 201);
+    const result = await storage.appendEvent(
+      groupId,
+      {
+        recordId: recordId ?? null,
+        actorId,
+        eventData,
+        compressed,
+        created: new Date().toISOString(),
+      },
+      appendLimits,
+    );
+    if (result.status === 'quota') {
+      return c.json({ error: 'Group storage quota exceeded — compact or export' }, 507);
+    }
+    if (result.status === 'rate') {
+      return c.json({ error: 'Group data rate limit exceeded' }, 429, {
+        'Retry-After': String(Math.ceil(result.retryAfterMs / 1000)),
+      });
+    }
+    onAppend?.(groupId, result.seq);
+    return c.json({ seq: result.seq }, 201);
   });
 
   return app;

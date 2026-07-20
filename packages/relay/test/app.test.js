@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { conformanceSuite } from './conformance.js';
 import { makeApp, createGroup, pushEvent, pullEvents } from './helpers.js';
 
+const GENEROUS = { maxRecords: 50000, maxTotalBytes: 50 * 1024 * 1024, rateBytes: 10 * 1024 * 1024, windowMs: 1000 };
+
 conformanceSuite({ describe, it, makeApp: async () => makeApp().app });
 
 describe('node adapter specifics', () => {
@@ -56,5 +58,44 @@ describe('inactivity retention', () => {
     assert.equal((await pullEvents(app, idle.groupId, idle.secret)).status, 404);
     // A group accessed within the window is untouched.
     assert.equal((await pullEvents(app, active.groupId, active.secret)).status, 200);
+  });
+});
+
+describe('storage limits', () => {
+  it('tracks record count and bytes, counting a batch once', async () => {
+    const { app, storage } = makeApp({ appendLimits: GENEROUS });
+    const { groupId, secret } = await createGroup(app);
+    await pushEvent(app, groupId, secret, { eventData: 'blob-a', recordId: 'r1' });
+    // Re-pushing the same recordId is idempotent — it must not double-count.
+    await pushEvent(app, groupId, secret, { eventData: 'blob-a', recordId: 'r1' });
+    await pushEvent(app, groupId, secret, { eventData: 'blob-bb', recordId: 'r2' });
+
+    const stats = storage.getGroupStats(groupId);
+    assert.equal(stats.recordCount, 2);
+    assert.equal(stats.totalBytes, 'blob-a'.length + 'blob-bb'.length);
+  });
+
+  it('rejects appends past the record cap with 507', async () => {
+    const { app } = makeApp({ appendLimits: { ...GENEROUS, maxRecords: 2 } });
+    const { groupId, secret } = await createGroup(app);
+    assert.equal((await pushEvent(app, groupId, secret, { recordId: 'a' })).status, 201);
+    assert.equal((await pushEvent(app, groupId, secret, { recordId: 'b' })).status, 201);
+    assert.equal((await pushEvent(app, groupId, secret, { recordId: 'c' })).status, 507);
+  });
+
+  it('rejects appends past the byte cap with 507', async () => {
+    const { app } = makeApp({ appendLimits: { ...GENEROUS, maxTotalBytes: 10 } });
+    const { groupId, secret } = await createGroup(app);
+    assert.equal((await pushEvent(app, groupId, secret, { eventData: 'short' })).status, 201);
+    assert.equal((await pushEvent(app, groupId, secret, { eventData: 'too-long-now' })).status, 507);
+  });
+
+  it('rejects appends past the monthly rate cap with 429 and a Retry-After hint', async () => {
+    const { app } = makeApp({ appendLimits: { ...GENEROUS, rateBytes: 10, windowMs: 60 * 60 * 1000 } });
+    const { groupId, secret } = await createGroup(app);
+    assert.equal((await pushEvent(app, groupId, secret, { eventData: 'short' })).status, 201);
+    const res = await pushEvent(app, groupId, secret, { eventData: 'more-bytes' });
+    assert.equal(res.status, 429);
+    assert.ok(Number(res.headers.get('Retry-After')) > 0);
   });
 });

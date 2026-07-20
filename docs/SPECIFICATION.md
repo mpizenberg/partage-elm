@@ -1353,7 +1353,7 @@ The encrypted payload contains all application-level data, including the **UUID 
 | `GET` | `/api/pow/challenge?groupId={id}` | none | Get a PoW challenge bound to the groupId. Returns `{challenge, timestamp, difficulty, signature}`. |
 | `POST` | `/api/groups` | PoW | Create a group. Body: `{groupId, createdBy, authVerifier}` plus the solved challenge fields (`pow_challenge`, `pow_timestamp`, `pow_difficulty`, `pow_signature`, `pow_solution`). `201` on success, `400` on invalid PoW, `409` if the group already exists. |
 | `GET` | `/api/groups/{id}/events?since={seq}` | bearer | Pull records with `seq > since`, ascending, at most 200 per page. Returns `{events: [{seq, actorId, eventData, compressed, created}], hasMore}`. |
-| `POST` | `/api/groups/{id}/events` | bearer | Append one encrypted batch: `{actorId, eventData, compressed}`. Returns `{seq}` with status `201`. |
+| `POST` | `/api/groups/{id}/events` | bearer | Append one encrypted batch: `{actorId, eventData, compressed}` (optional `recordId` for idempotent retry). Returns `{seq}` with `201`; `413` over the 1 MB record cap, `507` over the group storage quota, `429` (with `Retry-After`) over the monthly rate limit ([14.8](#148-relay-retention--storage-limits)). |
 | `WS` | `/api/groups/{id}/ws?auth={secret}` | secret | Live updates: the server sends `{seq}` whenever a record is appended to the group. A notified client reacts with a normal authenticated pull from its cursor. |
 
 Records can never be updated or deleted through the API — the event log is append-only by construction.

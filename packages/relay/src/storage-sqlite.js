@@ -4,6 +4,7 @@
  */
 
 import { DatabaseSync } from 'node:sqlite';
+import { planAppend } from './quota.js';
 
 export function openStorage(path) {
   const db = new DatabaseSync(path);
@@ -42,9 +43,23 @@ export function openStorage(path) {
     db.exec('UPDATE groups SET last_access = created WHERE last_access IS NULL');
   }
   db.exec('CREATE INDEX IF NOT EXISTS groups_last_access ON groups (last_access)');
+  const hasQuota =
+    db.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('groups') WHERE name = 'record_count'").get().n === 1;
+  if (!hasQuota) {
+    db.exec(`
+      ALTER TABLE groups ADD COLUMN record_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE groups ADD COLUMN total_bytes INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE groups ADD COLUMN bytes_this_window INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE groups ADD COLUMN window_start TEXT;
+      UPDATE groups SET
+        record_count = (SELECT COUNT(*) FROM events WHERE events.group_id = groups.id),
+        total_bytes = (SELECT COALESCE(SUM(LENGTH(data)), 0) FROM events WHERE events.group_id = groups.id),
+        window_start = created;
+    `);
+  }
 
   const insertGroup = db.prepare(
-    'INSERT INTO groups (id, created_by, auth_verifier, pow_challenge, created, last_access) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO groups (id, created_by, auth_verifier, pow_challenge, created, last_access, window_start) VALUES (?, ?, ?, ?, ?, ?, ?)',
   );
   const selectVerifier = db.prepare('SELECT auth_verifier FROM groups WHERE id = ?');
   const selectLastAccess = db.prepare('SELECT last_access FROM groups WHERE id = ?');
@@ -58,6 +73,12 @@ export function openStorage(path) {
   const insertEvent = db.prepare(
     'INSERT INTO events (group_id, record_id, actor_id, data, compressed, created) VALUES (?, ?, ?, ?, ?, ?)',
   );
+  const selectStats = db.prepare(
+    'SELECT record_count, total_bytes, bytes_this_window, window_start FROM groups WHERE id = ?',
+  );
+  const updateStats = db.prepare(
+    'UPDATE groups SET record_count = record_count + 1, total_bytes = total_bytes + ?, window_start = ?, bytes_this_window = ? WHERE id = ?',
+  );
   const selectSeqByRecordId = db.prepare('SELECT seq FROM events WHERE group_id = ? AND record_id = ?');
   const selectEvents = db.prepare(
     'SELECT seq, actor_id, data, compressed, created FROM events WHERE group_id = ? AND seq > ? ORDER BY seq LIMIT ?',
@@ -67,7 +88,7 @@ export function openStorage(path) {
   return {
     createGroup({ groupId, createdBy, authVerifier, powChallenge, created }) {
       try {
-        insertGroup.run(groupId, createdBy, authVerifier, powChallenge, created, created);
+        insertGroup.run(groupId, createdBy, authVerifier, powChallenge, created, created, created);
         return null;
       } catch (err) {
         if (String(err.message).includes('groups.id')) {
@@ -100,15 +121,33 @@ export function openStorage(path) {
       return purged;
     },
 
-    appendEvent(groupId, { recordId, actorId, eventData, compressed, created }) {
+    getGroupStats(groupId) {
+      const row = selectStats.get(groupId);
+      return row === undefined
+        ? null
+        : {
+            recordCount: row.record_count,
+            totalBytes: row.total_bytes,
+            bytesThisWindow: row.bytes_this_window,
+            windowStart: row.window_start,
+          };
+    },
+
+    appendEvent(groupId, { recordId, actorId, eventData, compressed, created }, limits) {
       if (recordId !== null) {
         const existing = selectSeqByRecordId.get(groupId, recordId);
         if (existing !== undefined) {
-          return existing.seq;
+          return { status: 'ok', seq: existing.seq };
         }
       }
+      const size = eventData.length;
+      const plan = planAppend(selectStats.get(groupId), size, created, limits);
+      if (plan.rejection) {
+        return plan.rejection;
+      }
       const result = insertEvent.run(groupId, recordId, actorId, eventData, compressed ? 1 : 0, created);
-      return Number(result.lastInsertRowid);
+      updateStats.run(size, plan.windowStart, plan.bytesThisWindow, groupId);
+      return { status: 'ok', seq: Number(result.lastInsertRowid) };
     },
 
     listEventsSince(groupId, sinceSeq, limit) {
