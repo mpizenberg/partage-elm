@@ -42,6 +42,7 @@ import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Domain.MemberMerge as Merge
 import Domain.Settlement as Settlement
+import Domain.TamperSignals as TamperSignals exposing (TamperSignals)
 import ErrorLog
 import GroupOps exposing (LoadedGroup)
 import IndexedDb as Idb
@@ -242,11 +243,13 @@ type
     | OnGroupMetadataActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnGroupRemoved Group.Id (ConcurrentTask.Response Idb.Error ())
     | OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)
-    | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set String })
+    | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set String, tamperSignals : TamperSignals })
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
     | OnCompactionStep Group.Id (ConcurrentTask.Response Server.Error GroupOps.CompactionStep)
     | OnCompactionEventSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | PostSyncTasksDone (ConcurrentTask.Response Idb.Error ())
+    | DismissTamperSignals
+    | OnTamperSignalsSaved (ConcurrentTask.Response Idb.Error ())
     | OnDiagnosticsLoaded (ConcurrentTask.Response Idb.Error Page.Group.Diagnostics.Stats)
     | OnServerEvent Json.Decode.Value
     | SyncTick
@@ -843,7 +846,7 @@ update config msg model =
         OnGroupEventsLoaded groupId (ConcurrentTask.Success result) ->
             let
                 ( modelAfterLoad, initCmd ) =
-                    case applyLoadedGroup config groupId result.events result.groupKey result.syncCursor result.unpushedIds model of
+                    case applyLoadedGroup config groupId result.events result.groupKey result.syncCursor result.unpushedIds result.tamperSignals model of
                         Just m ->
                             initPagesIfNeeded config (routeToGroupView config.route) m
 
@@ -871,7 +874,7 @@ update config msg model =
                         let
                             result : GroupOps.SyncApplyResult
                             result =
-                                GroupOps.applySyncResult pushedIds syncResult loaded
+                                GroupOps.applySyncResult config.currentTime pushedIds syncResult loaded
 
                             ( runner, taskCmds ) =
                                 ( model.runner, Cmd.none )
@@ -1063,6 +1066,23 @@ update config msg model =
 
         PostSyncTasksDone _ ->
             ( model, Cmd.none, [] )
+
+        DismissTamperSignals ->
+            case model.loadedGroup of
+                Just loaded ->
+                    ( model.runner, Cmd.none )
+                        |> Runner.andRun OnTamperSignalsSaved (Storage.saveTamperSignals config.db loaded.summary.id TamperSignals.empty)
+                        |> Tuple.mapFirst (\r -> { model | runner = r, loadedGroup = Just { loaded | tamperSignals = TamperSignals.empty } })
+                        |> (\( m, cmd ) -> ( m, cmd, [] ))
+
+                Nothing ->
+                    ( model, Cmd.none, [] )
+
+        OnTamperSignalsSaved (ConcurrentTask.Success ()) ->
+            ( model, Cmd.none, [] )
+
+        OnTamperSignalsSaved _ ->
+            ( model, Cmd.none, [ LogError ErrorLog.StorageSource ErrorLog.Err "Failed to save tamper signals" ] )
 
         OnDiagnosticsLoaded (ConcurrentTask.Success stats) ->
             case model.loadedGroup of
@@ -1597,7 +1617,13 @@ triggerSyncInternal config groupId model =
                                             pull =
                                                 syncResult.pullResult
                                         in
-                                        { syncResult | pullResult = { pull | events = verifiedEvents } }
+                                        { syncResult
+                                            | pullResult =
+                                                { pull
+                                                    | events = verifiedEvents
+                                                    , forgedSignatures = List.length pull.events - List.length verifiedEvents
+                                                }
+                                        }
                                     )
                     in
                     ( model.runner, Cmd.none )
@@ -1695,10 +1721,10 @@ deleteGroup config model groupId =
 
 {-| Apply loaded group data from IndexedDB, constructing a LoadedGroup.
 -}
-applyLoadedGroup : UpdateConfig -> Group.Id -> List Event.Envelope -> Symmetric.Key -> Maybe Int -> Set String -> Model -> Maybe Model
-applyLoadedGroup config groupId events groupKey syncCursor unpushedIds model =
+applyLoadedGroup : UpdateConfig -> Group.Id -> List Event.Envelope -> Symmetric.Key -> Maybe Int -> Set String -> TamperSignals -> Model -> Maybe Model
+applyLoadedGroup config groupId events groupKey syncCursor unpushedIds tamperSignals model =
     Dict.get groupId config.groups
-        |> Maybe.map (\summary -> GroupOps.initLoadedGroup events summary groupKey syncCursor unpushedIds)
+        |> Maybe.map (\summary -> GroupOps.initLoadedGroup events summary groupKey syncCursor unpushedIds tamperSignals)
         |> Maybe.map (\loaded -> { model | loadedGroup = Just loaded })
 
 
@@ -2027,7 +2053,12 @@ viewTabs config maybeUserRootId loaded model =
                     banners : List (Ui.Element msg)
                     banners =
                         List.concat
-                            [ if maybeUserRootId == Nothing then
+                            [ if TamperSignals.bannerWorthy loaded.tamperSignals then
+                                [ UI.Components.tamperBanner config.i18n { onDismiss = config.toMsg DismissTamperSignals } ]
+
+                              else
+                                []
+                            , if maybeUserRootId == Nothing then
                                 [ UI.Components.readOnlyBanner config.i18n ]
 
                               else

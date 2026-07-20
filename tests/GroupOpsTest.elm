@@ -7,6 +7,7 @@ import Domain.Event as Event exposing (Payload(..))
 import Domain.Group as Group
 import Domain.GroupState as GroupState
 import Domain.Member as Member
+import Domain.TamperSignals as TamperSignals
 import Expect
 import GroupOps
 import Set
@@ -23,6 +24,7 @@ suite =
         , describe "applySyncResult with late arrivals" lateArrivalTests
         , describe "applySyncResult after a cursor reset" cursorResetTests
         , describe "applySyncResult heal re-push" healRepushTests
+        , describe "applySyncResult tamper signals" tamperSignalTests
         ]
 
 
@@ -42,12 +44,13 @@ cursorResetTests =
 
                 loaded : GroupOps.LoadedGroup
                 loaded =
-                    GroupOps.initLoadedGroup existing testSummary (Symmetric.importKey "test-key") (Just 50) Set.empty
+                    GroupOps.initLoadedGroup existing testSummary (Symmetric.importKey "test-key") (Just 50) Set.empty TamperSignals.empty
 
                 result : GroupOps.SyncApplyResult
                 result =
-                    GroupOps.applySyncResult Set.empty
-                        { pullResult = { events = existing ++ [ fresh ], cursor = 4, undecodable = 0, didReset = True, recordCount = 0 }, pushedCount = 0 }
+                    GroupOps.applySyncResult (Time.millisToPosix 0)
+                        Set.empty
+                        { pullResult = { events = existing ++ [ fresh ], cursor = 4, undecodable = 0, didReset = True, recordCount = 0, forgedSignatures = 0 }, pushedCount = 0 }
                         loaded
             in
             result
@@ -75,8 +78,9 @@ healRepushTests =
 
         healAfter : { events : List Event.Envelope, didReset : Bool } -> GroupOps.SyncApplyResult
         healAfter { events, didReset } =
-            GroupOps.applySyncResult Set.empty
-                { pullResult = { events = events, cursor = 0, undecodable = 0, didReset = didReset, recordCount = 0 }, pushedCount = 0 }
+            GroupOps.applySyncResult (Time.millisToPosix 0)
+                Set.empty
+                { pullResult = { events = events, cursor = 0, undecodable = 0, didReset = didReset, recordCount = 0, forgedSignatures = 0 }, pushedCount = 0 }
                 (loadedFrom localLog)
     in
     [ test "a purge (reset pull returns nothing) queues every local event for re-push" <|
@@ -91,6 +95,31 @@ healRepushTests =
         \_ ->
             (healAfter { events = [], didReset = False }).updatedGroup.unpushedIds
                 |> Expect.equal Set.empty
+    ]
+
+
+tamperSignalTests : List Test
+tamperSignalTests =
+    let
+        syncWithForged : Int -> GroupOps.SyncApplyResult
+        syncWithForged forged =
+            GroupOps.applySyncResult (Time.millisToPosix 1000)
+                Set.empty
+                { pullResult = { events = [], cursor = 0, undecodable = 0, didReset = False, recordCount = 0, forgedSignatures = forged }, pushedCount = 0 }
+                (loadedFrom bootstrapMembers)
+    in
+    [ test "a pull carrying forged signatures bumps the counter and raises the banner" <|
+        \_ ->
+            (syncWithForged 2).updatedGroup.tamperSignals
+                |> Expect.all
+                    [ .forgedSignatures >> Expect.equal 2
+                    , TamperSignals.bannerWorthy >> Expect.equal True
+                    ]
+    , test "a clean pull leaves the counters untouched" <|
+        \_ ->
+            (syncWithForged 0).updatedGroup.tamperSignals
+                |> TamperSignals.isClean
+                |> Expect.equal True
     ]
 
 
@@ -177,13 +206,14 @@ lateArrivalTests =
 
 loadedFrom : List Event.Envelope -> GroupOps.LoadedGroup
 loadedFrom events =
-    GroupOps.initLoadedGroup events testSummary (Symmetric.importKey "test-key") Nothing Set.empty
+    GroupOps.initLoadedGroup events testSummary (Symmetric.importKey "test-key") Nothing Set.empty TamperSignals.empty
 
 
 syncWith : List Event.Envelope -> GroupOps.LoadedGroup -> GroupOps.SyncApplyResult
 syncWith newEvents loaded =
-    GroupOps.applySyncResult Set.empty
-        { pullResult = { events = newEvents, cursor = 1, undecodable = 0, didReset = False, recordCount = 0 }, pushedCount = 0 }
+    GroupOps.applySyncResult (Time.millisToPosix 0)
+        Set.empty
+        { pullResult = { events = newEvents, cursor = 1, undecodable = 0, didReset = False, recordCount = 0, forgedSignatures = 0 }, pushedCount = 0 }
         loaded
 
 

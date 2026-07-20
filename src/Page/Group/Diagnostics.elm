@@ -26,6 +26,7 @@ import Dict
 import Domain.Event as Event
 import Domain.Group as Group
 import Domain.GroupState as GroupState
+import Domain.TamperSignals exposing (TamperSignals)
 import GroupOps exposing (LoadedGroup)
 import IndexedDb as Idb
 import Infra.EventVerification as EventVerification
@@ -362,6 +363,7 @@ view i18n loaded model =
     Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.md ]
         [ eventsSection i18n loaded
         , syncSection i18n loaded
+        , tamperSection i18n loaded.tamperSignals
         , sizesSection i18n model
         , storageSection i18n model
         , perfSection i18n model
@@ -391,6 +393,21 @@ syncSection i18n loaded =
             )
         , metricRow (T.diagUnpushedCount i18n) (String.fromInt (Set.size loaded.unpushedIds))
         ]
+
+
+tamperSection : I18n -> TamperSignals -> Ui.Element msg
+tamperSection i18n signals =
+    section (T.diagTamperTitle i18n)
+        (if Domain.TamperSignals.isClean signals then
+            [ subtleText (T.diagTamperClean i18n) ]
+
+         else
+            [ metricRow (T.diagTamperForged i18n) (String.fromInt signals.forgedSignatures)
+            , metricRow (T.diagTamperRateLimit i18n) (String.fromInt signals.rateLimitHits)
+            , metricRow (T.diagTamperReset i18n) (String.fromInt signals.resetsWithLoss)
+            , metricRow (T.diagTamperManifest i18n) (String.fromInt signals.manifestMismatches)
+            ]
+        )
 
 
 sizesSection : I18n -> Model -> Ui.Element msg

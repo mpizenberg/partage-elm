@@ -25,6 +25,7 @@ module Infra.Storage exposing
     , saveNotificationTranslations
     , saveSelfProfile
     , saveSyncCursor
+    , saveTamperSignals
     , saveUnpushedIds
     , saveUsageStats
     )
@@ -34,6 +35,7 @@ import Dict exposing (Dict)
 import Domain.Event as Event
 import Domain.Group as Group
 import Domain.Member as Member
+import Domain.TamperSignals as TamperSignals exposing (TamperSignals)
 import IndexedDb as Idb
 import Infra.Identity as Identity exposing (Identity)
 import Infra.UsageStats as UsageStats exposing (UsageStats)
@@ -61,7 +63,7 @@ type alias InitData =
 
 dbSchema : Idb.Schema
 dbSchema =
-    Idb.schema "partage" 6
+    Idb.schema "partage" 7
         |> Idb.withStore identityStore
         |> Idb.withStore groupsStore
         |> Idb.withStore groupKeysStore
@@ -70,6 +72,7 @@ dbSchema =
         |> Idb.withStore unpushedIdsStore
         |> Idb.withStore usageStatsStore
         |> Idb.withStore exchangeRatesStore
+        |> Idb.withStore tamperSignalsStore
 
 
 identityStore : Idb.Store Idb.ExplicitKey
@@ -118,6 +121,11 @@ usageStatsStore =
 exchangeRatesStore : Idb.Store Idb.ExplicitKey
 exchangeRatesStore =
     Idb.defineStore "exchangeRates"
+
+
+tamperSignalsStore : Idb.Store Idb.ExplicitKey
+tamperSignalsStore =
+    Idb.defineStore "tamperSignals"
 
 
 
@@ -302,15 +310,32 @@ loadUnpushedIds db groupId =
         |> ConcurrentTask.map (Maybe.map Set.fromList >> Maybe.withDefault Set.empty)
 
 
-{-| Load all data needed for a group: events, encryption key, sync cursor, and unpushed IDs.
+{-| Save a group's tamper-signal counters (spec §11.7).
 -}
-loadGroup : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set String }
+saveTamperSignals : Idb.Db -> Group.Id -> TamperSignals -> ConcurrentTask Idb.Error ()
+saveTamperSignals db groupId signals =
+    Idb.putAt db tamperSignalsStore (Idb.StringKey groupId) (TamperSignals.encode signals)
+
+
+{-| Load a group's tamper-signal counters, defaulting to none.
+-}
+loadTamperSignals : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error TamperSignals
+loadTamperSignals db groupId =
+    Idb.get db tamperSignalsStore (Idb.StringKey groupId) TamperSignals.decoder
+        |> ConcurrentTask.map (Maybe.withDefault TamperSignals.empty)
+
+
+{-| Load all data needed for a group: events, encryption key, sync cursor,
+unpushed IDs, and tamper-signal counters.
+-}
+loadGroup : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set String, tamperSignals : TamperSignals }
 loadGroup db groupId =
-    ConcurrentTask.map4 (\events key cursor unpushed -> { events = events, groupKey = key, syncCursor = cursor, unpushedIds = unpushed })
+    ConcurrentTask.map5 (\events key cursor unpushed signals -> { events = events, groupKey = key, syncCursor = cursor, unpushedIds = unpushed, tamperSignals = signals })
         (loadGroupEvents db groupId)
         (loadGroupKeyRequired db groupId)
         (loadSyncCursor db groupId)
         (loadUnpushedIds db groupId)
+        (loadTamperSignals db groupId)
 
 
 {-| Add event IDs to the unpushed set for a group (read-modify-write).
@@ -340,6 +365,9 @@ deleteGroup db groupId =
 
         -- Delete unpushed IDs
         , Idb.delete db unpushedIdsStore (Idb.StringKey groupId)
+
+        -- Delete tamper-signal counters
+        , Idb.delete db tamperSignalsStore (Idb.StringKey groupId)
 
         -- Delete group events
         , Idb.getKeysByIndex db eventsStore byGroupIdIndex (Idb.only (Idb.StringKey groupId))

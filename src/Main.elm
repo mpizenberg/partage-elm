@@ -13,6 +13,7 @@ import Domain.Event as Event
 import Domain.Group as Group
 import Domain.GroupState as GroupState
 import Domain.Member as Member
+import Domain.TamperSignals exposing (TamperSignals)
 import ErrorLog
 import FeatherIcons
 import Form.NewGroup
@@ -156,7 +157,7 @@ type Msg
     | JoinGroupMsg Page.JoinGroup.Msg
       -- Join flow
     | OnJoinGroupFetched (ConcurrentTask.Response Server.Error { syncResult : Server.SyncResult, manifestMismatch : Bool })
-    | OnJoinLocalGroupLoaded (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set.Set String })
+    | OnJoinLocalGroupLoaded (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set.Set String, tamperSignals : TamperSignals })
     | OnJoinGroupSaved Group.Id Member.Id (ConcurrentTask.Response Idb.Error ())
       -- Form submission responses
     | OnGroupCreated (ConcurrentTask.Response Idb.Error Group.Summary)

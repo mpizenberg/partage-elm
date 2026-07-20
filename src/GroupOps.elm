@@ -32,6 +32,7 @@ import Domain.Event as Event
 import Domain.Group as Group
 import Domain.GroupState as GroupState
 import Domain.Member as Member
+import Domain.TamperSignals as TamperSignals exposing (TamperSignals)
 import Form.NewGroup
 import IndexedDb as Idb
 import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
@@ -83,6 +84,7 @@ type alias LoadedGroup =
     , groupKey : Symmetric.Key
     , syncCursor : Maybe Int
     , unpushedIds : Set String
+    , tamperSignals : TamperSignals
     }
 
 
@@ -105,8 +107,8 @@ addUnpushedId eventId loaded =
 
 {-| Build a LoadedGroup from raw events, a summary, and the group key, applying all events to compute state.
 -}
-initLoadedGroup : List Event.Envelope -> Group.Summary -> Symmetric.Key -> Maybe Int -> Set String -> LoadedGroup
-initLoadedGroup events summary key cursor unpushed =
+initLoadedGroup : List Event.Envelope -> Group.Summary -> Symmetric.Key -> Maybe Int -> Set String -> TamperSignals -> LoadedGroup
+initLoadedGroup events summary key cursor unpushed tamperSignals =
     -- We store the events in reverse order for efficient prepending of new events
     { events = List.reverse events
     , groupState = GroupState.applyEvents events GroupState.empty
@@ -114,6 +116,7 @@ initLoadedGroup events summary key cursor unpushed =
     , groupKey = key
     , syncCursor = cursor
     , unpushedIds = unpushed
+    , tamperSignals = tamperSignals
     }
 
 
@@ -712,13 +715,18 @@ type alias SyncApplyResult =
 {-| Apply a sync result to a loaded group: deduplicate pulled events, update state, clear pushed IDs.
 Events are merged in sorted order. If any new events conflict with existing events in the overlap
 window (same entity, order-dependent resolution), the group state is rebuilt from scratch.
+`now` stamps any tamper signal this sync raised (spec §11.7).
 -}
-applySyncResult : Set String -> Server.SyncResult -> LoadedGroup -> SyncApplyResult
-applySyncResult pushedIds syncResult loaded =
+applySyncResult : Time.Posix -> Set String -> Server.SyncResult -> LoadedGroup -> SyncApplyResult
+applySyncResult now pushedIds syncResult loaded =
     let
         pullResult : Server.PullResult
         pullResult =
             syncResult.pullResult
+
+        tamperSignals : TamperSignals
+        tamperSignals =
+            TamperSignals.recordForgedSignatures pullResult.forgedSignatures now loaded.tamperSignals
 
         existingIds : Set String
         existingIds =
@@ -789,6 +797,7 @@ applySyncResult pushedIds syncResult loaded =
             , groupState = updatedGroupState
             , syncCursor = Just pullResult.cursor
             , unpushedIds = remainingUnpushedIds
+            , tamperSignals = tamperSignals
         }
     , newEvents = sortedNewEvents
     , pullCursor = pullResult.cursor
@@ -913,6 +922,11 @@ postSyncTasks : Idb.Db -> Server.ServerContext -> SyncApplyResult -> ConcurrentT
 postSyncTasks db ctx result =
     List.filterMap identity
         [ Just <| Storage.saveUnpushedIds db ctx.groupId result.updatedGroup.unpushedIds
+        , if TamperSignals.isClean result.updatedGroup.tamperSignals then
+            Nothing
+
+          else
+            Just <| Storage.saveTamperSignals db ctx.groupId result.updatedGroup.tamperSignals
         , if List.isEmpty result.newEvents then
             Nothing
 

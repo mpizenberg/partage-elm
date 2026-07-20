@@ -11,7 +11,7 @@ module UI.Components exposing
     , fab
     , featherIcon, featherIconColored, animatedChevron
     , appLogo
-    , languageSelector, pwaBanners, readOnlyBanner, unknownEventsBanner
+    , languageSelector, pwaBanners, readOnlyBanner, tamperBanner, unknownEventsBanner
     )
 
 {-| Reusable UI components.
@@ -55,7 +55,7 @@ module UI.Components exposing
 
 # Domain components
 
-@docs languageSelector, pwaBanners, readOnlyBanner, unknownEventsBanner
+@docs languageSelector, pwaBanners, readOnlyBanner, tamperBanner, unknownEventsBanner
 
 -}
 
@@ -1032,4 +1032,18 @@ unknownEventsBanner i18n =
         , textColor = Theme.warning.text
         , action = Nothing
         , dismiss = Nothing
+        }
+
+
+{-| Banner raised when a group's high-confidence tamper signals fired
+(forged signatures or rate-limit anomalies, spec §11.7). Dismissable — the
+counters reset, and re-fire if interference continues.
+-}
+tamperBanner : I18n -> { onDismiss : msg } -> Ui.Element msg
+tamperBanner i18n { onDismiss } =
+    pwaBanner (T.groupTamperWarning i18n)
+        { bgColor = Theme.danger.tint
+        , textColor = Theme.danger.text
+        , action = Nothing
+        , dismiss = Just onDismiss
         }

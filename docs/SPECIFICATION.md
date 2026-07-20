@@ -696,13 +696,22 @@ membership-metadata leak. This yields an enforcement ladder, best rung first:
    repaired by honest members, whose full local replicas are the system of
    record: the relay is only a cache
    ([14.8](#148-relay-retention--storage-limits)).
-4. **Respond** — detection signals (envelopes rejected by signature
-   verification, an unexpected cursor reset, a compaction-manifest mismatch,
-   abnormal data volume) feed a per-group tamper indicator in the UI. The
-   endgame for a confirmed compromise is **migration**: create a fresh group
-   with a new key, seed it from the local verified history via the
-   export→import path (which re-verifies every event), re-invite members
-   out-of-band, and abandon the old group to the TTL.
+4. **Respond** — detection signals feed per-group tamper counters, persisted
+   locally. Two are **high-confidence** and raise a warning banner: an envelope
+   rejected by signature verification (only forgery or corruption fails the
+   immutable key map) and a push rejected by the monthly rate cap (honest
+   volume sits orders of magnitude below it). Two are **advisory** and are
+   counted but never alarm on their own, because each has a benign cause: a
+   cursor reset that dropped history this client held (also a legitimate TTL
+   resurrection) and a compaction-manifest mismatch (also benign concurrent
+   interleaving, which is why the join path only warns on it). The advisory
+   counters surface only in the diagnostics detail, where a climbing count
+   distinguishes active interference from a one-off. The banner is dismissable
+   (the counters reset and re-fire if interference continues). The endgame for
+   a confirmed compromise is **migration**: create a fresh group with a new
+   key, seed it from the local verified history via the export→import path
+   (which re-verifies every event), re-invite members out-of-band, and abandon
+   the old group to the TTL.
 
 Within this model, content vandalism (junk entries, renames, mass tombstoning)
 remains possible but is signed, attributed in the activity feed, and
