@@ -302,6 +302,12 @@ payloadName payload =
         Event.SettlementPreferencesUpdated _ ->
             "SettlementPreferencesUpdated"
 
+        Event.CompactionProposed _ ->
+            "CompactionProposed"
+
+        Event.CompactionApproved _ ->
+            "CompactionApproved"
+
 
 {-| Median of a list of ints (0 for an empty list, lower middle for even
 lengths — byte-size precision does not warrant averaging the two middles).

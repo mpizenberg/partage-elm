@@ -194,10 +194,6 @@ applyEvent envelope state =
 
     else
         let
-            activity : Activity
-            activity =
-                Activity.fromEnvelope (activityContext state) envelope
-
             anchored : Bool
             anchored =
                 isAnchorMover envelope.payload state
@@ -214,7 +210,12 @@ applyEvent envelope state =
                 else
                     newState
         in
-        { withSnapshot | pendingActivities = activity :: withSnapshot.pendingActivities }
+        case Activity.fromEnvelope (activityContext state) envelope of
+            Just activity ->
+                { withSnapshot | pendingActivities = activity :: withSnapshot.pendingActivities }
+
+            Nothing ->
+                withSnapshot
 
 
 {-| Classify an event as an anchor-mover for the stable settlement cache.
@@ -273,6 +274,12 @@ isAnchorMover payload state =
             False
 
         GroupMetadataUpdated _ ->
+            False
+
+        CompactionProposed _ ->
+            False
+
+        CompactionApproved _ ->
             False
 
 
@@ -370,6 +377,12 @@ applyPayload envelope state =
 
         SettlementPreferencesUpdated data ->
             applySettlementPreferencesUpdated data state
+
+        CompactionProposed _ ->
+            state
+
+        CompactionApproved _ ->
+            state
 
 
 

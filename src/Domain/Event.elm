@@ -59,6 +59,13 @@ event authored by a newer version. The envelope still verifies and round
 trips via its raw JSON; state computation ignores it. Never authored
 locally.
 
+`CompactionProposed` and `CompactionApproved` are the consensus gate for
+log consolidation (spec §14.9): a proposal commits to the exact history up
+to `uptoEventId` via `manifestHash` (see Domain.Compaction), and each
+approval is a member's signed attestation that its own replica matches.
+They carry no user-visible meaning: state computation and the activity
+feed ignore them.
+
 -}
 type Payload
     = Unknown
@@ -75,6 +82,8 @@ type Payload
     | GroupCreated { name : String, defaultCurrency : Currency }
     | GroupMetadataUpdated GroupMetadataChange
     | SettlementPreferencesUpdated { memberRootId : Member.Id, preferredRecipients : List Member.Id }
+    | CompactionProposed { uptoEventId : Id, eventCount : Int, manifestHash : String }
+    | CompactionApproved { proposalId : Id }
 
 
 {-| A partial update to group metadata. Nothing fields are left unchanged,
@@ -347,6 +356,20 @@ encodePayload payload =
                 , ( "pr", Encode.list Encode.string data.preferredRecipients )
                 ]
 
+        CompactionProposed data ->
+            Encode.object
+                [ ( "t", Encode.string "cp" )
+                , ( "u", Encode.string data.uptoEventId )
+                , ( "n", Encode.int data.eventCount )
+                , ( "h", Encode.string data.manifestHash )
+                ]
+
+        CompactionApproved data ->
+            Encode.object
+                [ ( "t", Encode.string "ca" )
+                , ( "pid", Encode.string data.proposalId )
+                ]
+
 
 {-| Decode a Payload from a tagged JSON object.
 -}
@@ -452,6 +475,23 @@ payloadDecoder =
                             )
                             (Decode.field "mr" Decode.string)
                             (Decode.field "pr" (Decode.list Decode.string))
+
+                    "cp" ->
+                        Decode.map3
+                            (\upto count hash ->
+                                CompactionProposed
+                                    { uptoEventId = upto
+                                    , eventCount = count
+                                    , manifestHash = hash
+                                    }
+                            )
+                            (Decode.field "u" Decode.string)
+                            (Decode.field "n" Decode.int)
+                            (Decode.field "h" Decode.string)
+
+                    "ca" ->
+                        Decode.map (\pid -> CompactionApproved { proposalId = pid })
+                            (Decode.field "pid" Decode.string)
 
                     _ ->
                         Decode.fail ("Unknown payload type: " ++ t)

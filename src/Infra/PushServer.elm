@@ -303,6 +303,12 @@ involvedMembers entryCurrentVersion payload =
         SettlementPreferencesUpdated data ->
             [ data.memberRootId ]
 
+        CompactionProposed _ ->
+            []
+
+        CompactionApproved _ ->
+            []
+
 
 entryInvolvedMembers : Entry.Entry -> List Member.Id
 entryInvolvedMembers entry =

@@ -21,7 +21,28 @@ suite =
         , memberLinkTests
         , groupMetadataTests
         , eventOrderingTests
+        , compactionEventTests
         ]
+
+
+compactionEventTests : Test
+compactionEventTests =
+    test "compaction events change no state and add no activity" <|
+        \_ ->
+            let
+                base : GroupState.GroupState
+                base =
+                    GroupState.applyEvents [ adminBootstrap ] GroupState.empty
+
+                withCompaction : GroupState.GroupState
+                withCompaction =
+                    GroupState.applyEvents
+                        [ makeEnvelope "e1" 1000 "admin" (CompactionProposed { uptoEventId = "e0", eventCount = 1, manifestHash = "abc" })
+                        , makeEnvelope "e2" 2000 "admin" (CompactionApproved { proposalId = "e1" })
+                        ]
+                        base
+            in
+            withCompaction |> Expect.equal base
 
 
 {-| Bootstrap event: admin self-registers as a member so subsequent events by admin pass authorization.

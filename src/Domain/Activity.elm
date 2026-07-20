@@ -67,25 +67,22 @@ type alias StateContext =
     }
 
 
-{-| Build an Activity from an event envelope, given the state before the event.
+{-| Build an Activity from an event envelope, given the state before the
+event. Nothing for protocol events (compaction proposals and approvals),
+which carry no user-visible meaning.
 -}
-fromEnvelope : StateContext -> Event.Envelope -> Activity
+fromEnvelope : StateContext -> Event.Envelope -> Maybe Activity
 fromEnvelope ctx envelope =
-    let
-        detail : Detail
-        detail =
-            payloadToDetail ctx envelope.payload
-
-        involved : List Member.Id
-        involved =
-            involvedMembers ctx envelope.payload
-    in
-    { eventId = envelope.id
-    , timestamp = envelope.clientTimestamp
-    , actorId = envelope.triggeredBy
-    , detail = detail
-    , involvedMembers = involved
-    }
+    payloadToDetail ctx envelope.payload
+        |> Maybe.map
+            (\detail ->
+                { eventId = envelope.id
+                , timestamp = envelope.clientTimestamp
+                , actorId = envelope.triggeredBy
+                , detail = detail
+                , involvedMembers = involvedMembers ctx envelope.payload
+                }
+            )
 
 
 involvedMembers : StateContext -> Payload -> List Member.Id
@@ -143,6 +140,12 @@ involvedMembers ctx payload =
         SettlementPreferencesUpdated data ->
             [ data.memberRootId ]
 
+        CompactionProposed _ ->
+            []
+
+        CompactionApproved _ ->
+            []
+
 
 entryInvolvedMembers : Entry.Entry -> List Member.Id
 entryInvolvedMembers entry =
@@ -168,44 +171,54 @@ beneficiaryMemberId beneficiary =
             data.memberId
 
 
-payloadToDetail : StateContext -> Payload -> Detail
+payloadToDetail : StateContext -> Payload -> Maybe Detail
 payloadToDetail ctx payload =
     case payload of
+        CompactionProposed _ ->
+            Nothing
+
+        CompactionApproved _ ->
+            Nothing
+
         Unknown ->
-            UnknownDetail
+            Just UnknownDetail
 
         EntryAdded entry ->
-            entryAddedDetail entry
+            Just (entryAddedDetail entry)
 
         EntryModified entry ->
-            entryModifiedDetail ctx entry
+            Just (entryModifiedDetail ctx entry)
 
         EntryDeleted { rootId } ->
-            EntryDeletedDetail
-                { entryDescription = ctx.entryDescription rootId
-                , entry = ctx.entryCurrentVersion rootId
-                }
+            Just
+                (EntryDeletedDetail
+                    { entryDescription = ctx.entryDescription rootId
+                    , entry = ctx.entryCurrentVersion rootId
+                    }
+                )
 
         EntryUndeleted { rootId } ->
-            EntryUndeletedDetail
-                { entryDescription = ctx.entryDescription rootId
-                , entry = ctx.entryCurrentVersion rootId
-                }
+            Just
+                (EntryUndeletedDetail
+                    { entryDescription = ctx.entryDescription rootId
+                    , entry = ctx.entryCurrentVersion rootId
+                    }
+                )
 
         MemberCreated data ->
-            MemberCreatedDetail { name = data.name, memberType = data.memberType }
+            Just (MemberCreatedDetail { name = data.name, memberType = data.memberType })
 
         MemberLinked { rootId } ->
-            MemberLinkedDetail { name = ctx.resolveName rootId, rootId = rootId }
+            Just (MemberLinkedDetail { name = ctx.resolveName rootId, rootId = rootId })
 
         MemberRenamed data ->
-            MemberRenamedDetail { oldName = data.oldName, newName = data.newName, rootId = data.rootId }
+            Just (MemberRenamedDetail { oldName = data.oldName, newName = data.newName, rootId = data.rootId })
 
         MemberRetired { rootId } ->
-            MemberRetiredDetail { name = ctx.resolveName rootId, rootId = rootId }
+            Just (MemberRetiredDetail { name = ctx.resolveName rootId, rootId = rootId })
 
         MemberUnretired { rootId } ->
-            MemberUnretiredDetail { name = ctx.resolveName rootId, rootId = rootId }
+            Just (MemberUnretiredDetail { name = ctx.resolveName rootId, rootId = rootId })
 
         MemberMetadataUpdated data ->
             let
@@ -213,16 +226,18 @@ payloadToDetail ctx payload =
                 oldMeta =
                     ctx.memberMetadata data.rootId
             in
-            MemberMetadataUpdatedDetail
-                { name = ctx.resolveName data.rootId
-                , rootId = data.rootId
-                , oldMetadata = oldMeta
-                , newMetadata = data.metadata
-                , updatedFields = memberMetadataChanges oldMeta data.metadata
-                }
+            Just
+                (MemberMetadataUpdatedDetail
+                    { name = ctx.resolveName data.rootId
+                    , rootId = data.rootId
+                    , oldMetadata = oldMeta
+                    , newMetadata = data.metadata
+                    , updatedFields = memberMetadataChanges oldMeta data.metadata
+                    }
+                )
 
         GroupCreated data ->
-            GroupCreatedDetail { name = data.name, defaultCurrency = data.defaultCurrency }
+            Just (GroupCreatedDetail { name = data.name, defaultCurrency = data.defaultCurrency })
 
         GroupMetadataUpdated change ->
             let
@@ -234,19 +249,23 @@ payloadToDetail ctx payload =
                 newMeta =
                     applyGroupMetadataChange oldMeta change
             in
-            GroupMetadataUpdatedDetail
-                { oldMeta = oldMeta
-                , newMeta = newMeta
-                , changedFields = groupMetadataChangedFields oldMeta change
-                }
+            Just
+                (GroupMetadataUpdatedDetail
+                    { oldMeta = oldMeta
+                    , newMeta = newMeta
+                    , changedFields = groupMetadataChangedFields oldMeta change
+                    }
+                )
 
         SettlementPreferencesUpdated data ->
-            SettlementPreferencesUpdatedDetail
-                { name = ctx.resolveName data.memberRootId
-                , memberRootId = data.memberRootId
-                , oldRecipients = List.map ctx.resolveName (ctx.settlementPreference data.memberRootId)
-                , newRecipients = List.map ctx.resolveName data.preferredRecipients
-                }
+            Just
+                (SettlementPreferencesUpdatedDetail
+                    { name = ctx.resolveName data.memberRootId
+                    , memberRootId = data.memberRootId
+                    , oldRecipients = List.map ctx.resolveName (ctx.settlementPreference data.memberRootId)
+                    , newRecipients = List.map ctx.resolveName data.preferredRecipients
+                    }
+                )
 
 
 applyGroupMetadataChange : GroupMetadataSnapshot -> Event.GroupMetadataChange -> GroupMetadataSnapshot

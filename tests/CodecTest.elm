@@ -246,6 +246,11 @@ payloadFuzzer =
         , Fuzz.map2 (\rid prefs -> SettlementPreferencesUpdated { memberRootId = rid, preferredRecipients = prefs })
             Fuzz.string
             (Fuzz.list Fuzz.string)
+        , Fuzz.map3 (\upto count hash -> CompactionProposed { uptoEventId = upto, eventCount = count, manifestHash = hash })
+            Fuzz.string
+            Fuzz.int
+            Fuzz.string
+        , Fuzz.map (\pid -> CompactionApproved { proposalId = pid }) Fuzz.string
         ]
 
 
