@@ -453,4 +453,47 @@ forwardCompatTests =
                 Decode.decodeString Event.envelopeDecoder json
                     |> Result.map (\env -> ( env.payload, env.authorKey, Encode.encode 0 (Event.encodeEnvelope env) ))
                     |> Expect.equal (Ok ( Unknown, Just "pk1", json ))
+        , Test.test "canonicalize matches JSON.stringify byte-for-byte on an externally-authored envelope" <|
+            -- Fixture from scripts/generate-benchmark-group.mjs, which signs
+            -- JSON.stringify of the sig-less envelope. Signatures on generated
+            -- (and any JS-authored) events only verify if Elm's re-encoding of
+            -- the parsed wire object — JWK escapes included — is identical.
+            \_ ->
+                let
+                    wire : String
+                    wire =
+                        "{\"id\":\"0190d176-75c6-7708-840f-2fc887062cd7\",\"ts\":1721501119942,\"by\":\"d81a0c70d98a8a3c9e0171532b472da4058f51b623952fc6c7b3755141a90f9d\",\"v\":1,\"key\":\"{\\\"key_ops\\\":[\\\"verify\\\"],\\\"ext\\\":true,\\\"kty\\\":\\\"EC\\\",\\\"x\\\":\\\"nVGl5CbM6PR5_AvhBnZcMk2ngWCCnhaCjJ4Z63BebgA\\\",\\\"y\\\":\\\"JHzVUR5UJ6gxdAJ3d9ERrK-SrbjweLR6SguMWdeize8\\\",\\\"crv\\\":\\\"P-256\\\"}\",\"p\":{\"t\":\"mc\",\"m\":\"d81a0c70d98a8a3c9e0171532b472da4058f51b623952fc6c7b3755141a90f9d\",\"n\":\"Alice\",\"mt\":\"real\",\"ab\":\"d81a0c70d98a8a3c9e0171532b472da4058f51b623952fc6c7b3755141a90f9d\"},\"sig\":\"DCeYpEmWvpUdRJRyHJwnk5F6pSoDF72gmrXb6PKavCTRNQhBx9mL5XdCwUz38gAJ49NqvtOUF+GyBy/SGINJew==\"}"
+
+                    canonical : String
+                    canonical =
+                        "{\"id\":\"0190d176-75c6-7708-840f-2fc887062cd7\",\"ts\":1721501119942,\"by\":\"d81a0c70d98a8a3c9e0171532b472da4058f51b623952fc6c7b3755141a90f9d\",\"v\":1,\"key\":\"{\\\"key_ops\\\":[\\\"verify\\\"],\\\"ext\\\":true,\\\"kty\\\":\\\"EC\\\",\\\"x\\\":\\\"nVGl5CbM6PR5_AvhBnZcMk2ngWCCnhaCjJ4Z63BebgA\\\",\\\"y\\\":\\\"JHzVUR5UJ6gxdAJ3d9ERrK-SrbjweLR6SguMWdeize8\\\",\\\"crv\\\":\\\"P-256\\\"}\",\"p\":{\"t\":\"mc\",\"m\":\"d81a0c70d98a8a3c9e0171532b472da4058f51b623952fc6c7b3755141a90f9d\",\"n\":\"Alice\",\"mt\":\"real\",\"ab\":\"d81a0c70d98a8a3c9e0171532b472da4058f51b623952fc6c7b3755141a90f9d\"}}"
+                in
+                Decode.decodeString Event.envelopeDecoder wire
+                    |> Result.map (\env -> ( Event.canonicalize env, Encode.encode 0 (Event.encodeEnvelope env) ))
+                    |> Expect.equal (Ok ( canonical, wire ))
+        , Test.test "a generated expense envelope decodes to a real payload, not Unknown" <|
+            \_ ->
+                let
+                    wire : String
+                    wire =
+                        "{\"id\":\"01920891-ca43-7835-8064-f4b893d6a61b\",\"ts\":1726720625219,\"by\":\"d81a0c70d98a8a3c9e0171532b472da4058f51b623952fc6c7b3755141a90f9d\",\"v\":1,\"p\":{\"t\":\"ea\",\"e\":{\"m\":{\"id\":\"01920526-57db-7da1-83f5-cfe9513802e9\",\"r\":\"01920526-57db-7da1-83f5-cfe9513802e9\",\"dp\":0,\"del\":false,\"cb\":\"d81a0c70d98a8a3c9e0171532b472da4058f51b623952fc6c7b3755141a90f9d\",\"ca\":1726663251931},\"k\":{\"t\":\"expense\",\"d\":{\"desc\":\"Taxi run\",\"a\":9876,\"cur\":\"eur\",\"dt\":{\"y\":2024,\"mo\":9,\"dy\":18},\"pay\":[{\"m\":\"d81a0c70d98a8a3c9e0171532b472da4058f51b623952fc6c7b3755141a90f9d\",\"a\":9876}],\"ben\":[{\"t\":\"share\",\"m\":\"35c0b05a-5a29-41e8-872b-b5b92d411b7b\",\"s\":1},{\"t\":\"share\",\"m\":\"2843f051-0cd7-4e07-a106-2ca064585611\",\"s\":1},{\"t\":\"share\",\"m\":\"e52f2df739338078a3d4333ea33ae92b775702f832cc53f00a9d1317a3f5b432\",\"s\":1},{\"t\":\"share\",\"m\":\"0d7d08a42b7e774884acba7d8adc1ef5f6418bc7e6f04697d9cee0c8e7346772\",\"s\":1}],\"loc\":\"Grenoble\",\"nt\":\"Split evenly as usual\"}}}},\"sig\":\"NHrtLOxNa4LivkXognLBg585rwL7yw49LQ2sPtgoR7Z4XsyNG5BJe+JaBS2VscmkEFhe55nCpFyKvXGoj058+Q==\"}"
+                in
+                Decode.decodeString Event.envelopeDecoder wire
+                    |> Result.map
+                        (\env ->
+                            case env.payload of
+                                EntryAdded entry ->
+                                    ( entry.meta.depth
+                                    , case entry.kind of
+                                        Entry.Expense data ->
+                                            ( data.description, data.amount, List.length data.beneficiaries )
+
+                                        _ ->
+                                            ( "not an expense", 0, 0 )
+                                    )
+
+                                _ ->
+                                    ( -1, ( "not EntryAdded", 0, 0 ) )
+                        )
+                    |> Expect.equal (Ok ( 0, ( "Taxi run", 9876, 4 ) ))
         ]

@@ -13,8 +13,10 @@ module Page.Group.Diagnostics exposing
 {-| Hidden per-group diagnostics page (developer mode only).
 
 Read-only measurement instrument: event counts, plaintext and compressed
-sizes, sync state, device storage, and a timed full replay. Everything is
-computed client-side — the relay only ever sees ciphertext.
+sizes, sync state, device storage, and timed runs of the expensive
+operations a group goes through — IndexedDB load + decode, signature
+verification of the full log (the join cost), and sort + replay.
+Everything is computed client-side — the relay only ever sees ciphertext.
 
 -}
 
@@ -25,6 +27,9 @@ import Domain.Event as Event
 import Domain.Group as Group
 import Domain.GroupState as GroupState
 import GroupOps exposing (LoadedGroup)
+import IndexedDb as Idb
+import Infra.EventVerification as EventVerification
+import Infra.Storage as Storage
 import Infra.UsageStats as UsageStats
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -54,6 +59,9 @@ type alias Stats =
     , gzip : Maybe { wholeLogBytes : Int, perEventBytes : Int }
     , storage : UsageStats.StorageEstimate
     , persistStatus : UsageStats.PersistedStatus
+    , loadMillis : Int
+    , verifyMillis : Int
+    , verifiedCount : Int
     , replayMillis : Int
     , replayEntryCount : Int
     }
@@ -81,26 +89,53 @@ isFresh loaded model =
 -- MEASUREMENT TASKS
 
 
-load : LoadedGroup -> ConcurrentTask Never Stats
-load loaded =
-    replayTask loaded.events
+{-| The timed operations run one after another, before the concurrent
+gzip/storage tasks, so nothing else loads the JS side inside a timing
+window.
+-}
+load : Idb.Db -> LoadedGroup -> ConcurrentTask Idb.Error Stats
+load db loaded =
+    timed (Storage.loadGroupEvents db loaded.summary.id)
         |> ConcurrentTask.andThen
-            (\replay ->
-                ConcurrentTask.map3 (buildStats loaded replay)
-                    (compressionTask loaded.events)
-                    UsageStats.estimateStorage
-                    UsageStats.persistedStatus
+            (\loadRun ->
+                timed (EventVerification.filterVerifiedEvents GroupState.empty loadRun.value)
+                    |> ConcurrentTask.andThen
+                        (\verifyRun ->
+                            replayTask loaded.events
+                                |> ConcurrentTask.andThen
+                                    (\replay ->
+                                        ConcurrentTask.map3
+                                            (buildStats loaded
+                                                { loadMillis = loadRun.millis
+                                                , verifyMillis = verifyRun.millis
+                                                , verifiedCount = List.length verifyRun.value
+                                                , replay = replay
+                                                }
+                                            )
+                                            (compressionTask loaded.events)
+                                            (ConcurrentTask.mapError never UsageStats.estimateStorage)
+                                            (ConcurrentTask.mapError never UsageStats.persistedStatus)
+                                    )
+                        )
             )
+
+
+type alias Timings =
+    { loadMillis : Int
+    , verifyMillis : Int
+    , verifiedCount : Int
+    , replay : { millis : Int, entryCount : Int }
+    }
 
 
 buildStats :
     LoadedGroup
-    -> { millis : Int, entryCount : Int }
+    -> Timings
     -> CompressionStats
     -> UsageStats.StorageEstimate
     -> UsageStats.PersistedStatus
     -> Stats
-buildStats loaded replay compression storage persistStatus =
+buildStats loaded timings compression storage persistStatus =
     let
         count : Int
         count =
@@ -123,8 +158,11 @@ buildStats loaded replay compression storage persistStatus =
     , gzip = compression.gzip
     , storage = storage
     , persistStatus = persistStatus
-    , replayMillis = replay.millis
-    , replayEntryCount = replay.entryCount
+    , loadMillis = timings.loadMillis
+    , verifyMillis = timings.verifyMillis
+    , verifiedCount = timings.verifiedCount
+    , replayMillis = timings.replay.millis
+    , replayEntryCount = timings.replay.entryCount
     }
 
 
@@ -134,7 +172,7 @@ type alias CompressionStats =
     }
 
 
-compressionTask : List Event.Envelope -> ConcurrentTask Never CompressionStats
+compressionTask : List Event.Envelope -> ConcurrentTask x CompressionStats
 compressionTask envelopes =
     ConcurrentTask.define
         { function = "diagnostics:compressionStats"
@@ -164,25 +202,37 @@ compressionStatsDecoder =
 
 
 {-| Time a full sort + replay of the log, as done on every group open.
-The interval includes two task-port round-trips (~1 ms of noise), which only
-matters below benchmark scale.
+The strict `map` evaluates the replay between the two clock reads.
 -}
-replayTask : List Event.Envelope -> ConcurrentTask Never { millis : Int, entryCount : Int }
+replayTask : List Event.Envelope -> ConcurrentTask x { millis : Int, entryCount : Int }
 replayTask events =
+    timed
+        (ConcurrentTask.succeed ()
+            |> ConcurrentTask.map (\() -> GroupState.applyEvents events GroupState.empty)
+        )
+        |> ConcurrentTask.map
+            (\run -> { millis = run.millis, entryCount = Dict.size run.value.entries })
+
+
+{-| Bracket a task between two clock reads. Each read is a task-port round
+trip, so the interval carries ~1 ms of noise — only relevant below benchmark
+scale.
+-}
+timed : ConcurrentTask x a -> ConcurrentTask x { millis : Int, value : a }
+timed task =
     ConcurrentTask.Time.now
         |> ConcurrentTask.andThen
             (\before ->
-                let
-                    replayed : GroupState.GroupState
-                    replayed =
-                        GroupState.applyEvents events GroupState.empty
-                in
-                ConcurrentTask.Time.now
-                    |> ConcurrentTask.map
-                        (\after ->
-                            { millis = Time.posixToMillis after - Time.posixToMillis before
-                            , entryCount = Dict.size replayed.entries
-                            }
+                task
+                    |> ConcurrentTask.andThen
+                        (\value ->
+                            ConcurrentTask.Time.now
+                                |> ConcurrentTask.map
+                                    (\after ->
+                                        { millis = Time.posixToMillis after - Time.posixToMillis before
+                                        , value = value
+                                        }
+                                    )
                         )
             )
 
@@ -308,7 +358,7 @@ view i18n loaded model =
         , syncSection i18n loaded
         , sizesSection i18n model
         , storageSection i18n model
-        , replaySection i18n model
+        , perfSection i18n model
         ]
 
 
@@ -383,13 +433,16 @@ storageSection i18n model =
         )
 
 
-replaySection : I18n -> Model -> Ui.Element msg
-replaySection i18n model =
+perfSection : I18n -> Model -> Ui.Element msg
+perfSection i18n model =
     asyncSection i18n
-        (T.diagReplayTitle i18n)
+        (T.diagPerfTitle i18n)
         model
         (\stats ->
-            [ metricRow (T.diagReplayTime i18n) (String.fromInt stats.replayMillis ++ " ms")
+            [ metricRow (T.diagLoadTime i18n) (String.fromInt stats.loadMillis ++ " ms")
+            , metricRow (T.diagVerifyTime i18n) (String.fromInt stats.verifyMillis ++ " ms")
+            , metricRow (T.diagVerifiedCount i18n) (String.fromInt stats.verifiedCount)
+            , metricRow (T.diagReplayTime i18n) (String.fromInt stats.replayMillis ++ " ms")
             , metricRow (T.diagReplayEntries i18n) (String.fromInt stats.replayEntryCount)
             ]
         )

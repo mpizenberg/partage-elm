@@ -244,7 +244,7 @@ type
     | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set String })
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
     | PostSyncTasksDone (ConcurrentTask.Response Idb.Error ())
-    | OnDiagnosticsLoaded (ConcurrentTask.Response Never Page.Group.Diagnostics.Stats)
+    | OnDiagnosticsLoaded (ConcurrentTask.Response Idb.Error Page.Group.Diagnostics.Stats)
     | OnServerEvent Json.Decode.Value
     | SyncTick
     | ScrollToEntryResult (Result Browser.Dom.Error ())
@@ -1666,7 +1666,7 @@ initPagesIfNeeded config groupView model =
                 ( Diagnostics, _ ) ->
                     if config.devMode && not (Page.Group.Diagnostics.isFresh loaded model.diagnosticsModel) then
                         ( model.runner, Cmd.none )
-                            |> Runner.andRun OnDiagnosticsLoaded (Page.Group.Diagnostics.load loaded)
+                            |> Runner.andRun OnDiagnosticsLoaded (Page.Group.Diagnostics.load config.db loaded)
                             |> Tuple.mapFirst (\r -> { model | runner = r, diagnosticsModel = Page.Group.Diagnostics.init })
 
                     else
