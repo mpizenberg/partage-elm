@@ -166,11 +166,23 @@ update config msg runnerCmd =
                     ( runnerCmd, Just (SetImportError (T.importErrorAlreadyExists config.i18n)) )
 
                 Ok exportData ->
+                    let
+                        -- The import is a fresh local engagement, so the group
+                        -- is not dormant regardless of the exporter's stamp.
+                        importedSummary : Group.Summary
+                        importedSummary =
+                            let
+                                group : Group.Summary
+                                group =
+                                    exportData.group
+                            in
+                            { group | lastSyncedAt = config.currentTime }
+                    in
                     ( runnerCmd
-                        |> Runner.andRun (config.toMsg << OnGroupImported exportData.group)
+                        |> Runner.andRun (config.toMsg << OnGroupImported importedSummary)
                             (EventVerification.filterVerifiedEvents GroupState.empty exportData.events
                                 |> ConcurrentTask.andThen
-                                    (\verified -> Storage.saveGroup config.db exportData.group exportData.groupKey verified Nothing)
+                                    (\verified -> Storage.saveGroup config.db importedSummary exportData.groupKey verified Nothing)
                             )
                     , Nothing
                     )

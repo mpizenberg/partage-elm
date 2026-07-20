@@ -80,7 +80,7 @@
   "activitySettlementPreferencesUpdated": "updated settlement preferences for {name}",
   "activityUnknown": "made a change this app version can't display — update the app to see it",
   "groupUnknownEventsBanner": "Some changes can't be read by this app version, so balances may be incomplete. Update the app to see them.",
-  "groupArchivalNudge": "No activity here in a long time. The server can drop groups left untouched for 12 months — export a backup from the home screen to keep this one safe.",
+  "homeDormantHint": "Inactive for a while. Export a backup — the server may drop groups left untouched for 12 months.",
   "changeFieldDescription": "description",
   "changeFieldAmount": "amount",
   "changeFieldDate": "date",

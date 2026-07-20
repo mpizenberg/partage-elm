@@ -221,6 +221,7 @@ newGroup ctx onComplete output =
             , createdAt = ctx.currentTime
             , memberCount = 1 + List.length output.virtualMembers
             , myBalanceCents = 0
+            , lastSyncedAt = ctx.currentTime
             }
 
         signingKeyPair : Signature.SigningKeyPair
@@ -383,6 +384,7 @@ importSplitwiseGroup ctx onComplete cfg =
             , createdAt = ctx.currentTime
             , memberCount = 1 + List.length virtualMembers
             , myBalanceCents = 0
+            , lastSyncedAt = ctx.currentTime
             }
 
         signingKeyPair : Signature.SigningKeyPair

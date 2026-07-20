@@ -123,8 +123,8 @@ empty =
 -- TODO: add argument of current id to extract user balance
 
 
-summarize : Member.Id -> Group.Id -> GroupState -> Group.Summary
-summarize memberId groupId state =
+summarize : Member.Id -> Group.Id -> Time.Posix -> GroupState -> Group.Summary
+summarize memberId groupId lastSyncedAt state =
     { id = groupId
     , name = state.groupMeta.name
     , defaultCurrency = state.groupMeta.defaultCurrency
@@ -140,6 +140,7 @@ summarize memberId groupId state =
             |> Maybe.andThen (\rootId -> Dict.get rootId state.balances)
             |> Maybe.map .netBalance
             |> Maybe.withDefault 0
+    , lastSyncedAt = lastSyncedAt
     }
 
 

@@ -11,7 +11,7 @@ import Expect
 import Fuzz exposing (Fuzzer)
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Test exposing (Test, describe, fuzz)
+import Test exposing (Test, describe, fuzz, test)
 import Time
 
 
@@ -20,6 +20,7 @@ suite =
     describe "JSON Codecs"
         [ currencyTests
         , dateTests
+        , summaryTests
         , linkTests
         , memberTypeTests
         , paymentInfoTests
@@ -284,6 +285,37 @@ dateTests : Test
 dateTests =
     fuzz dateFuzzer "Date roundtrips" <|
         roundtrip Date.encodeDate Date.dateDecoder
+
+
+summaryTests : Test
+summaryTests =
+    describe "Group.Summary"
+        [ test "round-trips including lastSyncedAt" <|
+            \_ ->
+                let
+                    summary : Group.Summary
+                    summary =
+                        { id = "g1"
+                        , name = "Trip"
+                        , defaultCurrency = Currency.EUR
+                        , isSubscribed = True
+                        , isArchived = False
+                        , createdAt = Time.millisToPosix 1000
+                        , memberCount = 4
+                        , myBalanceCents = -250
+                        , lastSyncedAt = Time.millisToPosix 987654321
+                        }
+                in
+                Group.encodeSummary summary
+                    |> Decode.decodeValue Group.summaryDecoder
+                    |> Expect.equal (Ok summary)
+        , test "defaults lastSyncedAt to createdAt when absent (pre-upgrade records)" <|
+            \_ ->
+                """{"id":"g1","n":"Trip","dc":"eur","sub":false,"ar":false,"ca":5000,"mc":2,"mb":0}"""
+                    |> Decode.decodeString Group.summaryDecoder
+                    |> Result.map .lastSyncedAt
+                    |> Expect.equal (Ok (Time.millisToPosix 5000))
+        ]
 
 
 linkTests : Test

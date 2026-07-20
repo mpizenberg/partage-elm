@@ -27,6 +27,7 @@ type alias Context msg =
     , notificationPermission : Maybe Pwa.NotificationPermission
     , pushActive : Bool
     , onEnableNotifications : msg
+    , currentTime : Time.Posix
     }
 
 
@@ -408,7 +409,31 @@ groupCard i18n ctx summary =
                 , exportLink (ctx.onExportCsv summary.id) (T.homeExportGroupCsv i18n)
                 ]
             ]
+        , if not summary.isArchived && isDormant ctx.currentTime summary then
+            Ui.el
+                [ Ui.paddingTop Theme.spacing.sm
+                , Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.warning.text
+                ]
+                (Ui.text (T.homeDormantHint i18n))
+
+          else
+            Ui.none
         ]
+
+
+{-| A group not synced for longer than this — just inside the relay's
+12-month inactivity window (docs/SPECIFICATION.md §14.8) — is shown as
+dormant, nudging an archival export before a purge can plausibly reach it.
+-}
+dormantThresholdMillis : Int
+dormantThresholdMillis =
+    334 * 24 * 60 * 60 * 1000
+
+
+isDormant : Time.Posix -> Group.Summary -> Bool
+isDormant now summary =
+    (Time.posixToMillis now - Time.posixToMillis summary.lastSyncedAt) > dormantThresholdMillis
 
 
 exportLink : msg -> String -> Ui.Element msg

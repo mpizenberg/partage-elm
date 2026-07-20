@@ -783,7 +783,7 @@ update msg model =
 
                                 summary : Group.Summary
                                 summary =
-                                    GroupState.summarize memberId groupId preview.groupState
+                                    GroupState.summarize memberId groupId model.currentTime preview.groupState
 
                                 updatedModel : Model
                                 updatedModel =
@@ -926,7 +926,7 @@ update msg model =
                     let
                         summary : Group.Summary
                         summary =
-                            GroupState.summarize memberId groupId preview.groupState
+                            GroupState.summarize memberId groupId model.currentTime preview.groupState
 
                         balanceTabRoute : Route
                         balanceTabRoute =
@@ -1746,6 +1746,7 @@ viewReady model readyData =
                     , notificationPermission = model.pwaState.notificationPermission
                     , pushActive = PwaState.pushIsActive model.pwaState
                     , onEnableNotifications = PwaStateMsg PwaState.enableNotificationsMsg
+                    , currentTime = model.currentTime
                     }
                     HomeMsg
                     model.homeModel
