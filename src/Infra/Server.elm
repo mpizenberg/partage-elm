@@ -8,6 +8,8 @@ module Infra.Server exposing
     , errorToString
     , isNetworkError
     , isNotFound
+    , isQuotaExceeded
+    , isRateLimited
     , isUnauthorized
     , serverEventDecoder
     , subscribeToGroup
@@ -128,6 +130,22 @@ isNetworkError err =
 isUnauthorized : Error -> Bool
 isUnauthorized =
     isStatus 401
+
+
+{-| True when the group is full: its append exceeded the relay's storage quota
+(§14.8). Surfaced so the user can compact or export instead of retrying.
+-}
+isQuotaExceeded : Error -> Bool
+isQuotaExceeded =
+    isStatus 507
+
+
+{-| True when the group's recent append volume exceeded the relay's monthly
+rate limit (§14.8). Transient — syncing resumes once the window rolls.
+-}
+isRateLimited : Error -> Bool
+isRateLimited =
+    isStatus 429
 
 
 isStatus : Int -> Error -> Bool

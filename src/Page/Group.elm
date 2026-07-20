@@ -934,7 +934,19 @@ update config msg model =
                         []
 
                     else
-                        [ ShowToast Toast.Error (T.toastSyncError (Server.errorToString err) config.i18n)
+                        let
+                            toastMessage : String
+                            toastMessage =
+                                if Server.isQuotaExceeded err then
+                                    T.toastGroupFull config.i18n
+
+                                else if Server.isRateLimited err then
+                                    T.toastRateLimited config.i18n
+
+                                else
+                                    T.toastSyncError (Server.errorToString err) config.i18n
+                        in
+                        [ ShowToast Toast.Error toastMessage
                         , LogError ErrorLog.SyncSource ErrorLog.Err ("Sync: " ++ Server.errorToString err)
                         ]
             in
