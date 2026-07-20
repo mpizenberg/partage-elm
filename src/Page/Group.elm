@@ -1489,13 +1489,12 @@ triggerSyncInternal config groupId model =
                                 |> ConcurrentTask.mapError never
                                 |> ConcurrentTask.map
                                     (\verifiedEvents ->
-                                        { syncResult
-                                            | pullResult =
-                                                { events = verifiedEvents
-                                                , cursor = syncResult.pullResult.cursor
-                                                , undecodable = syncResult.pullResult.undecodable
-                                                }
-                                        }
+                                        let
+                                            pull : Server.PullResult
+                                            pull =
+                                                syncResult.pullResult
+                                        in
+                                        { syncResult | pullResult = { pull | events = verifiedEvents } }
                                     )
                     in
                     ( model.runner, Cmd.none )

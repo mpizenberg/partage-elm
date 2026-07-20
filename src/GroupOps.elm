@@ -605,9 +605,23 @@ applySyncResult pushedIds syncResult loaded =
         newEvents =
             List.filter (\e -> not (Set.member e.id existingIds)) pullResult.events
 
+        -- Heal re-push: a reset pull returns everything the relay still holds,
+        -- so any local event absent from it was lost (purge, truncation,
+        -- unsanctioned compaction) and must be re-pushed. `unpushedIds` only
+        -- tracks never-pushed events, so the gap is computed here; the
+        -- follow-up sync it triggers does the actual pushing.
         remainingUnpushedIds : Set String
         remainingUnpushedIds =
-            Set.diff loaded.unpushedIds pushedIds
+            if pullResult.didReset then
+                let
+                    relayIds : Set String
+                    relayIds =
+                        List.map .id pullResult.events |> Set.fromList
+                in
+                Set.union (Set.diff loaded.unpushedIds pushedIds) (Set.diff existingIds relayIds)
+
+            else
+                Set.diff loaded.unpushedIds pushedIds
 
         -- Sort only new events, then merge with existing (already sorted) events.
         -- loaded.events is newest-first; new events need sorting before merge.

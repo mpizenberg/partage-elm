@@ -312,11 +312,14 @@ sync ctx actorId { unpushedEvents, pullCursor, notifyContext } =
 `undecodable` counts skipped items: records that failed to decrypt plus
 envelopes whose JSON shape could not be decoded. Skipping instead of
 failing keeps one bad record from bricking the group's sync forever.
+`didReset` is set when the pull restarted from 0 on a `resetCursor` — the
+relay lost events this client has seen, so the caller re-pushes the gap.
 -}
 type alias PullResult =
     { events : List Event.Envelope
     , cursor : Int
     , undecodable : Int
+    , didReset : Bool
     }
 
 
@@ -330,10 +333,10 @@ caller's dedup-by-event-id merge makes the restart loss-free.
 -}
 pullEvents : ServerContext -> String -> Maybe Int -> ConcurrentTask Error PullResult
 pullEvents ctx secret maybeCursor =
-    pullAllPages ctx secret True (Maybe.withDefault 0 maybeCursor) { events = [], undecodable = 0 }
+    pullAllPages ctx secret True (Maybe.withDefault 0 maybeCursor) { events = [], undecodable = 0, didReset = False }
 
 
-pullAllPages : ServerContext -> String -> Bool -> Int -> { events : List Event.Envelope, undecodable : Int } -> ConcurrentTask Error PullResult
+pullAllPages : ServerContext -> String -> Bool -> Int -> { events : List Event.Envelope, undecodable : Int, didReset : Bool } -> ConcurrentTask Error PullResult
 pullAllPages ctx secret allowReset cursor acc =
     Http.get
         { url = eventsUrl ctx ++ "?since=" ++ String.fromInt cursor
@@ -345,17 +348,18 @@ pullAllPages ctx secret allowReset cursor acc =
         |> ConcurrentTask.andThen
             (\page ->
                 if page.resetCursor && allowReset then
-                    pullAllPages ctx secret False 0 acc
+                    pullAllPages ctx secret False 0 { acc | didReset = True }
 
                 else
                     decryptServerEvents ctx.groupKey page.events
                         |> ConcurrentTask.andThen
                             (\decrypted ->
                                 let
-                                    newAcc : { events : List Event.Envelope, undecodable : Int }
+                                    newAcc : { events : List Event.Envelope, undecodable : Int, didReset : Bool }
                                     newAcc =
-                                        { events = acc.events ++ decrypted.events
-                                        , undecodable = acc.undecodable + decrypted.undecodable
+                                        { acc
+                                            | events = acc.events ++ decrypted.events
+                                            , undecodable = acc.undecodable + decrypted.undecodable
                                         }
 
                                     newCursor : Int
@@ -368,7 +372,7 @@ pullAllPages ctx secret allowReset cursor acc =
                                     pullAllPages ctx secret allowReset newCursor newAcc
 
                                 else
-                                    ConcurrentTask.succeed { events = newAcc.events, cursor = newCursor, undecodable = newAcc.undecodable }
+                                    ConcurrentTask.succeed { events = newAcc.events, cursor = newCursor, undecodable = newAcc.undecodable, didReset = newAcc.didReset }
                             )
             )
 

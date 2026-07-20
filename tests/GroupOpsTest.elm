@@ -22,6 +22,7 @@ suite =
         [ describe "clampAfterLatest" clampTests
         , describe "applySyncResult with late arrivals" lateArrivalTests
         , describe "applySyncResult after a cursor reset" cursorResetTests
+        , describe "applySyncResult heal re-push" healRepushTests
         ]
 
 
@@ -46,7 +47,7 @@ cursorResetTests =
                 result : GroupOps.SyncApplyResult
                 result =
                     GroupOps.applySyncResult Set.empty
-                        { pullResult = { events = existing ++ [ fresh ], cursor = 4, undecodable = 0 }, pushedCount = 0 }
+                        { pullResult = { events = existing ++ [ fresh ], cursor = 4, undecodable = 0, didReset = True }, pushedCount = 0 }
                         loaded
             in
             result
@@ -56,7 +57,40 @@ cursorResetTests =
                             |> Expect.equal (List.map .id (List.reverse (Event.sortEvents (fresh :: existing))))
                     , \r -> r.updatedGroup.syncCursor |> Expect.equal (Just 4)
                     , \r -> List.map .id r.newEvents |> Expect.equal [ "e-fresh" ]
+
+                    -- The relay returned every local event (plus one new), so
+                    -- the heal finds nothing missing to re-push.
+                    , \r -> r.updatedGroup.unpushedIds |> Expect.equal Set.empty
                     ]
+    ]
+
+
+healRepushTests : List Test
+healRepushTests =
+    let
+        localLog : List Event.Envelope
+        localLog =
+            bootstrapMembers
+                ++ [ makeEnvelope "e-add" 100 "alice" (EntryAdded (makeExpenseEntry "entry1" 100 defaultExpenseData)) ]
+
+        healAfter : { events : List Event.Envelope, didReset : Bool } -> GroupOps.SyncApplyResult
+        healAfter { events, didReset } =
+            GroupOps.applySyncResult Set.empty
+                { pullResult = { events = events, cursor = 0, undecodable = 0, didReset = didReset }, pushedCount = 0 }
+                (loadedFrom localLog)
+    in
+    [ test "a purge (reset pull returns nothing) queues every local event for re-push" <|
+        \_ ->
+            (healAfter { events = [], didReset = True }).updatedGroup.unpushedIds
+                |> Expect.equal (Set.fromList (List.map .id localLog))
+    , test "a partial loss queues only the events missing from the relay's remaining set" <|
+        \_ ->
+            (healAfter { events = bootstrapMembers, didReset = True }).updatedGroup.unpushedIds
+                |> Expect.equal (Set.singleton "e-add")
+    , test "a normal pull (no reset) never queues a re-push" <|
+        \_ ->
+            (healAfter { events = [], didReset = False }).updatedGroup.unpushedIds
+                |> Expect.equal Set.empty
     ]
 
 
@@ -149,7 +183,7 @@ loadedFrom events =
 syncWith : List Event.Envelope -> GroupOps.LoadedGroup -> GroupOps.SyncApplyResult
 syncWith newEvents loaded =
     GroupOps.applySyncResult Set.empty
-        { pullResult = { events = newEvents, cursor = 1, undecodable = 0 }, pushedCount = 0 }
+        { pullResult = { events = newEvents, cursor = 1, undecodable = 0, didReset = False }, pushedCount = 0 }
         loaded
 
 
