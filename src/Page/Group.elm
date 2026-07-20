@@ -32,6 +32,7 @@ import Browser.Dom
 import ConcurrentTask exposing (ConcurrentTask)
 import ConcurrentTask.Http as Http
 import Dict exposing (Dict)
+import Domain.Compaction as Compaction
 import Domain.Currency exposing (Currency(..))
 import Domain.Date as Date exposing (Date)
 import Domain.Entry as Entry
@@ -2097,7 +2098,24 @@ tabContent config maybeUserRootId loaded model =
                 , addMemberHref = Route.toPath (GroupRoute config.groupId AddVirtualMember)
                 , onEditGroupMetadata = config.toMsg (RequestNavigation EditGroupMetadata)
                 , editGroupMetadataHref = Route.toPath (GroupRoute config.groupId EditGroupMetadata)
-                , inviteLink = config.origin ++ Route.toPath (GroupRoute config.groupId (Join (Symmetric.exportKey loaded.groupKey)))
+                , inviteLink =
+                    config.origin
+                        ++ Route.toPath
+                            (GroupRoute config.groupId
+                                (Join
+                                    { key = Symmetric.exportKey loaded.groupKey
+
+                                    -- Attest only pushed events: the joiner
+                                    -- checks the attestation against what the
+                                    -- relay serves, which cannot include this
+                                    -- device's unpushed tail yet.
+                                    , tail =
+                                        loaded.events
+                                            |> List.filter (\e -> not (Set.member e.id loaded.unpushedIds))
+                                            |> Compaction.attestationTail
+                                    }
+                                )
+                            )
                 , isSynced = loaded.syncCursor /= Nothing
                 , onToggleNotification = config.toMsg ToggleNotification
                 , isSubscribed = loaded.summary.isSubscribed

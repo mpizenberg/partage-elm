@@ -112,6 +112,8 @@
   "inviteLinkShare": "Partager",
   "joinGroupFetching": "Chargement du groupe...",
   "joinGroupError": "Échec du chargement du groupe",
+  "joinGroupTruncated": "Le serveur a renvoyé moins d'historique que cette invitation ne l'exige — les données du groupe ont peut-être été altérées. Demandez un nouveau lien à la personne qui vous a invité·e.",
+  "joinGroupHistoryWarning": "L'historique consolidé de ce groupe n'a pas pu être entièrement vérifié. Vérifiez auprès de la personne qui vous a invité·e avant de vous fier aux montants affichés.",
   "joinGroupClaimMember": "Je suis...",
   "joinGroupRecoverMember": "Récupérer mon compte...",
   "joinGroupJoinAsNew": "Rejoindre en tant que nouveau membre",

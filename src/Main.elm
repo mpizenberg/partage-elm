@@ -6,6 +6,7 @@ import Browser.Dom
 import ConcurrentTask exposing (ConcurrentTask)
 import ConcurrentTask.Http as Http
 import Dict
+import Domain.Compaction as Compaction
 import Domain.Currency as Currency exposing (Currency)
 import Domain.Date as Date
 import Domain.Event as Event
@@ -154,7 +155,7 @@ type Msg
     | GroupMsg Page.Group.Msg
     | JoinGroupMsg Page.JoinGroup.Msg
       -- Join flow
-    | OnJoinGroupFetched (ConcurrentTask.Response Server.Error Server.SyncResult)
+    | OnJoinGroupFetched (ConcurrentTask.Response Server.Error { syncResult : Server.SyncResult, manifestMismatch : Bool })
     | OnJoinLocalGroupLoaded (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set.Set String })
     | OnJoinGroupSaved Group.Id Member.Id (ConcurrentTask.Response Idb.Error ())
       -- Form submission responses
@@ -452,8 +453,8 @@ update msg model =
                             Nothing
             in
             case applyRouteGuard maybeIdentity (Route.fromAppUrl event.appUrl) of
-                ( (GroupRoute groupId (Join key)) as route, guardCmd ) ->
-                    handleJoinRoute model route groupId key maybeIdentity
+                ( (GroupRoute groupId (Join invite)) as route, guardCmd ) ->
+                    handleJoinRoute model route groupId invite.key maybeIdentity
                         |> Update.addCmd guardCmd
                         |> Update.addCmd (navScrollCmd route)
 
@@ -540,8 +541,8 @@ update msg model =
                     in
                     -- If on a Join route, re-trigger the join fetch now that we have identity
                     case model.route of
-                        GroupRoute groupId (Join key) ->
-                            handleJoinRoute modelWithIdentity model.route groupId key (Just identity)
+                        GroupRoute groupId (Join invite) ->
+                            handleJoinRoute modelWithIdentity model.route groupId invite.key (Just identity)
                                 |> Update.addCmd (Cmd.batch [ navCmd_, taskCmd ])
 
                         Welcome ->
@@ -595,8 +596,8 @@ update msg model =
                 -- Handle group navigation if the initial route is a group route
                 ( modelAfterNav, navCmd_ ) =
                     case guardedRoute of
-                        GroupRoute groupId (Join key) ->
-                            handleJoinRoute modelWithReadyData guardedRoute groupId key readyData.identity
+                        GroupRoute groupId (Join invite) ->
+                            handleJoinRoute modelWithReadyData guardedRoute groupId invite.key readyData.identity
 
                         GroupRoute groupId groupView ->
                             case buildGroupConfig modelWithReadyData of
@@ -765,11 +766,11 @@ update msg model =
             case maybeOutput of
                 Just (Page.JoinGroup.JoinConfirmed joinData) ->
                     case ( model.appState, model.route, Page.JoinGroup.getPreview joinModel ) of
-                        ( Ready readyData, GroupRoute groupId (Join key), Just preview ) ->
+                        ( Ready readyData, GroupRoute groupId (Join invite), Just preview ) ->
                             let
                                 groupKey : Symmetric.Key
                                 groupKey =
-                                    Symmetric.importKey key
+                                    Symmetric.importKey invite.key
 
                                 memberId : Member.Id
                                 memberId =
@@ -872,6 +873,7 @@ update msg model =
                                     , syncCursor = Maybe.withDefault 0 groupData.syncCursor
                                     , selectedAction = Page.JoinGroup.defaultAction groupState
                                     , newMemberName = ""
+                                    , historyWarning = False
                                     }
                           }
                         , Cmd.none
@@ -883,29 +885,54 @@ update msg model =
         OnJoinLocalGroupLoaded _ ->
             ( model, Cmd.none )
 
-        OnJoinGroupFetched (ConcurrentTask.Success syncResult) ->
+        OnJoinGroupFetched (ConcurrentTask.Success fetched) ->
             let
-                groupState : GroupState.GroupState
-                groupState =
-                    GroupState.applyEvents syncResult.pullResult.events GroupState.empty
+                verified : List Event.Envelope
+                verified =
+                    fetched.syncResult.pullResult.events
 
-                groupName : String
-                groupName =
-                    groupState.groupMeta.name
+                -- The invite's attestation (spec §12.1): the fetched history
+                -- must reach the inviter's head. Old bare-key links (or an
+                -- unknown tail format) carry none and skip the check.
+                attestationOk : Bool
+                attestationOk =
+                    case model.route of
+                        GroupRoute _ (Join invite) ->
+                            case Maybe.andThen Compaction.parseAttestation invite.tail of
+                                Just attestation ->
+                                    Compaction.historyReaches attestation verified
+
+                                Nothing ->
+                                    True
+
+                        _ ->
+                            True
             in
-            ( { model
-                | joinGroupModel =
-                    Page.JoinGroup.showPreview
-                        { groupName = groupName
-                        , groupState = groupState
-                        , events = syncResult.pullResult.events
-                        , syncCursor = syncResult.pullResult.cursor
-                        , selectedAction = Page.JoinGroup.defaultAction groupState
-                        , newMemberName = ""
-                        }
-              }
-            , Cmd.none
-            )
+            if not attestationOk then
+                ( { model | joinGroupModel = Page.JoinGroup.error (T.joinGroupTruncated model.i18n) }
+                , Cmd.none
+                )
+
+            else
+                let
+                    groupState : GroupState.GroupState
+                    groupState =
+                        GroupState.applyEvents verified GroupState.empty
+                in
+                ( { model
+                    | joinGroupModel =
+                        Page.JoinGroup.showPreview
+                            { groupName = groupState.groupMeta.name
+                            , groupState = groupState
+                            , events = verified
+                            , syncCursor = fetched.syncResult.pullResult.cursor
+                            , selectedAction = Page.JoinGroup.defaultAction groupState
+                            , newMemberName = ""
+                            , historyWarning = fetched.manifestMismatch
+                            }
+                  }
+                , Cmd.none
+                )
 
         OnJoinGroupFetched (ConcurrentTask.Error err) ->
             ( { model | joinGroupModel = Page.JoinGroup.error (Server.errorToString err) }
@@ -1377,6 +1404,42 @@ applyRouteGuard identity route =
             ( route, Cmd.none )
 
 
+{-| Joiner-side compaction verification (spec §14.9): when the fetched
+history carries a quorumed compaction proposal, the received pre-boundary
+envelopes must count and hash exactly as the quorum signed. True means
+mismatch — the history is surfaced as not fully verifiable.
+-}
+verifyCompactedHistory : List Event.Envelope -> ConcurrentTask Server.Error Bool
+verifyCompactedHistory verified =
+    let
+        state : GroupState.GroupState
+        state =
+            GroupState.applyEvents verified GroupState.empty
+
+        resolvers : { resolveRoot : Member.Id -> Maybe Member.Id, isRetired : Member.Id -> Bool }
+        resolvers =
+            { resolveRoot = GroupState.resolveMemberRootId state
+            , isRetired =
+                \root ->
+                    Dict.get root state.members
+                        |> Maybe.map .isRetired
+                        |> Maybe.withDefault False
+            }
+    in
+    case Compaction.quorumedProposal resolvers verified of
+        Nothing ->
+            ConcurrentTask.succeed False
+
+        Just quorumed ->
+            if quorumed.claimedCount /= quorumed.prefixCount then
+                ConcurrentTask.succeed True
+
+            else
+                WebCrypto.sha256 quorumed.manifestInput
+                    |> ConcurrentTask.mapError Server.CryptoError
+                    |> ConcurrentTask.map (\hash -> hash /= quorumed.claimedHash)
+
+
 {-| Handle navigation to a Join route.
 -}
 handleJoinRoute : Model -> Route -> Group.Id -> String -> Maybe Identity -> ( Model, Cmd Msg )
@@ -1410,14 +1473,20 @@ handleJoinRoute model route groupId key maybeIdentity =
                                             |> ConcurrentTask.andThen
                                                 (\syncResult ->
                                                     EventVerification.filterVerifiedEvents GroupState.empty syncResult.pullResult.events
-                                                        |> ConcurrentTask.map
+                                                        |> ConcurrentTask.andThen
                                                             (\verified ->
                                                                 let
                                                                     pull : Server.PullResult
                                                                     pull =
                                                                         syncResult.pullResult
                                                                 in
-                                                                { syncResult | pullResult = { pull | events = verified } }
+                                                                verifyCompactedHistory verified
+                                                                    |> ConcurrentTask.map
+                                                                        (\manifestMismatch ->
+                                                                            { syncResult = { syncResult | pullResult = { pull | events = verified } }
+                                                                            , manifestMismatch = manifestMismatch
+                                                                            }
+                                                                        )
                                                             )
                                                 )
                                         )

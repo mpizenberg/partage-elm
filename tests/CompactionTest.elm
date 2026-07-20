@@ -39,8 +39,10 @@ suite =
         [ manifestTests
         , pendingApprovalTests
         , executableProposalTests
+        , quorumedProposalTests
         , proposalDraftTests
         , chunkTests
+        , attestationTests
         ]
 
 
@@ -276,6 +278,65 @@ executableProposalTests =
                 Compaction.executableProposal threeActors twoProposals
                     |> Maybe.map .proposalId
                     |> Expect.equal (Just "p2")
+        ]
+
+
+quorumedProposalTests : Test
+quorumedProposalTests =
+    describe "quorumedProposal"
+        [ test "reports a quorumed proposal even when the count diverges" <|
+            \_ ->
+                let
+                    divergent : List Event.Envelope
+                    divergent =
+                        [ makeEnvelope "e1" 100 "alice" (Event.EntryDeleted { rootId = "x" })
+                        , makeEnvelope "e2" 200 "bob" (Event.EntryDeleted { rootId = "y" })
+                        , makeEnvelope "p1" 400 "alice" (CompactionProposed { uptoEventId = "e2", eventCount = 1, manifestHash = "H" })
+                        , makeEnvelope "a1" 500 "bob" (CompactionApproved { proposalId = "p1" })
+                        ]
+                in
+                Compaction.quorumedProposal threeActors divergent
+                    |> Maybe.map (\q -> ( q.claimedCount, q.prefixCount ))
+                    |> Expect.equal (Just ( 1, 2 ))
+        , test "no quorum means nothing to verify" <|
+            \_ ->
+                Compaction.quorumedProposal threeActors threeActorLog
+                    |> Expect.equal Nothing
+        ]
+
+
+attestationTests : Test
+attestationTests =
+    describe "attestation"
+        [ test "round-trips through the fragment tail" <|
+            \_ ->
+                Compaction.attestationTail (wireEnvelopes [ e2, e1 ])
+                    |> Maybe.andThen Compaction.parseAttestation
+                    |> Expect.equal (Just { eventCount = 2, headId = "e2" })
+        , test "an empty log yields no attestation" <|
+            \_ ->
+                Compaction.attestationTail []
+                    |> Expect.equal Nothing
+        , test "head ids containing dashes survive the round trip" <|
+            \_ ->
+                Compaction.parseAttestation "7-0198c9c2-4a5b-7c33"
+                    |> Expect.equal (Just { eventCount = 7, headId = "0198c9c2-4a5b-7c33" })
+        , test "unknown tail formats parse as no attestation" <|
+            \_ ->
+                ( Compaction.parseAttestation "future", Compaction.parseAttestation "x-abc" )
+                    |> Expect.equal ( Nothing, Nothing )
+        , test "a history reaches the attestation with enough events and the head present" <|
+            \_ ->
+                Compaction.historyReaches { eventCount = 2, headId = "e2" } (wireEnvelopes [ e1, e2, e3 ])
+                    |> Expect.equal True
+        , test "a missing head means the history falls short" <|
+            \_ ->
+                Compaction.historyReaches { eventCount = 2, headId = "e9" } (wireEnvelopes [ e1, e2, e3 ])
+                    |> Expect.equal False
+        , test "too few events means the history falls short" <|
+            \_ ->
+                Compaction.historyReaches { eventCount = 3, headId = "e2" } (wireEnvelopes [ e1, e2 ])
+                    |> Expect.equal False
         ]
 
 

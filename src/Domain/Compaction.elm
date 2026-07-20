@@ -1,12 +1,16 @@
 module Domain.Compaction exposing
     ( Executable
     , PendingApproval
+    , attestationTail
     , chunkEnvelopes
     , executableProposal
+    , historyReaches
     , manifest
+    , parseAttestation
     , pendingApprovals
     , proposalCooldownMs
     , proposalDraft
+    , quorumedProposal
     , recordCountTrigger
     )
 
@@ -166,7 +170,56 @@ executableProposal :
     { resolveRoot : Member.Id -> Maybe Member.Id, isRetired : Member.Id -> Bool }
     -> List Event.Envelope
     -> Maybe Executable
-executableProposal { resolveRoot, isRetired } events =
+executableProposal resolvers events =
+    newestQuorumed resolvers
+        events
+        (\envelope proposal prefix ->
+            if List.length prefix == proposal.eventCount then
+                Just
+                    { proposalId = envelope.id
+                    , claimedHash = proposal.manifestHash
+                    , manifestInput = manifestInput prefix
+                    , prefix = prefix
+                    }
+
+            else
+                Nothing
+        )
+
+
+{-| The newest proposal with visible quorum, for a joiner verifying a
+fetched history (spec §14.9): the received pre-boundary envelopes must
+count and hash exactly as quorumed. Unlike `executableProposal` this
+reports a count mismatch instead of skipping it — for a joiner that
+divergence is the signal.
+-}
+quorumedProposal :
+    { resolveRoot : Member.Id -> Maybe Member.Id, isRetired : Member.Id -> Bool }
+    -> List Event.Envelope
+    -> Maybe { claimedHash : String, claimedCount : Int, prefixCount : Int, manifestInput : String }
+quorumedProposal resolvers events =
+    newestQuorumed resolvers
+        events
+        (\_ proposal prefix ->
+            Just
+                { claimedHash = proposal.manifestHash
+                , claimedCount = proposal.eventCount
+                , prefixCount = List.length prefix
+                , manifestInput = manifestInput prefix
+                }
+        )
+
+
+{-| The newest proposal whose quorum is visible, mapped through `toResult`
+(which receives the proposal envelope, its payload, and the sorted local
+prefix at its boundary).
+-}
+newestQuorumed :
+    { resolveRoot : Member.Id -> Maybe Member.Id, isRetired : Member.Id -> Bool }
+    -> List Event.Envelope
+    -> (Event.Envelope -> { uptoEventId : Event.Id, eventCount : Int, manifestHash : String } -> List Event.Envelope -> Maybe a)
+    -> Maybe a
+newestQuorumed { resolveRoot, isRetired } events toResult =
     let
         approverRoots : Event.Id -> Member.Id -> Set Member.Id
         approverRoots proposalId proposerRoot =
@@ -191,8 +244,8 @@ executableProposal { resolveRoot, isRetired } events =
                 (Set.singleton proposerRoot)
                 events
 
-        toExecutable : Event.Envelope -> { uptoEventId : Event.Id, eventCount : Int, manifestHash : String } -> Maybe Executable
-        toExecutable envelope proposal =
+        quorumFor : Event.Envelope -> { uptoEventId : Event.Id, eventCount : Int, manifestHash : String } -> Maybe a
+        quorumFor envelope proposal =
             Maybe.map2 Tuple.pair
                 (resolveRoot envelope.triggeredBy)
                 (prefixThrough proposal.uptoEventId events)
@@ -211,13 +264,8 @@ executableProposal { resolveRoot, isRetired } events =
                                 Set.intersect (approverRoots envelope.id proposerRoot) involved
                                     |> Set.size
                         in
-                        if List.length prefix == proposal.eventCount && 2 * signers > Set.size involved then
-                            Just
-                                { proposalId = envelope.id
-                                , claimedHash = proposal.manifestHash
-                                , manifestInput = manifestInput prefix
-                                , prefix = prefix
-                                }
+                        if 2 * signers > Set.size involved then
+                            toResult envelope proposal prefix
 
                         else
                             Nothing
@@ -229,7 +277,7 @@ executableProposal { resolveRoot, isRetired } events =
             (\envelope ->
                 case envelope.payload of
                     Event.CompactionProposed proposal ->
-                        toExecutable envelope proposal
+                        quorumFor envelope proposal
 
                     _ ->
                         Nothing
@@ -282,6 +330,49 @@ proposalDraft now events =
 
         _ ->
             Nothing
+
+
+{-| The inviter's head attestation for the invite-fragment tail (spec
+§12.1): `<eventCount>-<headEventId>` over the given events — pass only
+_pushed_ events, since the joiner checks against what the relay serves.
+Count plus head presence catches both tail-truncation (head missing) and
+any deletion (count short); unlike a manifest hash it stays valid when
+concurrent events interleave into the history after the link is made.
+-}
+attestationTail : List Event.Envelope -> Maybe String
+attestationTail events =
+    Event.sortEvents events
+        |> List.reverse
+        |> List.head
+        |> Maybe.map (\newest -> String.fromInt (List.length events) ++ "-" ++ newest.id)
+
+
+{-| Parse an invite-fragment tail. Nothing for unknown formats, which the
+join flow ignores (the grammar reserves the tail, it does not pin it).
+-}
+parseAttestation : String -> Maybe { eventCount : Int, headId : Event.Id }
+parseAttestation tail =
+    case String.split "-" tail of
+        countPart :: rest ->
+            case ( String.toInt countPart, rest ) of
+                ( Just count, _ :: _ ) ->
+                    Just { eventCount = count, headId = String.join "-" rest }
+
+                _ ->
+                    Nothing
+
+        [] ->
+            Nothing
+
+
+{-| Whether a fetched history reaches the inviter's attestation: at least
+as many (verified) events as attested, including the attested head.
+-}
+historyReaches : { eventCount : Int, headId : Event.Id } -> List Event.Envelope -> Bool
+historyReaches attestation events =
+    List.length events
+        >= attestation.eventCount
+        && List.any (\envelope -> envelope.id == attestation.headId) events
 
 
 {-| Pack envelopes into consolidation batches whose summed raw-JSON size

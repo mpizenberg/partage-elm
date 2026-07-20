@@ -26,7 +26,7 @@ type Route
 {-| Sub-routes within a group page.
 -}
 type GroupView
-    = Join String
+    = Join { key : String, tail : Maybe String }
     | Tab GroupTab
     | HighlightEntry Entry.Id
     | NewEntry
@@ -68,17 +68,26 @@ fromAppUrl appUrl =
             ImportSplitwise
 
         [ "join", groupId ] ->
-            -- The fragment grammar is `key[.extra]`: everything after the
-            -- first `.` is reserved for future use (e.g. invite attestations)
-            -- and ignored, so old clients keep accepting new invite links.
-            GroupRoute groupId
-                (Join
-                    (Maybe.withDefault "" appUrl.fragment
-                        |> String.split "."
-                        |> List.head
-                        |> Maybe.withDefault ""
-                    )
-                )
+            -- The fragment grammar is `key[.tail]`: everything before the
+            -- first `.` is the key; the tail carries the inviter's head
+            -- attestation (spec §12.1) and is kept verbatim for the join
+            -- flow to interpret (unknown formats are simply ignored).
+            case String.split "." (Maybe.withDefault "" appUrl.fragment) of
+                key :: rest ->
+                    GroupRoute groupId
+                        (Join
+                            { key = key
+                            , tail =
+                                if List.isEmpty rest then
+                                    Nothing
+
+                                else
+                                    Just (String.join "." rest)
+                            }
+                        )
+
+                [] ->
+                    GroupRoute groupId (Join { key = "", tail = Nothing })
 
         [ "groups", groupId ] ->
             GroupRoute groupId (Tab BalanceTab)
@@ -136,10 +145,10 @@ fromAppUrl appUrl =
 toAppUrl : Route -> AppUrl
 toAppUrl route =
     case route of
-        GroupRoute groupId (Join key) ->
+        GroupRoute groupId (Join invite) ->
             { path = [ "join", groupId ]
             , queryParameters = Dict.empty
-            , fragment = Just key
+            , fragment = Just (joinFragment invite)
             }
 
         GroupRoute groupId (HighlightEntry entryId) ->
@@ -242,8 +251,8 @@ toPath route =
         ImportSplitwise ->
             "/groups/import-splitwise"
 
-        GroupRoute groupId (Join key) ->
-            "/join/" ++ groupId ++ "#" ++ key
+        GroupRoute groupId (Join invite) ->
+            "/join/" ++ groupId ++ "#" ++ joinFragment invite
 
         GroupRoute groupId (Tab BalanceTab) ->
             "/groups/" ++ groupId
@@ -292,3 +301,13 @@ toPath route =
 
         NotFound ->
             "/"
+
+
+joinFragment : { key : String, tail : Maybe String } -> String
+joinFragment invite =
+    case invite.tail of
+        Just tail ->
+            invite.key ++ "." ++ tail
+
+        Nothing ->
+            invite.key

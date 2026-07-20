@@ -725,11 +725,18 @@ https://<app-domain>/join/<groupId>#<base64url-encoded-group-key>
 - The **group ID** is in the URL path (sent to the server).
 - The **group key** is in the URL **fragment** (after `#`), which is **never sent to the server** by the browser.
 - The key uses **Base64URL encoding** (URL-safe characters, no padding).
-- **Fragment grammar:** the fragment is `key[.extra]`. Parsers take everything
-  before the first `.` as the key and ignore the tail, which is reserved for
-  future use — specifically the inviter's head attestation for compaction
-  verification ([14.9](#149-log-consolidation-compaction)). The dot can never
-  appear in a Base64URL key, and links generated today are bare-key.
+- **Fragment grammar:** the fragment is `key[.tail]`. Parsers take everything
+  before the first `.` as the key; the dot can never appear in a Base64URL
+  key. The tail carries the **inviter's head attestation**, formatted
+  `<eventCount>-<headEventId>` over the inviter's *pushed* events at
+  link-generation time (unpushed events cannot be expected from the relay).
+  A joiner requires the fetched verified history to reach it — at least
+  `eventCount` events, including `headEventId` — and refuses the join
+  otherwise ([14.9](#149-log-consolidation-compaction)): count-plus-head
+  catches both tail-truncation and deletions, and unlike a manifest hash it
+  stays valid when concurrent events interleave into the history after the
+  link is made. Unknown tail formats are ignored (the joiner then has no
+  attestation to require, as with old bare-key links).
 
 ### 12.2 Invite Link Sharing
 

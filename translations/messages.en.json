@@ -112,6 +112,8 @@
   "inviteLinkShare": "Share",
   "joinGroupFetching": "Loading group...",
   "joinGroupError": "Failed to load group",
+  "joinGroupTruncated": "The server returned less history than this invite expects — the group's data may have been tampered with. Ask the person who invited you for a fresh link.",
+  "joinGroupHistoryWarning": "This group's consolidated history could not be fully verified. Ask the person who invited you before relying on the amounts shown.",
   "joinGroupClaimMember": "I am...",
   "joinGroupRecoverMember": "Recover my account...",
   "joinGroupJoinAsNew": "Join as new member",

@@ -29,6 +29,7 @@ type alias PreviewData =
     , syncCursor : Int
     , selectedAction : JoinAction
     , newMemberName : String
+    , historyWarning : Bool
     }
 
 
@@ -244,6 +245,17 @@ viewPreview i18n preview =
         , Ui.Font.letterSpacing Theme.letterSpacing.tight
         ]
         (Ui.text preview.groupName)
+    , if preview.historyWarning then
+        UI.Components.card [ Ui.padding Theme.spacing.md ]
+            [ Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.danger.text
+                ]
+                (Ui.text (T.joinGroupHistoryWarning i18n))
+            ]
+
+      else
+        Ui.none
     , if not (List.isEmpty virtualMembers) then
         Ui.column []
             [ UI.Components.sectionLabel (T.joinGroupClaimMember i18n)
