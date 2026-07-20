@@ -1,8 +1,8 @@
-import { SELF } from 'cloudflare:test';
+import { SELF, env, runInDurableObject, runDurableObjectAlarm } from 'cloudflare:test';
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
 import { conformanceSuite } from '../test/conformance.js';
-import { createGroup, pushEvent } from '../test/protocol-helpers.js';
+import { createGroup, pushEvent, pullEvents } from '../test/protocol-helpers.js';
 
 const BASE = 'https://relay.test';
 
@@ -43,5 +43,30 @@ describe('worker websocket live updates', () => {
   it('rejects a connection to an unknown group', async () => {
     const res = await connect('nope', 'any');
     assert.equal(res.status, 404);
+  });
+});
+
+describe('worker inactivity retention', () => {
+  it('purges an idle group when its DO alarm fires', async () => {
+    const { groupId, secret } = await createGroup(app, { groupId: 'idle-do' });
+    await pushEvent(app, groupId, secret);
+
+    const stub = env.GROUP.getByName(groupId);
+    await runInDurableObject(stub, (instance) => {
+      instance.storage.touchAccess(groupId, '2000-01-01T00:00:00.000Z', '2999-01-01T00:00:00.000Z');
+    });
+    assert.equal(await runDurableObjectAlarm(stub), true);
+
+    // Purged group answers 404 — the client's next sync resurrects it.
+    assert.equal((await pullEvents(app, groupId, secret)).status, 404);
+  });
+
+  it('re-arms the alarm for a group still within the window', async () => {
+    const { groupId, secret } = await createGroup(app, { groupId: 'active-do' });
+    const stub = env.GROUP.getByName(groupId);
+    assert.equal(await runDurableObjectAlarm(stub), true);
+
+    // Recently accessed → survives and stays reachable.
+    assert.equal((await pullEvents(app, groupId, secret)).status, 200);
   });
 });

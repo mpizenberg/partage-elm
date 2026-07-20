@@ -10,7 +10,7 @@
  */
 
 import { DurableObject } from 'cloudflare:workers';
-import { createApp, verifyGroupSecret } from './app.js';
+import { createApp, verifyGroupSecret, RETENTION_MS } from './app.js';
 import { createDoStorage } from './storage-do.js';
 import { issueChallenge } from './pow.js';
 
@@ -25,7 +25,30 @@ export class GroupDo extends DurableObject {
     });
   }
 
+  // Keep a retention sweep scheduled for the lifetime of the group. The first
+  // request to hit the DO arms it; the alarm re-arms itself while the group
+  // stays active and purges it once idle past the window.
+  async ensureAlarm() {
+    if ((await this.ctx.storage.getAlarm()) === null) {
+      await this.ctx.storage.setAlarm(Date.now() + RETENTION_MS);
+    }
+  }
+
+  async alarm() {
+    const group = this.storage.soleGroup();
+    if (group === null) {
+      return;
+    }
+    const purgeAt = Date.parse(group.lastAccess) + RETENTION_MS;
+    if (Date.now() >= purgeAt) {
+      this.storage.purgeIdleGroups(new Date(Date.now() - RETENTION_MS).toISOString());
+    } else {
+      await this.ctx.storage.setAlarm(purgeAt);
+    }
+  }
+
   async fetch(request) {
+    await this.ensureAlarm();
     const url = new URL(request.url);
     if (url.pathname.endsWith('/ws')) {
       const groupId = url.pathname.split('/')[3];

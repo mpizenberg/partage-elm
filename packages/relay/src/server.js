@@ -14,8 +14,11 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { startServer } from './node-server.js';
 import { openStorage } from './storage-sqlite.js';
+import { RETENTION_MS } from './app.js';
 
 const dev = process.argv.includes('--dev');
+
+const SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 const powSecret = process.env.POW_SECRET ?? (dev ? 'partage-pow-secret-dev-only' : null);
 if (powSecret === null) {
@@ -26,11 +29,23 @@ if (powSecret === null) {
 const dbPath = process.env.RELAY_DB ?? './data/relay.db';
 mkdirSync(dirname(dbPath), { recursive: true });
 
+const storage = openStorage(dbPath);
+
+function sweepIdleGroups() {
+  const purged = storage.purgeIdleGroups(new Date(Date.now() - RETENTION_MS).toISOString());
+  if (purged > 0) {
+    console.log(`Purged ${purged} idle group(s)`);
+  }
+}
+
 const { url } = await startServer({
-  storage: openStorage(dbPath),
+  storage,
   powSecret,
   port: Number(process.env.PORT ?? 8090),
   staticDir: process.env.STATIC_DIR,
 });
+
+sweepIdleGroups();
+setInterval(sweepIdleGroups, SWEEP_INTERVAL_MS).unref();
 
 console.log(`Partage relay listening on ${url}${dev ? ' (dev mode)' : ''}`);

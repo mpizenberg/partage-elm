@@ -20,6 +20,14 @@ export const PULL_PAGE_SIZE = 200;
 const MAX_EVENT_DATA_BYTES = 1024 * 1024;
 const MAX_BODY_BYTES = MAX_EVENT_DATA_BYTES + 16 * 1024;
 
+// A group idle (no authenticated request) longer than this is purged: the
+// clients hold the full log and re-push on their next sync (see the retention
+// contract in docs/SPECIFICATION.md §14.8).
+export const RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
+// `last_access` is only rewritten when it is older than this, so a busy group
+// costs at most one access write per day rather than one per request.
+const ACCESS_TOUCH_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
 const encoder = new TextEncoder();
 
 async function sha256Base64Url(text) {
@@ -128,6 +136,12 @@ export function createApp({ storage, powSecret, onAppend }) {
     if (result === 'unauthorized') {
       return c.json({ error: 'Invalid credentials' }, 401);
     }
+    const now = Date.now();
+    await storage.touchAccess(
+      c.req.param('id'),
+      new Date(now).toISOString(),
+      new Date(now - ACCESS_TOUCH_INTERVAL_MS).toISOString(),
+    );
     await next();
   });
 

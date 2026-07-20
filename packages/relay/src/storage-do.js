@@ -11,7 +11,8 @@ export function createDoStorage(sql) {
       created_by    TEXT NOT NULL,
       auth_verifier TEXT NOT NULL,
       pow_challenge TEXT NOT NULL,
-      created       TEXT NOT NULL
+      created       TEXT NOT NULL,
+      last_access   TEXT
     )
   `);
   sql.exec(`
@@ -31,16 +32,23 @@ export function createDoStorage(sql) {
     sql.exec('ALTER TABLE events ADD COLUMN record_id TEXT');
   }
   sql.exec('CREATE UNIQUE INDEX IF NOT EXISTS events_group_record ON events (group_id, record_id)');
+  const hasLastAccess =
+    sql.exec("SELECT COUNT(*) AS n FROM pragma_table_info('groups') WHERE name = 'last_access'").one().n === 1;
+  if (!hasLastAccess) {
+    sql.exec('ALTER TABLE groups ADD COLUMN last_access TEXT');
+    sql.exec('UPDATE groups SET last_access = created WHERE last_access IS NULL');
+  }
 
   return {
     createGroup({ groupId, createdBy, authVerifier, powChallenge, created }) {
       try {
         sql.exec(
-          'INSERT INTO groups (id, created_by, auth_verifier, pow_challenge, created) VALUES (?, ?, ?, ?, ?)',
+          'INSERT INTO groups (id, created_by, auth_verifier, pow_challenge, created, last_access) VALUES (?, ?, ?, ?, ?, ?)',
           groupId,
           createdBy,
           authVerifier,
           powChallenge,
+          created,
           created,
         );
         return null;
@@ -55,6 +63,33 @@ export function createDoStorage(sql) {
     getGroupVerifier(groupId) {
       const rows = sql.exec('SELECT auth_verifier FROM groups WHERE id = ?', groupId).toArray();
       return rows.length === 0 ? null : rows[0].auth_verifier;
+    },
+
+    getLastAccess(groupId) {
+      const rows = sql.exec('SELECT last_access FROM groups WHERE id = ?', groupId).toArray();
+      return rows.length === 0 ? null : rows[0].last_access;
+    },
+
+    touchAccess(groupId, now, staleBefore) {
+      sql.exec(
+        'UPDATE groups SET last_access = ? WHERE id = ? AND (last_access IS NULL OR last_access < ?)',
+        now,
+        groupId,
+        staleBefore,
+      );
+      return sql.exec('SELECT changes() AS n').one().n > 0;
+    },
+
+    purgeIdleGroups(cutoff) {
+      sql.exec('DELETE FROM events WHERE group_id IN (SELECT id FROM groups WHERE last_access < ?)', cutoff);
+      sql.exec('DELETE FROM groups WHERE last_access < ?', cutoff);
+      return sql.exec('SELECT changes() AS n').one().n;
+    },
+
+    // The DO holds a single group; the alarm reads it without knowing the id.
+    soleGroup() {
+      const rows = sql.exec('SELECT id, last_access FROM groups LIMIT 1').toArray();
+      return rows.length === 0 ? null : { groupId: rows[0].id, lastAccess: rows[0].last_access };
     },
 
     appendEvent(groupId, { recordId, actorId, eventData, compressed, created }) {
