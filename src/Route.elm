@@ -67,7 +67,17 @@ fromAppUrl appUrl =
             ImportSplitwise
 
         [ "join", groupId ] ->
-            GroupRoute groupId (Join (Maybe.withDefault "" appUrl.fragment))
+            -- The fragment grammar is `key[.extra]`: everything after the
+            -- first `.` is reserved for future use (e.g. invite attestations)
+            -- and ignored, so old clients keep accepting new invite links.
+            GroupRoute groupId
+                (Join
+                    (Maybe.withDefault "" appUrl.fragment
+                        |> String.split "."
+                        |> List.head
+                        |> Maybe.withDefault ""
+                    )
+                )
 
         [ "groups", groupId ] ->
             GroupRoute groupId (Tab BalanceTab)
