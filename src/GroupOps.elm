@@ -8,6 +8,7 @@ module GroupOps exposing
     , appendEvent
     , applySyncResult
     , clampAfterLatest
+    , compactionApprovalsDue
     , deleteEntry
     , editEntry
     , event
@@ -23,6 +24,7 @@ module GroupOps exposing
 import ConcurrentTask exposing (ConcurrentTask)
 import ConcurrentTask.Time
 import Dict
+import Domain.Compaction as Compaction
 import Domain.Currency exposing (Currency)
 import Domain.Entry as Entry
 import Domain.Event as Event
@@ -44,6 +46,7 @@ import Set exposing (Set)
 import SplitwiseImport
 import Time
 import UUID
+import WebCrypto
 import WebCrypto.Signature as Signature
 import WebCrypto.Symmetric as Symmetric
 
@@ -573,6 +576,35 @@ addMember ctx loaded output =
     attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter }
         (\now -> Event.wrap eventId now (author ctx) payload "")
         loaded
+
+
+
+-- Compaction approval
+
+
+{-| The ids of compaction proposals the member `myRoot` should approve:
+pending per `Compaction.pendingApprovals`, and whose recomputed manifest
+hash equals the claimed one — the approval signature attests "my replica's
+history up to this boundary is exactly this". Run after each sync.
+-}
+compactionApprovalsDue : Member.Id -> LoadedGroup -> ConcurrentTask x (List Event.Id)
+compactionApprovalsDue myRoot loaded =
+    Compaction.pendingApprovals (GroupState.resolveMemberRootId loaded.groupState) myRoot loaded.events
+        |> List.map
+            (\pending ->
+                WebCrypto.sha256 pending.manifestInput
+                    |> ConcurrentTask.map
+                        (\hash ->
+                            if hash == pending.claimedHash then
+                                Just pending.proposalId
+
+                            else
+                                Nothing
+                        )
+            )
+        |> ConcurrentTask.batch
+        |> ConcurrentTask.map (List.filterMap identity)
+        |> ConcurrentTask.onError (\_ -> ConcurrentTask.succeed [])
 
 
 

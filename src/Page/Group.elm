@@ -243,6 +243,8 @@ type
     | OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)
     | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set String })
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
+    | OnCompactionApprovalsChecked Group.Id (ConcurrentTask.Response Idb.Error (List Event.Id))
+    | OnCompactionApprovalSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | PostSyncTasksDone (ConcurrentTask.Response Idb.Error ())
     | OnDiagnosticsLoaded (ConcurrentTask.Response Idb.Error Page.Group.Diagnostics.Stats)
     | OnServerEvent Json.Decode.Value
@@ -877,6 +879,14 @@ update config msg model =
                                             { serverUrl = config.serverUrl, groupId = groupId, groupKey = loaded.groupKey }
                                             result
                                         )
+                                    |> Runner.andRun (OnCompactionApprovalsChecked groupId)
+                                        (case currentUserRootId model result.updatedGroup of
+                                            Just myRoot ->
+                                                GroupOps.compactionApprovalsDue myRoot result.updatedGroup
+
+                                            Nothing ->
+                                                ConcurrentTask.succeed []
+                                        )
 
                             ( modelAfterSync, initCmd ) =
                                 { model
@@ -966,6 +976,40 @@ update config msg model =
 
         OnGroupSynced _ _ (ConcurrentTask.UnexpectedError _) ->
             ( { model | syncInProgress = False }, Cmd.none, [ LogError ErrorLog.SyncSource ErrorLog.Err "Unexpected error during group sync" ] )
+
+        OnCompactionApprovalsChecked groupId (ConcurrentTask.Success proposalIds) ->
+            case model.loadedGroup of
+                Just loaded ->
+                    if loaded.summary.id == groupId then
+                        List.foldl
+                            (\proposalId ( mdl, cmd, outs ) ->
+                                let
+                                    ( mdl2, cmd2, outs2 ) =
+                                        runSubmit (OnCompactionApprovalSaved groupId)
+                                            config
+                                            mdl
+                                            (\ctx -> GroupOps.event ctx loaded (Event.CompactionApproved { proposalId = proposalId }))
+                                in
+                                ( mdl2, Cmd.batch [ cmd, cmd2 ], outs ++ outs2 )
+                            )
+                            ( model, Cmd.none, [] )
+                            proposalIds
+
+                    else
+                        ( model, Cmd.none, [] )
+
+                Nothing ->
+                    ( model, Cmd.none, [] )
+
+        OnCompactionApprovalsChecked _ _ ->
+            ( model, Cmd.none, [] )
+
+        OnCompactionApprovalSaved groupId (ConcurrentTask.Success envelope) ->
+            applyAndSync config groupId envelope model
+                |> Maybe.withDefault ( model, Cmd.none, [] )
+
+        OnCompactionApprovalSaved _ _ ->
+            ( model, Cmd.none, [ LogError ErrorLog.StorageSource ErrorLog.Err "Failed to save compaction approval" ] )
 
         PostSyncTasksDone (ConcurrentTask.Success ()) ->
             ( model, Cmd.none, [] )
