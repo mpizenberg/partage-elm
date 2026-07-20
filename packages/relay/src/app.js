@@ -48,6 +48,7 @@ export async function verifyGroupSecret(storage, groupId, secret) {
  * - appendEvent(groupId, {actorId, eventData, compressed, created}) → seq
  * - listEventsSince(groupId, sinceSeq, limit)
  *     → [{seq, actorId, eventData, compressed, created}]
+ * - getMaxSeq(groupId) → number (0 when the group has no events)
  *
  * `onAppend(groupId, seq)` is called after each successful event append
  * (used by adapters to notify live subscribers).
@@ -136,6 +137,15 @@ export function createApp({ storage, powSecret, onAppend }) {
     }
     const rows = await storage.listEventsSince(c.req.param('id'), since, PULL_PAGE_SIZE + 1);
     const hasMore = rows.length > PULL_PAGE_SIZE;
+    if (rows.length === 0 && since > 0) {
+      // A cursor beyond the group's history means the server lost events the
+      // client has seen (purge, compaction, resurrection): tell the client to
+      // restart its pull from 0 instead of silently reporting "up to date".
+      const maxSeq = await storage.getMaxSeq(c.req.param('id'));
+      if (since > maxSeq) {
+        return c.json({ events: [], hasMore: false, resetCursor: true });
+      }
+    }
     return c.json({ events: hasMore ? rows.slice(0, PULL_PAGE_SIZE) : rows, hasMore });
   });
 

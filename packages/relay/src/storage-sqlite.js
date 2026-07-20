@@ -37,6 +37,7 @@ export function openStorage(path) {
   const selectEvents = db.prepare(
     'SELECT seq, actor_id, data, compressed, created FROM events WHERE group_id = ? AND seq > ? ORDER BY seq LIMIT ?',
   );
+  const selectMaxSeq = db.prepare('SELECT MAX(seq) AS max_seq FROM events WHERE group_id = ?');
 
   return {
     createGroup({ groupId, createdBy, authVerifier, powChallenge, created }) {
@@ -69,6 +70,10 @@ export function openStorage(path) {
         compressed: row.compressed === 1,
         created: row.created,
       }));
+    },
+
+    getMaxSeq(groupId) {
+      return selectMaxSeq.get(groupId).max_seq ?? 0;
     },
 
     close() {

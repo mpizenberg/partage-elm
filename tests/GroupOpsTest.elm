@@ -21,7 +21,43 @@ suite =
     describe "GroupOps"
         [ describe "clampAfterLatest" clampTests
         , describe "applySyncResult with late arrivals" lateArrivalTests
+        , describe "applySyncResult after a cursor reset" cursorResetTests
         ]
+
+
+cursorResetTests : List Test
+cursorResetTests =
+    [ test "a full re-pull from 0 converges without duplicates and adopts the new cursor" <|
+        \_ ->
+            let
+                existing : List Event.Envelope
+                existing =
+                    bootstrapMembers
+                        ++ [ makeEnvelope "e-add" 100 "alice" (EntryAdded (makeExpenseEntry "entry1" 100 defaultExpenseData)) ]
+
+                fresh : Event.Envelope
+                fresh =
+                    makeEnvelope "e-fresh" 200 "bob" (EntryDeleted { rootId = "entry1" })
+
+                loaded : GroupOps.LoadedGroup
+                loaded =
+                    GroupOps.initLoadedGroup existing testSummary (Symmetric.importKey "test-key") (Just 50) Set.empty
+
+                result : GroupOps.SyncApplyResult
+                result =
+                    GroupOps.applySyncResult Set.empty
+                        { pullResult = { events = existing ++ [ fresh ], cursor = 4, undecodable = 0 }, pushedCount = 0 }
+                        loaded
+            in
+            result
+                |> Expect.all
+                    [ \r ->
+                        List.map .id r.updatedGroup.events
+                            |> Expect.equal (List.map .id (List.reverse (Event.sortEvents (fresh :: existing))))
+                    , \r -> r.updatedGroup.syncCursor |> Expect.equal (Just 4)
+                    , \r -> List.map .id r.newEvents |> Expect.equal [ "e-fresh" ]
+                    ]
+    ]
 
 
 clampTests : List Test

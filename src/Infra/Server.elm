@@ -313,14 +313,20 @@ type alias PullResult =
 
 
 {-| Pull events from the server since the given cursor. Decrypts each event.
+
+A `resetCursor` response (the server no longer holds events up to our
+cursor — purge, compaction, or resurrection) restarts the pull from 0, at
+most once per sync so a misbehaving server cannot loop us forever. The
+caller's dedup-by-event-id merge makes the restart loss-free.
+
 -}
 pullEvents : ServerContext -> String -> Maybe Int -> ConcurrentTask Error PullResult
 pullEvents ctx secret maybeCursor =
-    pullAllPages ctx secret (Maybe.withDefault 0 maybeCursor) { events = [], undecodable = 0 }
+    pullAllPages ctx secret True (Maybe.withDefault 0 maybeCursor) { events = [], undecodable = 0 }
 
 
-pullAllPages : ServerContext -> String -> Int -> { events : List Event.Envelope, undecodable : Int } -> ConcurrentTask Error PullResult
-pullAllPages ctx secret cursor acc =
+pullAllPages : ServerContext -> String -> Bool -> Int -> { events : List Event.Envelope, undecodable : Int } -> ConcurrentTask Error PullResult
+pullAllPages ctx secret allowReset cursor acc =
     Http.get
         { url = eventsUrl ctx ++ "?since=" ++ String.fromInt cursor
         , headers = [ authHeader secret ]
@@ -330,28 +336,32 @@ pullAllPages ctx secret cursor acc =
         |> ConcurrentTask.mapError HttpError
         |> ConcurrentTask.andThen
             (\page ->
-                decryptServerEvents ctx.groupKey page.events
-                    |> ConcurrentTask.andThen
-                        (\decrypted ->
-                            let
-                                newAcc : { events : List Event.Envelope, undecodable : Int }
-                                newAcc =
-                                    { events = acc.events ++ decrypted.events
-                                    , undecodable = acc.undecodable + decrypted.undecodable
-                                    }
+                if page.resetCursor && allowReset then
+                    pullAllPages ctx secret False 0 acc
 
-                                newCursor : Int
-                                newCursor =
-                                    List.head (List.reverse page.events)
-                                        |> Maybe.map .seq
-                                        |> Maybe.withDefault cursor
-                            in
-                            if page.hasMore then
-                                pullAllPages ctx secret newCursor newAcc
+                else
+                    decryptServerEvents ctx.groupKey page.events
+                        |> ConcurrentTask.andThen
+                            (\decrypted ->
+                                let
+                                    newAcc : { events : List Event.Envelope, undecodable : Int }
+                                    newAcc =
+                                        { events = acc.events ++ decrypted.events
+                                        , undecodable = acc.undecodable + decrypted.undecodable
+                                        }
 
-                            else
-                                ConcurrentTask.succeed { events = newAcc.events, cursor = newCursor, undecodable = newAcc.undecodable }
-                        )
+                                    newCursor : Int
+                                    newCursor =
+                                        List.head (List.reverse page.events)
+                                            |> Maybe.map .seq
+                                            |> Maybe.withDefault cursor
+                                in
+                                if page.hasMore then
+                                    pullAllPages ctx secret allowReset newCursor newAcc
+
+                                else
+                                    ConcurrentTask.succeed { events = newAcc.events, cursor = newCursor, undecodable = newAcc.undecodable }
+                            )
             )
 
 
@@ -404,11 +414,12 @@ decryptServerEventBatch key record =
             ConcurrentTask.succeed { events = [], undecodable = 1 }
 
 
-pullPageDecoder : Decode.Decoder { events : List ServerEventRecord, hasMore : Bool }
+pullPageDecoder : Decode.Decoder { events : List ServerEventRecord, hasMore : Bool, resetCursor : Bool }
 pullPageDecoder =
-    Decode.map2 (\events hasMore -> { events = events, hasMore = hasMore })
+    Decode.map3 (\events hasMore resetCursor -> { events = events, hasMore = hasMore, resetCursor = resetCursor })
         (Decode.field "events" (Decode.list serverEventRecordDecoder))
         (Decode.field "hasMore" Decode.bool)
+        (Decode.oneOf [ Decode.field "resetCursor" Decode.bool, Decode.succeed False ])
 
 
 serverEventRecordDecoder : Decode.Decoder ServerEventRecord

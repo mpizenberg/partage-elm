@@ -166,6 +166,31 @@ export function conformanceSuite({ describe, it, makeApp }) {
       assert.equal(res.status, 413);
     });
 
+    it('asks for a cursor reset when since is beyond the group history', async () => {
+      const app = await makeApp();
+      const { groupId, secret } = await createGroup(app, { groupId: uid() });
+      const seq = (await (await pushEvent(app, groupId, secret)).json()).seq;
+      const pulled = await (await pullEvents(app, groupId, secret, seq + 10)).json();
+      assert.deepEqual(pulled, { events: [], hasMore: false, resetCursor: true });
+    });
+
+    it('asks for a cursor reset when the group has no events but since > 0', async () => {
+      const app = await makeApp();
+      const { groupId, secret } = await createGroup(app, { groupId: uid() });
+      const pulled = await (await pullEvents(app, groupId, secret, 5)).json();
+      assert.deepEqual(pulled, { events: [], hasMore: false, resetCursor: true });
+    });
+
+    it('omits resetCursor on an up-to-date pull', async () => {
+      const app = await makeApp();
+      const { groupId, secret } = await createGroup(app, { groupId: uid() });
+      const seq = (await (await pushEvent(app, groupId, secret)).json()).seq;
+      const atTip = await (await pullEvents(app, groupId, secret, seq)).json();
+      assert.deepEqual(atTip, { events: [], hasMore: false });
+      const fromZero = await (await pullEvents(app, groupId, secret, 0)).json();
+      assert.equal('resetCursor' in fromZero, false);
+    });
+
     it('rejects an invalid since cursor', async () => {
       const app = await makeApp();
       const { groupId, secret } = await createGroup(app, { groupId: uid() });

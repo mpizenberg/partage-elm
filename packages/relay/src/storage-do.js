@@ -80,5 +80,9 @@ export function createDoStorage(sql) {
           created: row.created,
         }));
     },
+
+    getMaxSeq(groupId) {
+      return sql.exec('SELECT MAX(seq) AS max_seq FROM events WHERE group_id = ?', groupId).one().max_seq ?? 0;
+    },
   };
 }
