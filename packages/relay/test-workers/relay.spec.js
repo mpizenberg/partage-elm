@@ -70,3 +70,27 @@ describe('worker inactivity retention', () => {
     assert.equal((await pullEvents(app, groupId, secret)).status, 200);
   });
 });
+
+describe('worker hardening', () => {
+  const create = (body) =>
+    SELF.fetch(`${BASE}/api/groups`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  it('rejects a malformed groupId on creation', async () => {
+    assert.equal((await create({ groupId: 'has/slash', createdBy: 'x', authVerifier: 'y' })).status, 400);
+  });
+
+  it('rejects a malformed groupId on an events request', async () => {
+    assert.equal((await pullEvents(app, 'x'.repeat(65), 'any')).status, 400);
+  });
+
+  it('rejects an unsolved creation without materializing the group', async () => {
+    // No pow_* fields: the Worker gate rejects before spending a Durable Object.
+    assert.equal((await create({ groupId: 'unsolved', createdBy: 'x', authVerifier: 'y' })).status, 400);
+    // The group was never created, so a subsequent pull 404s.
+    assert.equal((await pullEvents(app, 'unsolved', 'any')).status, 404);
+  });
+});

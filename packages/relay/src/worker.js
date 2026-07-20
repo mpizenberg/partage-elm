@@ -12,7 +12,17 @@
 import { DurableObject } from 'cloudflare:workers';
 import { createApp, verifyGroupSecret, RETENTION_MS } from './app.js';
 import { createDoStorage } from './storage-do.js';
-import { issueChallenge } from './pow.js';
+import { issueChallenge, verifySolution } from './pow.js';
+
+// Real groupIds are 15-char [a-z0-9] (Infra.IdGen), but the Worker only needs
+// to reject shapes that could never name a real group before spending a
+// Durable Object on them; a permissive URL-safe bound stays robust to any
+// future change in the client id format.
+const GROUP_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+function isValidGroupId(id) {
+  return typeof id === 'string' && GROUP_ID_PATTERN.test(id);
+}
 
 export class GroupDo extends DurableObject {
   constructor(ctx, env) {
@@ -83,6 +93,11 @@ export class GroupDo extends DurableObject {
 
 export default {
   async fetch(request, env) {
+    // A relay with no PoW secret would accept unsolved group creations and sign
+    // challenges with an empty key: fail loud rather than silently insecure.
+    if (!env.POW_SECRET) {
+      throw new Error('POW_SECRET is not configured');
+    }
     const url = new URL(request.url);
 
     if (url.pathname === '/api/pow/challenge') {
@@ -100,8 +115,15 @@ export default {
       } catch {
         return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
       }
-      if (typeof body.groupId !== 'string' || body.groupId === '') {
-        return Response.json({ error: 'groupId, createdBy and authVerifier are required' }, { status: 400 });
+      if (!isValidGroupId(body.groupId)) {
+        return Response.json({ error: 'Invalid groupId' }, { status: 400 });
+      }
+      // Gate on PoW here, in the stateless Worker, so an unsolved creation never
+      // materializes (and bills) a Durable Object. The DO re-checks for the
+      // self-host path, which has no Worker in front of it.
+      const powError = await verifySolution(env.POW_SECRET, body.groupId, body);
+      if (powError !== null) {
+        return Response.json({ error: powError }, { status: 400 });
       }
       return env.GROUP.getByName(body.groupId).fetch(
         new Request(request.url, {
@@ -114,6 +136,9 @@ export default {
 
     const groupMatch = url.pathname.match(/^\/api\/groups\/([^/]+)\//);
     if (groupMatch) {
+      if (!isValidGroupId(groupMatch[1])) {
+        return Response.json({ error: 'Invalid groupId' }, { status: 400 });
+      }
       return env.GROUP.getByName(groupMatch[1]).fetch(request);
     }
 
