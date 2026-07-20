@@ -19,6 +19,10 @@ import { issueChallenge, verifySolution, constantTimeEqual } from './pow.js';
 export const PULL_PAGE_SIZE = 200;
 const MAX_EVENT_DATA_BYTES = 1024 * 1024;
 const MAX_BODY_BYTES = MAX_EVENT_DATA_BYTES + 16 * 1024;
+// A compact request carries a whole consolidated history in one transaction.
+// Whole-log gzip compresses far better than per-record, so this bounds honest
+// groups comfortably while keeping the buffered body far below DO memory.
+const MAX_COMPACT_BODY_BYTES = 16 * 1024 * 1024;
 
 // A group idle (no authenticated request) longer than this is purged: the
 // clients hold the full log and re-push on their next sync (see the retention
@@ -69,6 +73,16 @@ export async function verifyGroupSecret(storage, groupId, secret) {
  *     that record's seq is returned and nothing is inserted (idempotent push).
  *     A re-push of a counted record is always 'ok'; only genuinely new records
  *     are checked against `limits` and add to the group's counters.
+ * - compact(groupId, uptoSeq, records, created, limits)
+ *     → {status: 'ok', maxSeq} | {status: 'stale'} | {status: 'quota'}
+ *       | {status: 'rate', retryAfterMs}
+ *     In one transaction: deletes records with seq ≤ uptoSeq and appends
+ *     `records` at fresh higher seqs, skipping ones whose recordId already
+ *     survives above the boundary. 'stale' when uptoSeq exceeds the max seq
+ *     or covers no records (a lost compaction race). Accounted net against
+ *     `limits`: the rate window only pays for growth, never gets refunds.
+ * - getGroupStats(groupId)
+ *     → {recordCount, totalBytes, bytesThisWindow, windowStart} | null
  * - listEventsSince(groupId, sinceSeq, limit)
  *     → [{seq, actorId, eventData, compressed, created}]
  * - getMaxSeq(groupId) → number (0 when the group has no events)
@@ -137,7 +151,10 @@ export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT
     return c.json({}, 201);
   });
 
-  app.use('/api/groups/:id/events', async (c, next) => {
+  // Not a '/api/groups/:id/*' wildcard: the Node adapter mounts its WebSocket
+  // route on the same app, and WS auth is query-parameter-based (browsers
+  // cannot set headers there) and must never renew last_access.
+  const groupAuth = async (c, next) => {
     const auth = c.req.header('Authorization') ?? '';
     if (!auth.startsWith('Bearer ')) {
       return c.json({ error: 'Missing bearer token' }, 401);
@@ -156,7 +173,9 @@ export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT
       new Date(now - ACCESS_TOUCH_INTERVAL_MS).toISOString(),
     );
     await next();
-  });
+  };
+  app.use('/api/groups/:id/events', groupAuth);
+  app.use('/api/groups/:id/compact', groupAuth);
 
   app.get('/api/groups/:id/events', async (c) => {
     const sinceRaw = c.req.query('since') ?? '0';
@@ -166,16 +185,20 @@ export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT
     }
     const rows = await storage.listEventsSince(c.req.param('id'), since, PULL_PAGE_SIZE + 1);
     const hasMore = rows.length > PULL_PAGE_SIZE;
+    // The group's total record count rides along so clients can tell when the
+    // relay holds far more records than a consolidated history would need —
+    // the trigger heuristic for proposing a compaction.
+    const recordCount = (await storage.getGroupStats(c.req.param('id')))?.recordCount ?? 0;
     if (rows.length === 0 && since > 0) {
       // A cursor beyond the group's history means the server lost events the
       // client has seen (purge, compaction, resurrection): tell the client to
       // restart its pull from 0 instead of silently reporting "up to date".
       const maxSeq = await storage.getMaxSeq(c.req.param('id'));
       if (since > maxSeq) {
-        return c.json({ events: [], hasMore: false, resetCursor: true });
+        return c.json({ events: [], hasMore: false, recordCount, resetCursor: true });
       }
     }
-    return c.json({ events: hasMore ? rows.slice(0, PULL_PAGE_SIZE) : rows, hasMore });
+    return c.json({ events: hasMore ? rows.slice(0, PULL_PAGE_SIZE) : rows, hasMore, recordCount });
   });
 
   app.post('/api/groups/:id/events', bodyLimit({ maxSize: MAX_BODY_BYTES }), async (c) => {
@@ -225,6 +248,67 @@ export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT
     }
     onAppend?.(groupId, result.seq);
     return c.json({ seq: result.seq }, 201);
+  });
+
+  app.post('/api/groups/:id/compact', bodyLimit({ maxSize: MAX_COMPACT_BODY_BYTES }), async (c) => {
+    let body;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    const { uptoSeq, records } = body;
+    if (!Number.isInteger(uptoSeq) || uptoSeq <= 0 || !Array.isArray(records) || records.length === 0) {
+      return c.json({ error: 'uptoSeq and a non-empty records array are required' }, 400);
+    }
+    for (const record of records) {
+      if (
+        typeof record?.actorId !== 'string' ||
+        typeof record?.eventData !== 'string' ||
+        typeof record?.compressed !== 'boolean' ||
+        record.actorId === '' ||
+        record.eventData === ''
+      ) {
+        return c.json({ error: 'each record requires actorId, eventData and compressed' }, 400);
+      }
+      if (
+        record.recordId !== undefined &&
+        (typeof record.recordId !== 'string' || record.recordId === '' || record.recordId.length > 200)
+      ) {
+        return c.json({ error: 'Invalid recordId' }, 400);
+      }
+      if (record.eventData.length > MAX_EVENT_DATA_BYTES) {
+        return c.json({ error: 'eventData exceeds 1 MB limit' }, 413);
+      }
+    }
+
+    const groupId = c.req.param('id');
+    const result = await storage.compact(
+      groupId,
+      uptoSeq,
+      records.map((record) => ({
+        recordId: record.recordId ?? null,
+        actorId: record.actorId,
+        eventData: record.eventData,
+        compressed: record.compressed,
+      })),
+      new Date().toISOString(),
+      appendLimits,
+    );
+    if (result.status === 'stale') {
+      return c.json({ error: 'uptoSeq no longer matches the group history' }, 409);
+    }
+    if (result.status === 'quota') {
+      return c.json({ error: 'Group storage quota exceeded — compact or export' }, 507);
+    }
+    if (result.status === 'rate') {
+      return c.json({ error: 'Group data rate limit exceeded' }, 429, {
+        'Retry-After': String(Math.ceil(result.retryAfterMs / 1000)),
+      });
+    }
+    onAppend?.(groupId, result.maxSeq);
+    return c.json({ maxSeq: result.maxSeq });
   });
 
   return app;

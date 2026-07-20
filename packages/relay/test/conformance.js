@@ -7,7 +7,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { createGroup, pushEvent, pullEvents, solvedPow, sha256Base64Url } from './protocol-helpers.js';
+import { createGroup, pushEvent, pullEvents, compactGroup, record, solvedPow, sha256Base64Url } from './protocol-helpers.js';
 
 export function conformanceSuite({ describe, it, makeApp }) {
   // The worker runner shares one live instance across the whole suite (no
@@ -207,14 +207,14 @@ export function conformanceSuite({ describe, it, makeApp }) {
       const { groupId, secret } = await createGroup(app, { groupId: uid() });
       const seq = (await (await pushEvent(app, groupId, secret)).json()).seq;
       const pulled = await (await pullEvents(app, groupId, secret, seq + 10)).json();
-      assert.deepEqual(pulled, { events: [], hasMore: false, resetCursor: true });
+      assert.deepEqual(pulled, { events: [], hasMore: false, recordCount: 1, resetCursor: true });
     });
 
     it('asks for a cursor reset when the group has no events but since > 0', async () => {
       const app = await makeApp();
       const { groupId, secret } = await createGroup(app, { groupId: uid() });
       const pulled = await (await pullEvents(app, groupId, secret, 5)).json();
-      assert.deepEqual(pulled, { events: [], hasMore: false, resetCursor: true });
+      assert.deepEqual(pulled, { events: [], hasMore: false, recordCount: 0, resetCursor: true });
     });
 
     it('omits resetCursor on an up-to-date pull', async () => {
@@ -222,7 +222,7 @@ export function conformanceSuite({ describe, it, makeApp }) {
       const { groupId, secret } = await createGroup(app, { groupId: uid() });
       const seq = (await (await pushEvent(app, groupId, secret)).json()).seq;
       const atTip = await (await pullEvents(app, groupId, secret, seq)).json();
-      assert.deepEqual(atTip, { events: [], hasMore: false });
+      assert.deepEqual(atTip, { events: [], hasMore: false, recordCount: 1 });
       const fromZero = await (await pullEvents(app, groupId, secret, 0)).json();
       assert.equal('resetCursor' in fromZero, false);
     });
@@ -241,6 +241,122 @@ export function conformanceSuite({ describe, it, makeApp }) {
       const pulled = await (await pullEvents(app, groupId, secret)).json();
       assert.equal(pulled.events[0].actorId, 'alice-hash');
       assert.equal(pulled.events[0].compressed, true);
+    });
+  });
+
+  describe('compaction', () => {
+    async function seed(app, count, secret, groupId) {
+      const seqs = [];
+      for (let i = 1; i <= count; i++) {
+        const res = await pushEvent(app, groupId, secret, { eventData: `blob-${i}`, recordId: `r${i}` });
+        seqs.push((await res.json()).seq);
+      }
+      return seqs;
+    }
+
+    it('replaces records up to the boundary with the uploaded ones at higher seqs', async () => {
+      const app = await makeApp();
+      const { groupId, secret } = await createGroup(app, { groupId: uid() });
+      const seqs = await seed(app, 3, secret, groupId);
+
+      const res = await compactGroup(app, groupId, secret, seqs[2], [
+        record('consolidated-1-2', { recordId: 'c1' }),
+        record('consolidated-3', { recordId: 'c2' }),
+      ]);
+      assert.equal(res.status, 200);
+      const { maxSeq } = await res.json();
+      assert.ok(maxSeq > seqs[2]);
+
+      const pulled = await (await pullEvents(app, groupId, secret)).json();
+      assert.equal(pulled.recordCount, 2);
+      assert.deepEqual(
+        pulled.events.map((e) => e.eventData),
+        ['consolidated-1-2', 'consolidated-3'],
+      );
+      assert.ok(pulled.events.every((e) => e.seq > seqs[2]));
+    });
+
+    it('leaves records beyond the boundary untouched', async () => {
+      const app = await makeApp();
+      const { groupId, secret } = await createGroup(app, { groupId: uid() });
+      const seqs = await seed(app, 3, secret, groupId);
+
+      const res = await compactGroup(app, groupId, secret, seqs[1], [record('consolidated-1-2')]);
+      assert.equal(res.status, 200);
+
+      const pulled = await (await pullEvents(app, groupId, secret)).json();
+      assert.deepEqual(
+        pulled.events.map((e) => e.eventData),
+        ['blob-3', 'consolidated-1-2'],
+      );
+    });
+
+    it('an old cursor keeps working after a compaction', async () => {
+      const app = await makeApp();
+      const { groupId, secret } = await createGroup(app, { groupId: uid() });
+      const seqs = await seed(app, 3, secret, groupId);
+      await compactGroup(app, groupId, secret, seqs[2], [record('consolidated')]);
+
+      const pulled = await (await pullEvents(app, groupId, secret, seqs[0])).json();
+      assert.equal('resetCursor' in pulled, false);
+      assert.deepEqual(pulled.events.map((e) => e.eventData), ['consolidated']);
+    });
+
+    it('rejects a boundary beyond the history with 409', async () => {
+      const app = await makeApp();
+      const { groupId, secret } = await createGroup(app, { groupId: uid() });
+      const seqs = await seed(app, 1, secret, groupId);
+      const res = await compactGroup(app, groupId, secret, seqs[0] + 10, [record('consolidated')]);
+      assert.equal(res.status, 409);
+    });
+
+    it('rejects a lost compaction race with 409', async () => {
+      const app = await makeApp();
+      const { groupId, secret } = await createGroup(app, { groupId: uid() });
+      const seqs = await seed(app, 2, secret, groupId);
+      assert.equal((await compactGroup(app, groupId, secret, seqs[1], [record('winner')])).status, 200);
+      // The loser's boundary now covers only deleted rows.
+      const res = await compactGroup(app, groupId, secret, seqs[1], [record('loser')]);
+      assert.equal(res.status, 409);
+      const pulled = await (await pullEvents(app, groupId, secret)).json();
+      assert.deepEqual(pulled.events.map((e) => e.eventData), ['winner']);
+    });
+
+    it('skips an uploaded record whose recordId survives above the boundary', async () => {
+      const app = await makeApp();
+      const { groupId, secret } = await createGroup(app, { groupId: uid() });
+      const seqs = await seed(app, 2, secret, groupId);
+
+      const res = await compactGroup(app, groupId, secret, seqs[0], [
+        record('duplicate-of-2', { recordId: 'r2' }),
+        record('consolidated-1', { recordId: 'c1' }),
+      ]);
+      assert.equal(res.status, 200);
+      const pulled = await (await pullEvents(app, groupId, secret)).json();
+      assert.deepEqual(
+        pulled.events.map((e) => e.eventData),
+        ['blob-2', 'consolidated-1'],
+      );
+    });
+
+    it('requires authentication', async () => {
+      const app = await makeApp();
+      const { groupId } = await createGroup(app, { groupId: uid() });
+      const res = await compactGroup(app, groupId, 'wrong-secret', 1, [record('x')]);
+      assert.equal(res.status, 401);
+    });
+
+    it('rejects a malformed body', async () => {
+      const app = await makeApp();
+      const { groupId, secret } = await createGroup(app, { groupId: uid() });
+      await seed(app, 1, secret, groupId);
+      assert.equal((await compactGroup(app, groupId, secret, 0, [record('x')])).status, 400);
+      assert.equal((await compactGroup(app, groupId, secret, 1, [])).status, 400);
+      assert.equal((await compactGroup(app, groupId, secret, 1, [{ eventData: 'x' }])).status, 400);
+      assert.equal(
+        (await compactGroup(app, groupId, secret, 1, [record('x'.repeat(1024 * 1024 + 1))])).status,
+        413,
+      );
     });
   });
 }

@@ -4,7 +4,7 @@
  */
 
 import { DatabaseSync } from 'node:sqlite';
-import { planAppend } from './quota.js';
+import { planChange } from './quota.js';
 
 export function openStorage(path) {
   const db = new DatabaseSync(path);
@@ -77,9 +77,16 @@ export function openStorage(path) {
     'SELECT record_count, total_bytes, bytes_this_window, window_start FROM groups WHERE id = ?',
   );
   const updateStats = db.prepare(
-    'UPDATE groups SET record_count = record_count + 1, total_bytes = total_bytes + ?, window_start = ?, bytes_this_window = ? WHERE id = ?',
+    'UPDATE groups SET record_count = record_count + ?, total_bytes = total_bytes + ?, window_start = ?, bytes_this_window = ? WHERE id = ?',
   );
   const selectSeqByRecordId = db.prepare('SELECT seq FROM events WHERE group_id = ? AND record_id = ?');
+  const selectSurvivorByRecordId = db.prepare(
+    'SELECT seq FROM events WHERE group_id = ? AND record_id = ? AND seq > ?',
+  );
+  const selectDeletable = db.prepare(
+    'SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(data)), 0) AS bytes FROM events WHERE group_id = ? AND seq <= ?',
+  );
+  const deleteUpTo = db.prepare('DELETE FROM events WHERE group_id = ? AND seq <= ?');
   const selectEvents = db.prepare(
     'SELECT seq, actor_id, data, compressed, created FROM events WHERE group_id = ? AND seq > ? ORDER BY seq LIMIT ?',
   );
@@ -141,13 +148,52 @@ export function openStorage(path) {
         }
       }
       const size = eventData.length;
-      const plan = planAppend(selectStats.get(groupId), size, created, limits);
+      const plan = planChange(selectStats.get(groupId), { records: 1, bytes: size }, created, limits);
       if (plan.rejection) {
         return plan.rejection;
       }
       const result = insertEvent.run(groupId, recordId, actorId, eventData, compressed ? 1 : 0, created);
-      updateStats.run(size, plan.windowStart, plan.bytesThisWindow, groupId);
+      updateStats.run(1, size, plan.windowStart, plan.bytesThisWindow, groupId);
       return { status: 'ok', seq: Number(result.lastInsertRowid) };
+    },
+
+    compact(groupId, uptoSeq, records, created, limits) {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const maxSeq = selectMaxSeq.get(groupId).max_seq ?? 0;
+        const deletable = selectDeletable.get(groupId, uptoSeq);
+        // A boundary beyond the history, or one whose records are already
+        // gone, means this compactor lost a race (or retries a compaction
+        // that already succeeded): reject rather than delete blind.
+        if (uptoSeq > maxSeq || deletable.n === 0) {
+          db.exec('ROLLBACK');
+          return { status: 'stale' };
+        }
+        // A record whose recordId survives above the boundary already holds
+        // the same content (ids are content-derived): skip, don't duplicate.
+        const fresh = records.filter(
+          (record) =>
+            record.recordId === null || selectSurvivorByRecordId.get(groupId, record.recordId, uptoSeq) === undefined,
+        );
+        const recordDelta = fresh.length - deletable.n;
+        const byteDelta = fresh.reduce((sum, record) => sum + record.eventData.length, 0) - deletable.bytes;
+        const plan = planChange(selectStats.get(groupId), { records: recordDelta, bytes: byteDelta }, created, limits);
+        if (plan.rejection) {
+          db.exec('ROLLBACK');
+          return plan.rejection;
+        }
+        deleteUpTo.run(groupId, uptoSeq);
+        for (const record of fresh) {
+          insertEvent.run(groupId, record.recordId, record.actorId, record.eventData, record.compressed ? 1 : 0, created);
+        }
+        updateStats.run(recordDelta, byteDelta, plan.windowStart, plan.bytesThisWindow, groupId);
+        const newMaxSeq = selectMaxSeq.get(groupId).max_seq ?? 0;
+        db.exec('COMMIT');
+        return { status: 'ok', maxSeq: newMaxSeq };
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
     },
 
     listEventsSince(groupId, sinceSeq, limit) {

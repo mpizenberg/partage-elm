@@ -8,15 +8,18 @@
  */
 
 /**
- * Decide whether a `size`-byte append is allowed and, if so, the window
- * counters to persist alongside the insert. Returns either
+ * Decide whether a change of `records` records and `bytes` bytes (both may be
+ * negative — compaction is accounted net) is allowed and, if so, the window
+ * counters to persist alongside it. Only growth spends the rate window: the
+ * spend is floored at zero, never refunded. Returns either
  * `{ rejection: {status: 'quota'} | {status: 'rate', retryAfterMs} }` or
  * `{ windowStart, bytesThisWindow }` (the roll-forward values to write).
  */
-export function planAppend(stats, size, created, limits) {
-  if (stats.record_count + 1 > limits.maxRecords || stats.total_bytes + size > limits.maxTotalBytes) {
+export function planChange(stats, { records, bytes }, created, limits) {
+  if (stats.record_count + records > limits.maxRecords || stats.total_bytes + bytes > limits.maxTotalBytes) {
     return { rejection: { status: 'quota' } };
   }
+  const spend = Math.max(0, bytes);
   const nowMs = Date.parse(created);
   const windowStartMs = Date.parse(stats.window_start);
   // A window older than the period resets: the group only spends against the
@@ -24,8 +27,8 @@ export function planAppend(stats, size, created, limits) {
   const rolled = nowMs - windowStartMs >= limits.windowMs;
   const windowStart = rolled ? created : stats.window_start;
   const bytesBefore = rolled ? 0 : stats.bytes_this_window;
-  if (bytesBefore + size > limits.rateBytes) {
-    return { rejection: { status: 'rate', retryAfterMs: windowStartMs + limits.windowMs - nowMs } };
+  if (bytesBefore + spend > limits.rateBytes) {
+    return { rejection: { status: 'rate', retryAfterMs: Math.max(0, windowStartMs + limits.windowMs - nowMs) } };
   }
-  return { windowStart, bytesThisWindow: bytesBefore + size };
+  return { windowStart, bytesThisWindow: bytesBefore + spend };
 }

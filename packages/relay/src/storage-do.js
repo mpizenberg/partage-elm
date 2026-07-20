@@ -4,7 +4,7 @@
  * interchangeable; the group_id column simply always holds the DO's one group.
  */
 
-import { planAppend } from './quota.js';
+import { planChange } from './quota.js';
 
 export function createDoStorage(sql) {
   sql.exec(`
@@ -133,7 +133,7 @@ export function createDoStorage(sql) {
       const stats = sql
         .exec('SELECT record_count, total_bytes, bytes_this_window, window_start FROM groups WHERE id = ?', groupId)
         .one();
-      const plan = planAppend(stats, size, created, limits);
+      const plan = planChange(stats, { records: 1, bytes: size }, created, limits);
       if (plan.rejection) {
         return plan.rejection;
       }
@@ -149,13 +149,83 @@ export function createDoStorage(sql) {
         )
         .one().seq;
       sql.exec(
-        'UPDATE groups SET record_count = record_count + 1, total_bytes = total_bytes + ?, window_start = ?, bytes_this_window = ? WHERE id = ?',
+        'UPDATE groups SET record_count = record_count + ?, total_bytes = total_bytes + ?, window_start = ?, bytes_this_window = ? WHERE id = ?',
+        1,
         size,
         plan.windowStart,
         plan.bytesThisWindow,
         groupId,
       );
       return { status: 'ok', seq };
+    },
+
+    // All checks run before the first write, and the method is synchronous
+    // start to finish: in a SQLite-backed DO every write of the same
+    // event-loop task commits as one atomic batch, so the delete + inserts +
+    // counter update can never be observed (or survive a crash) partially
+    // applied.
+    compact(groupId, uptoSeq, records, created, limits) {
+      const maxSeq = sql.exec('SELECT MAX(seq) AS max_seq FROM events WHERE group_id = ?', groupId).one().max_seq ?? 0;
+      const deletable = sql
+        .exec(
+          'SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(data)), 0) AS bytes FROM events WHERE group_id = ? AND seq <= ?',
+          groupId,
+          uptoSeq,
+        )
+        .one();
+      // A boundary beyond the history, or one whose records are already
+      // gone, means this compactor lost a race (or retries a compaction
+      // that already succeeded): reject rather than delete blind.
+      if (uptoSeq > maxSeq || deletable.n === 0) {
+        return { status: 'stale' };
+      }
+      // A record whose recordId survives above the boundary already holds
+      // the same content (ids are content-derived): skip, don't duplicate.
+      const fresh = records.filter(
+        (record) =>
+          record.recordId === null ||
+          sql
+            .exec(
+              'SELECT seq FROM events WHERE group_id = ? AND record_id = ? AND seq > ?',
+              groupId,
+              record.recordId,
+              uptoSeq,
+            )
+            .toArray().length === 0,
+      );
+      const recordDelta = fresh.length - deletable.n;
+      const byteDelta = fresh.reduce((sum, record) => sum + record.eventData.length, 0) - deletable.bytes;
+      const stats = sql
+        .exec('SELECT record_count, total_bytes, bytes_this_window, window_start FROM groups WHERE id = ?', groupId)
+        .one();
+      const plan = planChange(stats, { records: recordDelta, bytes: byteDelta }, created, limits);
+      if (plan.rejection) {
+        return plan.rejection;
+      }
+      sql.exec('DELETE FROM events WHERE group_id = ? AND seq <= ?', groupId, uptoSeq);
+      for (const record of fresh) {
+        sql.exec(
+          'INSERT INTO events (group_id, record_id, actor_id, data, compressed, created) VALUES (?, ?, ?, ?, ?, ?)',
+          groupId,
+          record.recordId,
+          record.actorId,
+          record.eventData,
+          record.compressed ? 1 : 0,
+          created,
+        );
+      }
+      sql.exec(
+        'UPDATE groups SET record_count = record_count + ?, total_bytes = total_bytes + ?, window_start = ?, bytes_this_window = ? WHERE id = ?',
+        recordDelta,
+        byteDelta,
+        plan.windowStart,
+        plan.bytesThisWindow,
+        groupId,
+      );
+      return {
+        status: 'ok',
+        maxSeq: sql.exec('SELECT MAX(seq) AS max_seq FROM events WHERE group_id = ?', groupId).one().max_seq ?? 0,
+      };
     },
 
     listEventsSince(groupId, sinceSeq, limit) {

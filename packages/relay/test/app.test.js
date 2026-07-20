@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { conformanceSuite } from './conformance.js';
-import { makeApp, createGroup, pushEvent, pullEvents } from './helpers.js';
+import { makeApp, createGroup, pushEvent, pullEvents, compactGroup, record } from './helpers.js';
 
 const GENEROUS = { maxRecords: 50000, maxTotalBytes: 50 * 1024 * 1024, rateBytes: 10 * 1024 * 1024, windowMs: 1000 };
 
@@ -97,5 +97,43 @@ describe('storage limits', () => {
     const res = await pushEvent(app, groupId, secret, { eventData: 'more-bytes' });
     assert.equal(res.status, 429);
     assert.ok(Number(res.headers.get('Retry-After')) > 0);
+  });
+
+  it('a shrinking compaction updates the exact counters and spends no rate budget', async () => {
+    const { app, storage } = makeApp({ appendLimits: GENEROUS });
+    const { groupId, secret } = await createGroup(app);
+    let lastSeq = 0;
+    for (let i = 1; i <= 3; i++) {
+      lastSeq = (await (await pushEvent(app, groupId, secret, { eventData: '0123456789', recordId: `r${i}` })).json())
+        .seq;
+    }
+    assert.equal(storage.getGroupStats(groupId).bytesThisWindow, 30);
+
+    const res = await compactGroup(app, groupId, secret, lastSeq, [record('consolidated', { recordId: 'c1' })]);
+    assert.equal(res.status, 200);
+    const stats = storage.getGroupStats(groupId);
+    assert.equal(stats.recordCount, 1);
+    assert.equal(stats.totalBytes, 'consolidated'.length);
+    assert.equal(stats.bytesThisWindow, 30);
+  });
+
+  it('a growing compaction pays its net bytes against the rate cap', async () => {
+    const { app } = makeApp({ appendLimits: { ...GENEROUS, rateBytes: 25, windowMs: 60 * 60 * 1000 } });
+    const { groupId, secret } = await createGroup(app);
+    const seq = (await (await pushEvent(app, groupId, secret, { eventData: '0123456789' })).json()).seq;
+    // Net growth of 20 bytes on top of the 10 already spent exceeds 25.
+    const res = await compactGroup(app, groupId, secret, seq, [record('0123456789012345678901234567890')]);
+    assert.equal(res.status, 429);
+    // The rejected compaction changed nothing.
+    const pulled = await (await pullEvents(app, groupId, secret)).json();
+    assert.deepEqual(pulled.events.map((e) => e.eventData), ['0123456789']);
+  });
+
+  it('a compaction that would overflow the byte quota is rejected with 507', async () => {
+    const { app } = makeApp({ appendLimits: { ...GENEROUS, maxTotalBytes: 15 } });
+    const { groupId, secret } = await createGroup(app);
+    const seq = (await (await pushEvent(app, groupId, secret, { eventData: '0123456789' })).json()).seq;
+    const res = await compactGroup(app, groupId, secret, seq, [record('0123456789012345678901234567890')]);
+    assert.equal(res.status, 507);
   });
 });
