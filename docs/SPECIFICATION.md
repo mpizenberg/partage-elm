@@ -873,7 +873,7 @@ When new events arrive via sync, a **full replay** from scratch is not always ne
 
 In practice, late arrivals involving lifecycle conflicts are extremely rare (they require two users to retire/unretire the same member within a short offline window). The vast majority of syncs hit the fast path.
 
-**Computed state caching (planned, not implemented):** opening a group today always replays the full event log from scratch. A persisted materialized-state cache — keyed by a log fingerprint, falling back to full replay on any mismatch — is planned, pending measurement that replay time warrants it.
+**Computed state caching (not implemented):** opening a group always replays the full event log from scratch. On-device measurement at 10k–50k events showed replay stays within interactive budget, so a persisted materialized-state cache is not warranted; the dominant open cost is the once-per-join signature verification, not replay. A cache — keyed by a log fingerprint, falling back to full replay on any mismatch — remains a possible optimization only if replay time ever regresses.
 
 ### 14.7 Connectivity Indicators
 
