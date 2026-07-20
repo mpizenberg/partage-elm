@@ -20,7 +20,8 @@ and compaction designs.
   _consensus-gated via multi-signed events_, or at worst _detectable
   and healable_ by honest members' full replicas. This kills the
   member-triggered delete route and adds a signature quorum to
-  compaction.
+  compaction. Detection gets a user-facing stage, and the endgame for a
+  confirmed compromise is **migration to a fresh group with a new key**.
 - The only lever that caps growth for long-lived active groups is
   **compaction**. A _state-snapshot_ scheme would be breaking and
   trust-damaging — rejected. A _log-consolidation_ scheme (re-batch raw
@@ -154,6 +155,25 @@ enforcement ladder, best first:
 - _Joining is the weak moment._ A new joiner has no prior replica to
   compare against, so truncation is invisible to them. Their trust
   anchor must ride the invite link (§5.2).
+- _Detection is silent and compromise has no exit._ Closed by
+  surface-and-migrate, below.
+
+**Respond: surface and migrate.** Today the client silently drops
+forged envelopes and would silently heal truncation — correct behavior,
+but the user never learns their group is under attack. Each detection
+signal — envelopes rejected by signature verification, an unexpected
+`resetCursor` (§4.4), a compaction-manifest mismatch (§5.2), an
+abnormal data-rate burst (§4.5) — should feed a per-group tamper
+indicator surfaced in the UI. And because read access is unpreventable
+and keys never rotate, the endgame for a confirmed compromise is
+**migration**: create a fresh group with a new key, seed it from the
+local verified history, and re-invite members out-of-band; the old
+group is abandoned to the TTL (§4.3). The existing export→import path
+(which re-verifies every event) does most of the work. Seeding the new
+group from a state snapshot is acceptable here despite §5.1's
+rejection: a migration is a new group, human-initiated, with membership
+re-established out-of-band — none of the trust properties §5.1 protects
+are at stake.
 
 ## 4. Server: cheap, non-breaking measures
 
@@ -237,7 +257,7 @@ client (the merge never deletes), so neither a malicious member nor a
 malicious relay can use a forged `resetCursor` to make clients lose
 data — the worst case is a redundant re-pull.
 
-### 4.5 Per-group quota
+### 4.5 Per-group quota and monthly rate limit
 
 Maintain `record_count` and `total_bytes` on the groups row (updated on
 append/compact — no `SUM` scans). Reject appends over a generous cap
@@ -248,8 +268,24 @@ to bound abuse. Complements the S3 relay-hardening items (PoW checked
 in the worker before DO materialization, groupId shape validation,
 throw on missing `POW_SECRET`).
 
-§3 residual, accepted: a compromised member can fill the quota to block
-honest appends — denial of service, not destruction. Spam is either
+Add a second, time-based cap: **at most ~10 MB of new data per group
+per month**. The absolute quota bounds total damage; the rate cap
+bounds damage _speed_ — a compromised member can no longer fill a group
+to its quota in one session, buying months of detection time (§3) at
+zero cost to honest use, which sits orders of magnitude below the cap
+(§2). Tracking is one `bytes_this_window, window_start` pair on the
+groups row. The compact route (§5.2) must be accounted **net** — bytes
+inserted minus bytes deleted, floored at zero — not exempted: an
+exemption would let a spammer tunnel unlimited data through compact
+calls with a tiny `uptoSeq`, while net accounting makes legitimate
+consolidation free (it is net-negative) and gives spam nothing. Heal
+re-pushes (§4.4) fit comfortably: a full realistic history is well
+under one month's allowance. Over-limit appends get their own error
+code with a retry-after hint.
+
+§3 residual, accepted: a compromised member can still fill the quota to
+block honest appends — denial of service, not destruction — though the
+rate cap stretches this over months. Spam is either
 attributable (validly signed events name their author) or inert
 (undecryptable/unverifiable records are dropped by every client and,
 being absent from verified local logs, are squeezed out by the next
@@ -398,7 +434,11 @@ is evictable:
   the browser may silently wipe IndexedDB — combined with a server TTL
   purge, that is real data loss; combined with §3, fewer replicas means
   weaker healing. Request persistence at first group creation/join;
-  surface the denied case in the About/usage screen.
+  surface the denied case in the About/usage screen. Implementation
+  rides the existing app-glue task pattern
+  (`usageStats:estimateStorage`, `public/index.js:155`) — a sibling
+  handler calling `navigator.storage.persist()`/`persisted()`; the
+  vendored `elm-indexeddb` package itself needs no change.
 - **Export is the offline backup** and already exists; once a retention
   policy is announced (§4.3), nudge archival exports for long-idle
   groups ("this group hasn't synced in 10 months — download a backup").
@@ -457,7 +497,7 @@ it.
   was considered and rejected as not worth a second wire format at
   these sizes.
 
-## 8. Measure before optimizing
+## 8. Measure before optimizing — the diagnostics page
 
 All client timing figures above are estimates. Before implementing
 §7.1: generate a synthetic 10k–50k event group (a small script through
@@ -465,6 +505,26 @@ the existing event codecs), and time (a) IDB load, (b) decode, (c)
 sort+replay, (d) join verify, on a mid-range phone. This decides
 whether the state cache is a launch-window task or a someday task, and
 gives the §4.5 quota numbers an empirical basis.
+
+The natural home for these measurements is a **hidden diagnostics
+page**, enabled by a dev-mode toggle in settings, for developers and
+power users alike. Only the client can compute any of it — the relay
+sees ciphertext. Per group:
+
+- event count and per-type histogram;
+- average/median plaintext envelope size, and plaintext vs. stored
+  size;
+- compression potential: re-compress the whole log with
+  `CompressionStream` and compare against the sum of per-record sizes —
+  this measures exactly what consolidation (§5.2) would reclaim;
+- sync cursor, unpushed count, and server `recordCount` from the pull
+  metadata (§5.2);
+- `navigator.storage.estimate()` and persistence status (§6);
+- a timed full replay (the §7.1 benchmark, live).
+
+Read-only, so cheap and safe. It doubles as the surface where a power
+user notices bloat and triggers a compaction proposal, and where §3's
+tamper indicator gets its detailed view.
 
 ## 9. Recommended sequence
 
@@ -476,15 +536,26 @@ Pre-launch (small, and they gate everything else):
    client side: deployed parsers must tolerate the attestation before
    it can ever be sent.
 3. **§4.1 idempotent append** — also closes finding 11's storage leak.
-4. **Spec updates**: the §3 threat model and enforcement ladder,
-   retention-policy contract (§4.3), compaction design with quorum rule
-   and manifest canonical form (§5.2), fix or implement §14.6's
-   state-cache claim.
+4. **Spec updates**: the §3 threat model, enforcement ladder, and
+   migration endgame; retention-policy contract (§4.3); quota and
+   monthly rate limit (§4.5); compaction design with quorum rule and
+   manifest canonical form (§5.2); fix or implement §14.6's state-cache
+   claim.
 5. **§6 `navigator.storage.persist()`** — one small JS + UX change.
 
-Post-launch, safe at any time, in value order: 6. §4.3 TTL purge + resurrection flow. 7. §4.4 heal re-push (diff local log vs. relay on reset). 8. §4.5 quota enforcement (+ S3 relay hardening batch). 9. §5.2 consensus consolidation: proposal/approval events, auto-sign on
-sync, compact route, joiner manifest verification, invite
-attestation. 10. §7.1 client state cache, informed by §8 measurements.
+Post-launch, safe at any time, in value order:
+
+6. **§8 diagnostics page** — first, because it is the measurement
+   instrument for everything below.
+7. §4.3 TTL purge + resurrection flow.
+8. §4.4 heal re-push (diff local log vs. relay on reset).
+9. §4.5 quota + monthly rate limit (+ S3 relay hardening batch).
+10. §5.2 consensus consolidation: proposal/approval events, auto-sign
+    on sync, compact route (net-accounted per §4.5), joiner manifest
+    verification, invite attestation.
+11. §3 compromise surfacing + migration flow — early signals (rejected
+    envelopes) can ship any time; the full signal set lands with 8–10.
+12. §7.1 client state cache, informed by §8 measurements.
 
 Explicitly rejected: state snapshots (§5.1), a member-triggered delete
 route (§4.2), per-member server identities (§3 — membership-metadata
