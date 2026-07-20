@@ -166,6 +166,42 @@ export function conformanceSuite({ describe, it, makeApp }) {
       assert.equal(res.status, 413);
     });
 
+    it('replaying a recordId returns the original seq without inserting', async () => {
+      const app = await makeApp();
+      const { groupId, secret } = await createGroup(app, { groupId: uid() });
+      const first = await (await pushEvent(app, groupId, secret, { recordId: 'batch-1' })).json();
+      const replay = await (
+        await pushEvent(app, groupId, secret, { recordId: 'batch-1', eventData: 'other-blob' })
+      ).json();
+      assert.equal(replay.seq, first.seq);
+      const pulled = await (await pullEvents(app, groupId, secret)).json();
+      assert.equal(pulled.events.length, 1);
+    });
+
+    it('scopes recordId dedup to the group and skips it when absent', async () => {
+      const app = await makeApp();
+      const a = await createGroup(app, { groupId: uid() });
+      const b = await createGroup(app, { groupId: uid() });
+      await pushEvent(app, a.groupId, a.secret, { recordId: 'shared' });
+      await pushEvent(app, b.groupId, b.secret, { recordId: 'shared' });
+      const pulledB = await (await pullEvents(app, b.groupId, b.secret)).json();
+      assert.equal(pulledB.events.length, 1);
+
+      await pushEvent(app, a.groupId, a.secret, {});
+      await pushEvent(app, a.groupId, a.secret, {});
+      const pulledA = await (await pullEvents(app, a.groupId, a.secret)).json();
+      assert.equal(pulledA.events.length, 3);
+    });
+
+    it('rejects a malformed recordId', async () => {
+      const app = await makeApp();
+      const { groupId, secret } = await createGroup(app, { groupId: uid() });
+      const empty = await pushEvent(app, groupId, secret, { recordId: '' });
+      assert.equal(empty.status, 400);
+      const long = await pushEvent(app, groupId, secret, { recordId: 'x'.repeat(201) });
+      assert.equal(long.status, 400);
+    });
+
     it('asks for a cursor reset when since is beyond the group history', async () => {
       const app = await makeApp();
       const { groupId, secret } = await createGroup(app, { groupId: uid() });

@@ -18,12 +18,19 @@ export function createDoStorage(sql) {
     CREATE TABLE IF NOT EXISTS events (
       seq        INTEGER PRIMARY KEY AUTOINCREMENT,
       group_id   TEXT NOT NULL REFERENCES groups(id),
+      record_id  TEXT,
       actor_id   TEXT NOT NULL,
       data       TEXT NOT NULL,
       compressed INTEGER NOT NULL,
       created    TEXT NOT NULL
     )
   `);
+  const hasRecordId =
+    sql.exec("SELECT COUNT(*) AS n FROM pragma_table_info('events') WHERE name = 'record_id'").one().n === 1;
+  if (!hasRecordId) {
+    sql.exec('ALTER TABLE events ADD COLUMN record_id TEXT');
+  }
+  sql.exec('CREATE UNIQUE INDEX IF NOT EXISTS events_group_record ON events (group_id, record_id)');
 
   return {
     createGroup({ groupId, createdBy, authVerifier, powChallenge, created }) {
@@ -50,11 +57,20 @@ export function createDoStorage(sql) {
       return rows.length === 0 ? null : rows[0].auth_verifier;
     },
 
-    appendEvent(groupId, { actorId, eventData, compressed, created }) {
+    appendEvent(groupId, { recordId, actorId, eventData, compressed, created }) {
+      if (recordId !== null) {
+        const existing = sql
+          .exec('SELECT seq FROM events WHERE group_id = ? AND record_id = ?', groupId, recordId)
+          .toArray();
+        if (existing.length > 0) {
+          return existing[0].seq;
+        }
+      }
       return sql
         .exec(
-          'INSERT INTO events (group_id, actor_id, data, compressed, created) VALUES (?, ?, ?, ?, ?) RETURNING seq',
+          'INSERT INTO events (group_id, record_id, actor_id, data, compressed, created) VALUES (?, ?, ?, ?, ?, ?) RETURNING seq',
           groupId,
+          recordId,
           actorId,
           eventData,
           compressed ? 1 : 0,

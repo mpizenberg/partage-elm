@@ -19,6 +19,7 @@ export function openStorage(path) {
     CREATE TABLE IF NOT EXISTS events (
       seq        INTEGER PRIMARY KEY AUTOINCREMENT,
       group_id   TEXT NOT NULL REFERENCES groups(id),
+      record_id  TEXT,
       actor_id   TEXT NOT NULL,
       data       TEXT NOT NULL,
       compressed INTEGER NOT NULL,
@@ -26,14 +27,21 @@ export function openStorage(path) {
     );
     CREATE INDEX IF NOT EXISTS events_group_seq ON events (group_id, seq);
   `);
+  const hasRecordId =
+    db.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('events') WHERE name = 'record_id'").get().n === 1;
+  if (!hasRecordId) {
+    db.exec('ALTER TABLE events ADD COLUMN record_id TEXT');
+  }
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS events_group_record ON events (group_id, record_id)');
 
   const insertGroup = db.prepare(
     'INSERT INTO groups (id, created_by, auth_verifier, pow_challenge, created) VALUES (?, ?, ?, ?, ?)',
   );
   const selectVerifier = db.prepare('SELECT auth_verifier FROM groups WHERE id = ?');
   const insertEvent = db.prepare(
-    'INSERT INTO events (group_id, actor_id, data, compressed, created) VALUES (?, ?, ?, ?, ?)',
+    'INSERT INTO events (group_id, record_id, actor_id, data, compressed, created) VALUES (?, ?, ?, ?, ?, ?)',
   );
+  const selectSeqByRecordId = db.prepare('SELECT seq FROM events WHERE group_id = ? AND record_id = ?');
   const selectEvents = db.prepare(
     'SELECT seq, actor_id, data, compressed, created FROM events WHERE group_id = ? AND seq > ? ORDER BY seq LIMIT ?',
   );
@@ -57,8 +65,14 @@ export function openStorage(path) {
       return row === undefined ? null : row.auth_verifier;
     },
 
-    appendEvent(groupId, { actorId, eventData, compressed, created }) {
-      const result = insertEvent.run(groupId, actorId, eventData, compressed ? 1 : 0, created);
+    appendEvent(groupId, { recordId, actorId, eventData, compressed, created }) {
+      if (recordId !== null) {
+        const existing = selectSeqByRecordId.get(groupId, recordId);
+        if (existing !== undefined) {
+          return existing.seq;
+        }
+      }
+      const result = insertEvent.run(groupId, recordId, actorId, eventData, compressed ? 1 : 0, created);
       return Number(result.lastInsertRowid);
     },
 

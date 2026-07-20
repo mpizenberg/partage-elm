@@ -45,7 +45,9 @@ export async function verifyGroupSecret(storage, groupId, secret) {
  * - createGroup({groupId, createdBy, authVerifier, powChallenge, created})
  *     → null | 'group_exists'
  * - getGroupVerifier(groupId) → string | null
- * - appendEvent(groupId, {actorId, eventData, compressed, created}) → seq
+ * - appendEvent(groupId, {recordId, actorId, eventData, compressed, created}) → seq
+ *     recordId may be null; when it matches an existing record of the group,
+ *     that record's seq is returned and nothing is inserted (idempotent push)
  * - listEventsSince(groupId, sinceSeq, limit)
  *     → [{seq, actorId, eventData, compressed, created}]
  * - getMaxSeq(groupId) → number (0 when the group has no events)
@@ -157,7 +159,7 @@ export function createApp({ storage, powSecret, onAppend }) {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
 
-    const { actorId, eventData, compressed } = body;
+    const { actorId, eventData, compressed, recordId } = body;
     if (
       typeof actorId !== 'string' ||
       typeof eventData !== 'string' ||
@@ -167,12 +169,16 @@ export function createApp({ storage, powSecret, onAppend }) {
     ) {
       return c.json({ error: 'actorId, eventData and compressed are required' }, 400);
     }
+    if (recordId !== undefined && (typeof recordId !== 'string' || recordId === '' || recordId.length > 200)) {
+      return c.json({ error: 'Invalid recordId' }, 400);
+    }
     if (eventData.length > MAX_EVENT_DATA_BYTES) {
       return c.json({ error: 'eventData exceeds 1 MB limit' }, 413);
     }
 
     const groupId = c.req.param('id');
     const seq = await storage.appendEvent(groupId, {
+      recordId: recordId ?? null,
       actorId,
       eventData,
       compressed,

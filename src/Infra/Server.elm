@@ -211,6 +211,11 @@ createGroupOnServer { serverUrl, groupId, groupKey, createdBy } =
 
 {-| Push local events to the server as a single encrypted batch.
 Compresses the payload before encryption when gzip achieves at least 30% reduction.
+
+The recordId is derived from the batched event ids (not generated fresh)
+so that re-pushing the same batch — after a push whose response was lost —
+hits the server's uniqueness check instead of storing a duplicate record.
+
 -}
 pushEvents : ServerContext -> String -> String -> List Event.Envelope -> ConcurrentTask Error ()
 pushEvents ctx secret actorId envelopes =
@@ -218,10 +223,12 @@ pushEvents ctx secret actorId envelopes =
         ConcurrentTask.succeed ()
 
     else
-        Compression.encryptJson ctx.groupKey (Encode.list Event.encodeEnvelope envelopes)
+        ConcurrentTask.map2 Tuple.pair
+            (WebCrypto.sha256 (String.join "\n" (List.sort (List.map .id envelopes))))
+            (Compression.encryptJson ctx.groupKey (Encode.list Event.encodeEnvelope envelopes))
             |> ConcurrentTask.mapError CryptoError
             |> ConcurrentTask.andThen
-                (\result ->
+                (\( recordId, result ) ->
                     Http.post
                         { url = eventsUrl ctx
                         , headers = [ authHeader secret ]
@@ -229,6 +236,7 @@ pushEvents ctx secret actorId envelopes =
                             Http.jsonBody
                                 (Encode.object
                                     [ ( "actorId", Encode.string actorId )
+                                    , ( "recordId", Encode.string recordId )
                                     , ( "eventData", Encode.string (Encode.encode 0 (Compression.encodeEventData result)) )
                                     , ( "compressed", Encode.bool result.compressed )
                                     ]
