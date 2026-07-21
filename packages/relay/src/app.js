@@ -35,7 +35,7 @@ const ACCESS_TOUCH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 // Per-group storage caps (docs/SPECIFICATION.md §14.8). The absolute quota
 // bounds total abuse; the monthly rate cap bounds its speed. Honest groups sit
 // orders of magnitude below both. Overridable so tests can trip them cheaply.
-const DEFAULT_APPEND_LIMITS = {
+export const DEFAULT_APPEND_LIMITS = {
   maxRecords: 50_000,
   maxTotalBytes: 50 * 1024 * 1024,
   rateBytes: 10 * 1024 * 1024,
@@ -74,8 +74,9 @@ export async function verifyGroupSecret(storage, groupId, secret) {
  *     A re-push of a counted record is always 'ok'; only genuinely new records
  *     are checked against `limits` and add to the group's counters.
  * - compact(groupId, uptoSeq, expectedCount, records, created, limits)
- *     → {status: 'ok', maxSeq} | {status: 'stale'} | {status: 'quota'}
+ *     → {status: 'ok', maxSeq, byteDelta} | {status: 'stale'} | {status: 'quota'}
  *       | {status: 'rate', retryAfterMs}
+ *     byteDelta is the net byte change, negative when the compaction reclaimed space.
  *     In one transaction: deletes records with seq ≤ uptoSeq and appends
  *     `records` at fresh higher seqs, skipping ones whose recordId already
  *     survives above the boundary. 'stale' when uptoSeq exceeds the max seq
@@ -89,11 +90,20 @@ export async function verifyGroupSecret(storage, groupId, secret) {
  *     → [{seq, actorId, eventData, compressed, created}]
  * - getMaxSeq(groupId) → number (0 when the group has no events)
  *
+ * Optional observability methods (self-host only; absent on the Durable Object
+ * adapter until Cloudflare parity lands, so calls go through `storage.bumpMetric?.`):
+ * - bumpMetric(name, day, amount = 1) — day-bucketed counter, UPSERT-add.
+ * - recordDailyLevels(day, {name: value}) — day-bucketed level snapshot, UPSERT-replace.
+ * - getDailySince(day) → [{day, name, value}] — the counter+level series from `day` on.
+ * - getFleetLevels({idleCutoff, nearQuotaBytes, nearQuotaRecords, actorWindows})
+ *     → the current fleet level snapshot object (keys are metric names).
+ *
  * `onAppend(groupId, seq)` is called after each successful event append
  * (used by adapters to notify live subscribers).
  */
 export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT_APPEND_LIMITS }) {
   const app = new Hono();
+  const bump = (name, amount = 1) => storage.bumpMetric?.(name, new Date().toISOString().slice(0, 10), amount);
 
   app.use(
     cors({
@@ -111,6 +121,7 @@ export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT
     if (groupId === '') {
       return c.json({ error: 'groupId query parameter is required' }, 400);
     }
+    bump('pow_issued');
     return c.json(await issueChallenge(powSecret, groupId));
   });
 
@@ -150,6 +161,7 @@ export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT
       return c.json({ error: 'Group already exists' }, 409);
     }
 
+    bump('group_created');
     return c.json({}, 201);
   });
 
@@ -159,6 +171,7 @@ export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT
   const groupAuth = async (c, next) => {
     const auth = c.req.header('Authorization') ?? '';
     if (!auth.startsWith('Bearer ')) {
+      bump('auth_401');
       return c.json({ error: 'Missing bearer token' }, 401);
     }
     const result = await verifyGroupSecret(storage, c.req.param('id'), auth.slice('Bearer '.length));
@@ -166,6 +179,7 @@ export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT
       return c.json({ error: 'Group not found' }, 404);
     }
     if (result === 'unauthorized') {
+      bump('auth_401');
       return c.json({ error: 'Invalid credentials' }, 401);
     }
     const now = Date.now();
@@ -200,7 +214,12 @@ export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT
         return c.json({ events: [], hasMore: false, recordCount, resetCursor: true });
       }
     }
-    return c.json({ events: hasMore ? rows.slice(0, PULL_PAGE_SIZE) : rows, hasMore, recordCount });
+    const events = hasMore ? rows.slice(0, PULL_PAGE_SIZE) : rows;
+    const bytesServed = events.reduce((sum, event) => sum + event.eventData.length, 0);
+    if (bytesServed > 0) {
+      bump('bytes_served', bytesServed);
+    }
+    return c.json({ events, hasMore, recordCount });
   });
 
   app.post('/api/groups/:id/events', bodyLimit({ maxSize: MAX_BODY_BYTES }), async (c) => {
@@ -225,6 +244,7 @@ export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT
       return c.json({ error: 'Invalid recordId' }, 400);
     }
     if (eventData.length > MAX_EVENT_DATA_BYTES) {
+      bump('body_413');
       return c.json({ error: 'eventData exceeds 1 MB limit' }, 413);
     }
 
@@ -241,9 +261,11 @@ export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT
       appendLimits,
     );
     if (result.status === 'quota') {
+      bump('quota_507');
       return c.json({ error: 'Group storage quota exceeded — compact or export' }, 507);
     }
     if (result.status === 'rate') {
+      bump('rate_429');
       return c.json({ error: 'Group data rate limit exceeded' }, 429, {
         'Retry-After': String(Math.ceil(result.retryAfterMs / 1000)),
       });
@@ -288,6 +310,7 @@ export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT
         return c.json({ error: 'Invalid recordId' }, 400);
       }
       if (record.eventData.length > MAX_EVENT_DATA_BYTES) {
+        bump('body_413');
         return c.json({ error: 'eventData exceeds 1 MB limit' }, 413);
       }
     }
@@ -310,12 +333,18 @@ export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT
       return c.json({ error: 'uptoSeq no longer matches the group history' }, 409);
     }
     if (result.status === 'quota') {
+      bump('quota_507');
       return c.json({ error: 'Group storage quota exceeded — compact or export' }, 507);
     }
     if (result.status === 'rate') {
+      bump('rate_429');
       return c.json({ error: 'Group data rate limit exceeded' }, 429, {
         'Retry-After': String(Math.ceil(result.retryAfterMs / 1000)),
       });
+    }
+    bump('compaction_ops');
+    if (result.byteDelta < 0) {
+      bump('compaction_bytes_reclaimed', -result.byteDelta);
     }
     onAppend?.(groupId, result.maxSeq);
     return c.json({ maxSeq: result.maxSeq });

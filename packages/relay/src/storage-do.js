@@ -227,6 +227,7 @@ export function createDoStorage(sql) {
       return {
         status: 'ok',
         maxSeq: sql.exec('SELECT MAX(seq) AS max_seq FROM events WHERE group_id = ?', groupId).one().max_seq ?? 0,
+        byteDelta,
       };
     },
 

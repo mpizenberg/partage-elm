@@ -29,6 +29,12 @@ export function openStorage(path) {
       created    TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS events_group_seq ON events (group_id, seq);
+    CREATE TABLE IF NOT EXISTS daily (
+      day   TEXT NOT NULL,
+      name  TEXT NOT NULL,
+      value INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (day, name)
+    );
   `);
   const hasRecordId =
     db.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('events') WHERE name = 'record_id'").get().n === 1;
@@ -91,6 +97,26 @@ export function openStorage(path) {
     'SELECT seq, actor_id, data, compressed, created FROM events WHERE group_id = ? AND seq > ? ORDER BY seq LIMIT ?',
   );
   const selectMaxSeq = db.prepare('SELECT MAX(seq) AS max_seq FROM events WHERE group_id = ?');
+  const bumpMetricStmt = db.prepare(
+    'INSERT INTO daily (day, name, value) VALUES (?, ?, ?) ON CONFLICT(day, name) DO UPDATE SET value = value + excluded.value',
+  );
+  const recordLevelStmt = db.prepare(
+    'INSERT INTO daily (day, name, value) VALUES (?, ?, ?) ON CONFLICT(day, name) DO UPDATE SET value = excluded.value',
+  );
+  const selectDailySince = db.prepare('SELECT day, name, value FROM daily WHERE day >= ? ORDER BY day, name');
+  const selectFleetAgg = db.prepare(`
+    SELECT
+      COUNT(*) AS total_groups,
+      COALESCE(SUM(total_bytes), 0) AS total_bytes,
+      COALESCE(SUM(record_count), 0) AS total_records,
+      COALESCE(MAX(total_bytes), 0) AS max_bytes,
+      COALESCE(SUM(CASE WHEN last_access >= ? THEN 1 ELSE 0 END), 0) AS active_groups,
+      COALESCE(SUM(CASE WHEN total_bytes >= ? OR record_count >= ? THEN 1 ELSE 0 END), 0) AS groups_near_quota
+    FROM groups
+  `);
+  const selectByteAtOffset = db.prepare('SELECT total_bytes FROM groups ORDER BY total_bytes LIMIT 1 OFFSET ?');
+  const selectDistinctActors = db.prepare('SELECT COUNT(DISTINCT actor_id) AS n FROM events');
+  const selectActiveActors = db.prepare('SELECT COUNT(DISTINCT actor_id) AS n FROM events WHERE created >= ?');
 
   return {
     createGroup({ groupId, createdBy, authVerifier, powChallenge, created }) {
@@ -191,7 +217,7 @@ export function openStorage(path) {
         updateStats.run(recordDelta, byteDelta, plan.windowStart, plan.bytesThisWindow, groupId);
         const newMaxSeq = selectMaxSeq.get(groupId).max_seq ?? 0;
         db.exec('COMMIT');
-        return { status: 'ok', maxSeq: newMaxSeq };
+        return { status: 'ok', maxSeq: newMaxSeq, byteDelta };
       } catch (err) {
         db.exec('ROLLBACK');
         throw err;
@@ -210,6 +236,47 @@ export function openStorage(path) {
 
     getMaxSeq(groupId) {
       return selectMaxSeq.get(groupId).max_seq ?? 0;
+    },
+
+    bumpMetric(name, day, amount = 1) {
+      bumpMetricStmt.run(day, name, amount);
+    },
+
+    recordDailyLevels(day, levels) {
+      for (const [name, value] of Object.entries(levels)) {
+        recordLevelStmt.run(day, name, value);
+      }
+    },
+
+    getDailySince(sinceDay) {
+      return selectDailySince.all(sinceDay).map((row) => ({ day: row.day, name: row.name, value: row.value }));
+    },
+
+    getFleetLevels({ idleCutoff, nearQuotaBytes, nearQuotaRecords, actorWindows }) {
+      const agg = selectFleetAgg.get(idleCutoff, nearQuotaBytes, nearQuotaRecords);
+      const percentileBytes = (q) => {
+        if (agg.total_groups === 0) {
+          return 0;
+        }
+        const offset = Math.min(agg.total_groups - 1, Math.floor(q * (agg.total_groups - 1)));
+        return selectByteAtOffset.get(offset).total_bytes;
+      };
+      const levels = {
+        total_groups: agg.total_groups,
+        active_groups: agg.active_groups,
+        idle_groups: agg.total_groups - agg.active_groups,
+        total_bytes: agg.total_bytes,
+        total_records: agg.total_records,
+        max_bytes: agg.max_bytes,
+        p50_bytes: percentileBytes(0.5),
+        p95_bytes: percentileBytes(0.95),
+        groups_near_quota: agg.groups_near_quota,
+        distinct_actors_cumulative: selectDistinctActors.get().n,
+      };
+      for (const window of actorWindows) {
+        levels[window.name] = selectActiveActors.get(window.since).n;
+      }
+      return levels;
     },
 
     close() {
