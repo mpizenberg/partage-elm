@@ -6,7 +6,8 @@ import Domain.Entry as Entry exposing (Kind(..))
 import Domain.Event exposing (Payload(..))
 import Domain.GroupState as GroupState
 import Domain.Member as Member
-import Domain.MigrationCuration as MigrationCuration exposing (Bound(..))
+import Domain.MigrationCuration as MigrationCuration exposing (AnchorReason(..), Bound(..))
+import Domain.SuspicionAudit exposing (Finding, Kind(..))
 import Expect
 import Test exposing (Test, describe, test)
 import TestHelpers exposing (defaultExpenseData, makeEnvelope, makeExpenseEntry)
@@ -70,6 +71,32 @@ leakedKeyOrder =
         ]
 
 
+{-| Eve's genuine history (seq 3, 9) plus a 25-event flood she alone pushed in one
+sync (seq 12).
+-}
+floodEvents : List Domain.Event.Envelope
+floodEvents =
+    leakedKeyEvents
+        ++ List.map
+            (\i -> makeEnvelope ("flood" ++ String.fromInt i) 300 "eve" (EntryAdded (makeExpenseEntry ("f" ++ String.fromInt i) 300 defaultExpenseData)))
+            (List.range 1 25)
+
+
+floodOrder : Dict.Dict String Int
+floodOrder =
+    Dict.union leakedKeyOrder
+        (Dict.fromList (List.map (\i -> ( "flood" ++ String.fromInt i, 12 )) (List.range 1 25)))
+
+
+eveFinding : Finding
+eveFinding =
+    { culprit = "eve"
+    , culpritLabel = "Eve"
+    , kind = ForeignPaymentEdit { target = "admin" }
+    , eventIds = [ "e-eve2" ]
+    }
+
+
 suite : Test
 suite =
     describe "MigrationCuration"
@@ -77,6 +104,63 @@ suite =
         , boundedSuite
         , identitiesSuite
         , previewSuite
+        , anchorsSuite
+        ]
+
+
+anchorsSuite : Test
+anchorsSuite =
+    describe "anchorsFor"
+        [ test "a sole-author flood becomes a cut-before-the-flood anchor" <|
+            \_ ->
+                MigrationCuration.anchorsFor floodOrder [] "eve" floodEvents
+                    |> Expect.equal
+                        [ { reason = FloodReason 25, bound = After 9, kept = 3, dropped = 25 } ]
+        , test "a multi-author sync is not a flood, even when large" <|
+            \_ ->
+                let
+                    shared : List Domain.Event.Envelope
+                    shared =
+                        floodEvents ++ [ makeEnvelope "admin-12" 300 "admin" (EntryAdded (makeExpenseEntry "a12" 300 defaultExpenseData)) ]
+
+                    sharedOrder : Dict.Dict String Int
+                    sharedOrder =
+                        Dict.insert "admin-12" 12 floodOrder
+                in
+                MigrationCuration.anchorsFor sharedOrder [] "eve" shared
+                    |> Expect.equal []
+        , test "a finding becomes a cut-before-the-offending-sync anchor" <|
+            \_ ->
+                MigrationCuration.anchorsFor leakedKeyOrder [ eveFinding ] "eve" leakedKeyEvents
+                    |> Expect.equal
+                        [ { reason = FindingReason eveFinding, bound = After 3, kept = 1, dropped = 2 } ]
+        , test "no anchor when the offending sync is the identity's earliest" <|
+            \_ ->
+                MigrationCuration.anchorsFor leakedKeyOrder
+                    [ { eveFinding | eventIds = [ "e-eve1" ] } ]
+                    "eve"
+                    leakedKeyEvents
+                    |> Expect.equal []
+        , test "a finding and a flood on the same sync collapse to one anchor, finding first" <|
+            \_ ->
+                MigrationCuration.anchorsFor floodOrder
+                    [ { eveFinding | eventIds = [ "flood1" ] } ]
+                    "eve"
+                    floodEvents
+                    |> List.length
+                    |> Expect.equal 1
+        , test "no anchors before the server order is fetched" <|
+            \_ ->
+                MigrationCuration.anchorsFor Dict.empty [ eveFinding ] "eve" leakedKeyEvents
+                    |> Expect.equal []
+        , test "cutBeforeFinding snaps to the sync before the earliest offending one" <|
+            \_ ->
+                MigrationCuration.cutBeforeFinding leakedKeyOrder eveFinding leakedKeyEvents
+                    |> Expect.equal (After 3)
+        , test "cutBeforeFinding falls back to whole removal without a fetched order" <|
+            \_ ->
+                MigrationCuration.cutBeforeFinding Dict.empty eveFinding leakedKeyEvents
+                    |> Expect.equal All
         ]
 
 

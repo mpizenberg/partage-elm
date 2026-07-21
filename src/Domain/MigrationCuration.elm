@@ -1,4 +1,4 @@
-module Domain.MigrationCuration exposing (BalanceRow, Bound(..), Boundary, Identity, Preview, curateEvents, identities, preview)
+module Domain.MigrationCuration exposing (AnchorReason(..), BalanceRow, Bound(..), Boundary, CutAnchor, Identity, Preview, anchorsFor, curateEvents, cutBeforeFinding, identities, preview)
 
 {-| Drop events authored by excluded identities when re-homing a group during
 migration (spec §11.7).
@@ -31,6 +31,7 @@ import Dict exposing (Dict)
 import Domain.Event as Event exposing (Envelope, Payload(..))
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
+import Domain.SuspicionAudit exposing (Finding)
 import Set
 import Time
 
@@ -178,6 +179,201 @@ isGenesis envelope =
 
         _ ->
             False
+
+
+
+-- CUT ANCHORS
+
+
+{-| The fewest events a single sync must carry to count as a flood. A leaked-key
+flood dumps thousands; honest single-sync batches are a handful. Sole-authorship
+(below) is the real filter, so this only rules out small runs. Tunable.
+-}
+floodMinBatch : Int
+floodMinBatch =
+    20
+
+
+{-| Why a cut is suggested: a suspicion finding implicating this identity, or a
+flood — a single sync carrying `count` events, all this identity's own (a shape
+compaction never produces, since it interleaves the whole group's authors).
+-}
+type AnchorReason
+    = FindingReason Finding
+    | FloodReason Int
+
+
+{-| A pre-computed "cut before here" suggestion for one identity: keep everything
+it authored before the offending sync, drop from there on. `bound` is the
+server-order split; `kept`/`dropped` are how many of the identity's events land on
+each side.
+-}
+type alias CutAnchor =
+    { reason : AnchorReason
+    , bound : Bound
+    , kept : Int
+    , dropped : Int
+    }
+
+
+{-| One sync (server seq) an identity authored at: how many of its events landed
+there, how many it authored strictly earlier, and whether it was the sole author
+of that sync. Sole-authorship is the flood signal compaction can't fake.
+-}
+type alias AuthorBatch =
+    { seq : Int
+    , ownCount : Int
+    , ownBefore : Int
+    , soleAuthor : Bool
+    }
+
+
+authorBatches : Dict Event.Id Int -> Member.Id -> List Envelope -> List AuthorBatch
+authorBatches order memberId events =
+    let
+        seqAuthors : Dict Int (Set.Set Member.Id)
+        seqAuthors =
+            List.foldl
+                (\e acc ->
+                    case Dict.get e.id order of
+                        Just seq ->
+                            Dict.update seq (Maybe.withDefault Set.empty >> Set.insert e.triggeredBy >> Just) acc
+
+                        Nothing ->
+                            acc
+                )
+                Dict.empty
+                events
+
+        ownSeqCounts : Dict Int Int
+        ownSeqCounts =
+            List.foldl
+                (\e acc ->
+                    if e.triggeredBy == memberId then
+                        case Dict.get e.id order of
+                            Just seq ->
+                                Dict.update seq (Maybe.withDefault 0 >> (+) 1 >> Just) acc
+
+                            Nothing ->
+                                acc
+
+                    else
+                        acc
+                )
+                Dict.empty
+                events
+    in
+    Dict.toList ownSeqCounts
+        |> List.foldl
+            (\( seq, count ) ( acc, before ) ->
+                ( { seq = seq
+                  , ownCount = count
+                  , ownBefore = before
+                  , soleAuthor = Dict.get seq seqAuthors |> Maybe.map (Set.size >> (==) 1) |> Maybe.withDefault True
+                  }
+                    :: acc
+                , before + count
+                )
+            )
+            ( [], 0 )
+        |> Tuple.first
+        |> List.reverse
+
+
+{-| The cut suggestions for one identity, earliest (fewest kept) first: one per
+suspicion finding that implicates it, plus a flood anchor when it was the sole
+author of a large sync. Each keeps everything before the offending sync. Events
+the identity authored without a known seq are always kept (they can't be placed),
+so they count toward `kept`. Empty when nothing looks injected, or before the
+server order has been fetched.
+-}
+anchorsFor : Dict Event.Id Int -> List Finding -> Member.Id -> List Envelope -> List CutAnchor
+anchorsFor order findings memberId events =
+    let
+        batches : List AuthorBatch
+        batches =
+            authorBatches order memberId events
+
+        totalOwn : Int
+        totalOwn =
+            List.length (List.filter (\e -> e.triggeredBy == memberId) events)
+
+        noSeq : Int
+        noSeq =
+            totalOwn - List.sum (List.map .ownCount batches)
+
+        cutBeforeSeq : Int -> AnchorReason -> Maybe CutAnchor
+        cutBeforeSeq seq reason =
+            Maybe.map2
+                (\b prev ->
+                    let
+                        kept : Int
+                        kept =
+                            b.ownBefore + noSeq
+                    in
+                    { reason = reason, bound = After prev, kept = kept, dropped = totalOwn - kept }
+                )
+                (List.filter (\b -> b.seq == seq) batches |> List.head)
+                (prevSeqOf seq batches)
+
+        findingAnchors : List CutAnchor
+        findingAnchors =
+            List.filter (\f -> f.culprit == memberId) findings
+                |> List.filterMap
+                    (\f ->
+                        f.eventIds
+                            |> List.filterMap (\id -> Dict.get id order)
+                            |> List.minimum
+                            |> Maybe.andThen (\seq -> cutBeforeSeq seq (FindingReason f))
+                    )
+
+        floodAnchors : List CutAnchor
+        floodAnchors =
+            batches
+                |> List.filter (\b -> b.soleAuthor && b.ownCount >= floodMinBatch)
+                |> List.head
+                |> Maybe.andThen (\b -> cutBeforeSeq b.seq (FloodReason b.ownCount))
+                |> Maybe.map List.singleton
+                |> Maybe.withDefault []
+    in
+    findingAnchors
+        ++ floodAnchors
+        |> List.foldl
+            (\anchor acc ->
+                if List.any (\x -> x.bound == anchor.bound) acc then
+                    acc
+
+                else
+                    acc ++ [ anchor ]
+            )
+            []
+        |> List.sortBy .kept
+
+
+{-| The largest sync the identity authored strictly before `seq`, i.e. the
+keep-through split that drops everything from `seq` on. Nothing when `seq` is the
+identity's earliest sync (there is no genuine prefix to keep).
+-}
+prevSeqOf : Int -> List AuthorBatch -> Maybe Int
+prevSeqOf seq batches =
+    batches |> List.filter (\b -> b.seq < seq) |> List.map .seq |> List.maximum
+
+
+{-| The server-order split that drops a finding's offending sync and everything
+after, keeping the identity's earlier history. Snaps to the sync before the
+offending one so it lines up with the manual timeline. Falls back to `All`
+(whole-identity removal) when the server order isn't known — the finding's events
+can't be placed — or when the offending sync is the identity's earliest, so
+nothing genuine precedes it.
+-}
+cutBeforeFinding : Dict Event.Id Int -> Finding -> List Envelope -> Bound
+cutBeforeFinding order finding events =
+    finding.eventIds
+        |> List.filterMap (\id -> Dict.get id order)
+        |> List.minimum
+        |> Maybe.andThen (\seq -> prevSeqOf seq (authorBatches order finding.culprit events))
+        |> Maybe.map After
+        |> Maybe.withDefault All
 
 
 {-| A resulting member balance and how much the cut moved it from the
