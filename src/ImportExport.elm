@@ -37,13 +37,23 @@ type Msg
     | OnExportCsvDataLoaded Group.Id (ConcurrentTask.Response Idb.Error (List Event.Envelope))
     | OnExportCompressed (ConcurrentTask.Response String ())
     | OnImportDecompressed (ConcurrentTask.Response String String)
-    | OnGroupImported Group.Summary (ConcurrentTask.Response Idb.Error ())
+    | OnGroupImported (ConcurrentTask.Response Idb.Error ImportResult)
+
+
+{-| Outcome of a completed import: the summary recomputed from the verified
+events, and how many events the file carried that failed verification and were
+dropped (0 for a clean file).
+-}
+type alias ImportResult =
+    { summary : Group.Summary
+    , droppedCount : Int
+    }
 
 
 type OutMsg
     = ShowToast Toast.ToastLevel String
     | SetImportError String
-    | GroupImported Group.Summary
+    | GroupImported Group.Summary Int
 
 
 {-| Opaque message to start a group export. Use in Page.Home config:
@@ -80,6 +90,7 @@ type alias Config msg =
     , groups : Dict Group.Id Group.Summary
     , currentTime : Time.Posix
     , i18n : I18n
+    , identityHash : String
     }
 
 
@@ -166,23 +177,31 @@ update config msg runnerCmd =
                     ( runnerCmd, Just (SetImportError (T.importErrorAlreadyExists config.i18n)) )
 
                 Ok exportData ->
-                    let
-                        -- The import is a fresh local engagement, so the group
-                        -- is not dormant regardless of the exporter's stamp.
-                        importedSummary : Group.Summary
-                        importedSummary =
-                            let
-                                group : Group.Summary
-                                group =
-                                    exportData.group
-                            in
-                            { group | lastSyncedAt = config.currentTime, supersededBy = Nothing }
-                    in
                     ( runnerCmd
-                        |> Runner.andRun (config.toMsg << OnGroupImported importedSummary)
+                        |> Runner.andRun (config.toMsg << OnGroupImported)
                             (EventVerification.filterVerifiedEvents GroupState.empty exportData.events
                                 |> ConcurrentTask.andThen
-                                    (\verified -> Storage.saveGroup config.db importedSummary exportData.groupKey verified Nothing)
+                                    (\verified ->
+                                        let
+                                            -- The file's summary block is unsigned; recompute it
+                                            -- from the verified events so a hand-edited count,
+                                            -- balance, or name can't ride in.
+                                            summary : Group.Summary
+                                            summary =
+                                                GroupState.summarize config.identityHash
+                                                    exportData.group.id
+                                                    config.currentTime
+                                                    (GroupState.applyEvents verified GroupState.empty)
+
+                                            result : ImportResult
+                                            result =
+                                                { summary = summary
+                                                , droppedCount = List.length exportData.events - List.length verified
+                                                }
+                                        in
+                                        Storage.saveGroup config.db summary exportData.groupKey verified Nothing
+                                            |> ConcurrentTask.map (\_ -> result)
+                                    )
                             )
                     , Nothing
                     )
@@ -190,8 +209,8 @@ update config msg runnerCmd =
         OnImportDecompressed _ ->
             ( runnerCmd, Just (SetImportError (T.importErrorInvalidFile config.i18n)) )
 
-        OnGroupImported summary (ConcurrentTask.Success _) ->
-            ( runnerCmd, Just (GroupImported summary) )
+        OnGroupImported (ConcurrentTask.Success result) ->
+            ( runnerCmd, Just (GroupImported result.summary result.droppedCount) )
 
-        OnGroupImported _ _ ->
+        OnGroupImported _ ->
             ( runnerCmd, Just (ShowToast Toast.Error (T.toastImportError config.i18n)) )

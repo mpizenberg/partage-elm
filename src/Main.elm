@@ -987,6 +987,7 @@ update msg model =
                             , groups = readyData.groups
                             , currentTime = model.currentTime
                             , i18n = model.i18n
+                            , identityHash = Maybe.map .publicKeyHash readyData.identity |> Maybe.withDefault ""
                             }
 
                         ( ( runner, cmd ), maybeOutMsg ) =
@@ -1591,16 +1592,29 @@ processImportExportOutMsg model ieCmd maybeOutMsg =
         Just (ImportExport.SetImportError errorMsg) ->
             ( { model | homeModel = Page.Home.setImportError errorMsg model.homeModel }, ieCmd )
 
-        Just (ImportExport.GroupImported summary) ->
+        Just (ImportExport.GroupImported summary droppedCount) ->
             case model.appState of
                 Ready readyData ->
-                    addToast Toast.Success
-                        (T.toastImportSuccess model.i18n)
-                        { model
-                            | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
-                            , groupModel = Page.Group.resetLoadedGroup model.groupModel
-                            , homeModel = Page.Home.init
-                        }
+                    let
+                        importedModel : Model
+                        importedModel =
+                            { model
+                                | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
+                                , groupModel = Page.Group.resetLoadedGroup model.groupModel
+                                , homeModel = Page.Home.init
+                            }
+                    in
+                    (if droppedCount > 0 then
+                        let
+                            warning : String
+                            warning =
+                                T.toastImportTampered (String.fromInt droppedCount) model.i18n
+                        in
+                        addToast Toast.Error warning (logError ErrorLog.ImportExportSource ErrorLog.Err warning importedModel)
+
+                     else
+                        addToast Toast.Success (T.toastImportSuccess model.i18n) importedModel
+                    )
                         |> Update.addCmd ieCmd
                         |> Update.addCmd (Navigation.pushUrl navCmd (Route.toAppUrl (GroupRoute summary.id (Tab BalanceTab))))
 

@@ -379,6 +379,7 @@
   "toastGroupRemoveError": "Failed to remove group.",
   "toastImportSuccess": "Group imported successfully.",
   "toastImportError": "Failed to import group.",
+  "toastImportTampered": "Group imported, but {count} event(s) failed signature verification and were removed.",
   "toastExportError": "Failed to export group.",
   "toastSettlementRecorded": "Settlement recorded.",
   "toastSyncError": "Sync failed: {details}",

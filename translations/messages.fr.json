@@ -379,6 +379,7 @@
   "toastGroupRemoveError": "Échec de la suppression du groupe.",
   "toastImportSuccess": "Groupe importé avec succès.",
   "toastImportError": "Échec de l'importation du groupe.",
+  "toastImportTampered": "Groupe importé, mais {count} événement(s) ont échoué la vérification de signature et ont été retirés.",
   "toastExportError": "Échec de l'exportation du groupe.",
   "toastSettlementRecorded": "Règlement enregistré.",
   "toastSyncError": "Échec de la synchronisation : {details}",
