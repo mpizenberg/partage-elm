@@ -87,7 +87,15 @@ errorToString err =
                     "Network error"
 
                 Http.BadStatus meta _ ->
-                    "Server error (" ++ String.fromInt meta.statusCode ++ ")"
+                    case meta.statusCode of
+                        507 ->
+                            "Group storage limit reached (507)"
+
+                        429 ->
+                            "Data rate limit exceeded (429)"
+
+                        code ->
+                            "Server error (" ++ String.fromInt code ++ ")"
 
                 Http.BadBody _ _ _ ->
                     "Invalid server response"
