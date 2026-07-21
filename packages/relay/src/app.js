@@ -42,6 +42,45 @@ export const DEFAULT_APPEND_LIMITS = {
   windowMs: 30 * 24 * 60 * 60 * 1000,
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+// Groups at or above this fraction of either quota are counted as near-capacity.
+const NEAR_QUOTA_FRACTION = 0.8;
+
+// Operator-dashboard thresholds and hot-list depth (docs/OWNER dashboard). Named
+// so they can be retuned once real traffic is observed.
+const HOTLIST_LIMIT = 10;
+const AUTH_PROBE_THRESHOLD = 50;
+const REJECTION_SPIKE_FLOOR = 50;
+const REJECTION_SPIKE_FACTOR = 3;
+const REJECTION_METRICS = ['quota_507', 'rate_429', 'body_413'];
+
+// Hosting rates mirrored from docs/SPECIFICATION.md §17.2 (the source of truth,
+// also encoded in src/Infra/UsageStats.elm). Cents; compute is a fixed multiple
+// of storage; bandwidth bills egress only.
+const BASE_CENTS_PER_MONTH = 10;
+const STORAGE_CENTS_PER_GB_MONTH = 10;
+const BANDWIDTH_CENTS_PER_GB = 10;
+const COMPUTE_MULTIPLIER = 5;
+const BYTES_PER_GB = 1e9;
+
+/**
+ * The live fleet-level query parameters, shared by the daily snapshot sweep and
+ * the admin endpoint's `now` section so both read the present identically.
+ */
+export function fleetLevelParams(nowMs, appendLimits = DEFAULT_APPEND_LIMITS) {
+  const iso = (ms) => new Date(ms).toISOString();
+  return {
+    idleCutoff: iso(nowMs - RETENTION_MS),
+    nearQuotaBytes: Math.floor(appendLimits.maxTotalBytes * NEAR_QUOTA_FRACTION),
+    nearQuotaRecords: Math.floor(appendLimits.maxRecords * NEAR_QUOTA_FRACTION),
+    actorWindows: [
+      { name: 'active_actors_1d', since: iso(nowMs - DAY_MS) },
+      { name: 'active_actors_7d', since: iso(nowMs - 7 * DAY_MS) },
+      { name: 'active_actors_30d', since: iso(nowMs - 30 * DAY_MS) },
+    ],
+  };
+}
+
 const encoder = new TextEncoder();
 
 async function sha256Base64Url(text) {
@@ -60,6 +99,76 @@ export async function verifyGroupSecret(storage, groupId, secret) {
   }
   const presented = await sha256Base64Url(secret);
   return constantTimeEqual(presented, verifier) ? 'ok' : 'unauthorized';
+}
+
+// Both sides hashed to a fixed-length digest before comparison, so the
+// constant-time check never leaks the operator secret's length.
+async function verifyAdminSecret(adminSecret, presented) {
+  const [a, b] = await Promise.all([sha256Base64Url(presented), sha256Base64Url(adminSecret)]);
+  return constantTimeEqual(a, b);
+}
+
+function median(values) {
+  if (values.length === 0) {
+    return 0;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+function evaluateFlags({ levels, history, today, nowMs, adminStorageBudgetBytes }) {
+  const day = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const rejectionsByDay = {};
+  let authToday = 0;
+  for (const row of history) {
+    if (REJECTION_METRICS.includes(row.name)) {
+      rejectionsByDay[row.day] = (rejectionsByDay[row.day] ?? 0) + row.value;
+    } else if (row.name === 'auth_401' && row.day === today) {
+      authToday += row.value;
+    }
+  }
+  const trailing = [];
+  for (let i = 1; i <= 7; i++) {
+    trailing.push(rejectionsByDay[day(nowMs - i * DAY_MS)] ?? 0);
+  }
+  const rejectionThreshold = Math.max(REJECTION_SPIKE_FLOOR, REJECTION_SPIKE_FACTOR * median(trailing));
+  const rejectionsToday = rejectionsByDay[today] ?? 0;
+
+  return {
+    nearCapacity: { active: levels.groups_near_quota > 0, groupsNearQuota: levels.groups_near_quota },
+    authProbing: { active: authToday > AUTH_PROBE_THRESHOLD, count: authToday, threshold: AUTH_PROBE_THRESHOLD },
+    rejectionSpike: { active: rejectionsToday > rejectionThreshold, count: rejectionsToday, threshold: rejectionThreshold },
+    storageOverBudget: {
+      active: adminStorageBudgetBytes !== null && levels.total_bytes > adminStorageBudgetBytes,
+      totalBytes: levels.total_bytes,
+      budgetBytes: adminStorageBudgetBytes,
+    },
+  };
+}
+
+// Current monthly run-rate: storage/compute from the present total, bandwidth
+// from egress served over the trailing 30 days.
+function computeCost({ levels, history, nowMs }) {
+  const windowStart = new Date(nowMs - 30 * DAY_MS).toISOString().slice(0, 10);
+  let monthlyBytesServed = 0;
+  for (const row of history) {
+    if (row.name === 'bytes_served' && row.day >= windowStart) {
+      monthlyBytesServed += row.value;
+    }
+  }
+  const storageCents = (levels.total_bytes / BYTES_PER_GB) * STORAGE_CENTS_PER_GB_MONTH;
+  const computeCents = storageCents * COMPUTE_MULTIPLIER;
+  const networkCents = (monthlyBytesServed / BYTES_PER_GB) * BANDWIDTH_CENTS_PER_GB;
+  return {
+    baseCents: BASE_CENTS_PER_MONTH,
+    storageCents,
+    computeCents,
+    networkCents,
+    totalCents: BASE_CENTS_PER_MONTH + storageCents + computeCents + networkCents,
+    totalBytes: levels.total_bytes,
+    monthlyBytesServed,
+  };
 }
 
 /**
@@ -97,11 +206,21 @@ export async function verifyGroupSecret(storage, groupId, secret) {
  * - getDailySince(day) → [{day, name, value}] — the counter+level series from `day` on.
  * - getFleetLevels({idleCutoff, nearQuotaBytes, nearQuotaRecords, actorWindows})
  *     → the current fleet level snapshot object (keys are metric names).
+ * - getHotlists({activeSince, actorSince, limit})
+ *     → {largestByBytes, largestByRecords, oldestActive, mostActors}, each a
+ *       top-`limit` list of {groupId, …} rows for the operator drill-down.
  *
  * `onAppend(groupId, seq)` is called after each successful event append
  * (used by adapters to notify live subscribers).
  */
-export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT_APPEND_LIMITS }) {
+export function createApp({
+  storage,
+  powSecret,
+  onAppend,
+  appendLimits = DEFAULT_APPEND_LIMITS,
+  adminSecret = null,
+  adminStorageBudgetBytes = null,
+}) {
   const app = new Hono();
   const bump = (name, amount = 1) => storage.bumpMetric?.(name, new Date().toISOString().slice(0, 10), amount);
 
@@ -349,6 +468,40 @@ export function createApp({ storage, powSecret, onAppend, appendLimits = DEFAULT
     onAppend?.(groupId, result.maxSeq);
     return c.json({ maxSeq: result.maxSeq });
   });
+
+  // Operator dashboard: cross-group metadata reads behind a separate secret,
+  // mounted outside the group-auth middleware and never touching last_access.
+  // Absent (404) unless ADMIN_SECRET is configured.
+  if (adminSecret !== null) {
+    app.get('/api/admin/summary', async (c) => {
+      const auth = c.req.header('Authorization') ?? '';
+      if (!auth.startsWith('Bearer ') || !(await verifyAdminSecret(adminSecret, auth.slice('Bearer '.length)))) {
+        return c.json({ error: 'Invalid credentials' }, 401);
+      }
+
+      const nowMs = Date.now();
+      const today = new Date(nowMs).toISOString().slice(0, 10);
+      const params = fleetLevelParams(nowMs, appendLimits);
+      const levels = storage.getFleetLevels(params);
+
+      const daysRaw = Number(c.req.query('days') ?? '365');
+      const days = Number.isInteger(daysRaw) && daysRaw > 0 ? Math.min(daysRaw, 365) : 365;
+      const history = storage.getDailySince(new Date(nowMs - (days - 1) * DAY_MS).toISOString().slice(0, 10));
+
+      return c.json({
+        generatedAt: new Date(nowMs).toISOString(),
+        now: levels,
+        history,
+        hotlists: storage.getHotlists({
+          activeSince: params.idleCutoff,
+          actorSince: new Date(nowMs - 30 * DAY_MS).toISOString(),
+          limit: HOTLIST_LIMIT,
+        }),
+        flags: evaluateFlags({ levels, history, today, nowMs, adminStorageBudgetBytes }),
+        cost: computeCost({ levels, history, nowMs }),
+      });
+    });
+  }
 
   return app;
 }

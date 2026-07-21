@@ -117,6 +117,16 @@ export function openStorage(path) {
   const selectByteAtOffset = db.prepare('SELECT total_bytes FROM groups ORDER BY total_bytes LIMIT 1 OFFSET ?');
   const selectDistinctActors = db.prepare('SELECT COUNT(DISTINCT actor_id) AS n FROM events');
   const selectActiveActors = db.prepare('SELECT COUNT(DISTINCT actor_id) AS n FROM events WHERE created >= ?');
+  const selectTopByBytes = db.prepare('SELECT id, total_bytes FROM groups ORDER BY total_bytes DESC, id LIMIT ?');
+  const selectTopByRecords = db.prepare('SELECT id, record_count FROM groups ORDER BY record_count DESC, id LIMIT ?');
+  const selectOldestActive = db.prepare(
+    'SELECT id, created FROM groups WHERE last_access >= ? ORDER BY created, id LIMIT ?',
+  );
+  const selectTopByActors = db.prepare(`
+    SELECT group_id AS id, COUNT(DISTINCT actor_id) AS actors
+    FROM events WHERE created >= ?
+    GROUP BY group_id ORDER BY actors DESC, group_id LIMIT ?
+  `);
 
   return {
     createGroup({ groupId, createdBy, authVerifier, powChallenge, created }) {
@@ -277,6 +287,17 @@ export function openStorage(path) {
         levels[window.name] = selectActiveActors.get(window.since).n;
       }
       return levels;
+    },
+
+    getHotlists({ activeSince, actorSince, limit }) {
+      return {
+        largestByBytes: selectTopByBytes.all(limit).map((row) => ({ groupId: row.id, totalBytes: row.total_bytes })),
+        largestByRecords: selectTopByRecords
+          .all(limit)
+          .map((row) => ({ groupId: row.id, recordCount: row.record_count })),
+        oldestActive: selectOldestActive.all(activeSince, limit).map((row) => ({ groupId: row.id, created: row.created })),
+        mostActors: selectTopByActors.all(actorSince, limit).map((row) => ({ groupId: row.id, actors: row.actors })),
+      };
     },
 
     close() {
