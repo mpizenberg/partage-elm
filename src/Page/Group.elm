@@ -43,6 +43,7 @@ import Domain.Member as Member
 import Domain.MemberMerge as Merge
 import Domain.MigrationCuration as MigrationCuration
 import Domain.Settlement as Settlement
+import Domain.SuspicionAudit as SuspicionAudit exposing (Finding)
 import Domain.TamperSignals as TamperSignals exposing (TamperSignals)
 import ErrorLog
 import GroupOps exposing (LoadedGroup)
@@ -252,13 +253,15 @@ type
     | OnGroupMetadataActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnGroupRemoved Group.Id (ConcurrentTask.Response Idb.Error ())
     | OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)
-    | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set String, tamperSignals : TamperSignals })
+    | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set String, tamperSignals : TamperSignals, suspicionDismissals : Set String })
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
     | OnCompactionStep Group.Id (ConcurrentTask.Response Server.Error GroupOps.CompactionOutcome)
     | OnCompactionEventSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | PostSyncTasksDone (ConcurrentTask.Response Idb.Error ())
     | DismissTamperSignals
     | OnTamperSignalsSaved (ConcurrentTask.Response Idb.Error ())
+    | DismissSuspicion String
+    | OnSuspicionDismissalsSaved (ConcurrentTask.Response Idb.Error ())
     | ToggleMigrationExclude Member.Id
     | SetMigrationBound Member.Id MigrationCuration.Bound
     | OnMigrationOrderFetched Group.Id (ConcurrentTask.Response Server.Error (Dict Event.Id Int))
@@ -869,7 +872,7 @@ update config msg model =
         OnGroupEventsLoaded groupId (ConcurrentTask.Success result) ->
             let
                 ( modelAfterLoad, initCmd ) =
-                    case applyLoadedGroup config groupId result.events result.groupKey result.syncCursor result.unpushedIds result.tamperSignals model of
+                    case applyLoadedGroup config groupId result.events result.groupKey result.syncCursor result.unpushedIds result.tamperSignals result.suspicionDismissals model of
                         Just m ->
                             initPagesIfNeeded config (routeToGroupView config.route) m
 
@@ -1125,6 +1128,28 @@ update config msg model =
 
         OnTamperSignalsSaved _ ->
             ( model, Cmd.none, [ LogError ErrorLog.StorageSource ErrorLog.Err "Failed to save tamper signals" ] )
+
+        DismissSuspicion key ->
+            case model.loadedGroup of
+                Just loaded ->
+                    let
+                        dismissed : Set String
+                        dismissed =
+                            Set.insert key loaded.suspicionDismissals
+                    in
+                    ( model.runner, Cmd.none )
+                        |> Runner.andRun OnSuspicionDismissalsSaved (Storage.saveSuspicionDismissals config.db loaded.summary.id dismissed)
+                        |> Tuple.mapFirst (\r -> { model | runner = r, loadedGroup = Just { loaded | suspicionDismissals = dismissed } })
+                        |> (\( m, cmd ) -> ( m, cmd, [] ))
+
+                Nothing ->
+                    ( model, Cmd.none, [] )
+
+        OnSuspicionDismissalsSaved (ConcurrentTask.Success ()) ->
+            ( model, Cmd.none, [] )
+
+        OnSuspicionDismissalsSaved _ ->
+            ( model, Cmd.none, [ LogError ErrorLog.StorageSource ErrorLog.Err "Failed to save suspicion dismissals" ] )
 
         ToggleMigrationExclude memberId ->
             let
@@ -1879,10 +1904,10 @@ deleteGroup config model groupId =
 
 {-| Apply loaded group data from IndexedDB, constructing a LoadedGroup.
 -}
-applyLoadedGroup : UpdateConfig -> Group.Id -> List Event.Envelope -> Symmetric.Key -> Maybe Int -> Set String -> TamperSignals -> Model -> Maybe Model
-applyLoadedGroup config groupId events groupKey syncCursor unpushedIds tamperSignals model =
+applyLoadedGroup : UpdateConfig -> Group.Id -> List Event.Envelope -> Symmetric.Key -> Maybe Int -> Set String -> TamperSignals -> Set String -> Model -> Maybe Model
+applyLoadedGroup config groupId events groupKey syncCursor unpushedIds tamperSignals suspicionDismissals model =
     Dict.get groupId config.groups
-        |> Maybe.map (\summary -> GroupOps.initLoadedGroup events summary groupKey syncCursor unpushedIds tamperSignals)
+        |> Maybe.map (\summary -> GroupOps.initLoadedGroup events summary groupKey syncCursor unpushedIds tamperSignals suspicionDismissals)
         |> Maybe.map (\loaded -> { model | loadedGroup = Just loaded })
 
 
@@ -2021,6 +2046,16 @@ per-identity boundary drops nothing and only whole-identity exclusion bites.
 curationOrder : Model -> Dict Event.Id Int
 curationOrder model =
     Maybe.withDefault Dict.empty model.migrationOrder
+
+
+{-| Suspicion findings the viewer hasn't dismissed. Recomputed from history
+rather than stored: it cannot be updated incrementally the way group state can,
+so caching it would buy nothing.
+-}
+activeFindings : Member.Id -> GroupOps.LoadedGroup -> List Finding
+activeFindings viewer loaded =
+    SuspicionAudit.audit viewer loaded.groupState loaded.events
+        |> List.filter (\f -> not (Set.member (SuspicionAudit.dismissKey f) loaded.suspicionDismissals))
 
 
 
@@ -2202,9 +2237,13 @@ viewGroupPage config groupView loaded model =
                         loaded.summary.defaultCurrency
                         { identities = MigrationCuration.identities (curationOrder model) userRootId loaded.groupState loaded.events
                         , selection = model.migrationSelection
+                        , findings = activeFindings model.identityHash loaded
+                        , resolveName = GroupState.resolveMemberName loaded.groupState
                         , preview = model.migrationPreview
                         , onToggle = config.toMsg << ToggleMigrationExclude
                         , onSetBound = \memberId bound -> config.toMsg (SetMigrationBound memberId bound)
+                        , onDismissFinding = \finding -> config.toMsg (DismissSuspicion (SuspicionAudit.dismissKey finding))
+                        , onExcludeFinding = \finding -> config.toMsg (SetMigrationBound finding.culprit MigrationCuration.All)
                         , onPreview = config.toMsg PreviewMigration
                         , onConfirm = config.toMsg ConfirmMigration
                         , onCancel = config.toMsg (RequestNavigation (Tab BalanceTab))
@@ -2264,6 +2303,13 @@ viewTabs config maybeUserRootId loaded model =
                                     { onMigrate = config.toMsg (RequestNavigation Migrate)
                                     , onDismiss = config.toMsg DismissTamperSignals
                                     }
+                                ]
+
+                              else
+                                []
+                            , if not (List.isEmpty (activeFindings model.identityHash loaded)) && loaded.summary.supersededBy == Nothing then
+                                [ UI.Components.suspicionBanner config.i18n
+                                    { onReview = config.toMsg (RequestNavigation Migrate) }
                                 ]
 
                               else

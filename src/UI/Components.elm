@@ -11,7 +11,7 @@ module UI.Components exposing
     , fab
     , featherIcon, featherIconColored, animatedChevron
     , appLogo
-    , languageSelector, pwaBanners, readOnlyBanner, supersededBanner, tamperBanner, unknownEventsBanner
+    , languageSelector, pwaBanners, readOnlyBanner, supersededBanner, suspicionBanner, tamperBanner, unknownEventsBanner
     )
 
 {-| Reusable UI components.
@@ -55,7 +55,7 @@ module UI.Components exposing
 
 # Domain components
 
-@docs languageSelector, pwaBanners, readOnlyBanner, supersededBanner, tamperBanner, unknownEventsBanner
+@docs languageSelector, pwaBanners, readOnlyBanner, supersededBanner, suspicionBanner, tamperBanner, unknownEventsBanner
 
 -}
 
@@ -1046,6 +1046,20 @@ tamperBanner i18n { onMigrate, onDismiss } =
         , textColor = Theme.danger.text
         , action = Just ( T.groupTamperMigrate i18n, onMigrate )
         , dismiss = Just onDismiss
+        }
+
+
+{-| Banner shown when the suspicion audit found un-dismissed findings (spec
+§11.7). It routes to the migration review, where each finding is dismissed or
+acted on individually — so, unlike the tamper banner, it carries no dismiss.
+-}
+suspicionBanner : I18n -> { onReview : msg } -> Ui.Element msg
+suspicionBanner i18n { onReview } =
+    pwaBanner (T.groupSuspicionWarning i18n)
+        { bgColor = Theme.danger.tint
+        , textColor = Theme.danger.text
+        , action = Just ( T.groupSuspicionReview i18n, onReview )
+        , dismiss = Nothing
         }
 
 

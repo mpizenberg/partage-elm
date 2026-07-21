@@ -11,6 +11,7 @@ import Dict exposing (Dict)
 import Domain.Currency exposing (Currency)
 import Domain.Member as Member
 import Domain.MigrationCuration exposing (Bound(..), Identity, Preview)
+import Domain.SuspicionAudit exposing (Finding, Kind(..))
 import Format
 import Translations as T exposing (I18n)
 import UI.Components
@@ -25,9 +26,13 @@ view :
     ->
         { identities : List Identity
         , selection : Dict Member.Id Bound
+        , findings : List Finding
+        , resolveName : Member.Id -> String
         , preview : Maybe Preview
         , onToggle : Member.Id -> msg
         , onSetBound : Member.Id -> Bound -> msg
+        , onDismissFinding : Finding -> msg
+        , onExcludeFinding : Finding -> msg
         , onPreview : msg
         , onConfirm : msg
         , onCancel : msg
@@ -47,6 +52,7 @@ view i18n currency config =
                     ]
                 )
             ]
+        , findingsCard i18n config
         , UI.Components.card [ Ui.padding Theme.spacing.lg ]
             [ Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
                 (UI.Components.sectionLabel (T.migrateReviewTitle i18n)
@@ -72,6 +78,50 @@ view i18n currency config =
 body : String -> Ui.Element msg
 body text =
     Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.text ] (Ui.text text)
+
+
+findingsCard :
+    I18n
+    -> { c | findings : List Finding, resolveName : Member.Id -> String, onDismissFinding : Finding -> msg, onExcludeFinding : Finding -> msg }
+    -> Ui.Element msg
+findingsCard i18n config =
+    if List.isEmpty config.findings then
+        Ui.none
+
+    else
+        UI.Components.card [ Ui.padding Theme.spacing.lg ]
+            [ Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+                (UI.Components.sectionLabel (T.migrateSuspicionTitle i18n)
+                    :: List.map (findingRow i18n config) config.findings
+                )
+            ]
+
+
+findingRow :
+    I18n
+    -> { c | resolveName : Member.Id -> String, onDismissFinding : Finding -> msg, onExcludeFinding : Finding -> msg }
+    -> Finding
+    -> Ui.Element msg
+findingRow i18n config finding =
+    Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
+        [ body (findingText i18n config.resolveName finding)
+        , Ui.row [ Ui.spacing Theme.spacing.sm ]
+            [ UI.Components.btnOutline []
+                { label = T.migrateSuspicionExclude i18n, icon = Nothing, onPress = config.onExcludeFinding finding }
+            , UI.Components.btnOutline []
+                { label = T.migrateSuspicionDismiss i18n, icon = Nothing, onPress = config.onDismissFinding finding }
+            ]
+        ]
+
+
+findingText : I18n -> (Member.Id -> String) -> Finding -> String
+findingText i18n resolveName finding =
+    case finding.kind of
+        ForeignPaymentEdit { target } ->
+            T.migrateSuspicionForeignPayment { culprit = finding.culpritLabel, target = resolveName target } i18n
+
+        GraftedDeviceTamper _ ->
+            T.migrateSuspicionGraftedDevice finding.culpritLabel i18n
 
 
 identityRow :

@@ -44,7 +44,7 @@ cursorResetTests =
 
                 loaded : GroupOps.LoadedGroup
                 loaded =
-                    GroupOps.initLoadedGroup existing testSummary (Symmetric.importKey "test-key") (Just 50) Set.empty TamperSignals.empty
+                    GroupOps.initLoadedGroup existing testSummary (Symmetric.importKey "test-key") (Just 50) Set.empty TamperSignals.empty Set.empty
 
                 result : GroupOps.SyncApplyResult
                 result =
@@ -206,7 +206,7 @@ lateArrivalTests =
 
 loadedFrom : List Event.Envelope -> GroupOps.LoadedGroup
 loadedFrom events =
-    GroupOps.initLoadedGroup events testSummary (Symmetric.importKey "test-key") Nothing Set.empty TamperSignals.empty
+    GroupOps.initLoadedGroup events testSummary (Symmetric.importKey "test-key") Nothing Set.empty TamperSignals.empty Set.empty
 
 
 syncWith : List Event.Envelope -> GroupOps.LoadedGroup -> GroupOps.SyncApplyResult

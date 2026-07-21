@@ -90,6 +90,7 @@ type alias LoadedGroup =
     , syncCursor : Maybe Int
     , unpushedIds : Set String
     , tamperSignals : TamperSignals
+    , suspicionDismissals : Set String
     }
 
 
@@ -112,8 +113,8 @@ addUnpushedId eventId loaded =
 
 {-| Build a LoadedGroup from raw events, a summary, and the group key, applying all events to compute state.
 -}
-initLoadedGroup : List Event.Envelope -> Group.Summary -> Symmetric.Key -> Maybe Int -> Set String -> TamperSignals -> LoadedGroup
-initLoadedGroup events summary key cursor unpushed tamperSignals =
+initLoadedGroup : List Event.Envelope -> Group.Summary -> Symmetric.Key -> Maybe Int -> Set String -> TamperSignals -> Set String -> LoadedGroup
+initLoadedGroup events summary key cursor unpushed tamperSignals suspicionDismissals =
     -- We store the events in reverse order for efficient prepending of new events
     { events = List.reverse events
     , groupState = GroupState.applyEvents events GroupState.empty
@@ -122,6 +123,7 @@ initLoadedGroup events summary key cursor unpushed tamperSignals =
     , syncCursor = cursor
     , unpushedIds = unpushed
     , tamperSignals = tamperSignals
+    , suspicionDismissals = suspicionDismissals
     }
 
 
