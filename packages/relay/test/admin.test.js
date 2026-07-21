@@ -36,6 +36,45 @@ describe('admin endpoint auth', () => {
   });
 });
 
+describe('admin auth rate limiting', () => {
+  const attempt = (app, { secret, ip }) =>
+    app.request('/api/admin/summary', {
+      headers: { Authorization: `Bearer ${secret}`, 'X-Forwarded-For': ip },
+    });
+
+  it('locks out an address after repeated failures, but not a correct secret elsewhere', async () => {
+    const { app } = makeApp({ adminSecret: ADMIN });
+
+    let firstBlock = -1;
+    for (let i = 0; i < 20; i++) {
+      const status = (await attempt(app, { secret: 'wrong', ip: '1.1.1.1' })).status;
+      if (status === 429) {
+        firstBlock = i;
+        break;
+      }
+      assert.equal(status, 401);
+    }
+    assert.ok(firstBlock >= 1, 'a lockout follows some plain 401s');
+
+    const blocked = await attempt(app, { secret: 'wrong', ip: '1.1.1.1' });
+    assert.equal(blocked.status, 429);
+    assert.ok(blocked.headers.get('retry-after'));
+
+    // The correct secret is short-circuited from the locked address...
+    assert.equal((await attempt(app, { secret: ADMIN, ip: '1.1.1.1' })).status, 429);
+    // ...but works from a fresh one, and a fresh address is not pre-locked.
+    assert.equal((await attempt(app, { secret: ADMIN, ip: '2.2.2.2' })).status, 200);
+    assert.equal((await attempt(app, { secret: 'wrong', ip: '3.3.3.3' })).status, 401);
+  });
+
+  it('does not count a successful auth toward the lockout', async () => {
+    const { app } = makeApp({ adminSecret: ADMIN });
+    for (let i = 0; i < 20; i++) {
+      assert.equal((await attempt(app, { secret: ADMIN, ip: '4.4.4.4' })).status, 200);
+    }
+  });
+});
+
 describe('admin summary content', () => {
   it('reports current fleet levels in the now section', async () => {
     const { app, storage } = makeApp({ adminSecret: ADMIN });

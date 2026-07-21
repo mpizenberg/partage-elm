@@ -16,6 +16,7 @@ import { cors } from 'hono/cors';
 import { bodyLimit } from 'hono/body-limit';
 import { issueChallenge, verifySolution, constantTimeEqual } from './pow.js';
 import { ADMIN_PAGE } from './admin-page.js';
+import { createAdminThrottle } from './admin-throttle.js';
 
 export const PULL_PAGE_SIZE = 200;
 const MAX_EVENT_DATA_BYTES = 1024 * 1024;
@@ -54,6 +55,13 @@ const AUTH_PROBE_THRESHOLD = 50;
 const REJECTION_SPIKE_FLOOR = 50;
 const REJECTION_SPIKE_FACTOR = 3;
 const REJECTION_METRICS = ['quota_507', 'rate_429', 'body_413'];
+
+// Brute-force lockout for the admin bearer check, so a strong ADMIN_SECRET is
+// safe on the public origin: after this many failed attempts an address is
+// locked out for this long. Strict on purpose; a correct secret is never
+// throttled.
+const ADMIN_MAX_AUTH_FAILURES = 5;
+const ADMIN_LOCKOUT_MS = 15 * 60 * 1000;
 
 // Hosting rates mirrored from docs/SPECIFICATION.md §18.2 (the source of truth,
 // also encoded in src/Infra/UsageStats.elm). Cents; compute is a fixed multiple
@@ -107,6 +115,18 @@ export async function verifyGroupSecret(storage, groupId, secret) {
 async function verifyAdminSecret(adminSecret, presented) {
   const [a, b] = await Promise.all([sha256Base64Url(presented), sha256Base64Url(adminSecret)]);
   return constantTimeEqual(a, b);
+}
+
+// The rightmost X-Forwarded-For entry is the one the reverse proxy appends from
+// the real peer — a client can prepend spoofed hops but cannot control it. With
+// no proxy header present, all callers share one bucket.
+function clientIp(c) {
+  const forwarded = c.req.header('x-forwarded-for');
+  if (!forwarded) {
+    return 'unknown';
+  }
+  const hops = forwarded.split(',');
+  return hops[hops.length - 1].trim();
 }
 
 function median(values) {
@@ -476,13 +496,24 @@ export function createApp({
   // no secret; the endpoint's bearer is entered by the operator. Both absent
   // (404) unless ADMIN_SECRET is configured.
   if (adminSecret !== null) {
+    const throttle = createAdminThrottle({ maxFailures: ADMIN_MAX_AUTH_FAILURES, durationMs: ADMIN_LOCKOUT_MS });
+    const tooManyAttempts = (c, waitMs) =>
+      c.json({ error: 'Too many failed attempts' }, 429, { 'Retry-After': String(Math.ceil(waitMs / 1000)) });
+
     app.get('/admin', (c) => c.html(ADMIN_PAGE));
 
     app.get('/api/admin/summary', async (c) => {
+      const ip = clientIp(c);
+      const lockedFor = throttle.lockedForMs(ip);
+      if (lockedFor > 0) {
+        return tooManyAttempts(c, lockedFor);
+      }
       const auth = c.req.header('Authorization') ?? '';
       if (!auth.startsWith('Bearer ') || !(await verifyAdminSecret(adminSecret, auth.slice('Bearer '.length)))) {
-        return c.json({ error: 'Invalid credentials' }, 401);
+        const wait = throttle.fail(ip);
+        return wait > 0 ? tooManyAttempts(c, wait) : c.json({ error: 'Invalid credentials' }, 401);
       }
+      throttle.succeed(ip);
 
       const nowMs = Date.now();
       const today = new Date(nowMs).toISOString().slice(0, 10);

@@ -53,17 +53,11 @@ Setting `ADMIN_SECRET` turns on a read-only surface for monitoring the deploymen
 - `GET /admin` — a self-contained page; enter the secret, which stays in the browser tab's session and is never persisted.
 - `GET /api/admin/summary` — the JSON behind it, authenticated with `Authorization: Bearer $ADMIN_SECRET`.
 
-Both are **absent (`404`) until `ADMIN_SECRET` is set**, live outside the per-group auth, and never touch group content — but they do expose fleet **metadata** (group existence, sizes, opaque `groupId` hot-lists). Because that is a cross-group metadata surface strictly more privileged than any group secret, **do not expose it publicly.** The relay does not gate by network, so restrict `/admin` and `/api/admin/*` at your reverse proxy or host firewall — e.g. an nginx IP allowlist:
+Both are **absent (`404`) until `ADMIN_SECRET` is set** and live outside the per-group auth. They never return group content — only fleet **metadata** (group existence and sizes, opaque `groupId` hot-lists, abuse counters, a users estimate).
 
-```nginx
-location ~ ^/(admin|api/admin/) {
-    allow 203.0.113.4;   # your admin IP
-    deny all;
-    proxy_pass http://127.0.0.1:8090;
-}
-```
+Serving them on the public origin behind TLS is fine **provided `ADMIN_SECRET` is a strong random value** (generate it like `POW_SECRET`). That secret is the primary control — compared in constant time — and the endpoint hardens itself against guessing: after **5 failed attempts an address is locked out for 15 minutes**. The lockout is per-IP and keyed off the reverse proxy's `X-Forwarded-For` (the setups above set it), so an attacker cannot lock the operator out, and a correct secret is never throttled.
 
-or reach them only over an SSH tunnel / private network. Cloudflare parity is not yet implemented; the Worker never enables this endpoint.
+If you would rather the metadata surface be unreachable from the internet as well, that is optional defense-in-depth: restrict `/admin` and `/api/admin/*` with an nginx `allow`/`deny` block on those paths, or reach them only over an SSH tunnel or a private overlay (e.g. Tailscale). Cloudflare parity is not yet implemented; the Worker never enables this endpoint.
 
 CI builds and publishes this image on every push to `main` (`.github/workflows/relay-image.yml`): `ghcr.io/mpizenberg/partage-elm/relay`, tagged `latest` and with the commit sha.
 
