@@ -713,6 +713,29 @@ membership-metadata leak. This yields an enforcement ladder, best rung first:
    (which re-verifies every event), re-invite members out-of-band, and abandon
    the old group to the TTL.
 
+The four counters are blind to **signature-valid injection**: a key holder can
+author correctly-signed events, including as an existing member by self-linking
+a device (`MemberLinked` carries no root consent, being the device-recovery
+path), so nothing is rejected and no counter moves. A client-side **suspicion
+audit** recomputes two content-shaped signals from the history to catch these.
+A **foreign payment-info change** is a `MemberMetadataUpdated` that rewrites a
+self-present member's `payment` sub-record from a different root — redirecting
+that member's settlements. A **grafted-device tamper** is a second device
+grafted onto an established member (its root also authored-for by another
+identity) whose entire footprint only alters existing entries or payment info.
+Presence is judged from **authorship**, not device links, so a graft onto the
+group creator (who has no self-link) is caught; and because both tests ignore
+event order, a back-dated `clientTimestamp` cannot hide a finding. These signals
+are heuristic — a benign cross-edit (an admin filling in a member's details) can
+trip them — so they never act on their own: they raise a review prompt that
+routes to migration, where each finding is either **dismissed** (recorded
+per-device, never synced, so it does not re-alarm) or used to pre-select the
+implicated identity for exclusion from the re-homed history. A finding is
+withheld from the very device it implicates — matched on the **authoring device
+id**, so a graft's victim (same root, another device) still sees it — so an
+attacker running the app gets no sign they were detected, and cannot forge or
+suppress a flag that never enters the log.
+
 Within this model, content vandalism (junk entries, renames, mass tombstoning)
 remains possible but is signed, attributed in the activity feed, and
 reversible from the log — the trusted-group model working as intended. The
