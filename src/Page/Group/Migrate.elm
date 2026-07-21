@@ -139,7 +139,10 @@ identityRow i18n config identity =
         mainRow =
             Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.md, Ui.contentCenterY ]
                 [ if identity.excludable then
-                    UI.Components.toggle { isOn = bound /= Nothing, onPress = config.onToggle identity.id }
+                    Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
+                        [ UI.Components.toggle { isOn = bound == Nothing, onPress = config.onToggle identity.id }
+                        , Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.color Theme.base.textSubtle ] (Ui.text (T.migrateToggleKeep i18n))
+                        ]
 
                   else
                     Ui.el [ Ui.width (Ui.px 42) ] Ui.none

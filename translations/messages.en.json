@@ -100,6 +100,7 @@
   "migrateEventsUnit": "events",
   "migrateDeviceTag": "device",
   "migrateKept": "kept",
+  "migrateToggleKeep": "Keep",
   "migratePreview": "Preview the result",
   "migrateStatCarried": "Events carried over",
   "migrateStatDropped": "Events dropped",
