@@ -183,6 +183,7 @@ type alias Model =
     , migrationSelection : Dict Member.Id MigrationCuration.Bound
     , migrationPreview : Maybe MigrationCuration.Preview
     , migrationOrder : Maybe (Dict Event.Id Int)
+    , migrationManualExpanded : Set Member.Id
     }
 
 
@@ -264,6 +265,7 @@ type
     | OnSuspicionDismissalsSaved (ConcurrentTask.Response Idb.Error ())
     | ToggleMigrationExclude Member.Id
     | SetMigrationBound Member.Id MigrationCuration.Bound
+    | ToggleMigrationManual Member.Id
     | OnMigrationOrderFetched Group.Id (ConcurrentTask.Response Server.Error (Dict Event.Id Int))
     | PreviewMigration
     | ConfirmMigration
@@ -329,6 +331,7 @@ init config =
     , migrationSelection = Dict.empty
     , migrationPreview = Nothing
     , migrationOrder = Nothing
+    , migrationManualExpanded = Set.empty
     }
 
 
@@ -476,7 +479,7 @@ update config msg model =
         RequestNavigation groupView ->
             case config.route of
                 GroupRoute groupId _ ->
-                    ( { model | migrationSelection = Dict.empty, migrationPreview = Nothing, migrationOrder = Nothing }
+                    ( { model | migrationSelection = Dict.empty, migrationPreview = Nothing, migrationOrder = Nothing, migrationManualExpanded = Set.empty }
                     , Cmd.none
                     , [ NavigateTo (GroupRoute groupId groupView) ]
                     )
@@ -1153,15 +1156,43 @@ update config msg model =
 
         ToggleMigrationExclude memberId ->
             let
+                -- Pre-place the cut on the earliest suspicious sync, so a leaked
+                -- key defaults to keeping the genuine prefix; whole removal when
+                -- nothing looks injected.
+                defaultBound : MigrationCuration.Bound
+                defaultBound =
+                    case model.loadedGroup of
+                        Just loaded ->
+                            MigrationCuration.anchorsFor (curationOrder model) (activeFindings model.identityHash loaded) memberId loaded.events
+                                |> List.head
+                                |> Maybe.map .bound
+                                |> Maybe.withDefault MigrationCuration.All
+
+                        Nothing ->
+                            MigrationCuration.All
+
                 selection : Dict Member.Id MigrationCuration.Bound
                 selection =
                     if Dict.member memberId model.migrationSelection then
                         Dict.remove memberId model.migrationSelection
 
                     else
-                        Dict.insert memberId MigrationCuration.All model.migrationSelection
+                        Dict.insert memberId defaultBound model.migrationSelection
             in
             ( { model | migrationSelection = selection, migrationPreview = Nothing }
+            , Cmd.none
+            , []
+            )
+
+        ToggleMigrationManual memberId ->
+            ( { model
+                | migrationManualExpanded =
+                    if Set.member memberId model.migrationManualExpanded then
+                        Set.remove memberId model.migrationManualExpanded
+
+                    else
+                        Set.insert memberId model.migrationManualExpanded
+              }
             , Cmd.none
             , []
             )
@@ -1216,7 +1247,7 @@ update config msg model =
                     ( model, Cmd.none, [] )
 
         OnGroupMigrated (ConcurrentTask.Success result) ->
-            ( { model | migrationSelection = Dict.empty, migrationPreview = Nothing, migrationOrder = Nothing }
+            ( { model | migrationSelection = Dict.empty, migrationPreview = Nothing, migrationOrder = Nothing, migrationManualExpanded = Set.empty }
             , Cmd.none
             , [ UpdateGroupSummary result.oldSummary
               , UpdateGroupSummary result.newSummary
@@ -2238,13 +2269,16 @@ viewGroupPage config groupView loaded model =
                         { identities = MigrationCuration.identities (curationOrder model) userRootId loaded.groupState loaded.events
                         , selection = model.migrationSelection
                         , findings = activeFindings model.identityHash loaded
+                        , anchors = \memberId -> MigrationCuration.anchorsFor (curationOrder model) (activeFindings model.identityHash loaded) memberId loaded.events
+                        , expandedManual = model.migrationManualExpanded
                         , resolveName = GroupState.resolveMemberName loaded.groupState
                         , preview = model.migrationPreview
                         , zone = config.timeZone
                         , onToggle = config.toMsg << ToggleMigrationExclude
                         , onSetBound = \memberId bound -> config.toMsg (SetMigrationBound memberId bound)
+                        , onToggleManual = config.toMsg << ToggleMigrationManual
                         , onDismissFinding = \finding -> config.toMsg (DismissSuspicion (SuspicionAudit.dismissKey finding))
-                        , onExcludeFinding = \finding -> config.toMsg (SetMigrationBound finding.culprit MigrationCuration.All)
+                        , onExcludeFinding = \finding -> config.toMsg (SetMigrationBound finding.culprit (MigrationCuration.cutBeforeFinding (curationOrder model) finding loaded.events))
                         , onPreview = config.toMsg PreviewMigration
                         , onConfirm = config.toMsg ConfirmMigration
                         , onCancel = config.toMsg (RequestNavigation (Tab BalanceTab))

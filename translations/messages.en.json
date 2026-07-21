@@ -116,6 +116,8 @@
   "migrateCurateHeading": "Keep some of this identity's earlier history?",
   "migrateCurateRemoveAll": "Remove everything ({count} events)",
   "migrateCurateKeep": "Keep the first {kept}, drop {dropped}",
+  "migrateAnchorFlood": "Flood — {count} events in one sync",
+  "migrateCutManual": "Place the cut manually",
   "migrateCurateOrderNote": "Split points follow the order events reached the server — an order a tampered event can't back-date, unlike its own timestamp.",
   "migrateSuspicionTitle": "Suspicious activity",
   "migrateSuspicionForeignPayment": "{culprit} changed {target}'s payment info.",

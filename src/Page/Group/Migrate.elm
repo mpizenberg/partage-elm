@@ -11,9 +11,10 @@ import Dict exposing (Dict)
 import Domain.Currency exposing (Currency)
 import Domain.Date as Date
 import Domain.Member as Member
-import Domain.MigrationCuration exposing (BalanceRow, Bound(..), Identity, Preview)
+import Domain.MigrationCuration exposing (AnchorReason(..), BalanceRow, Bound(..), CutAnchor, Identity, Preview)
 import Domain.SuspicionAudit exposing (Finding, Kind(..))
 import Format
+import Set exposing (Set)
 import Time
 import Translations as T exposing (I18n)
 import UI.Components
@@ -30,11 +31,14 @@ view :
         { identities : List Identity
         , selection : Dict Member.Id Bound
         , findings : List Finding
+        , anchors : Member.Id -> List CutAnchor
+        , expandedManual : Set Member.Id
         , resolveName : Member.Id -> String
         , preview : Maybe Preview
         , zone : Time.Zone
         , onToggle : Member.Id -> msg
         , onSetBound : Member.Id -> Bound -> msg
+        , onToggleManual : Member.Id -> msg
         , onDismissFinding : Finding -> msg
         , onExcludeFinding : Finding -> msg
         , onPreview : msg
@@ -130,7 +134,17 @@ findingText i18n resolveName finding =
 
 identityCard :
     I18n
-    -> { c | zone : Time.Zone, onToggle : Member.Id -> msg, onSetBound : Member.Id -> Bound -> msg, selection : Dict Member.Id Bound }
+    ->
+        { c
+            | zone : Time.Zone
+            , onToggle : Member.Id -> msg
+            , onSetBound : Member.Id -> Bound -> msg
+            , onToggleManual : Member.Id -> msg
+            , selection : Dict Member.Id Bound
+            , anchors : Member.Id -> List CutAnchor
+            , expandedManual : Set Member.Id
+            , resolveName : Member.Id -> String
+        }
     -> Identity
     -> Ui.Element msg
 identityCard i18n config identity =
@@ -168,7 +182,7 @@ identityCard i18n config identity =
             case bound of
                 Just current ->
                     if identity.excludable && not (List.isEmpty identity.boundaries) then
-                        [ curationBox i18n config.onSetBound identity current ]
+                        [ curationBox i18n config identity current ]
 
                     else
                         []
@@ -259,11 +273,89 @@ segment label active activeBg onPress =
 
 
 {-| Refinement offered once an identity with multi-batch history is set to
-Remove: keep an early prefix instead of dropping everything. Splits follow the
-server's arrival order, which a tampered event can't back-date.
+Remove. Leads with the suspicious syncs as one-tap "cut before here" choices,
+keeps a plain "remove everything", and hides the full server-order timeline
+behind a collapsible for an arbitrary cut. Splits follow the server's arrival
+order, which a tampered event can't back-date.
 -}
-curationBox : I18n -> (Member.Id -> Bound -> msg) -> Identity -> Bound -> Ui.Element msg
-curationBox i18n onSetBound identity current =
+curationBox :
+    I18n
+    -> { c | onSetBound : Member.Id -> Bound -> msg, onToggleManual : Member.Id -> msg, anchors : Member.Id -> List CutAnchor, expandedManual : Set Member.Id, resolveName : Member.Id -> String }
+    -> Identity
+    -> Bound
+    -> Ui.Element msg
+curationBox i18n config identity current =
+    let
+        anchors : List CutAnchor
+        anchors =
+            config.anchors identity.id
+
+        expanded : Bool
+        expanded =
+            Set.member identity.id config.expandedManual
+
+        keepDrop : Int -> Int -> String
+        keepDrop kept dropped =
+            T.migrateCurateKeep { kept = String.fromInt kept, dropped = String.fromInt dropped } i18n
+
+        anchorOptions : List (Ui.Element msg)
+        anchorOptions =
+            List.map
+                (\anchor ->
+                    cutOption
+                        (anchorTitle i18n config.resolveName anchor)
+                        (Just (keepDrop anchor.kept anchor.dropped))
+                        (current == anchor.bound)
+                        (config.onSetBound identity.id anchor.bound)
+                )
+                anchors
+
+        removeAll : Ui.Element msg
+        removeAll =
+            cutOption
+                (T.migrateCurateRemoveAll (String.fromInt identity.eventCount) i18n)
+                Nothing
+                (current == All)
+                (config.onSetBound identity.id All)
+
+        manualToggle : Ui.Element msg
+        manualToggle =
+            Ui.row
+                [ Ui.Input.button (config.onToggleManual identity.id)
+                , Ui.pointer
+                , Ui.spacing Theme.spacing.xs
+                , Ui.contentCenterY
+                , Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
+                ]
+                [ Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.color Theme.warning.text ]
+                    (Ui.text
+                        (if expanded then
+                            "▾"
+
+                         else
+                            "▸"
+                        )
+                    )
+                , Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.weight Theme.fontWeight.medium, Ui.Font.color Theme.warning.text ]
+                    (Ui.text (T.migrateCutManual i18n))
+                ]
+
+        manualOptions : List (Ui.Element msg)
+        manualOptions =
+            if expanded then
+                List.map
+                    (\b ->
+                        cutOption
+                            (keepDrop b.kept (identity.eventCount - b.kept))
+                            Nothing
+                            (current == After b.seq)
+                            (config.onSetBound identity.id (After b.seq))
+                    )
+                    identity.boundaries
+
+            else
+                []
+    in
     Ui.column
         [ Ui.width Ui.fill
         , Ui.spacing Theme.spacing.xs
@@ -273,26 +365,29 @@ curationBox i18n onSetBound identity current =
         , Ui.border Theme.border
         , Ui.borderColor Theme.warning.tintStrong
         ]
-        ([ Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.weight Theme.fontWeight.semibold, Ui.Font.color Theme.warning.text ]
+        (Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.weight Theme.fontWeight.semibold, Ui.Font.color Theme.warning.text ]
             (Ui.text (T.migrateCurateHeading i18n))
-         , curateOption (T.migrateCurateRemoveAll (String.fromInt identity.eventCount) i18n) (current == All) (onSetBound identity.id All)
-         ]
-            ++ List.map
-                (\b ->
-                    curateOption
-                        (T.migrateCurateKeep { kept = String.fromInt b.kept, dropped = String.fromInt (identity.eventCount - b.kept) } i18n)
-                        (current == After b.seq)
-                        (onSetBound identity.id (After b.seq))
-                )
-                identity.boundaries
+            :: anchorOptions
+            ++ [ removeAll, manualToggle ]
+            ++ manualOptions
             ++ [ Ui.el [ Ui.width Ui.fill, Ui.Font.size Theme.font.xs, Ui.Font.color Theme.warning.textSubtle ]
                     (Ui.text (T.migrateCurateOrderNote i18n))
                ]
         )
 
 
-curateOption : String -> Bool -> msg -> Ui.Element msg
-curateOption label selected onPress =
+anchorTitle : I18n -> (Member.Id -> String) -> CutAnchor -> String
+anchorTitle i18n resolveName anchor =
+    case anchor.reason of
+        FindingReason finding ->
+            findingText i18n resolveName finding
+
+        FloodReason count ->
+            T.migrateAnchorFlood (String.fromInt count) i18n
+
+
+cutOption : String -> Maybe String -> Bool -> msg -> Ui.Element msg
+cutOption title maybeSubtitle selected onPress =
     Ui.row
         ([ Ui.Input.button onPress
          , Ui.pointer
@@ -310,7 +405,16 @@ curateOption label selected onPress =
                )
         )
         [ radioDot selected
-        , Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.text ] (Ui.text label)
+        , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+            (Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.text ] (Ui.text title)
+                :: (case maybeSubtitle of
+                        Just subtitle ->
+                            [ Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.color Theme.base.textSubtle ] (Ui.text subtitle) ]
+
+                        Nothing ->
+                            []
+                   )
+            )
         ]
 
 

@@ -116,6 +116,8 @@
   "migrateCurateHeading": "Conserver une partie de l'historique antérieur de cette identité ?",
   "migrateCurateRemoveAll": "Tout retirer ({count} événements)",
   "migrateCurateKeep": "Garder les {kept} premiers, retirer {dropped}",
+  "migrateAnchorFlood": "Afflux — {count} événements en une synchro",
+  "migrateCutManual": "Placer la coupe manuellement",
   "migrateCurateOrderNote": "Les points de coupe suivent l'ordre d'arrivée des événements sur le serveur — un ordre qu'un événement falsifié ne peut pas antidater, contrairement à son propre horodatage.",
   "migrateSuspicionTitle": "Activité suspecte",
   "migrateSuspicionForeignPayment": "{culprit} a modifié les informations de paiement de {target}.",
