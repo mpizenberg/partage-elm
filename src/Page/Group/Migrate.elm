@@ -146,13 +146,16 @@ identityRow i18n config identity =
 
                   else
                     Ui.el [ Ui.width (Ui.px 42) ] Ui.none
-                , Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
-                    (Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.text ] (Ui.text identity.label)
-                        :: List.filterMap (\( shown, element ) -> ifJust shown element)
-                            [ ( identity.isDevice, badge Theme.warning.bgSubtle Theme.warning.text (T.migrateDeviceTag i18n) )
-                            , ( not identity.excludable, badge Theme.base.tint Theme.base.textSubtle (T.migrateKept i18n) )
-                            ]
-                    )
+                , Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.xs ]
+                    [ Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
+                        (Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.text ] (Ui.text identity.label)
+                            :: List.filterMap (\( shown, element ) -> ifJust shown element)
+                                [ ( identity.isDevice, badge Theme.warning.bgSubtle Theme.warning.text (T.migrateDeviceTag i18n) )
+                                , ( not identity.excludable, badge Theme.base.tint Theme.base.textSubtle (T.migrateKept i18n) )
+                                ]
+                        )
+                    , Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.color Theme.base.textSubtle ] (Ui.text (Member.shortId identity.id))
+                    ]
                 , Ui.el [ Ui.alignRight, Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
                     (Ui.text (String.fromInt identity.eventCount ++ " " ++ T.migrateEventsUnit i18n))
                 ]

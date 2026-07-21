@@ -1,4 +1,4 @@
-module Domain.Member exposing (DeviceLink, Id, Metadata, PaymentInfo, State, Type(..), emptyMetadata, emptyPaymentInfo, encodeMetadata, encodePaymentInfo, encodeType, metadataDecoder, paymentInfoDecoder, pickLink, typeDecoder)
+module Domain.Member exposing (DeviceLink, Id, Metadata, PaymentInfo, State, Type(..), emptyMetadata, emptyPaymentInfo, encodeMetadata, encodePaymentInfo, encodeType, metadataDecoder, paymentInfoDecoder, pickLink, shortId, typeDecoder)
 
 {-| Group members, their lifecycle, and contact metadata.
 -}
@@ -64,6 +64,14 @@ pickLink a b =
 
     else
         b
+
+
+{-| A device/author id abbreviated for display — enough of the hash to tell two
+of a member's devices apart and to match against an id someone read out.
+-}
+shortId : Id -> String
+shortId id =
+    String.left 12 id
 
 
 {-| Optional contact and payment information for a member.
