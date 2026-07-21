@@ -2268,6 +2268,21 @@ pageShell config title content =
     UI.Shell.pageShell { title = title, onBack = config.onGoBack } content
 
 
+{-| A migrated group is abandoned: its history and balances live in the successor,
+so the tabs would render an empty shell. Show a calm pointer instead.
+-}
+supersededPlaceholder : I18n -> Ui.Element msg
+supersededPlaceholder i18n =
+    Ui.el
+        [ Ui.width Ui.fill
+        , Ui.paddingXY 0 Theme.spacing.xl
+        , Ui.Font.center
+        , Ui.Font.color Theme.base.textSubtle
+        , Ui.Font.size Theme.font.sm
+        ]
+        (Ui.text (T.groupSupersededBody i18n))
+
+
 viewTabs : ViewConfig msg -> Maybe Member.Id -> LoadedGroup -> Model -> ViewResult msg
 viewTabs config maybeUserRootId loaded model =
     let
@@ -2287,6 +2302,10 @@ viewTabs config maybeUserRootId loaded model =
 
                 Nothing ->
                     Ui.none
+
+        isSuperseded : Bool
+        isSuperseded =
+            loaded.summary.supersededBy /= Nothing
     in
     { content =
         UI.Shell.tabbedShell
@@ -2333,7 +2352,11 @@ viewTabs config maybeUserRootId loaded model =
                                 []
                             ]
                 in
-                if List.isEmpty banners then
+                if isSuperseded then
+                    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+                        (banners ++ [ supersededPlaceholder config.i18n ])
+
+                else if List.isEmpty banners then
                     tabContent config maybeUserRootId loaded model
 
                 else
@@ -2341,21 +2364,25 @@ viewTabs config maybeUserRootId loaded model =
                         (banners ++ [ tabContent config maybeUserRootId loaded model ])
             }
     , overlay =
-        Just <|
-            Ui.column [ Ui.spacing Theme.spacing.lg ]
-                [ fab
+        if isSuperseded then
+            Nothing
 
-                -- Tab bar
-                , UI.Shell.tabBar
-                    { balance = T.tabBalance config.i18n
-                    , entries = T.tabEntries config.i18n
-                    , members = T.tabMembers config.i18n
-                    , activity = T.tabActivity config.i18n
-                    }
-                    tabHref
-                    model.activeTab
-                    (\tab -> config.toMsg (RequestNavigation (Tab tab)))
-                ]
+        else
+            Just <|
+                Ui.column [ Ui.spacing Theme.spacing.lg ]
+                    [ fab
+
+                    -- Tab bar
+                    , UI.Shell.tabBar
+                        { balance = T.tabBalance config.i18n
+                        , entries = T.tabEntries config.i18n
+                        , members = T.tabMembers config.i18n
+                        , activity = T.tabActivity config.i18n
+                        }
+                        tabHref
+                        model.activeTab
+                        (\tab -> config.toMsg (RequestNavigation (Tab tab)))
+                    ]
     }
 
 

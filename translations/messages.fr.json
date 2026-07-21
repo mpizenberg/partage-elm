@@ -86,6 +86,7 @@
   "groupSuspicionReview": "Examiner",
   "groupSupersededBanner": "Ce groupe a été migré vers un nouveau groupe et est désormais en lecture seule.",
   "groupSupersededOpen": "Ouvrir le nouveau groupe",
+  "groupSupersededBody": "L'historique et les soldes de ce groupe ont été déplacés vers le nouveau groupe.",
   "migrateTitle": "Migrer vers un nouveau groupe",
   "migrateIntro": "La migration crée un tout nouveau groupe avec une nouvelle clé de chiffrement et y transfère votre historique vérifié. À utiliser si ce groupe présente des signes de falsification inattendus.",
   "migrateCarries": "L'intégralité de votre historique vérifié est transférée : les soldes et les membres restent identiques dans le nouveau groupe.",
