@@ -32,6 +32,7 @@ import Domain.Event as Event exposing (Envelope, Payload(..))
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
 import Set
+import Time
 
 
 {-| How much of an excluded identity's history to drop.
@@ -77,16 +78,21 @@ type alias Boundary =
 {-| A signing identity that authored events, with the stats a migrator needs to
 judge whether it belongs. `excludable` is False for the migrator and the group
 creator — dropping either would gut the group, so they can't be toggled off.
-`boundaries` are the seq split points, earliest first, at which the identity's
-history can be partially dropped (empty when it authored in a single batch, so
-only a whole-identity drop makes sense).
+`isSelf` marks the migrator's own identities (so the UI can say "you" rather than
+just "can't be removed"). `linkedAt` is the device's link timestamp when this
+identity is a linked device, so the migrator can tell an expected device from one
+that appeared alongside the flood. `boundaries` are the seq split points, earliest
+first, at which the identity's history can be partially dropped (empty when it
+authored in a single batch, so only a whole-identity drop makes sense).
 -}
 type alias Identity =
     { id : Member.Id
     , label : String
     , eventCount : Int
     , isDevice : Bool
+    , isSelf : Bool
     , excludable : Bool
+    , linkedAt : Maybe Time.Posix
     , boundaries : List Boundary
     }
 
@@ -143,11 +149,18 @@ identities order selfRoot state events =
 
         toIdentity : Member.Id -> Int -> Identity
         toIdentity id count =
+            let
+                root : Maybe Member.Id
+                root =
+                    GroupState.resolveMemberRootId state id
+            in
             { id = id
             , label = GroupState.resolveMemberName state id
             , eventCount = count
             , isDevice = Dict.member id state.deviceLinks
-            , excludable = GroupState.resolveMemberRootId state id /= Just selfRoot && id /= creator
+            , isSelf = root == Just selfRoot
+            , excludable = root /= Just selfRoot && id /= creator
+            , linkedAt = Dict.get id state.deviceLinks |> Maybe.map .timestamp
             , boundaries = boundariesFor id count
             }
     in

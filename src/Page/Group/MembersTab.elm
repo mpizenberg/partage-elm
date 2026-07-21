@@ -4,6 +4,7 @@ module Page.Group.MembersTab exposing (Config, Model, Msg, Output(..), init, upd
 -}
 
 import Dict exposing (Dict)
+import Domain.Date as Date
 import Domain.GroupState exposing (GroupMetadata, GroupState)
 import Domain.Member as Member
 import FeatherIcons
@@ -868,7 +869,7 @@ deviceRow subtle strong i18n zone deviceId linkedAt isThis =
             , case linkedAt of
                 Just ts ->
                     Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.color subtle ]
-                        (Ui.text (T.memberDeviceLinkedDate (monthYear i18n zone ts) i18n))
+                        (Ui.text (T.memberDeviceLinkedDate (Date.toString (Date.posixToDate zone ts)) i18n))
 
                 Nothing ->
                     Ui.none

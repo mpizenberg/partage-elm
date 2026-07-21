@@ -2240,6 +2240,7 @@ viewGroupPage config groupView loaded model =
                         , findings = activeFindings model.identityHash loaded
                         , resolveName = GroupState.resolveMemberName loaded.groupState
                         , preview = model.migrationPreview
+                        , zone = config.timeZone
                         , onToggle = config.toMsg << ToggleMigrationExclude
                         , onSetBound = \memberId bound -> config.toMsg (SetMigrationBound memberId bound)
                         , onDismissFinding = \finding -> config.toMsg (DismissSuspicion (SuspicionAudit.dismissKey finding))

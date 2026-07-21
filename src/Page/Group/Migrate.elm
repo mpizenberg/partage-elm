@@ -9,15 +9,18 @@ Page.Group on confirm.
 
 import Dict exposing (Dict)
 import Domain.Currency exposing (Currency)
+import Domain.Date as Date
 import Domain.Member as Member
 import Domain.MigrationCuration exposing (Bound(..), Identity, Preview)
 import Domain.SuspicionAudit exposing (Finding, Kind(..))
 import Format
+import Time
 import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
 import Ui
 import Ui.Font
+import Ui.Input
 
 
 view :
@@ -29,6 +32,7 @@ view :
         , findings : List Finding
         , resolveName : Member.Id -> String
         , preview : Maybe Preview
+        , zone : Time.Zone
         , onToggle : Member.Id -> msg
         , onSetBound : Member.Id -> Bound -> msg
         , onDismissFinding : Finding -> msg
@@ -57,7 +61,7 @@ view i18n currency config =
             [ Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
                 (UI.Components.sectionLabel (T.migrateReviewTitle i18n)
                     :: body (T.migrateReviewIntro i18n)
-                    :: List.map (identityRow i18n config) config.identities
+                    :: List.map (identityCard i18n config) config.identities
                 )
             ]
         , Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
@@ -124,92 +128,227 @@ findingText i18n resolveName finding =
             T.migrateSuspicionGraftedDevice finding.culpritLabel i18n
 
 
-identityRow :
+identityCard :
     I18n
-    -> { c | onToggle : Member.Id -> msg, onSetBound : Member.Id -> Bound -> msg, selection : Dict Member.Id Bound }
+    -> { c | zone : Time.Zone, onToggle : Member.Id -> msg, onSetBound : Member.Id -> Bound -> msg, selection : Dict Member.Id Bound }
     -> Identity
     -> Ui.Element msg
-identityRow i18n config identity =
+identityCard i18n config identity =
     let
         bound : Maybe Bound
         bound =
             Dict.get identity.id config.selection
 
-        mainRow : Ui.Element msg
-        mainRow =
-            Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.md, Ui.contentCenterY ]
-                [ if identity.excludable then
-                    Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
-                        [ UI.Components.toggle { isOn = bound == Nothing, onPress = config.onToggle identity.id }
-                        , Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.color Theme.base.textSubtle ] (Ui.text (T.migrateToggleKeep i18n))
-                        ]
+        control : Ui.Element msg
+        control =
+            if identity.excludable then
+                keepRemove i18n config.onToggle identity.id (bound == Nothing)
 
-                  else
-                    Ui.el [ Ui.width (Ui.px 42) ] Ui.none
-                , Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.xs ]
-                    [ Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
-                        (Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.text ] (Ui.text identity.label)
-                            :: List.filterMap (\( shown, element ) -> ifJust shown element)
-                                [ ( identity.isDevice, badge Theme.warning.bgSubtle Theme.warning.text (T.migrateDeviceTag i18n) )
-                                , ( not identity.excludable, badge Theme.base.tint Theme.base.textSubtle (T.migrateKept i18n) )
-                                ]
-                        )
-                    , Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.color Theme.base.textSubtle ] (Ui.text (Member.shortId identity.id))
-                    ]
-                , Ui.el [ Ui.alignRight, Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
-                    (Ui.text (String.fromInt identity.eventCount ++ " " ++ T.migrateEventsUnit i18n))
-                ]
-    in
-    case bound of
-        Just current ->
-            if List.isEmpty identity.boundaries then
-                mainRow
+            else if identity.isSelf then
+                pill Theme.success.bgSubtle Theme.success.text (T.migrateRoleYou i18n)
 
             else
-                Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
-                    [ mainRow, boundChips i18n config.onSetBound identity current ]
+                pill Theme.base.accent Theme.base.textSubtle (T.migrateKept i18n)
 
-        Nothing ->
-            mainRow
+        metaLine : String
+        metaLine =
+            String.join " · "
+                (case identity.linkedAt of
+                    Just ts ->
+                        [ T.memberDeviceLinkedDate (Date.toString (Date.posixToDate config.zone ts)) i18n
+                        , eventCountText i18n identity
+                        ]
+
+                    Nothing ->
+                        [ eventCountText i18n identity ]
+                )
+
+        refine : List (Ui.Element msg)
+        refine =
+            case bound of
+                Just current ->
+                    if identity.excludable && not (List.isEmpty identity.boundaries) then
+                        [ curationBox i18n config.onSetBound identity current ]
+
+                    else
+                        []
+
+                Nothing ->
+                    []
+
+        nameRow : Ui.Element msg
+        nameRow =
+            Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY, Ui.width Ui.shrink ]
+                (Ui.el [ Ui.Font.size Theme.font.md, Ui.Font.color Theme.base.text ] (Ui.text identity.label)
+                    :: (if identity.isDevice then
+                            [ pill Theme.warning.bgSubtle Theme.warning.text (T.migrateDeviceTag i18n) ]
+
+                        else
+                            []
+                       )
+                )
+
+        header : Ui.Element msg
+        header =
+            Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
+                [ Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.xs ]
+                    [ nameRow
+                    , Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.color Theme.base.textSubtle ] (Ui.text (Member.shortId identity.id))
+                    ]
+                , control
+                ]
+
+        meta : Ui.Element msg
+        meta =
+            Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.color Theme.base.textSubtle ] (Ui.text metaLine)
+    in
+    Ui.column
+        ([ Ui.width Ui.fill
+         , Ui.spacing Theme.spacing.sm
+         , Ui.padding Theme.spacing.md
+         , Ui.rounded Theme.radius.md
+         ]
+            ++ (if identity.excludable then
+                    [ Ui.border Theme.border, Ui.borderColor Theme.base.accent ]
+
+                else
+                    [ Ui.background Theme.base.tint ]
+               )
+        )
+        ([ header, meta ] ++ refine)
 
 
-boundChips : I18n -> (Member.Id -> Bound -> msg) -> Identity -> Bound -> Ui.Element msg
-boundChips i18n onSetBound identity current =
-    Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.xs, Ui.paddingWith { top = 0, bottom = 0, left = 52, right = 0 } ]
-        (UI.Components.chip
-            { label = T.migrateBoundAll i18n
-            , selected = current == All
-            , onPress = onSetBound identity.id All
-            }
-            :: List.map
+eventCountText : I18n -> Identity -> String
+eventCountText i18n identity =
+    String.fromInt identity.eventCount ++ " " ++ T.migrateEventsUnit i18n
+
+
+{-| Two-segment Keep / Remove control. The active segment is inert; only the
+other side carries the toggle, so a tap always flips the decision.
+-}
+keepRemove : I18n -> (Member.Id -> msg) -> Member.Id -> Bool -> Ui.Element msg
+keepRemove i18n onToggle memberId keeping =
+    Ui.row
+        [ Ui.width Ui.shrink
+        , Ui.alignRight
+        , Ui.border Theme.border
+        , Ui.borderColor Theme.base.accent
+        , Ui.rounded Theme.radius.xxl
+        , Ui.clip
+        ]
+        [ segment (T.migrateToggleKeep i18n) keeping Theme.primary.solid (onToggle memberId)
+        , segment (T.migrateActionRemove i18n) (not keeping) Theme.danger.solid (onToggle memberId)
+        ]
+
+
+segment : String -> Bool -> Ui.Color -> msg -> Ui.Element msg
+segment label active activeBg onPress =
+    Ui.el
+        ([ Ui.paddingXY Theme.spacing.md Theme.spacing.sm
+         , Ui.Font.size Theme.font.sm
+         , Ui.Font.weight Theme.fontWeight.medium
+         ]
+            ++ (if active then
+                    [ Ui.background activeBg, Ui.Font.color Theme.base.solidText ]
+
+                else
+                    [ Ui.Input.button onPress, Ui.pointer, Ui.Font.color Theme.base.textSubtle ]
+               )
+        )
+        (Ui.text label)
+
+
+{-| Refinement offered once an identity with multi-batch history is set to
+Remove: keep an early prefix instead of dropping everything. Splits follow the
+server's arrival order, which a tampered event can't back-date.
+-}
+curationBox : I18n -> (Member.Id -> Bound -> msg) -> Identity -> Bound -> Ui.Element msg
+curationBox i18n onSetBound identity current =
+    Ui.column
+        [ Ui.width Ui.fill
+        , Ui.spacing Theme.spacing.xs
+        , Ui.padding Theme.spacing.sm
+        , Ui.rounded Theme.radius.sm
+        , Ui.background Theme.warning.bgSubtle
+        , Ui.border Theme.border
+        , Ui.borderColor Theme.warning.tintStrong
+        ]
+        ([ Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.weight Theme.fontWeight.semibold, Ui.Font.color Theme.warning.text ]
+            (Ui.text (T.migrateCurateHeading i18n))
+         , curateOption (T.migrateCurateRemoveAll (String.fromInt identity.eventCount) i18n) (current == All) (onSetBound identity.id All)
+         ]
+            ++ List.map
                 (\b ->
-                    UI.Components.chip
-                        { label = T.migrateBoundKeep { kept = String.fromInt b.kept, dropped = String.fromInt (identity.eventCount - b.kept) } i18n
-                        , selected = current == After b.seq
-                        , onPress = onSetBound identity.id (After b.seq)
-                        }
+                    curateOption
+                        (T.migrateCurateKeep { kept = String.fromInt b.kept, dropped = String.fromInt (identity.eventCount - b.kept) } i18n)
+                        (current == After b.seq)
+                        (onSetBound identity.id (After b.seq))
                 )
                 identity.boundaries
+            ++ [ Ui.el [ Ui.width Ui.fill, Ui.Font.size Theme.font.xs, Ui.Font.color Theme.warning.textSubtle ]
+                    (Ui.text (T.migrateCurateOrderNote i18n))
+               ]
         )
 
 
-ifJust : Bool -> a -> Maybe a
-ifJust shown value =
-    if shown then
-        Just value
+curateOption : String -> Bool -> msg -> Ui.Element msg
+curateOption label selected onPress =
+    Ui.row
+        ([ Ui.Input.button onPress
+         , Ui.pointer
+         , Ui.spacing Theme.spacing.sm
+         , Ui.contentCenterY
+         , Ui.width Ui.fill
+         , Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
+         , Ui.rounded Theme.radius.sm
+         ]
+            ++ (if selected then
+                    [ Ui.background (Ui.rgb 255 255 255) ]
 
-    else
-        Nothing
+                else
+                    []
+               )
+        )
+        [ radioDot selected
+        , Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.text ] (Ui.text label)
+        ]
 
 
-badge : Ui.Color -> Ui.Color -> String -> Ui.Element msg
-badge bg fg text =
+radioDot : Bool -> Ui.Element msg
+radioDot selected =
+    Ui.el
+        [ Ui.width (Ui.px 16)
+        , Ui.height (Ui.px 16)
+        , Ui.rounded Theme.radius.xxxl
+        , Ui.border 2
+        , Ui.borderColor Theme.warning.accent
+        , Ui.contentCenterX
+        , Ui.contentCenterY
+        ]
+        (if selected then
+            Ui.el
+                [ Ui.width (Ui.px 8)
+                , Ui.height (Ui.px 8)
+                , Ui.rounded Theme.radius.xxxl
+                , Ui.background Theme.warning.accent
+                ]
+                Ui.none
+
+         else
+            Ui.none
+        )
+
+
+pill : Ui.Color -> Ui.Color -> String -> Ui.Element msg
+pill bg fg text =
     Ui.el
         [ Ui.Font.size Theme.font.xs
+        , Ui.Font.weight Theme.fontWeight.semibold
         , Ui.Font.color fg
         , Ui.background bg
         , Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
-        , Ui.rounded 999
+        , Ui.rounded Theme.radius.xxxl
+        , Ui.width Ui.shrink
         ]
         (Ui.text text)
 
