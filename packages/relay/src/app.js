@@ -15,6 +15,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { bodyLimit } from 'hono/body-limit';
 import { issueChallenge, verifySolution, constantTimeEqual } from './pow.js';
+import { ADMIN_PAGE } from './admin-page.js';
 
 export const PULL_PAGE_SIZE = 200;
 const MAX_EVENT_DATA_BYTES = 1024 * 1024;
@@ -469,10 +470,14 @@ export function createApp({
     return c.json({ maxSeq: result.maxSeq });
   });
 
-  // Operator dashboard: cross-group metadata reads behind a separate secret,
-  // mounted outside the group-auth middleware and never touching last_access.
-  // Absent (404) unless ADMIN_SECRET is configured.
+  // Operator dashboard: a self-contained read-only page plus the cross-group
+  // metadata endpoint it reads, both behind a separate secret, mounted outside
+  // the group-auth middleware and never touching last_access. The page carries
+  // no secret; the endpoint's bearer is entered by the operator. Both absent
+  // (404) unless ADMIN_SECRET is configured.
   if (adminSecret !== null) {
+    app.get('/admin', (c) => c.html(ADMIN_PAGE));
+
     app.get('/api/admin/summary', async (c) => {
       const auth = c.req.header('Authorization') ?? '';
       if (!auth.startsWith('Bearer ') || !(await verifyAdminSecret(adminSecret, auth.slice('Bearer '.length)))) {
