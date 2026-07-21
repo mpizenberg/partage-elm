@@ -87,6 +87,7 @@
   "migrateTitle": "Migrate to a new group",
   "migrateIntro": "Migration creates a brand-new group with a new encryption key and moves your verified history into it. Use this if this group shows signs of tampering you didn't expect.",
   "migrateCarries": "Your full verified history is carried over, so balances and members stay identical in the new group.",
+  "migrateCoordinate": "If several members see this warning, agree together first: only one person should migrate and share the new link — everyone else simply waits for it.",
   "migrateReinvite": "You must share the new group's invite link again — with trusted members only, and not over a channel that may be compromised. Anyone you don't re-invite is left behind.",
   "migrateReadonly": "This group becomes read-only and is abandoned; the server copy expires on its own.",
   "migrateExposure": "Migration protects future history. It cannot undo past exposure: whoever already had the old key can still read everything shared here before.",

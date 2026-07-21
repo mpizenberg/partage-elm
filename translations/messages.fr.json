@@ -87,6 +87,7 @@
   "migrateTitle": "Migrer vers un nouveau groupe",
   "migrateIntro": "La migration crée un tout nouveau groupe avec une nouvelle clé de chiffrement et y transfère votre historique vérifié. À utiliser si ce groupe présente des signes de falsification inattendus.",
   "migrateCarries": "L'intégralité de votre historique vérifié est transférée : les soldes et les membres restent identiques dans le nouveau groupe.",
+  "migrateCoordinate": "Si plusieurs membres voient cet avertissement, mettez-vous d'accord d'abord : une seule personne effectue la migration et partage le nouveau lien — les autres n'ont plus qu'à l'attendre.",
   "migrateReinvite": "Vous devez repartager le lien d'invitation du nouveau groupe — uniquement avec les membres de confiance, et pas via un canal potentiellement compromis. Toute personne non réinvitée est laissée de côté.",
   "migrateReadonly": "Ce groupe devient en lecture seule et est abandonné ; la copie sur le serveur expire d'elle-même.",
   "migrateExposure": "La migration protège l'historique futur. Elle ne peut pas annuler l'exposition passée : quiconque possédait déjà l'ancienne clé peut toujours lire tout ce qui a été partagé auparavant.",

@@ -20,6 +20,7 @@ view i18n { onConfirm, onCancel } =
                 (List.map body
                     [ T.migrateIntro i18n
                     , T.migrateCarries i18n
+                    , T.migrateCoordinate i18n
                     , T.migrateReinvite i18n
                     , T.migrateReadonly i18n
                     , T.migrateExposure i18n
