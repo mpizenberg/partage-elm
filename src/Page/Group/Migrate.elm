@@ -11,7 +11,7 @@ import Dict exposing (Dict)
 import Domain.Currency exposing (Currency)
 import Domain.Date as Date
 import Domain.Member as Member
-import Domain.MigrationCuration exposing (Bound(..), Identity, Preview)
+import Domain.MigrationCuration exposing (BalanceRow, Bound(..), Identity, Preview)
 import Domain.SuspicionAudit exposing (Finding, Kind(..))
 import Format
 import Time
@@ -357,12 +357,14 @@ previewBlock : I18n -> Currency -> Preview -> Ui.Element msg
 previewBlock i18n currency result =
     UI.Components.card [ Ui.padding Theme.spacing.md ]
         [ Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-            [ statRow (T.migrateStatCarried i18n) (String.fromInt result.carried)
-            , statRow (T.migrateStatDropped i18n) (String.fromInt result.dropped)
-            , statRow (T.migrateStatMembers i18n) (String.fromInt result.members)
-            , statRow (T.migrateStatEntries i18n) (String.fromInt result.entries)
-            , statRow (T.migrateStatBalance i18n) (Format.formatCentsSigned (T.currentLanguage i18n) result.myBalanceCents currency)
-            ]
+            ([ statRow (T.migrateStatCarried i18n) (String.fromInt result.carried)
+             , statRow (T.migrateStatDropped i18n) (String.fromInt result.dropped)
+             , statRow (T.migrateStatMembers i18n) (String.fromInt result.members)
+             , statRow (T.migrateStatEntries i18n) (String.fromInt result.entries)
+             , UI.Components.sectionLabel (T.migrateStatBalances i18n)
+             ]
+                ++ List.map (balanceRow i18n currency) result.balances
+            )
         ]
 
 
@@ -372,3 +374,43 @@ statRow label value =
         [ Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle, Ui.width Ui.fill ] (Ui.text label)
         , Ui.el [ Ui.alignRight, Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.text ] (Ui.text value)
         ]
+
+
+balanceRow : I18n -> Currency -> BalanceRow -> Ui.Element msg
+balanceRow i18n currency row =
+    let
+        lang : T.Language
+        lang =
+            T.currentLanguage i18n
+
+        label : String
+        label =
+            if row.isSelf then
+                row.label ++ " (" ++ T.migrateRoleYou i18n ++ ")"
+
+            else
+                row.label
+    in
+    Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
+        [ Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.text, Ui.width Ui.fill ] (Ui.text label)
+        , Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color (amountColor row.balanceCents) ]
+            (Ui.text (Format.formatCentsSigned lang row.balanceCents currency))
+        , if row.deltaCents == 0 then
+            Ui.none
+
+          else
+            Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.color (amountColor row.deltaCents) ]
+                (Ui.text ("Δ " ++ Format.formatCentsSigned lang row.deltaCents currency))
+        ]
+
+
+amountColor : Int -> Ui.Color
+amountColor cents =
+    if cents > 0 then
+        Theme.success.text
+
+    else if cents < 0 then
+        Theme.danger.text
+
+    else
+        Theme.base.textSubtle

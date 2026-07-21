@@ -1,4 +1,4 @@
-module Domain.MigrationCuration exposing (Bound(..), Boundary, Identity, Preview, curateEvents, identities, preview)
+module Domain.MigrationCuration exposing (BalanceRow, Bound(..), Boundary, Identity, Preview, curateEvents, identities, preview)
 
 {-| Drop events authored by excluded identities when re-homing a group during
 migration (spec §11.7).
@@ -180,16 +180,30 @@ isGenesis envelope =
             False
 
 
+{-| A resulting member balance and how much the cut moved it from the
+keep-everything baseline. `isSelf` marks the migrator's own row.
+-}
+type alias BalanceRow =
+    { id : Member.Id
+    , label : String
+    , balanceCents : Int
+    , deltaCents : Int
+    , isSelf : Bool
+    }
+
+
 {-| The new group a curated re-home would produce: how many events survive, how
-many are dropped, and the resulting active-member/entry counts and the migrator's
-own balance. A full replay — computed on demand, not per keystroke.
+many are dropped, the resulting active-member/entry counts, and the balances the
+cut changes (plus the migrator's own row, always). Deltas are against the
+keep-everything baseline — how much dropping the injected events restores. A full
+replay — computed on demand, not per keystroke.
 -}
 type alias Preview =
     { carried : Int
     , dropped : Int
     , members : Int
     , entries : Int
-    , myBalanceCents : Int
+    , balances : List BalanceRow
     }
 
 
@@ -203,14 +217,61 @@ preview order self selection events =
         state : GroupState
         state =
             GroupState.applyEvents kept GroupState.empty
+
+        baseline : GroupState
+        baseline =
+            GroupState.applyEvents events GroupState.empty
+
+        selfRoot : Maybe Member.Id
+        selfRoot =
+            GroupState.resolveMemberRootId state self
+
+        netOf : GroupState -> Member.Id -> Int
+        netOf st rootId =
+            Dict.get rootId st.balances |> Maybe.map .netBalance |> Maybe.withDefault 0
+
+        rows : List BalanceRow
+        rows =
+            state.members
+                |> Dict.filter (\_ member -> not member.isRetired)
+                |> Dict.toList
+                |> List.filterMap
+                    (\( rootId, _ ) ->
+                        let
+                            delta : Int
+                            delta =
+                                netOf state rootId - netOf baseline rootId
+
+                            isSelf : Bool
+                            isSelf =
+                                Just rootId == selfRoot
+                        in
+                        if delta /= 0 || isSelf then
+                            Just
+                                { id = rootId
+                                , label = GroupState.resolveMemberName state rootId
+                                , balanceCents = netOf state rootId
+                                , deltaCents = delta
+                                , isSelf = isSelf
+                                }
+
+                        else
+                            Nothing
+                    )
+                |> List.sortBy
+                    (\row ->
+                        ( if row.isSelf then
+                            0
+
+                          else
+                            1
+                        , negate (abs row.deltaCents)
+                        )
+                    )
     in
     { carried = List.length kept
     , dropped = List.length events - List.length kept
     , members = Dict.filter (\_ member -> not member.isRetired) state.members |> Dict.size
     , entries = Dict.filter (\_ entry -> not entry.isDeleted) state.entries |> Dict.size
-    , myBalanceCents =
-        GroupState.resolveMemberRootId state self
-            |> Maybe.andThen (\rootId -> Dict.get rootId state.balances)
-            |> Maybe.map .netBalance
-            |> Maybe.withDefault 0
+    , balances = rows
     }

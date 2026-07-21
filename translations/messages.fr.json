@@ -112,7 +112,7 @@
   "migrateStatDropped": "Événements supprimés",
   "migrateStatMembers": "Membres",
   "migrateStatEntries": "Écritures",
-  "migrateStatBalance": "Votre solde",
+  "migrateStatBalances": "Soldes après la coupe",
   "migrateCurateHeading": "Conserver une partie de l'historique antérieur de cette identité ?",
   "migrateCurateRemoveAll": "Tout retirer ({count} événements)",
   "migrateCurateKeep": "Garder les {kept} premiers, retirer {dropped}",

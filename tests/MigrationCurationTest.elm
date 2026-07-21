@@ -251,6 +251,10 @@ previewSuite =
         , test "the migrator's balance matches the attack-free baseline" <|
             \_ ->
                 let
+                    selfBalance : MigrationCuration.Preview -> Maybe Int
+                    selfBalance p =
+                        p.balances |> List.filter .isSelf |> List.head |> Maybe.map .balanceCents
+
                     baseline : MigrationCuration.Preview
                     baseline =
                         MigrationCuration.preview Dict.empty "alice" Dict.empty legitEvents
@@ -259,7 +263,7 @@ previewSuite =
                     curated =
                         MigrationCuration.preview Dict.empty "alice" (Dict.singleton "mallory" All) (legitEvents ++ attackerEvents)
                 in
-                Expect.equal baseline.myBalanceCents curated.myBalanceCents
+                Expect.equal (selfBalance baseline) (selfBalance curated)
         , test "a time boundary drops only the flood in the preview" <|
             \_ ->
                 let

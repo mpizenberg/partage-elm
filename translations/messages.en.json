@@ -112,7 +112,7 @@
   "migrateStatDropped": "Events dropped",
   "migrateStatMembers": "Members",
   "migrateStatEntries": "Entries",
-  "migrateStatBalance": "Your balance",
+  "migrateStatBalances": "Balances after the cut",
   "migrateCurateHeading": "Keep some of this identity's earlier history?",
   "migrateCurateRemoveAll": "Remove everything ({count} events)",
   "migrateCurateKeep": "Keep the first {kept}, drop {dropped}",
