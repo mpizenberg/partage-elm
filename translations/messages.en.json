@@ -104,6 +104,8 @@
   "migrateStatMembers": "Members",
   "migrateStatEntries": "Entries",
   "migrateStatBalance": "Your balance",
+  "migrateBoundAll": "Exclude all events",
+  "migrateBoundKeep": "keep {kept} · drop {dropped}",
   "toastMigrated": "Migrated to a new group. Share the new invite link with trusted members only.",
   "homeDormantHint": "Inactive for a while. The server deletes its copy after 12 months; yours stays on this device — export a backup.",
   "changeFieldDescription": "description",

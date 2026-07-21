@@ -176,10 +176,12 @@ type alias Model =
     , editGroupMetadataModel : Page.Group.EditGroupMetadata.Model
     , diagnosticsModel : Page.Group.Diagnostics.Model
 
-    -- Migration: identities the migrator has marked for exclusion, and the last
-    -- previewed result. Both live only for the duration of a migrate visit.
-    , migrationExcluded : Set Member.Id
+    -- Migration: per-identity exclusion the migrator chose, the last previewed
+    -- result, and the relay's fetched ingestion order (id → seq) that bounds a
+    -- partial exclusion. All live only for the duration of a migrate visit.
+    , migrationSelection : Dict Member.Id MigrationCuration.Bound
     , migrationPreview : Maybe MigrationCuration.Preview
+    , migrationOrder : Maybe (Dict Event.Id Int)
     }
 
 
@@ -258,6 +260,8 @@ type
     | DismissTamperSignals
     | OnTamperSignalsSaved (ConcurrentTask.Response Idb.Error ())
     | ToggleMigrationExclude Member.Id
+    | SetMigrationBound Member.Id MigrationCuration.Bound
+    | OnMigrationOrderFetched Group.Id (ConcurrentTask.Response Server.Error (Dict Event.Id Int))
     | PreviewMigration
     | ConfirmMigration
     | OnGroupMigrated (ConcurrentTask.Response Idb.Error GroupOps.MigrationResult)
@@ -319,8 +323,9 @@ init config =
     , pendingEntry = Nothing
     , editGroupMetadataModel = Page.Group.EditGroupMetadata.init GroupState.empty.groupMeta
     , diagnosticsModel = Page.Group.Diagnostics.init
-    , migrationExcluded = Set.empty
+    , migrationSelection = Dict.empty
     , migrationPreview = Nothing
+    , migrationOrder = Nothing
     }
 
 
@@ -468,7 +473,7 @@ update config msg model =
         RequestNavigation groupView ->
             case config.route of
                 GroupRoute groupId _ ->
-                    ( { model | migrationExcluded = Set.empty, migrationPreview = Nothing }
+                    ( { model | migrationSelection = Dict.empty, migrationPreview = Nothing, migrationOrder = Nothing }
                     , Cmd.none
                     , [ NavigateTo (GroupRoute groupId groupView) ]
                     )
@@ -1123,23 +1128,46 @@ update config msg model =
 
         ToggleMigrationExclude memberId ->
             let
-                flip : Member.Id -> Set Member.Id -> Set Member.Id
-                flip =
-                    if Set.member memberId model.migrationExcluded then
-                        Set.remove
+                selection : Dict Member.Id MigrationCuration.Bound
+                selection =
+                    if Dict.member memberId model.migrationSelection then
+                        Dict.remove memberId model.migrationSelection
 
                     else
-                        Set.insert
+                        Dict.insert memberId MigrationCuration.All model.migrationSelection
             in
-            ( { model | migrationExcluded = flip memberId model.migrationExcluded, migrationPreview = Nothing }
+            ( { model | migrationSelection = selection, migrationPreview = Nothing }
             , Cmd.none
             , []
             )
 
+        SetMigrationBound memberId bound ->
+            ( { model | migrationSelection = Dict.insert memberId bound model.migrationSelection, migrationPreview = Nothing }
+            , Cmd.none
+            , []
+            )
+
+        OnMigrationOrderFetched groupId (ConcurrentTask.Success order) ->
+            case model.loadedGroup of
+                Just loaded ->
+                    if loaded.summary.id == groupId then
+                        ( { model | migrationOrder = Just order }, Cmd.none, [] )
+
+                    else
+                        ( model, Cmd.none, [] )
+
+                Nothing ->
+                    ( model, Cmd.none, [] )
+
+        OnMigrationOrderFetched _ _ ->
+            -- Offline or a relay error: the migrator keeps whole-identity
+            -- exclusion; only the per-identity time boundaries are unavailable.
+            ( model, Cmd.none, [] )
+
         PreviewMigration ->
             case model.loadedGroup of
                 Just loaded ->
-                    ( { model | migrationPreview = Just (MigrationCuration.preview config.identity.publicKeyHash model.migrationExcluded loaded.events) }
+                    ( { model | migrationPreview = Just (MigrationCuration.preview (curationOrder model) config.identity.publicKeyHash model.migrationSelection loaded.events) }
                     , Cmd.none
                     , []
                     )
@@ -1152,7 +1180,7 @@ update config msg model =
                 Just loaded ->
                     let
                         ( state, cmd ) =
-                            GroupOps.migrateGroup (submitContext (\_ -> NoOp) config model) OnGroupMigrated model.migrationExcluded loaded
+                            GroupOps.migrateGroup (submitContext (\_ -> NoOp) config model) OnGroupMigrated (curationOrder model) model.migrationSelection loaded
                     in
                     ( { model | runner = state.runner, randomSeed = state.randomSeed, uuidState = state.uuidState }
                     , cmd
@@ -1163,7 +1191,7 @@ update config msg model =
                     ( model, Cmd.none, [] )
 
         OnGroupMigrated (ConcurrentTask.Success result) ->
-            ( { model | migrationExcluded = Set.empty, migrationPreview = Nothing }
+            ( { model | migrationSelection = Dict.empty, migrationPreview = Nothing, migrationOrder = Nothing }
             , Cmd.none
             , [ UpdateGroupSummary result.oldSummary
               , UpdateGroupSummary result.newSummary
@@ -1932,6 +1960,16 @@ initPagesIfNeeded config groupView model =
                     else
                         ( model, Cmd.none )
 
+                ( Migrate, Just _ ) ->
+                    if model.migrationOrder == Nothing then
+                        ( model.runner, Cmd.none )
+                            |> Runner.andRun (OnMigrationOrderFetched loaded.summary.id)
+                                (Server.fetchEventOrder { serverUrl = config.serverUrl, groupId = loaded.summary.id, groupKey = loaded.groupKey })
+                            |> Tuple.mapFirst (\r -> { model | runner = r })
+
+                    else
+                        ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
 
@@ -1974,6 +2012,15 @@ Returns Nothing if the user is not a member of this group.
 currentUserRootId : Model -> LoadedGroup -> Maybe Member.Id
 currentUserRootId model loaded =
     GroupState.resolveMemberRootId loaded.groupState model.identityHash
+
+
+{-| The relay's id → seq order for curation, or an empty map before it is
+fetched (or when the fetch failed): with no seq known, every event is kept, so a
+per-identity boundary drops nothing and only whole-identity exclusion bites.
+-}
+curationOrder : Model -> Dict Event.Id Int
+curationOrder model =
+    Maybe.withDefault Dict.empty model.migrationOrder
 
 
 
@@ -2153,10 +2200,11 @@ viewGroupPage config groupView loaded model =
                 pageShell config (T.migrateTitle config.i18n) <|
                     Page.Group.Migrate.view config.i18n
                         loaded.summary.defaultCurrency
-                        { identities = MigrationCuration.identities userRootId loaded.groupState loaded.events
-                        , excluded = model.migrationExcluded
+                        { identities = MigrationCuration.identities (curationOrder model) userRootId loaded.groupState loaded.events
+                        , selection = model.migrationSelection
                         , preview = model.migrationPreview
                         , onToggle = config.toMsg << ToggleMigrationExclude
+                        , onSetBound = \memberId bound -> config.toMsg (SetMigrationBound memberId bound)
                         , onPreview = config.toMsg PreviewMigration
                         , onConfirm = config.toMsg ConfirmMigration
                         , onCancel = config.toMsg (RequestNavigation (Tab BalanceTab))

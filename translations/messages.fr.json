@@ -104,6 +104,8 @@
   "migrateStatMembers": "Membres",
   "migrateStatEntries": "Écritures",
   "migrateStatBalance": "Votre solde",
+  "migrateBoundAll": "Exclure tous les événements",
+  "migrateBoundKeep": "garder {kept} · retirer {dropped}",
   "toastMigrated": "Migration effectuée. Partagez le nouveau lien d'invitation uniquement avec des membres de confiance.",
   "homeDormantHint": "Inactif depuis un moment. Le serveur supprime sa copie après 12 mois ; la vôtre reste sur cet appareil — exportez une sauvegarde.",
   "changeFieldDescription": "description",

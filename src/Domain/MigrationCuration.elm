@@ -1,4 +1,4 @@
-module Domain.MigrationCuration exposing (Identity, Preview, curateEvents, identities, preview)
+module Domain.MigrationCuration exposing (Bound(..), Boundary, Identity, Preview, curateEvents, identities, preview)
 
 {-| Drop events authored by excluded identities when re-homing a group during
 migration (spec §11.7).
@@ -13,27 +13,73 @@ self-authored `MemberLinked`. What survives replays to a consistent state —
 dangling modifications of a dropped entry are rejected on replay, reverting the
 entry to its pre-attack form.
 
-`identities` surfaces who authored what so the migrator can spot injected
-identities at flood scale; `preview` replays a candidate selection to show the
-resulting group.
+Exclusion is per-identity with an optional boundary. `All` drops everything the
+identity authored; `After s` keeps only what it authored up to server batch `s`
+and drops the rest — the leaked-legitimate-key case, where a real member's early
+history is genuine but a later flood rode in on the stolen key. The boundary is
+the relay's ingestion order (`ServerEventRecord.seq`), never the payload's
+`clientTimestamp`, which the attacker sets and can back-date. An event whose seq
+is unknown (not in the fetched order) is always kept, since it can't be placed.
+
+`identities` surfaces who authored what — with the seq boundaries at which their
+history can be split — so the migrator can spot injected identities and floods at
+scale; `preview` replays a candidate selection to show the resulting group.
 
 -}
 
-import Dict
-import Domain.Event exposing (Envelope, Payload(..))
+import Dict exposing (Dict)
+import Domain.Event as Event exposing (Envelope, Payload(..))
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
-import Set exposing (Set)
+import Set
 
 
-curateEvents : Set Member.Id -> List Envelope -> List Envelope
-curateEvents excluded events =
-    List.filter (\envelope -> not (Set.member envelope.triggeredBy excluded)) events
+{-| How much of an excluded identity's history to drop.
+-}
+type Bound
+    = All
+    | After Int
+
+
+curateEvents : Dict Event.Id Int -> Dict Member.Id Bound -> List Envelope -> List Envelope
+curateEvents order selection events =
+    List.filter (keep order selection) events
+
+
+keep : Dict Event.Id Int -> Dict Member.Id Bound -> Envelope -> Bool
+keep order selection envelope =
+    case Dict.get envelope.triggeredBy selection of
+        Nothing ->
+            True
+
+        Just All ->
+            False
+
+        Just (After boundary) ->
+            case Dict.get envelope.id order of
+                Just seq ->
+                    seq <= boundary
+
+                Nothing ->
+                    True
+
+
+{-| A server-order split point for one identity: keep everything it authored up
+to and including batch `seq`, drop the rest. `kept` is how many of the identity's
+events survive the split — the count the migrator weighs against the flood.
+-}
+type alias Boundary =
+    { seq : Int
+    , kept : Int
+    }
 
 
 {-| A signing identity that authored events, with the stats a migrator needs to
 judge whether it belongs. `excludable` is False for the migrator and the group
 creator — dropping either would gut the group, so they can't be toggled off.
+`boundaries` are the seq split points, earliest first, at which the identity's
+history can be partially dropped (empty when it authored in a single batch, so
+only a whole-identity drop makes sense).
 -}
 type alias Identity =
     { id : Member.Id
@@ -41,15 +87,18 @@ type alias Identity =
     , eventCount : Int
     , isDevice : Bool
     , excludable : Bool
+    , boundaries : List Boundary
     }
 
 
 {-| One entry per author id in the history, heaviest first so a flood floats to
 the top. `selfRoot` is the migrator's root id: any identity resolving to it is
 non-excludable (dropping your own devices would corrupt your own history).
+`order` is the fetched `id → seq` map; without it the boundaries are empty and
+only whole-identity exclusion is offered.
 -}
-identities : Member.Id -> GroupState -> List Envelope -> List Identity
-identities selfRoot state events =
+identities : Dict Event.Id Int -> Member.Id -> GroupState -> List Envelope -> List Identity
+identities order selfRoot state events =
     let
         creator : Member.Id
         creator =
@@ -59,6 +108,39 @@ identities selfRoot state events =
                 |> Maybe.map .triggeredBy
                 |> Maybe.withDefault ""
 
+        seqsByAuthor : Dict Member.Id (List Int)
+        seqsByAuthor =
+            List.foldl
+                (\envelope acc ->
+                    case Dict.get envelope.id order of
+                        Just seq ->
+                            Dict.update envelope.triggeredBy (\ms -> Just (seq :: Maybe.withDefault [] ms)) acc
+
+                        Nothing ->
+                            acc
+                )
+                Dict.empty
+                events
+
+        boundariesFor : Member.Id -> Int -> List Boundary
+        boundariesFor id count =
+            let
+                seqs : List Int
+                seqs =
+                    Dict.get id seqsByAuthor |> Maybe.withDefault []
+
+                noSeqCount : Int
+                noSeqCount =
+                    count - List.length seqs
+
+                distinct : List Int
+                distinct =
+                    seqs |> Set.fromList |> Set.toList
+            in
+            distinct
+                |> List.take (max 0 (List.length distinct - 1))
+                |> List.map (\b -> { seq = b, kept = noSeqCount + List.length (List.filter (\s -> s <= b) seqs) })
+
         toIdentity : Member.Id -> Int -> Identity
         toIdentity id count =
             { id = id
@@ -66,6 +148,7 @@ identities selfRoot state events =
             , eventCount = count
             , isDevice = Dict.member id state.deviceLinks
             , excludable = GroupState.resolveMemberRootId state id /= Just selfRoot && id /= creator
+            , boundaries = boundariesFor id count
             }
     in
     List.foldl (\envelope -> Dict.update envelope.triggeredBy (Maybe.withDefault 0 >> (+) 1 >> Just)) Dict.empty events
@@ -97,12 +180,12 @@ type alias Preview =
     }
 
 
-preview : Member.Id -> Set Member.Id -> List Envelope -> Preview
-preview self excluded events =
+preview : Dict Event.Id Int -> Member.Id -> Dict Member.Id Bound -> List Envelope -> Preview
+preview order self selection events =
     let
         kept : List Envelope
         kept =
-            curateEvents excluded events
+            curateEvents order selection events
 
         state : GroupState
         state =

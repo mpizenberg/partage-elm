@@ -312,15 +312,17 @@ type alias MigrationResult =
 
 
 {-| Migrate a compromised group to a fresh one (spec §11.7). Mint a new id and
-key, re-home the local verified history — dropping every event authored by an
-excluded identity — and queue what survives for push so the new group registers
-on the relay on its first sync. The signature covers the envelope, not the group
-id, so the carried events replay to the state they held in the old group. The old
+key, re-home the local verified history — dropping the events `selection` excises
+from each excluded identity, resolving any per-identity time boundary against the
+relay's `order` (`id → seq`) map — and queue what survives for push so the new
+group registers on the relay on its first sync. The signature covers the
+envelope, not the group id, so the carried events replay to the state they held
+in the old group. The old
 group is marked superseded and archived; it is left to the relay TTL. The new key
 must reach only trusted members, out of band.
 -}
-migrateGroup : Context msg -> (ConcurrentTask.Response Idb.Error MigrationResult -> msg) -> Set Member.Id -> LoadedGroup -> ( State msg, Cmd msg )
-migrateGroup ctx onComplete excluded loaded =
+migrateGroup : Context msg -> (ConcurrentTask.Response Idb.Error MigrationResult -> msg) -> Dict.Dict Event.Id Int -> Dict.Dict Member.Id MigrationCuration.Bound -> LoadedGroup -> ( State msg, Cmd msg )
+migrateGroup ctx onComplete order selection loaded =
     let
         ( newId, seedAfter ) =
             IdGen.groupId ctx.randomSeed
@@ -337,7 +339,7 @@ migrateGroup ctx onComplete excluded loaded =
         task =
             ConcurrentTask.map2 Tuple.pair
                 (EventVerification.filterVerifiedEvents GroupState.empty loaded.events
-                    |> ConcurrentTask.map (MigrationCuration.curateEvents excluded)
+                    |> ConcurrentTask.map (MigrationCuration.curateEvents order selection)
                 )
                 Crypto.generateGroupKey
                 |> ConcurrentTask.andThen

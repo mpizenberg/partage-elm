@@ -8,6 +8,7 @@ module Infra.Server exposing
     , compact
     , createGroupOnServer
     , errorToString
+    , fetchEventOrder
     , isNetworkError
     , isNotFound
     , isQuotaExceeded
@@ -28,6 +29,7 @@ carries a bearer secret derived from the group key.
 
 import ConcurrentTask exposing (ConcurrentTask)
 import ConcurrentTask.Http as Http
+import Dict exposing (Dict)
 import Domain.Compaction as Compaction
 import Domain.Event as Event
 import Domain.Group as Group
@@ -542,6 +544,30 @@ compact ctx actorId prefix =
                                         |> ConcurrentTask.andThen
                                             (postCompact ctx secret { uptoSeq = uptoSeq, expectedCount = List.length records })
                         )
+            )
+
+
+{-| Pull the group's full history and pair each event id with the server `seq`
+of the batch it arrived in — the relay's ingestion order, which (unlike the
+payload timestamp) an event's author cannot forge. Migration curation uses it to
+bound an excluded identity's history to what it authored before a given batch. A
+duplicated id keeps its earliest seq. Decrypts every record, so it is only worth
+calling for a rare operation like migration.
+-}
+fetchEventOrder : ServerContext -> ConcurrentTask Error (Dict Event.Id Int)
+fetchEventOrder ctx =
+    Crypto.deriveRelaySecret ctx.groupKey
+        |> ConcurrentTask.mapError CryptoError
+        |> ConcurrentTask.andThen (\secret -> pullTaggedRecords ctx secret 0 [])
+        |> ConcurrentTask.map
+            (List.foldl
+                (\record acc ->
+                    List.foldl
+                        (\envelope -> Dict.update envelope.id (\existing -> Just (min record.seq (Maybe.withDefault record.seq existing))))
+                        acc
+                        record.events
+                )
+                Dict.empty
             )
 
 

@@ -2,15 +2,16 @@ module Page.Group.Migrate exposing (view)
 
 {-| The migration confirmation screen (spec §11.7). It explains what migrating a
 compromised group does and does not do, lets the migrator exclude injected
-identities, previews the resulting group, then confirms. The minting and
-re-homing happen in Page.Group on confirm.
+identities — wholly, or only what they authored after a server-order boundary —
+previews the resulting group, then confirms. The minting and re-homing happen in
+Page.Group on confirm.
 -}
 
+import Dict exposing (Dict)
 import Domain.Currency exposing (Currency)
 import Domain.Member as Member
-import Domain.MigrationCuration exposing (Identity, Preview)
+import Domain.MigrationCuration exposing (Bound(..), Identity, Preview)
 import Format
-import Set exposing (Set)
 import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
@@ -23,9 +24,10 @@ view :
     -> Currency
     ->
         { identities : List Identity
-        , excluded : Set Member.Id
+        , selection : Dict Member.Id Bound
         , preview : Maybe Preview
         , onToggle : Member.Id -> msg
+        , onSetBound : Member.Id -> Bound -> msg
         , onPreview : msg
         , onConfirm : msg
         , onCancel : msg
@@ -49,7 +51,7 @@ view i18n currency config =
             [ Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
                 (UI.Components.sectionLabel (T.migrateReviewTitle i18n)
                     :: body (T.migrateReviewIntro i18n)
-                    :: List.map (identityRow i18n config.onToggle config.excluded) config.identities
+                    :: List.map (identityRow i18n config) config.identities
                 )
             ]
         , Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
@@ -72,24 +74,67 @@ body text =
     Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.text ] (Ui.text text)
 
 
-identityRow : I18n -> (Member.Id -> msg) -> Set Member.Id -> Identity -> Ui.Element msg
-identityRow i18n onToggle excluded identity =
-    Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.md, Ui.contentCenterY ]
-        [ if identity.excludable then
-            UI.Components.toggle { isOn = Set.member identity.id excluded, onPress = onToggle identity.id }
+identityRow :
+    I18n
+    -> { c | onToggle : Member.Id -> msg, onSetBound : Member.Id -> Bound -> msg, selection : Dict Member.Id Bound }
+    -> Identity
+    -> Ui.Element msg
+identityRow i18n config identity =
+    let
+        bound : Maybe Bound
+        bound =
+            Dict.get identity.id config.selection
 
-          else
-            Ui.el [ Ui.width (Ui.px 42) ] Ui.none
-        , Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
-            (Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.text ] (Ui.text identity.label)
-                :: List.filterMap (\( shown, element ) -> ifJust shown element)
-                    [ ( identity.isDevice, badge Theme.warning.bgSubtle Theme.warning.text (T.migrateDeviceTag i18n) )
-                    , ( not identity.excludable, badge Theme.base.tint Theme.base.textSubtle (T.migrateKept i18n) )
-                    ]
-            )
-        , Ui.el [ Ui.alignRight, Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
-            (Ui.text (String.fromInt identity.eventCount ++ " " ++ T.migrateEventsUnit i18n))
-        ]
+        mainRow : Ui.Element msg
+        mainRow =
+            Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.md, Ui.contentCenterY ]
+                [ if identity.excludable then
+                    UI.Components.toggle { isOn = bound /= Nothing, onPress = config.onToggle identity.id }
+
+                  else
+                    Ui.el [ Ui.width (Ui.px 42) ] Ui.none
+                , Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
+                    (Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.text ] (Ui.text identity.label)
+                        :: List.filterMap (\( shown, element ) -> ifJust shown element)
+                            [ ( identity.isDevice, badge Theme.warning.bgSubtle Theme.warning.text (T.migrateDeviceTag i18n) )
+                            , ( not identity.excludable, badge Theme.base.tint Theme.base.textSubtle (T.migrateKept i18n) )
+                            ]
+                    )
+                , Ui.el [ Ui.alignRight, Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
+                    (Ui.text (String.fromInt identity.eventCount ++ " " ++ T.migrateEventsUnit i18n))
+                ]
+    in
+    case bound of
+        Just current ->
+            if List.isEmpty identity.boundaries then
+                mainRow
+
+            else
+                Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
+                    [ mainRow, boundChips i18n config.onSetBound identity current ]
+
+        Nothing ->
+            mainRow
+
+
+boundChips : I18n -> (Member.Id -> Bound -> msg) -> Identity -> Bound -> Ui.Element msg
+boundChips i18n onSetBound identity current =
+    Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.xs, Ui.paddingWith { top = 0, bottom = 0, left = 52, right = 0 } ]
+        (UI.Components.chip
+            { label = T.migrateBoundAll i18n
+            , selected = current == All
+            , onPress = onSetBound identity.id All
+            }
+            :: List.map
+                (\b ->
+                    UI.Components.chip
+                        { label = T.migrateBoundKeep { kept = String.fromInt b.kept, dropped = String.fromInt (identity.eventCount - b.kept) } i18n
+                        , selected = current == After b.seq
+                        , onPress = onSetBound identity.id (After b.seq)
+                        }
+                )
+                identity.boundaries
+        )
 
 
 ifJust : Bool -> a -> Maybe a
