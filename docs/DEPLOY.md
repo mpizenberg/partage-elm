@@ -41,8 +41,29 @@ Configuration (all optional except `POW_SECRET`):
 | `PORT` | `8090` | Listen port. |
 | `RELAY_DB` | `/data/relay.db` | SQLite file path — mount a persistent volume there. |
 | `STATIC_DIR` | `./static` | Frontend directory to serve; unset to serve the API only. |
+| `ADMIN_SECRET` | — (unset) | Bearer secret for the operator dashboard ([below](#operator-dashboard-self-host)). Unset ⇒ the dashboard and its endpoint are absent (`404`). Generate like `POW_SECRET`. |
+| `ADMIN_STORAGE_BUDGET_BYTES` | — (unset) | Optional. When set, the dashboard's storage-over-budget flag fires once total stored bytes exceed it. |
 
 Put the container behind your TLS-terminating reverse proxy as usual. WebSocket upgrades on `/api/groups/*/ws` must be allowed.
+
+### Operator dashboard (self-host)
+
+Setting `ADMIN_SECRET` turns on a read-only surface for monitoring the deployment — capacity, growth, relay-observable abuse, per-group hot-lists, a pseudonymous users estimate, and a cost run-rate (see [Appendix C.7](SPECIFICATION.md#c7-operator-observability-self-host)):
+
+- `GET /admin` — a self-contained page; enter the secret, which stays in the browser tab's session and is never persisted.
+- `GET /api/admin/summary` — the JSON behind it, authenticated with `Authorization: Bearer $ADMIN_SECRET`.
+
+Both are **absent (`404`) until `ADMIN_SECRET` is set**, live outside the per-group auth, and never touch group content — but they do expose fleet **metadata** (group existence, sizes, opaque `groupId` hot-lists). Because that is a cross-group metadata surface strictly more privileged than any group secret, **do not expose it publicly.** The relay does not gate by network, so restrict `/admin` and `/api/admin/*` at your reverse proxy or host firewall — e.g. an nginx IP allowlist:
+
+```nginx
+location ~ ^/(admin|api/admin/) {
+    allow 203.0.113.4;   # your admin IP
+    deny all;
+    proxy_pass http://127.0.0.1:8090;
+}
+```
+
+or reach them only over an SSH tunnel / private network. Cloudflare parity is not yet implemented; the Worker never enables this endpoint.
 
 CI builds and publishes this image on every push to `main` (`.github/workflows/relay-image.yml`): `ghcr.io/mpizenberg/partage-elm/relay`, tagged `latest` and with the commit sha.
 

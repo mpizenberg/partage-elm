@@ -55,7 +55,7 @@ const REJECTION_SPIKE_FLOOR = 50;
 const REJECTION_SPIKE_FACTOR = 3;
 const REJECTION_METRICS = ['quota_507', 'rate_429', 'body_413'];
 
-// Hosting rates mirrored from docs/SPECIFICATION.md §17.2 (the source of truth,
+// Hosting rates mirrored from docs/SPECIFICATION.md §18.2 (the source of truth,
 // also encoded in src/Infra/UsageStats.elm). Cents; compute is a fixed multiple
 // of storage; bandwidth bills egress only.
 const BASE_CENTS_PER_MONTH = 10;
