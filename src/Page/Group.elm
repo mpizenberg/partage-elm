@@ -2415,6 +2415,7 @@ tabContent config maybeUserRootId loaded model =
                 , isSubscribed = loaded.summary.isSubscribed
                 , pushActive = config.pushActive
                 , timeZone = config.timeZone
+                , identityHash = model.identityHash
                 }
                 (config.toMsg << MembersTabMsg)
                 model.membersTabModel

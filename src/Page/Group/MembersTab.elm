@@ -3,7 +3,7 @@ module Page.Group.MembersTab exposing (Config, Model, Msg, Output(..), init, upd
 {-| Members tab showing active and retired members with warm minimal styling.
 -}
 
-import Dict
+import Dict exposing (Dict)
 import Domain.GroupState exposing (GroupMetadata, GroupState)
 import Domain.Member as Member
 import FeatherIcons
@@ -106,6 +106,7 @@ type alias Config msg =
     , isSubscribed : Bool
     , pushActive : Bool
     , timeZone : Time.Zone
+    , identityHash : String
     }
 
 
@@ -156,7 +157,7 @@ view i18n config toMsg model maybeUserRootId state =
         , Ui.column []
             [ UI.Components.sectionLabel (T.membersTabTitle i18n ++ " (" ++ String.fromInt (List.length active) ++ ")")
             , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-                (List.map (memberCard i18n config.timeZone toMsg model.expandedMembers maybeUserRootId) active)
+                (List.map (memberCard i18n config.timeZone config.identityHash state.deviceLinks toMsg model.expandedMembers maybeUserRootId) active)
             ]
 
         -- Retired Members
@@ -169,7 +170,7 @@ view i18n config toMsg model maybeUserRootId state =
                     }
                 , if model.showRetired then
                     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill, Ui.opacity 0.6 ]
-                        (List.map (memberCard i18n config.timeZone toMsg model.expandedMembers maybeUserRootId) retired)
+                        (List.map (memberCard i18n config.timeZone config.identityHash state.deviceLinks toMsg model.expandedMembers maybeUserRootId) retired)
 
                   else
                     Ui.none
@@ -423,8 +424,8 @@ qrCodeView link =
 -- MEMBER CARD
 
 
-memberCard : I18n -> Time.Zone -> (Msg -> msg) -> Set Member.Id -> Maybe Member.Id -> Member.State -> Ui.Element msg
-memberCard i18n zone toMsg expandedMembers maybeUserRootId member =
+memberCard : I18n -> Time.Zone -> String -> Dict Member.Id Member.DeviceLink -> (Msg -> msg) -> Set Member.Id -> Maybe Member.Id -> Member.State -> Ui.Element msg
+memberCard i18n zone identityHash deviceLinks toMsg expandedMembers maybeUserRootId member =
     let
         isCurrentUser : Bool
         isCurrentUser =
@@ -526,7 +527,7 @@ memberCard i18n zone toMsg expandedMembers maybeUserRootId member =
 
         -- Expanded detail content
         , if isExpanded then
-            memberDetail i18n toMsg isCurrentUser maybeUserRootId member
+            memberDetail i18n zone identityHash deviceLinks toMsg isCurrentUser maybeUserRootId member
 
           else
             Ui.none
@@ -595,8 +596,8 @@ virtualTag i18n =
         (Ui.text (T.memberVirtualLabel i18n))
 
 
-memberDetail : I18n -> (Msg -> msg) -> Bool -> Maybe Member.Id -> Member.State -> Ui.Element msg
-memberDetail i18n toMsg isCurrentUser maybeUserRootId member =
+memberDetail : I18n -> Time.Zone -> String -> Dict Member.Id Member.DeviceLink -> (Msg -> msg) -> Bool -> Maybe Member.Id -> Member.State -> Ui.Element msg
+memberDetail i18n zone identityHash deviceLinks toMsg isCurrentUser maybeUserRootId member =
     let
         isMember : Bool
         isMember =
@@ -753,10 +754,53 @@ memberDetail i18n toMsg isCurrentUser maybeUserRootId member =
 
             else
                 Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill ] sections
+
+        devicesSection : Ui.Element msg
+        devicesSection =
+            let
+                linked : List ( Member.Id, Member.DeviceLink )
+                linked =
+                    Dict.toList deviceLinks
+                        |> List.filter (\( _, link ) -> link.rootId == member.rootId)
+                        |> List.sortBy (\( _, link ) -> Time.posixToMillis link.timestamp)
+
+                ownIsListed : Bool
+                ownIsListed =
+                    List.any (\( deviceId, _ ) -> deviceId == identityHash) linked
+
+                primaryRow : List (Ui.Element msg)
+                primaryRow =
+                    if isCurrentUser && not ownIsListed && identityHash /= "" then
+                        [ deviceRow subtleColor textColor i18n zone identityHash Nothing True ]
+
+                    else
+                        []
+
+                linkedRows : List (Ui.Element msg)
+                linkedRows =
+                    List.map
+                        (\( deviceId, link ) ->
+                            deviceRow subtleColor textColor i18n zone deviceId (Just link.timestamp) (deviceId == identityHash)
+                        )
+                        linked
+
+                rows : List (Ui.Element msg)
+                rows =
+                    primaryRow ++ linkedRows
+            in
+            if List.isEmpty rows then
+                Ui.none
+
+            else
+                Ui.column []
+                    [ sectionLbl (T.memberDevicesLabel i18n)
+                    , Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ] rows
+                    ]
     in
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill, Ui.Font.color textColor ]
         [ -- Metadata sections
           metadataSections
+        , devicesSection
 
         -- Action buttons (only for members)
         , if isMember then
@@ -805,6 +849,46 @@ infoRow subtle icon label value maybeUrl =
                 Ui.el [ Ui.Font.size Theme.font.md, Ui.clipWithEllipsis ] (Ui.text value)
         , copyButton value
         ]
+
+
+deviceRow : Ui.Color -> Ui.Color -> I18n -> Time.Zone -> String -> Maybe Time.Posix -> Bool -> Ui.Element msg
+deviceRow subtle strong i18n zone deviceId linkedAt isThis =
+    Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY, Ui.width Ui.fill ]
+        [ Ui.el [ Ui.Font.color subtle, Ui.width Ui.shrink ] (UI.Components.featherIcon 16 FeatherIcons.smartphone)
+        , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+            [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY, Ui.width Ui.shrink ]
+                (Ui.el [ Ui.Font.size Theme.font.md, Ui.Font.color strong ] (Ui.text (Member.shortId deviceId))
+                    :: (if isThis then
+                            [ thisDeviceTag i18n ]
+
+                        else
+                            []
+                       )
+                )
+            , case linkedAt of
+                Just ts ->
+                    Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.color subtle ]
+                        (Ui.text (T.memberDeviceLinkedDate (monthYear i18n zone ts) i18n))
+
+                Nothing ->
+                    Ui.none
+            ]
+        , copyButton deviceId
+        ]
+
+
+thisDeviceTag : I18n -> Ui.Element msg
+thisDeviceTag i18n =
+    Ui.el
+        [ Ui.Font.size Theme.font.xs
+        , Ui.Font.weight Theme.fontWeight.semibold
+        , Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
+        , Ui.rounded Theme.radius.sm
+        , Ui.background Theme.base.tint
+        , Ui.Font.color Theme.base.textSubtle
+        , Ui.width Ui.shrink
+        ]
+        (Ui.text (T.memberDeviceThis i18n))
 
 
 copyButton : String -> Ui.Element msg
@@ -875,6 +959,11 @@ boolToInt b =
 
 formatJoinDate : I18n -> Time.Zone -> Time.Posix -> String
 formatJoinDate i18n zone posix =
+    T.memberJoinedDate (monthYear i18n zone posix) i18n
+
+
+monthYear : I18n -> Time.Zone -> Time.Posix -> String
+monthYear i18n zone posix =
     let
         month : String
         month =
@@ -919,4 +1008,4 @@ formatJoinDate i18n zone posix =
         year =
             String.fromInt (Time.toYear zone posix)
     in
-    T.memberJoinedDate (month ++ " " ++ year) i18n
+    month ++ " " ++ year
