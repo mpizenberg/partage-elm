@@ -713,28 +713,40 @@ membership-metadata leak. This yields an enforcement ladder, best rung first:
    (which re-verifies every event), re-invite members out-of-band, and abandon
    the old group to the TTL.
 
-The four counters are blind to **signature-valid injection**: a key holder can
-author correctly-signed events, including as an existing member by self-linking
-a device (`MemberLinked` carries no root consent, being the device-recovery
-path), so nothing is rejected and no counter moves. A client-side **suspicion
-audit** recomputes two content-shaped signals from the history to catch these.
-A **foreign payment-info change** is a `MemberMetadataUpdated` that rewrites a
-self-present member's `payment` sub-record from a different root — redirecting
-that member's settlements. A **grafted-device tamper** is a second device
-grafted onto an established member (its root also authored-for by another
-identity) whose entire footprint only alters existing entries or payment info.
-Presence is judged from **authorship**, not device links, so a graft onto the
-group creator (who has no self-link) is caught; and because both tests ignore
-event order, a back-dated `clientTimestamp` cannot hide a finding. These signals
-are heuristic — a benign cross-edit (an admin filling in a member's details) can
-trip them — so they never act on their own: they raise a review prompt that
-routes to migration, where each finding is either **dismissed** (recorded
-per-device, never synced, so it does not re-alarm) or used to pre-select the
-implicated identity for exclusion from the re-homed history. A finding is
-withheld from the very device it implicates — matched on the **authoring device
-id**, so a graft's victim (same root, another device) still sees it — so an
-attacker running the app gets no sign they were detected, and cannot forge or
-suppress a flag that never enters the log.
+The counters are blind to **signature-valid injection** — a key holder authoring
+correctly-signed events, including as an existing member via an un-consented
+self-link (the device-recovery path). A client-side **suspicion audit**
+recomputes two content signals from history to catch these: a **foreign payment
+change** (a `MemberMetadataUpdated` rewriting a member's `payment` from a
+different root — settlement redirection) and a **grafted-device tamper** (a
+device grafted onto an established member whose whole footprint only edits
+existing entries or payment info). Presence is judged from **authorship**, not
+device links, so a graft onto the creator (who has no self-link) is caught; both
+tests ignore event order, so a back-dated `clientTimestamp` cannot hide a
+finding. The signals are heuristic — a benign cross-edit can trip them — so they
+only prompt a migration review, where each is **dismissed** (per-device, never
+synced) or used to pre-select the identity for exclusion. A finding is withheld
+from the device it implicates (matched on authoring device id, so the graft's
+victim still sees it), so the attacker gets no tell and cannot forge or suppress
+a flag that never enters the log.
+
+**Curated migration.** Re-homing need not carry everything: since injected
+events are signed, plain re-verification would keep them, so curation lets the
+migrator drop them — the identical-state guarantee becomes *identical minus what
+you excluded* (exclude nothing = ordinary migration). Exclusion is by **author
+identity** (`triggeredBy`), matching a flood that comes from one or a few
+identities; dropping an attacker root or a grafted device removes everything it
+authored — including its own `MemberCreated`/`MemberLinked` — while real roots
+stay intact. Legitimate history never references appended attacker events, so
+the curated set has no dangling references and replays deterministically;
+dropping a modification of a real entry reverts it. For a **leaked legitimate
+key**, exclusion may carry a per-identity **time boundary** keeping the early
+history and dropping the tail; the boundary follows the relay's ingestion order
+(`ServerEventRecord.seq`), never the attacker-settable `clientTimestamp`, and is
+fetched-and-decrypted on demand (schema and sync untouched, batch-granular).
+Whole-identity exclusion is the robust default, a **preview** of the surviving
+state gates confirmation, and curation is the one-migrator's unilateral call
+inherited through the new invite.
 
 Within this model, content vandalism (junk entries, renames, mass tombstoning)
 remains possible but is signed, attributed in the activity feed, and
