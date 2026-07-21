@@ -46,7 +46,16 @@ attackerEvents =
 
 suite : Test
 suite =
-    describe "MigrationCuration.curateEvents"
+    describe "MigrationCuration"
+        [ curateEventsSuite
+        , identitiesSuite
+        , previewSuite
+        ]
+
+
+curateEventsSuite : Test
+curateEventsSuite =
+    describe "curateEvents"
         [ test "empty exclusion keeps every event" <|
             \_ ->
                 MigrationCuration.curateEvents Set.empty (legitEvents ++ attackerEvents)
@@ -95,4 +104,88 @@ suite =
                             |> (\events -> GroupState.applyEvents events GroupState.empty)
                 in
                 Expect.equal (GroupState.applyEvents legitEvents GroupState.empty) curated
+        ]
+
+
+findIdentity : String -> List MigrationCuration.Identity -> Maybe MigrationCuration.Identity
+findIdentity id =
+    List.filter (\identity -> identity.id == id) >> List.head
+
+
+identitiesSuite : Test
+identitiesSuite =
+    let
+        allEvents : List Domain.Event.Envelope
+        allEvents =
+            legitEvents ++ attackerEvents
+
+        state : GroupState.GroupState
+        state =
+            GroupState.applyEvents allEvents GroupState.empty
+
+        -- admin is the group creator and the migrator here.
+        ids : List MigrationCuration.Identity
+        ids =
+            MigrationCuration.identities "admin" state allEvents
+    in
+    describe "identities"
+        [ test "one entry per author, heaviest first" <|
+            \_ ->
+                List.map (\i -> ( i.id, i.eventCount )) ids
+                    |> Expect.equal [ ( "admin", 4 ), ( "mallory", 3 ), ( "alice", 1 ) ]
+        , test "the migrator/creator is not excludable" <|
+            \_ ->
+                findIdentity "admin" ids |> Maybe.map .excludable |> Expect.equal (Just False)
+        , test "an injected member is excludable" <|
+            \_ ->
+                findIdentity "mallory" ids |> Maybe.map .excludable |> Expect.equal (Just True)
+        , test "a linked device is flagged and resolves to its root for exclusion" <|
+            \_ ->
+                let
+                    withDevice : List Domain.Event.Envelope
+                    withDevice =
+                        legitEvents
+                            ++ [ makeEnvelope "link" 500 "admin-phone" (MemberLinked { rootId = "admin", deviceId = "admin-phone", seq = 1 })
+                               , makeEnvelope "ap-1" 1500 "admin-phone" (EntryAdded (makeExpenseEntry "entry3" 1500 defaultExpenseData))
+                               ]
+
+                    deviceId : Maybe MigrationCuration.Identity
+                    deviceId =
+                        MigrationCuration.identities "admin" (GroupState.applyEvents withDevice GroupState.empty) withDevice
+                            |> findIdentity "admin-phone"
+                in
+                Expect.equal ( Just True, Just False )
+                    ( Maybe.map .isDevice deviceId, Maybe.map .excludable deviceId )
+        ]
+
+
+previewSuite : Test
+previewSuite =
+    describe "preview"
+        [ test "counts what survives and what is dropped" <|
+            \_ ->
+                let
+                    result : MigrationCuration.Preview
+                    result =
+                        MigrationCuration.preview "alice" (Set.singleton "mallory") (legitEvents ++ attackerEvents)
+                in
+                Expect.all
+                    [ \r -> r.carried |> Expect.equal (List.length legitEvents)
+                    , \r -> r.dropped |> Expect.equal (List.length attackerEvents)
+                    , \r -> r.members |> Expect.equal 3
+                    , \r -> r.entries |> Expect.equal 1
+                    ]
+                    result
+        , test "the migrator's balance matches the attack-free baseline" <|
+            \_ ->
+                let
+                    baseline : MigrationCuration.Preview
+                    baseline =
+                        MigrationCuration.preview "alice" Set.empty legitEvents
+
+                    curated : MigrationCuration.Preview
+                    curated =
+                        MigrationCuration.preview "alice" (Set.singleton "mallory") (legitEvents ++ attackerEvents)
+                in
+                Expect.equal baseline.myBalanceCents curated.myBalanceCents
         ]

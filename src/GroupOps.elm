@@ -325,24 +325,6 @@ migrateGroup ctx onComplete excluded loaded =
         ( newId, seedAfter ) =
             IdGen.groupId ctx.randomSeed
 
-        state : GroupState.GroupState
-        state =
-            loaded.groupState
-
-        newSummary : Group.Summary
-        newSummary =
-            { id = newId
-            , name = state.groupMeta.name
-            , defaultCurrency = loaded.summary.defaultCurrency
-            , isSubscribed = False
-            , isArchived = False
-            , createdAt = state.groupMeta.createdAt
-            , memberCount = Dict.size state.members
-            , myBalanceCents = loaded.summary.myBalanceCents
-            , lastSyncedAt = ctx.currentTime
-            , supersededBy = Nothing
-            }
-
         oldSummary : Group.Summary
         oldSummary =
             { loadedSummary | isArchived = True, supersededBy = Just newId }
@@ -360,6 +342,11 @@ migrateGroup ctx onComplete excluded loaded =
                 Crypto.generateGroupKey
                 |> ConcurrentTask.andThen
                     (\( verified, key ) ->
+                        let
+                            newSummary : Group.Summary
+                            newSummary =
+                                GroupState.summarize ctx.identity.publicKeyHash newId ctx.currentTime (GroupState.applyEvents verified GroupState.empty)
+                        in
                         ConcurrentTask.batch
                             [ Storage.saveGroup ctx.db newSummary (Just (Symmetric.exportKey key)) verified Nothing
                             , Storage.addUnpushedIds ctx.db newId (List.map .id verified)

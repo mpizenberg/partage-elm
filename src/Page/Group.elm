@@ -41,6 +41,7 @@ import Domain.Group as Group
 import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Domain.MemberMerge as Merge
+import Domain.MigrationCuration as MigrationCuration
 import Domain.Settlement as Settlement
 import Domain.TamperSignals as TamperSignals exposing (TamperSignals)
 import ErrorLog
@@ -174,6 +175,11 @@ type alias Model =
     -- Group pages
     , editGroupMetadataModel : Page.Group.EditGroupMetadata.Model
     , diagnosticsModel : Page.Group.Diagnostics.Model
+
+    -- Migration: identities the migrator has marked for exclusion, and the last
+    -- previewed result. Both live only for the duration of a migrate visit.
+    , migrationExcluded : Set Member.Id
+    , migrationPreview : Maybe MigrationCuration.Preview
     }
 
 
@@ -251,6 +257,8 @@ type
     | PostSyncTasksDone (ConcurrentTask.Response Idb.Error ())
     | DismissTamperSignals
     | OnTamperSignalsSaved (ConcurrentTask.Response Idb.Error ())
+    | ToggleMigrationExclude Member.Id
+    | PreviewMigration
     | ConfirmMigration
     | OnGroupMigrated (ConcurrentTask.Response Idb.Error GroupOps.MigrationResult)
     | OpenGroupRoute Route
@@ -311,6 +319,8 @@ init config =
     , pendingEntry = Nothing
     , editGroupMetadataModel = Page.Group.EditGroupMetadata.init GroupState.empty.groupMeta
     , diagnosticsModel = Page.Group.Diagnostics.init
+    , migrationExcluded = Set.empty
+    , migrationPreview = Nothing
     }
 
 
@@ -458,7 +468,10 @@ update config msg model =
         RequestNavigation groupView ->
             case config.route of
                 GroupRoute groupId _ ->
-                    ( model, Cmd.none, [ NavigateTo (GroupRoute groupId groupView) ] )
+                    ( { model | migrationExcluded = Set.empty, migrationPreview = Nothing }
+                    , Cmd.none
+                    , [ NavigateTo (GroupRoute groupId groupView) ]
+                    )
 
                 _ ->
                     ( model, Cmd.none, [] )
@@ -1108,12 +1121,38 @@ update config msg model =
         OnTamperSignalsSaved _ ->
             ( model, Cmd.none, [ LogError ErrorLog.StorageSource ErrorLog.Err "Failed to save tamper signals" ] )
 
+        ToggleMigrationExclude memberId ->
+            let
+                flip : Member.Id -> Set Member.Id -> Set Member.Id
+                flip =
+                    if Set.member memberId model.migrationExcluded then
+                        Set.remove
+
+                    else
+                        Set.insert
+            in
+            ( { model | migrationExcluded = flip memberId model.migrationExcluded, migrationPreview = Nothing }
+            , Cmd.none
+            , []
+            )
+
+        PreviewMigration ->
+            case model.loadedGroup of
+                Just loaded ->
+                    ( { model | migrationPreview = Just (MigrationCuration.preview config.identity.publicKeyHash model.migrationExcluded loaded.events) }
+                    , Cmd.none
+                    , []
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none, [] )
+
         ConfirmMigration ->
             case model.loadedGroup of
                 Just loaded ->
                     let
                         ( state, cmd ) =
-                            GroupOps.migrateGroup (submitContext (\_ -> NoOp) config model) OnGroupMigrated Set.empty loaded
+                            GroupOps.migrateGroup (submitContext (\_ -> NoOp) config model) OnGroupMigrated model.migrationExcluded loaded
                     in
                     ( { model | runner = state.runner, randomSeed = state.randomSeed, uuidState = state.uuidState }
                     , cmd
@@ -1124,7 +1163,7 @@ update config msg model =
                     ( model, Cmd.none, [] )
 
         OnGroupMigrated (ConcurrentTask.Success result) ->
-            ( model
+            ( { model | migrationExcluded = Set.empty, migrationPreview = Nothing }
             , Cmd.none
             , [ UpdateGroupSummary result.oldSummary
               , UpdateGroupSummary result.newSummary
@@ -2109,11 +2148,17 @@ viewGroupPage config groupView loaded model =
                                )
                         )
 
-        ( Migrate, Just _ ) ->
+        ( Migrate, Just userRootId ) ->
             noOverlay <|
                 pageShell config (T.migrateTitle config.i18n) <|
                     Page.Group.Migrate.view config.i18n
-                        { onConfirm = config.toMsg ConfirmMigration
+                        loaded.summary.defaultCurrency
+                        { identities = MigrationCuration.identities userRootId loaded.groupState loaded.events
+                        , excluded = model.migrationExcluded
+                        , preview = model.migrationPreview
+                        , onToggle = config.toMsg << ToggleMigrationExclude
+                        , onPreview = config.toMsg PreviewMigration
+                        , onConfirm = config.toMsg ConfirmMigration
                         , onCancel = config.toMsg (RequestNavigation (Tab BalanceTab))
                         }
 
