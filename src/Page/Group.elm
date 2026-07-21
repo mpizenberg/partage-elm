@@ -1113,7 +1113,7 @@ update config msg model =
                 Just loaded ->
                     let
                         ( state, cmd ) =
-                            GroupOps.migrateGroup (submitContext (\_ -> NoOp) config model) OnGroupMigrated loaded
+                            GroupOps.migrateGroup (submitContext (\_ -> NoOp) config model) OnGroupMigrated Set.empty loaded
                     in
                     ( { model | runner = state.runner, randomSeed = state.randomSeed, uuidState = state.uuidState }
                     , cmd
