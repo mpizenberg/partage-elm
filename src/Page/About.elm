@@ -1,4 +1,4 @@
-module Page.About exposing (Model, Msg, Output(..), init, statsLoaded, update, view)
+module Page.About exposing (Model, Msg, Output(..), Stats, init, statsLoaded, update, view)
 
 import FeatherIcons
 import Infra.UsageStats as UsageStats exposing (CostBreakdown)

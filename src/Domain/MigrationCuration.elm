@@ -270,9 +270,9 @@ authorBatches order memberId events =
                 Dict.empty
                 events
     in
-    Dict.toList ownSeqCounts
-        |> List.foldl
-            (\( seq, count ) ( acc, before ) ->
+    ownSeqCounts
+        |> Dict.foldl
+            (\seq count ( acc, before ) ->
                 ( { seq = seq
                   , ownCount = count
                   , ownBefore = before

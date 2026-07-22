@@ -157,22 +157,22 @@ operations available to anyone holding the group data.
 -}
 view : I18n -> { isMember : Bool, isArchived : Bool } -> (Msg -> msg) -> Model -> Ui.Element msg
 view i18n { isMember, isArchived } toMsg (Model data) =
-    let
-        nameError : Maybe String
-        nameError =
+    Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
+        ((if isMember then
             let
-                field : Field.Field String
-                field =
-                    Form.get .name data.form
+                nameError : Maybe String
+                nameError =
+                    let
+                        field : Field.Field String
+                        field =
+                            Form.get .name data.form
+                    in
+                    if Field.isInvalid field && (data.submitted || Field.isDirty field) then
+                        Just (T.fieldRequired i18n)
+
+                    else
+                        Nothing
             in
-            if Field.isInvalid field && (data.submitted || Field.isDirty field) then
-                Just (T.fieldRequired i18n)
-
-            else
-                Nothing
-
-        metadataForm : List (Ui.Element Msg)
-        metadataForm =
             [ UI.Components.formTextField
                 { icon = Nothing
                 , label = T.groupSettingsName i18n
@@ -206,10 +206,6 @@ view i18n { isMember, isArchived } toMsg (Model data) =
                 , onPress = Submit
                 }
             ]
-    in
-    Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
-        ((if isMember then
-            metadataForm
 
           else
             []

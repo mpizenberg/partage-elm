@@ -1234,21 +1234,22 @@ update config msg model =
 
         ToggleMigrationExclude memberId ->
             let
-                defaultBound : MigrationCuration.Bound
-                defaultBound =
-                    case model.loadedGroup of
-                        Just loaded ->
-                            defaultMigrationBound model loaded memberId
-
-                        Nothing ->
-                            MigrationCuration.All
-
                 selection : Dict Member.Id MigrationCuration.Bound
                 selection =
                     if Dict.member memberId model.migrationSelection then
                         Dict.remove memberId model.migrationSelection
 
                     else
+                        let
+                            defaultBound : MigrationCuration.Bound
+                            defaultBound =
+                                case model.loadedGroup of
+                                    Just loaded ->
+                                        defaultMigrationBound model loaded memberId
+
+                                    Nothing ->
+                                        MigrationCuration.All
+                        in
                         Dict.insert memberId defaultBound model.migrationSelection
             in
             ( { model | migrationSelection = selection, migrationPreview = Nothing }
@@ -1987,14 +1988,18 @@ toggleArchiveGroup config model loaded =
             , lastSyncedAt = loaded.summary.lastSyncedAt
             }
 
-        updatedModel : Model
-        updatedModel =
-            { model | loadedGroup = Just { loaded | summary = updatedSummary } }
-
         ( savedModel, saveCmd ) =
             ( model.runner, Cmd.none )
                 |> Runner.andRun OnGroupSummarySaved (Storage.saveGroupSummary config.db updatedSummary)
-                |> Tuple.mapFirst (\r -> { updatedModel | runner = r })
+                |> Tuple.mapFirst
+                    (\r ->
+                        let
+                            updatedModel : Model
+                            updatedModel =
+                                { model | loadedGroup = Just { loaded | summary = updatedSummary } }
+                        in
+                        { updatedModel | runner = r }
+                    )
     in
     if archiving then
         ( savedModel.runner, saveCmd )
