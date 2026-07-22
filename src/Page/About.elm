@@ -10,13 +10,19 @@ import Ui
 import Ui.Font
 
 
-type Model
+type alias Model =
+    { stats : Stats
+    , confirmingReset : Bool
+    , confirmingRekey : Bool
+    }
+
+
+type Stats
     = Loading
     | Loaded
         { breakdown : CostBreakdown
         , trackingSince : String
         , persistStatus : UsageStats.PersistedStatus
-        , confirmingReset : Bool
         }
 
 
@@ -24,10 +30,13 @@ type Msg
     = StatsLoaded CostBreakdown String UsageStats.PersistedStatus
     | ToggleResetConfirm
     | ConfirmReset
+    | ToggleRekeyConfirm
+    | ConfirmRekey
 
 
 type Output
     = RequestResetStats
+    | RequestRekeyIdentity
 
 
 appVersion : String
@@ -42,7 +51,7 @@ sourceUrl =
 
 init : Model
 init =
-    Loading
+    { stats = Loading, confirmingReset = False, confirmingRekey = False }
 
 
 statsLoaded : CostBreakdown -> String -> UsageStats.PersistedStatus -> Msg
@@ -54,25 +63,29 @@ update : Msg -> Model -> ( Model, Maybe Output )
 update msg model =
     case msg of
         StatsLoaded breakdown trackingSince persistStatus ->
-            ( Loaded
-                { breakdown = breakdown
-                , trackingSince = trackingSince
-                , persistStatus = persistStatus
+            ( { model
+                | stats =
+                    Loaded
+                        { breakdown = breakdown
+                        , trackingSince = trackingSince
+                        , persistStatus = persistStatus
+                        }
                 , confirmingReset = False
-                }
+              }
             , Nothing
             )
 
         ToggleResetConfirm ->
-            case model of
-                Loaded data ->
-                    ( Loaded { data | confirmingReset = not data.confirmingReset }, Nothing )
-
-                _ ->
-                    ( model, Nothing )
+            ( { model | confirmingReset = not model.confirmingReset }, Nothing )
 
         ConfirmReset ->
             ( model, Just RequestResetStats )
+
+        ToggleRekeyConfirm ->
+            ( { model | confirmingRekey = not model.confirmingRekey }, Nothing )
+
+        ConfirmRekey ->
+            ( { model | confirmingRekey = False }, Just RequestRekeyIdentity )
 
 
 view :
@@ -82,6 +95,7 @@ view :
         , toMsg : Msg -> msg
         , devMode : Bool
         , onToggleDevMode : msg
+        , deviceId : String
         }
     -> Model
     -> Ui.Element msg
@@ -90,6 +104,7 @@ view i18n config model =
         [ descriptionSection i18n
         , languageSection i18n config.onSwitchLanguage
         , Ui.map config.toMsg (usageSection i18n model)
+        , Ui.map config.toMsg (deviceSecuritySection i18n config.deviceId model.confirmingRekey)
         , devModeSection i18n config
         , sourceSection i18n
         ]
@@ -136,12 +151,12 @@ usageSection i18n model =
             , Ui.paddingBottom Theme.spacing.md
             ]
             (Ui.text (T.aboutUsageHint i18n))
-        , case model of
+        , case model.stats of
             Loading ->
                 Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
                     (Ui.text (T.aboutUsageLoading i18n))
 
-            Loaded { breakdown, trackingSince, persistStatus, confirmingReset } ->
+            Loaded { breakdown, trackingSince, persistStatus } ->
                 Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
                     [ UI.Components.card [ Ui.padding Theme.spacing.lg ]
                         [ costTable i18n breakdown ]
@@ -153,7 +168,7 @@ usageSection i18n model =
                     , persistRow i18n persistStatus
                     , retentionRow i18n
                     , fundingSection i18n
-                    , resetSection i18n confirmingReset
+                    , resetSection i18n model.confirmingReset
                     ]
         ]
 
@@ -299,6 +314,59 @@ resetSection i18n confirmingReset =
             , icon = Nothing
             , onPress = ToggleResetConfirm
             }
+
+
+
+-- DEVICE SECURITY
+
+
+deviceSecuritySection : I18n -> String -> Bool -> Ui.Element Msg
+deviceSecuritySection i18n deviceId confirmingRekey =
+    Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+        [ UI.Components.sectionLabel (T.aboutDeviceSecurityLabel i18n)
+        , Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
+            [ Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.text ]
+                (Ui.text (T.aboutDeviceIdLabel i18n))
+            , Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.weight Theme.fontWeight.semibold
+                , Ui.alignRight
+                ]
+                (Ui.text (fingerprint deviceId))
+            ]
+        , Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
+            (Ui.text (T.aboutRekeyHint i18n))
+        , if confirmingRekey then
+            Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+                [ UI.Components.card [ Ui.padding Theme.spacing.md ]
+                    [ Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.danger.text ]
+                        (Ui.text (T.aboutRekeyConfirm i18n))
+                    ]
+                , UI.Components.btnDanger []
+                    { label = T.aboutRekeyButton i18n
+                    , icon = FeatherIcons.key
+                    , onPress = ConfirmRekey
+                    }
+                ]
+
+          else
+            UI.Components.btnOutline []
+                { label = T.aboutRekeyButton i18n
+                , icon = Nothing
+                , onPress = ToggleRekeyConfirm
+                }
+        ]
+
+
+{-| A short, recognisable form of the 64-hex-char device id.
+-}
+fingerprint : String -> String
+fingerprint deviceId =
+    if String.length deviceId <= 20 then
+        deviceId
+
+    else
+        String.left 10 deviceId ++ "…" ++ String.right 10 deviceId
 
 
 

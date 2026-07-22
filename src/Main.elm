@@ -1115,6 +1115,21 @@ update msg model =
                         _ ->
                             ( { model | aboutModel = aboutModel }, Cmd.none )
 
+                Just Page.About.RequestRekeyIdentity ->
+                    case model.appState of
+                        Ready { identity } ->
+                            case identity of
+                                Just current ->
+                                    ( model.runner, Cmd.none )
+                                        |> Runner.andRun OnIdentityGenerated (Identity.rekey current)
+                                        |> Tuple.mapFirst (\r -> { model | aboutModel = aboutModel, runner = r, generatingIdentity = True })
+
+                                Nothing ->
+                                    ( { model | aboutModel = aboutModel }, Cmd.none )
+
+                        _ ->
+                            ( { model | aboutModel = aboutModel }, Cmd.none )
+
                 Nothing ->
                     ( { model | aboutModel = aboutModel }, Cmd.none )
 
@@ -1884,6 +1899,7 @@ viewReady model readyData =
                         , toMsg = AboutMsg
                         , devMode = readyData.devMode
                         , onToggleDevMode = ToggleDevMode
+                        , deviceId = readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault ""
                         }
                         model.aboutModel
                     )
