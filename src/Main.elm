@@ -81,6 +81,19 @@ port sendTask : Json.Encode.Value -> Cmd msg
 port receiveTask : (Json.Decode.Value -> msg) -> Sub msg
 
 
+
+-- Each task runner gets its own port pair. On a shared channel, every delivery
+-- evaluates both runners' subscription taggers against pre-delivery pool
+-- snapshots, so a task started on the other runner from within a delivery's
+-- update cascade is erased when the pending tagger's snapshot lands.
+
+
+port groupSendTask : Json.Encode.Value -> Cmd msg
+
+
+port groupReceiveTask : (Json.Decode.Value -> msg) -> Sub msg
+
+
 port onClipboardCopy : (() -> msg) -> Sub msg
 
 
@@ -274,9 +287,9 @@ init flags =
       , importSplitwiseModel = Nothing
       , groupModel =
             Page.Group.init
-                { pool = ConcurrentTask.withPoolId 1 ConcurrentTask.pool
-                , send = sendTask
-                , receive = receiveTask
+                { pool = ConcurrentTask.pool
+                , send = groupSendTask
+                , receive = groupReceiveTask
                 , randomSeed = groupSeedAfterV7
                 , uuidState = groupUuidState
                 }

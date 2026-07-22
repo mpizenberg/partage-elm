@@ -376,19 +376,33 @@ function createExportTasks() {
   };
 }
 
+// One shared task-definitions object for both runner channels, so stateful
+// task closures (the relay socket map) are not duplicated per channel.
+var taskDefinitions = {
+  ...createWebCryptoTasks(),
+  ...createIndexedDbTasks(),
+  ...relayTasks,
+  ...createUsageStatsTasks(),
+  ...createDiagnosticsTasks(),
+  ...createCompressionTasks(),
+  ...createExportTasks(),
+};
+
+// Each Elm task runner has a dedicated port pair (see the port declarations in
+// Main.elm for why sharing one channel is unsafe).
 ConcurrentTask.register({
-  tasks: {
-    ...createWebCryptoTasks(),
-    ...createIndexedDbTasks(),
-    ...relayTasks,
-    ...createUsageStatsTasks(),
-    ...createDiagnosticsTasks(),
-    ...createCompressionTasks(),
-    ...createExportTasks(),
-  },
+  tasks: taskDefinitions,
   ports: {
     send: app.ports.sendTask,
     receive: app.ports.receiveTask,
+  },
+});
+
+ConcurrentTask.register({
+  tasks: taskDefinitions,
+  ports: {
+    send: app.ports.groupSendTask,
+    receive: app.ports.groupReceiveTask,
   },
 });
 
