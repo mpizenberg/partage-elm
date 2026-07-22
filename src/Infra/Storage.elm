@@ -448,25 +448,36 @@ saveGroup db summary maybeKey events maybeCursor =
 -- Usage stats
 
 
-{-| Load usage statistics, if they exist.
+{-| Load usage statistics, if they exist. The bytes-transferred counter lives in
+its own "transfer" record, written only by the JS byte-counter; it is merged
+into the Elm-owned "stats" record here so neither writer clobbers the other.
 -}
 loadUsageStats : Idb.Db -> ConcurrentTask Idb.Error (Maybe UsageStats)
 loadUsageStats db =
-    Idb.get db usageStatsStore (Idb.StringKey "stats") UsageStats.decoder
+    ConcurrentTask.map2
+        (\maybeStats transferred ->
+            Maybe.map (\stats -> { stats | totalBytesTransferred = transferred }) maybeStats
+        )
+        (Idb.get db usageStatsStore (Idb.StringKey "stats") UsageStats.decoder)
+        (Idb.get db usageStatsStore (Idb.StringKey "transfer") Decode.int
+            |> ConcurrentTask.map (Maybe.withDefault 0)
+        )
 
 
-{-| Save usage statistics.
+{-| Save usage statistics. The bytes-transferred counter is not written; it is
+owned by the JS byte-counter's "transfer" record.
 -}
 saveUsageStats : Idb.Db -> UsageStats -> ConcurrentTask Idb.Error ()
 saveUsageStats db stats =
     Idb.putAt db usageStatsStore (Idb.StringKey "stats") (UsageStats.encode stats)
 
 
-{-| Delete usage statistics (reset).
+{-| Delete usage statistics (reset), including the JS-owned byte counter.
 -}
 resetUsageStats : Idb.Db -> ConcurrentTask Idb.Error ()
 resetUsageStats db =
     Idb.delete db usageStatsStore (Idb.StringKey "stats")
+        |> ConcurrentTask.andThenDo (Idb.delete db usageStatsStore (Idb.StringKey "transfer"))
 
 
 

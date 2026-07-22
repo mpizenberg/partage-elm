@@ -306,11 +306,14 @@ formatDollars cents =
 -- Codecs
 
 
+{-| `totalBytesTransferred` is owned by the JS byte-counter, which writes it to
+a separate record; it is never encoded here so the two writers can't clobber a
+shared record. `Infra.Storage.loadUsageStats` merges the JS count back in.
+-}
 encode : UsageStats -> Encode.Value
 encode stats =
     Encode.object
         [ ( "trackingStartDate", Encode.int (Time.posixToMillis stats.trackingStartDate) )
-        , ( "totalBytesTransferred", Encode.int stats.totalBytesTransferred )
         , ( "storageBytes", Encode.int stats.storageBytes )
         , ( "storageLastCheckedDate", Encode.string stats.storageLastCheckedDate )
         , ( "storageCostAccumulatorCentNanos", Encode.int stats.storageCostAccumulatorCentNanos )
@@ -321,7 +324,7 @@ decoder : Decode.Decoder UsageStats
 decoder =
     Decode.map5 UsageStats
         (Decode.field "trackingStartDate" (Decode.map Time.millisToPosix Decode.int))
-        (Decode.field "totalBytesTransferred" Decode.int)
+        (Decode.succeed 0)
         (Decode.field "storageBytes" Decode.int)
         (Decode.field "storageLastCheckedDate" Decode.string)
         (Decode.field "storageCostAccumulatorCentNanos" Decode.int)

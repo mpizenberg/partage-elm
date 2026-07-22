@@ -82,7 +82,13 @@ export class GroupDo extends DurableObject {
   broadcast(seq) {
     const message = JSON.stringify({ seq });
     for (const ws of this.ctx.getWebSockets()) {
-      ws.send(message);
+      // A dead socket must not abort a committed append nor skip the remaining
+      // subscribers, so each send fails in isolation.
+      try {
+        ws.send(message);
+      } catch {
+        // Socket already closed; the next fetch will pull the missed seq.
+      }
     }
   }
 

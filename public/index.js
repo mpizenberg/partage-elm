@@ -20,11 +20,14 @@ class CopyButton extends HTMLElement {
   connectedCallback() {
     this.addEventListener("click", () => {
       const text = this.getAttribute("data-copy") || "";
-      navigator.clipboard.writeText(text).then(() => {
-        if (app && app.ports && app.ports.onClipboardCopy) {
-          app.ports.onClipboardCopy.send(null);
-        }
-      });
+      navigator.clipboard
+        .writeText(text)
+        .then(() => {
+          if (app && app.ports && app.ports.onClipboardCopy) {
+            app.ports.onClipboardCopy.send(null);
+          }
+        })
+        .catch(() => {});
     });
   }
 }
@@ -80,10 +83,23 @@ function initNavigation(ports) {
   });
 }
 
+// The manifest's start_url carries the PWA-launch marker param; strip it before
+// Elm routes on the URL so a real launch doesn't look like a distinct route.
+function initialUrlWithoutStartParam(paramName) {
+  try {
+    var url = new URL(location.href);
+    if (!paramName || !url.searchParams.has(paramName)) return location.href;
+    url.searchParams.delete(paramName);
+    return url.toString();
+  } catch (e) {
+    return location.href;
+  }
+}
+
 var app = Elm.Main.init({
   node: document.getElementById("app"),
   flags: {
-    initialUrl: location.href,
+    initialUrl: initialUrlWithoutStartParam(installHintOptions.requireStartUrlParam),
     language: navigator.language || "en",
     randomSeed: Array.from(crypto.getRandomValues(new Uint32Array(4))),
     currentTime: Date.now(),
@@ -263,8 +279,6 @@ function createCompressionTasks() {
                   .pipeThrough(new CompressionStream("gzip")),
               ).arrayBuffer(),
             );
-            console.log("Original   size: ", originalBytes.length);
-            console.log("Compressed size: ", compressedBytes.length);
             if (compressedBytes.length <= threshold * originalBytes.length) {
               dataToEncrypt = compressedBytes;
               compressed = true;
@@ -437,17 +451,12 @@ if (typeof PerformanceObserver !== "undefined") {
       }
       const tx = db.transaction("usageStats", "readwrite");
       const store = tx.objectStore("usageStats");
-      const getReq = store.get("stats");
+      // Own the byte counter in a dedicated record so Elm's full-record writes
+      // to "stats" can't clobber it (and vice versa). Elm merges it back on read.
+      const getReq = store.get("transfer");
       getReq.onsuccess = () => {
-        const stats = getReq.result || {
-          trackingStartDate: Date.now(),
-          totalBytesTransferred: 0,
-          storageBytes: 0,
-          storageLastCheckedDate: "",
-          storageCostAccumulatorCentNanos: 0,
-        };
-        stats.totalBytesTransferred += bytesToAdd;
-        store.put(stats, "stats");
+        const current = getReq.result || 0;
+        store.put(current + bytesToAdd, "transfer");
       };
       tx.oncomplete = () => db.close();
       tx.onerror = () => {

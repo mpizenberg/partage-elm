@@ -26,7 +26,13 @@ export function startServer({ storage, powSecret, port = 8090, staticDir, adminS
       if (sockets) {
         const message = JSON.stringify({ seq });
         for (const ws of sockets) {
-          ws.send(message);
+          // A dead socket must not abort a committed append nor skip the
+          // remaining subscribers, so each send fails in isolation.
+          try {
+            ws.send(message);
+          } catch {
+            // Socket already closed; the next fetch will pull the missed seq.
+          }
         }
       }
     },
