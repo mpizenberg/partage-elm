@@ -86,6 +86,8 @@
   "groupSuspicionReview": "Examiner",
   "groupRecoveryBanner": "Cet appareil n’est pas rattaché à ce groupe avec sa clé actuelle. Rattachez-le pour publier à nouveau.",
   "groupRecoveryRelink": "Rattacher cet appareil",
+  "groupArchivedBanner": "Ce groupe est archivé : lecture seule, sans synchronisation.",
+  "groupArchivedUnarchive": "Désarchiver",
   "migrateTitle": "Migrer vers un nouveau groupe",
   "migrateIntro": "La migration crée un tout nouveau groupe avec une nouvelle clé de chiffrement et y transfère votre historique vérifié. À utiliser si ce groupe présente des signes de falsification inattendus.",
   "migrateCarries": "L'intégralité de votre historique vérifié est transférée : les soldes et les membres restent identiques dans le nouveau groupe.",

@@ -254,6 +254,7 @@ type
     | SettleTransaction Settlement.Transaction
     | SaveSettlementPreferences { memberRootId : Member.Id, preferredRecipients : List Member.Id }
     | ToggleNotification
+    | UnarchiveGroup
       -- Async response handlers
     | OnEntrySaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnEntryActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
@@ -787,6 +788,18 @@ update config msg model =
                         config
                         model
                         (\ctx -> GroupOps.event ctx loaded (Event.SettlementPreferencesUpdated prefData))
+
+                Nothing ->
+                    ( model, Cmd.none, [] )
+
+        UnarchiveGroup ->
+            case model.loadedGroup of
+                Just loaded ->
+                    if loaded.summary.isArchived then
+                        toggleArchiveGroup config model loaded
+
+                    else
+                        ( model, Cmd.none, [] )
 
                 Nothing ->
                     ( model, Cmd.none, [] )
@@ -1970,7 +1983,13 @@ toggleArchiveGroup config model loaded =
         |> (\( r, cmd ) ->
                 ( { updatedModel | runner = r }
                 , cmd
-                , [ UpdateGroupSummary updatedSummary, NavigateTo Home ]
+                , UpdateGroupSummary updatedSummary
+                    :: (if updatedSummary.isArchived then
+                            [ NavigateTo Home ]
+
+                        else
+                            []
+                       )
                 )
            )
 
@@ -2000,7 +2019,15 @@ initPagesIfNeeded : UpdateConfig -> GroupView -> Model -> ( Model, Cmd Msg )
 initPagesIfNeeded config groupView model =
     case model.loadedGroup of
         Just loaded ->
-            case ( groupView, currentUserRootId model loaded ) of
+            case
+                ( groupView
+                , if loaded.summary.isArchived then
+                    Nothing
+
+                  else
+                    currentUserRootId model loaded
+                )
+            of
                 ( NewEntry, Just userRootId ) ->
                     let
                         entryFormConfig : NewEntryShared.Config
@@ -2516,7 +2543,9 @@ viewTabs config maybeUserRootId loaded model =
                               else
                                 []
                             , if loaded.summary.isArchived then
-                                []
+                                [ UI.Components.archivedBanner config.i18n
+                                    { onUnarchive = config.toMsg UnarchiveGroup }
+                                ]
 
                               else if maybeUserRootId == Nothing then
                                 case recoveryRootId model loaded of
@@ -2617,6 +2646,7 @@ tabContent config maybeUserRootId loaded model =
                 , isSynced = loaded.syncCursor /= Nothing
                 , onToggleNotification = config.toMsg ToggleNotification
                 , isSubscribed = loaded.summary.isSubscribed
+                , isArchived = loaded.summary.isArchived
                 , pushActive = config.pushActive
                 , timeZone = config.timeZone
                 , identityHash = model.identityHash

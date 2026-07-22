@@ -11,7 +11,7 @@ module UI.Components exposing
     , fab
     , featherIcon, featherIconColored, animatedChevron
     , appLogo
-    , languageSelector, pwaBanners, readOnlyBanner, recoveryBanner, suspicionBanner, tamperBanner, unknownEventsBanner
+    , archivedBanner, languageSelector, pwaBanners, readOnlyBanner, recoveryBanner, suspicionBanner, tamperBanner, unknownEventsBanner
     )
 
 {-| Reusable UI components.
@@ -55,7 +55,7 @@ module UI.Components exposing
 
 # Domain components
 
-@docs languageSelector, pwaBanners, readOnlyBanner, recoveryBanner, suspicionBanner, tamperBanner, unknownEventsBanner
+@docs archivedBanner, languageSelector, pwaBanners, readOnlyBanner, recoveryBanner, suspicionBanner, tamperBanner, unknownEventsBanner
 
 -}
 
@@ -1020,6 +1020,19 @@ readOnlyBanner i18n { onRejoin } =
         { bgColor = Theme.warning.tint
         , textColor = Theme.warning.text
         , action = Just ( T.readOnlyRejoin i18n, onRejoin )
+        , dismiss = Nothing
+        }
+
+
+{-| Banner shown on an archived group: it renders read-only and never syncs
+until unarchived.
+-}
+archivedBanner : I18n -> { onUnarchive : msg } -> Ui.Element msg
+archivedBanner i18n { onUnarchive } =
+    pwaBanner (T.groupArchivedBanner i18n)
+        { bgColor = Theme.base.tintStrong
+        , textColor = Theme.base.text
+        , action = Just ( T.groupArchivedUnarchive i18n, onUnarchive )
         , dismiss = Nothing
         }
 
