@@ -277,7 +277,6 @@ type
     | PreviewMigration
     | ConfirmMigration
     | OnGroupMigrated (ConcurrentTask.Response Idb.Error GroupOps.MigrationResult)
-    | OpenGroupRoute Route
     | NoOp
     | OnDiagnosticsLoaded (ConcurrentTask.Response Idb.Error Page.Group.Diagnostics.Stats)
     | OnServerEvent Json.Decode.Value
@@ -1319,9 +1318,6 @@ update config msg model =
               ]
             )
 
-        OpenGroupRoute route ->
-            ( model, Cmd.none, [ NavigateTo route ] )
-
         NoOp ->
             ( model, Cmd.none, [] )
 
@@ -1935,7 +1931,6 @@ syncGroupSummaryName config groupId model =
                             |> Maybe.map .netBalance
                             |> Maybe.withDefault 0
                     , lastSyncedAt = config.currentTime
-                    , supersededBy = loaded.summary.supersededBy
                     }
 
                 updatedModel : Model
@@ -1964,7 +1959,6 @@ toggleArchiveGroup config model loaded =
             , memberCount = loaded.summary.memberCount
             , myBalanceCents = loaded.summary.myBalanceCents
             , lastSyncedAt = loaded.summary.lastSyncedAt
-            , supersededBy = loaded.summary.supersededBy
             }
 
         updatedModel : Model
@@ -2091,7 +2085,7 @@ initPagesIfNeeded config groupView model =
                 ( Migrate, _ ) ->
                     -- Reachable by a re-keyed stranger too, so gate the order fetch
                     -- on the recovery root, not current membership.
-                    if recoveryRootId model loaded /= Nothing && loaded.summary.supersededBy == Nothing && model.migrationOrder == Nothing then
+                    if recoveryRootId model loaded /= Nothing && not loaded.summary.isArchived && model.migrationOrder == Nothing then
                         ( model.runner, Cmd.none )
                             |> Runner.andRun (OnMigrationOrderFetched loaded.summary.id)
                                 (Server.fetchEventOrder { serverUrl = config.serverUrl, groupId = loaded.summary.id, groupKey = loaded.groupKey })
@@ -2287,13 +2281,13 @@ viewGroupPage config groupView loaded model =
 
         maybeUserRootId : Maybe Member.Id
         maybeUserRootId =
-            -- A superseded group is read-only: nulling the root id reuses the
+            -- An archived group is read-only: nulling the root id reuses the
             -- non-member gate that already hides every mutating action.
-            if loaded.summary.supersededBy == Nothing then
-                currentUserRootId model loaded
+            if loaded.summary.isArchived then
+                Nothing
 
             else
-                Nothing
+                currentUserRootId model loaded
     in
     case ( groupView, maybeUserRootId ) of
         ( Tab tab, _ ) ->
@@ -2370,8 +2364,8 @@ viewGroupPage config groupView loaded model =
                 migrateButton =
                     -- Shown exactly when the migrate view would render: a
                     -- member, or a stranger with a recovery root, on a
-                    -- non-superseded group.
-                    if recoveryRootId model loaded /= Nothing && loaded.summary.supersededBy == Nothing then
+                    -- non-archived group.
+                    if recoveryRootId model loaded /= Nothing && not loaded.summary.isArchived then
                         [ UI.Components.btnOutline []
                             { label = T.migrateTitle config.i18n
                             , icon = Nothing
@@ -2403,7 +2397,7 @@ viewGroupPage config groupView loaded model =
         ( Rejoin, _ ) ->
             case ( maybeUserRootId, Page.JoinGroup.getPreview model.rejoinModel ) of
                 ( Nothing, Just preview ) ->
-                    if loaded.summary.supersededBy == Nothing then
+                    if not loaded.summary.isArchived then
                         noOverlay <|
                             pageShell config (T.rejoinTitle config.i18n) <|
                                 Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill ]
@@ -2420,7 +2414,7 @@ viewGroupPage config groupView loaded model =
         ( Migrate, _ ) ->
             case recoveryRootId model loaded of
                 Just selfRoot ->
-                    if loaded.summary.supersededBy == Nothing then
+                    if not loaded.summary.isArchived then
                         migrateView config loaded model selfRoot
 
                     else
@@ -2475,21 +2469,6 @@ pageShell config title content =
     UI.Shell.pageShell { title = title, onBack = config.onGoBack } content
 
 
-{-| A migrated group is abandoned: its history and balances live in the successor,
-so the tabs would render an empty shell. Show a calm pointer instead.
--}
-supersededPlaceholder : I18n -> Ui.Element msg
-supersededPlaceholder i18n =
-    Ui.el
-        [ Ui.width Ui.fill
-        , Ui.paddingXY 0 Theme.spacing.xl
-        , Ui.Font.center
-        , Ui.Font.color Theme.base.textSubtle
-        , Ui.Font.size Theme.font.sm
-        ]
-        (Ui.text (T.groupSupersededBody i18n))
-
-
 viewTabs : ViewConfig msg -> Maybe Member.Id -> LoadedGroup -> Model -> ViewResult msg
 viewTabs config maybeUserRootId loaded model =
     let
@@ -2509,10 +2488,6 @@ viewTabs config maybeUserRootId loaded model =
 
                 Nothing ->
                     Ui.none
-
-        isSuperseded : Bool
-        isSuperseded =
-            loaded.summary.supersededBy /= Nothing
     in
     { content =
         UI.Shell.tabbedShell
@@ -2524,7 +2499,7 @@ viewTabs config maybeUserRootId loaded model =
                     banners : List (Ui.Element msg)
                     banners =
                         List.concat
-                            [ if TamperSignals.bannerWorthy loaded.tamperSignals && loaded.summary.supersededBy == Nothing then
+                            [ if TamperSignals.bannerWorthy loaded.tamperSignals && not loaded.summary.isArchived then
                                 [ UI.Components.tamperBanner config.i18n
                                     { onMigrate = config.toMsg (RequestNavigation Migrate)
                                     , onDismiss = config.toMsg DismissTamperSignals
@@ -2533,32 +2508,28 @@ viewTabs config maybeUserRootId loaded model =
 
                               else
                                 []
-                            , if not (List.isEmpty (activeFindings model.identityHash loaded)) && loaded.summary.supersededBy == Nothing then
+                            , if not (List.isEmpty (activeFindings model.identityHash loaded)) && not loaded.summary.isArchived then
                                 [ UI.Components.suspicionBanner config.i18n
                                     { onReview = config.toMsg (RequestNavigation Migrate) }
                                 ]
 
                               else
                                 []
-                            , case loaded.summary.supersededBy of
-                                Just newId ->
-                                    [ UI.Components.supersededBanner config.i18n
-                                        { onOpenNew = config.toMsg (OpenGroupRoute (GroupRoute newId (Tab BalanceTab))) }
-                                    ]
+                            , if loaded.summary.isArchived then
+                                []
 
-                                Nothing ->
-                                    if maybeUserRootId == Nothing then
-                                        case recoveryRootId model loaded of
-                                            Just root ->
-                                                [ UI.Components.recoveryBanner config.i18n { onRelink = config.toMsg (RelinkDevice root) } ]
+                              else if maybeUserRootId == Nothing then
+                                case recoveryRootId model loaded of
+                                    Just root ->
+                                        [ UI.Components.recoveryBanner config.i18n { onRelink = config.toMsg (RelinkDevice root) } ]
 
-                                            Nothing ->
-                                                [ UI.Components.readOnlyBanner config.i18n
-                                                    { onRejoin = config.toMsg (RequestNavigation Rejoin) }
-                                                ]
+                                    Nothing ->
+                                        [ UI.Components.readOnlyBanner config.i18n
+                                            { onRejoin = config.toMsg (RequestNavigation Rejoin) }
+                                        ]
 
-                                    else
-                                        []
+                              else
+                                []
                             , if List.any (\e -> e.payload == Event.Unknown) loaded.events then
                                 [ UI.Components.unknownEventsBanner config.i18n ]
 
@@ -2566,11 +2537,7 @@ viewTabs config maybeUserRootId loaded model =
                                 []
                             ]
                 in
-                if isSuperseded then
-                    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
-                        (banners ++ [ supersededPlaceholder config.i18n ])
-
-                else if List.isEmpty banners then
+                if List.isEmpty banners then
                     tabContent config maybeUserRootId loaded model
 
                 else
@@ -2578,25 +2545,21 @@ viewTabs config maybeUserRootId loaded model =
                         (banners ++ [ tabContent config maybeUserRootId loaded model ])
             }
     , overlay =
-        if isSuperseded then
-            Nothing
+        Just <|
+            Ui.column [ Ui.spacing Theme.spacing.lg ]
+                [ fab
 
-        else
-            Just <|
-                Ui.column [ Ui.spacing Theme.spacing.lg ]
-                    [ fab
-
-                    -- Tab bar
-                    , UI.Shell.tabBar
-                        { balance = T.tabBalance config.i18n
-                        , entries = T.tabEntries config.i18n
-                        , members = T.tabMembers config.i18n
-                        , activity = T.tabActivity config.i18n
-                        }
-                        tabHref
-                        model.activeTab
-                        (\tab -> config.toMsg (RequestNavigation (Tab tab)))
-                    ]
+                -- Tab bar
+                , UI.Shell.tabBar
+                    { balance = T.tabBalance config.i18n
+                    , entries = T.tabEntries config.i18n
+                    , members = T.tabMembers config.i18n
+                    , activity = T.tabActivity config.i18n
+                    }
+                    tabHref
+                    model.activeTab
+                    (\tab -> config.toMsg (RequestNavigation (Tab tab)))
+                ]
     }
 
 

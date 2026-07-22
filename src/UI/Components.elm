@@ -11,7 +11,7 @@ module UI.Components exposing
     , fab
     , featherIcon, featherIconColored, animatedChevron
     , appLogo
-    , languageSelector, pwaBanners, readOnlyBanner, recoveryBanner, supersededBanner, suspicionBanner, tamperBanner, unknownEventsBanner
+    , languageSelector, pwaBanners, readOnlyBanner, recoveryBanner, suspicionBanner, tamperBanner, unknownEventsBanner
     )
 
 {-| Reusable UI components.
@@ -55,7 +55,7 @@ module UI.Components exposing
 
 # Domain components
 
-@docs languageSelector, pwaBanners, readOnlyBanner, recoveryBanner, supersededBanner, suspicionBanner, tamperBanner, unknownEventsBanner
+@docs languageSelector, pwaBanners, readOnlyBanner, recoveryBanner, suspicionBanner, tamperBanner, unknownEventsBanner
 
 -}
 
@@ -1075,18 +1075,5 @@ suspicionBanner i18n { onReview } =
         { bgColor = Theme.danger.tint
         , textColor = Theme.danger.text
         , action = Just ( T.groupSuspicionReview i18n, onReview )
-        , dismiss = Nothing
-        }
-
-
-{-| Banner shown on a group that was migrated away (spec §11.7): it is now
-read-only and points to the fresh group that replaced it.
--}
-supersededBanner : I18n -> { onOpenNew : msg } -> Ui.Element msg
-supersededBanner i18n { onOpenNew } =
-    pwaBanner (T.groupSupersededBanner i18n)
-        { bgColor = Theme.warning.tint
-        , textColor = Theme.warning.text
-        , action = Just ( T.groupSupersededOpen i18n, onOpenNew )
         , dismiss = Nothing
         }

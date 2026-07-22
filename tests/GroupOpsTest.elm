@@ -228,5 +228,4 @@ testSummary =
     , memberCount = 3
     , myBalanceCents = 0
     , lastSyncedAt = Time.millisToPosix 0
-    , supersededBy = Nothing
     }

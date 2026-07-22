@@ -141,7 +141,6 @@ summarize memberId groupId lastSyncedAt state =
             |> Maybe.map .netBalance
             |> Maybe.withDefault 0
     , lastSyncedAt = lastSyncedAt
-    , supersededBy = Nothing
     }
 
 

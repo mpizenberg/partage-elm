@@ -236,7 +236,6 @@ newGroup ctx onComplete output =
             , memberCount = 1 + List.length output.virtualMembers
             , myBalanceCents = 0
             , lastSyncedAt = ctx.currentTime
-            , supersededBy = Nothing
             }
 
         signingKeyPair : Signature.SigningKeyPair
@@ -305,7 +304,7 @@ type alias SplitwiseImportConfig =
 
 
 {-| The two summaries a migration touches: the fresh group it minted and the old
-group it superseded (now archived, pointing at the new one).
+group it replaced (now archived).
 -}
 type alias MigrationResult =
     { newSummary : Group.Summary
@@ -320,7 +319,7 @@ relay's `order` (`id → seq`) map — and queue what survives for push so the n
 group registers on the relay on its first sync. The signature covers the
 envelope, not the group id, so the carried events replay to the state they held
 in the old group. The old
-group is marked superseded and archived; it is left to the relay TTL. The new key
+group is archived; it is left to the relay TTL. The new key
 must reach only trusted members, out of band.
 -}
 migrateGroup : Context msg -> (ConcurrentTask.Response Idb.Error MigrationResult -> msg) -> Dict.Dict Event.Id Int -> Dict.Dict Member.Id MigrationCuration.Bound -> LoadedGroup -> ( State msg, Cmd msg )
@@ -331,7 +330,7 @@ migrateGroup ctx onComplete order selection loaded =
 
         oldSummary : Group.Summary
         oldSummary =
-            { loadedSummary | isArchived = True, supersededBy = Just newId }
+            { loadedSummary | isArchived = True }
 
         loadedSummary : Group.Summary
         loadedSummary =
@@ -466,7 +465,6 @@ importSplitwiseGroup ctx onComplete cfg =
             , memberCount = 1 + List.length virtualMembers
             , myBalanceCents = 0
             , lastSyncedAt = ctx.currentTime
-            , supersededBy = Nothing
             }
 
         signingKeyPair : Signature.SigningKeyPair
