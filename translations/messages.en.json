@@ -392,6 +392,7 @@
   "toastExportError": "Failed to export group.",
   "toastSettlementRecorded": "Settlement recorded.",
   "toastSyncError": "Sync failed: {details}",
+  "toastSyncSaveError": "Failed to save synced changes on this device.",
   "toastGroupFull": "This group reached the server's storage limit — new changes can't sync. Your data is safe on this device; export a backup.",
   "toastRateLimited": "Too much data synced recently. New changes will sync again later.",
   "entryDeleteWarning": "This will mark the entry as deleted.",

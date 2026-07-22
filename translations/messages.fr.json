@@ -392,6 +392,7 @@
   "toastExportError": "Échec de l'exportation du groupe.",
   "toastSettlementRecorded": "Règlement enregistré.",
   "toastSyncError": "Échec de la synchronisation : {details}",
+  "toastSyncSaveError": "Échec de l'enregistrement des modifications synchronisées sur cet appareil.",
   "toastGroupFull": "Ce groupe a atteint la limite de stockage du serveur — les nouvelles modifications ne peuvent plus se synchroniser. Vos données sont en sécurité sur cet appareil ; exportez une sauvegarde.",
   "toastRateLimited": "Trop de données synchronisées récemment. Les nouvelles modifications se synchroniseront à nouveau plus tard.",
   "entryDeleteWarning": "Cette écriture sera marquée comme supprimée.",

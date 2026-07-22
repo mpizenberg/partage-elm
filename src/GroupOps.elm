@@ -128,7 +128,18 @@ initLoadedGroup events summary key cursor unpushed tamperSignals suspicionDismis
 
 
 attempt : Context msg -> (Time.Posix -> Event.Envelope) -> LoadedGroup -> ( State msg, Cmd msg )
-attempt ctx makeUnsignedEnvelope loaded =
+attempt =
+    attemptTracking True
+
+
+{-| Like `attempt`, but `track` decides whether the new event id is recorded in
+the unpushed set as part of the same task. Single-event submissions track
+individually (`attempt`); multi-event submissions (merge) pass `False` and
+record all ids in one write afterwards, so their concurrent load-modify-save
+pairs can't clobber each other's unpushed set.
+-}
+attemptTracking : Bool -> Context msg -> (Time.Posix -> Event.Envelope) -> LoadedGroup -> ( State msg, Cmd msg )
+attemptTracking track ctx makeUnsignedEnvelope loaded =
     let
         signingKeyPair : Signature.SigningKeyPair
         signingKeyPair =
@@ -144,10 +155,15 @@ attempt ctx makeUnsignedEnvelope loaded =
                 |> ConcurrentTask.andThen (signEnvelope signingKeyPair)
                 |> ConcurrentTask.andThen
                     (\envelope ->
-                        ConcurrentTask.batch
-                            [ Storage.saveEvents ctx.db groupId [ envelope ]
-                            , Storage.addUnpushedIds ctx.db groupId [ envelope.id ]
-                            ]
+                        (Storage.saveEvents ctx.db groupId [ envelope ]
+                            :: (if track then
+                                    [ Storage.addUnpushedIds ctx.db groupId [ envelope.id ] ]
+
+                                else
+                                    []
+                               )
+                        )
+                            |> ConcurrentTask.batch
                             |> ConcurrentTask.map (\_ -> envelope)
                     )
     in
@@ -608,9 +624,10 @@ event =
     simpleEvent
 
 
-{-| Same as `event`, but also returns the freshly generated envelope id.
-Useful when the caller needs to track completion of one or more submitted
-events (e.g. a multi-event merge).
+{-| Same as `event`, but returns the freshly generated envelope id and does
+**not** record it in the unpushed set. Used by multi-event submissions
+(merge) that track completion of every id and then record them all in one
+unpushed-set write; see `attemptTracking`.
 -}
 eventWithId : Context msg -> LoadedGroup -> Event.Payload -> ( State msg, Cmd msg, Event.Id )
 eventWithId ctx loaded payload =
@@ -619,7 +636,8 @@ eventWithId ctx loaded payload =
             IdGen.v7 ctx.currentTime ctx.uuidState
 
         ( state, cmd ) =
-            attempt { ctx | uuidState = uuidStateAfter }
+            attemptTracking False
+                { ctx | uuidState = uuidStateAfter }
                 (\now -> Event.wrap eventId now (author ctx) payload "")
                 loaded
     in
@@ -1017,6 +1035,20 @@ mergeEventsHelp xs ys acc =
 -}
 postSyncTasks : Idb.Db -> Server.ServerContext -> SyncApplyResult -> ConcurrentTask Idb.Error ()
 postSyncTasks db ctx result =
+    let
+        -- The cursor must never persist ahead of its events: a crash between the
+        -- two would make the next open trust the cursor and skip the missing
+        -- events forever. Chaining guarantees events land first.
+        persistEventsThenCursor : ConcurrentTask Idb.Error ()
+        persistEventsThenCursor =
+            (if List.isEmpty result.newEvents then
+                ConcurrentTask.succeed ()
+
+             else
+                Storage.saveEvents db ctx.groupId result.newEvents
+            )
+                |> ConcurrentTask.andThen (\_ -> Storage.saveSyncCursor db ctx.groupId result.pullCursor)
+    in
     List.filterMap identity
         [ Just <| Storage.saveUnpushedIds db ctx.groupId result.updatedGroup.unpushedIds
         , if TamperSignals.isClean result.updatedGroup.tamperSignals then
@@ -1024,12 +1056,7 @@ postSyncTasks db ctx result =
 
           else
             Just <| Storage.saveTamperSignals db ctx.groupId result.updatedGroup.tamperSignals
-        , if List.isEmpty result.newEvents then
-            Nothing
-
-          else
-            Just <| Storage.saveEvents db ctx.groupId result.newEvents
-        , Just <| Storage.saveSyncCursor db ctx.groupId result.pullCursor
+        , Just persistEventsThenCursor
         , if result.updatedGroup.summary.isArchived then
             Nothing
 
