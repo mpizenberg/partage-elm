@@ -153,20 +153,20 @@ identityCard i18n config identity =
         bound =
             Dict.get identity.id config.selection
 
-        hasAnchor : Bool
-        hasAnchor =
-            not (List.isEmpty (config.anchors identity.id))
+        cuttable : Bool
+        cuttable =
+            not (List.isEmpty identity.boundaries)
 
         interactive : Bool
         interactive =
-            identity.removable || hasAnchor
+            identity.removable || cuttable
 
         control : Ui.Element msg
         control =
             if identity.removable then
                 keepToggle i18n (T.migrateActionRemove i18n) Theme.danger.solid config.onToggle identity.id (bound == Nothing)
 
-            else if hasAnchor then
+            else if cuttable then
                 keepToggle i18n (T.migrateActionCut i18n) Theme.warning.solid config.onToggle identity.id (bound == Nothing)
 
             else if identity.isSelf then
@@ -192,7 +192,7 @@ identityCard i18n config identity =
         refine =
             case bound of
                 Just current ->
-                    if hasAnchor || not (List.isEmpty identity.boundaries) then
+                    if cuttable then
                         [ curationBox i18n config identity current ]
 
                     else

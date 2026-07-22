@@ -1186,17 +1186,11 @@ update config msg model =
 
         ToggleMigrationExclude memberId ->
             let
-                -- Pre-place the cut on the earliest suspicious sync, so a leaked
-                -- key defaults to keeping the genuine prefix; whole removal when
-                -- nothing looks injected.
                 defaultBound : MigrationCuration.Bound
                 defaultBound =
                     case model.loadedGroup of
                         Just loaded ->
-                            MigrationCuration.anchorsFor (curationOrder model) (activeFindings model.identityHash loaded) memberId loaded.events
-                                |> List.head
-                                |> Maybe.map .bound
-                                |> Maybe.withDefault MigrationCuration.All
+                            defaultMigrationBound model loaded memberId
 
                         Nothing ->
                             MigrationCuration.All
@@ -2131,6 +2125,46 @@ activeFindings : Member.Id -> GroupOps.LoadedGroup -> List Finding
 activeFindings viewer loaded =
     SuspicionAudit.audit viewer loaded.groupState loaded.events
         |> List.filter (\f -> not (Set.member (SuspicionAudit.dismissKey f) loaded.suspicionDismissals))
+
+
+{-| Where to pre-place the cut when an identity is first toggled for exclusion:
+the earliest suspicious sync when one is detected; otherwise whole removal for an
+injected identity, but for a non-removable creator/self — who must never be set to
+`All`, as that would drop their establishing event — the earliest batch, keeping
+their genesis / `MemberCreated` and shedding what followed.
+-}
+defaultMigrationBound : Model -> LoadedGroup -> Member.Id -> MigrationCuration.Bound
+defaultMigrationBound model loaded memberId =
+    let
+        anchorBound : Maybe MigrationCuration.Bound
+        anchorBound =
+            MigrationCuration.anchorsFor (curationOrder model) (activeFindings model.identityHash loaded) memberId loaded.events
+                |> List.head
+                |> Maybe.map .bound
+    in
+    case anchorBound of
+        Just bound ->
+            bound
+
+        Nothing ->
+            let
+                selfRoot : Member.Id
+                selfRoot =
+                    recoveryRootId model loaded |> Maybe.withDefault model.identityHash
+            in
+            MigrationCuration.identities (curationOrder model) selfRoot loaded.groupState loaded.events
+                |> List.filter (\identity -> identity.id == memberId)
+                |> List.head
+                |> Maybe.map
+                    (\identity ->
+                        case ( identity.removable, identity.boundaries ) of
+                            ( False, first :: _ ) ->
+                                MigrationCuration.After first.seq
+
+                            _ ->
+                                MigrationCuration.All
+                    )
+                |> Maybe.withDefault MigrationCuration.All
 
 
 
