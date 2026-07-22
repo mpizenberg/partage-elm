@@ -103,6 +103,7 @@
   "migrateKept": "conservé",
   "migrateToggleKeep": "Garder",
   "migrateActionRemove": "Retirer",
+  "migrateActionCut": "Couper l’historique",
   "migrateRoleYou": "vous",
   "memberDevicesLabel": "Appareils",
   "memberDeviceThis": "cet appareil",

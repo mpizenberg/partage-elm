@@ -153,10 +153,21 @@ identityCard i18n config identity =
         bound =
             Dict.get identity.id config.selection
 
+        hasAnchor : Bool
+        hasAnchor =
+            not (List.isEmpty (config.anchors identity.id))
+
+        interactive : Bool
+        interactive =
+            identity.removable || hasAnchor
+
         control : Ui.Element msg
         control =
-            if identity.excludable then
-                keepRemove i18n config.onToggle identity.id (bound == Nothing)
+            if identity.removable then
+                keepToggle i18n (T.migrateActionRemove i18n) Theme.danger.solid config.onToggle identity.id (bound == Nothing)
+
+            else if hasAnchor then
+                keepToggle i18n (T.migrateActionCut i18n) Theme.warning.solid config.onToggle identity.id (bound == Nothing)
 
             else if identity.isSelf then
                 pill Theme.success.bgSubtle Theme.success.text (T.migrateRoleYou i18n)
@@ -181,7 +192,7 @@ identityCard i18n config identity =
         refine =
             case bound of
                 Just current ->
-                    if identity.excludable && not (List.isEmpty identity.boundaries) then
+                    if hasAnchor || not (List.isEmpty identity.boundaries) then
                         [ curationBox i18n config identity current ]
 
                     else
@@ -222,7 +233,7 @@ identityCard i18n config identity =
          , Ui.padding Theme.spacing.md
          , Ui.rounded Theme.radius.md
          ]
-            ++ (if identity.excludable then
+            ++ (if interactive then
                     [ Ui.border Theme.border, Ui.borderColor Theme.base.accent ]
 
                 else
@@ -237,11 +248,12 @@ eventCountText i18n identity =
     String.fromInt identity.eventCount ++ " " ++ T.migrateEventsUnit i18n
 
 
-{-| Two-segment Keep / Remove control. The active segment is inert; only the
+{-| Two-segment Keep / action control (Remove for a removable identity, Cut for a
+creator/self that can only be bound-cut). The active segment is inert; only the
 other side carries the toggle, so a tap always flips the decision.
 -}
-keepRemove : I18n -> (Member.Id -> msg) -> Member.Id -> Bool -> Ui.Element msg
-keepRemove i18n onToggle memberId keeping =
+keepToggle : I18n -> String -> Ui.Color -> (Member.Id -> msg) -> Member.Id -> Bool -> Ui.Element msg
+keepToggle i18n actionLabel actionBg onToggle memberId keeping =
     Ui.row
         [ Ui.width Ui.shrink
         , Ui.alignRight
@@ -251,7 +263,7 @@ keepRemove i18n onToggle memberId keeping =
         , Ui.clip
         ]
         [ segment (T.migrateToggleKeep i18n) keeping Theme.primary.solid (onToggle memberId)
-        , segment (T.migrateActionRemove i18n) (not keeping) Theme.danger.solid (onToggle memberId)
+        , segment actionLabel (not keeping) actionBg (onToggle memberId)
         ]
 
 
@@ -310,13 +322,18 @@ curationBox i18n config identity current =
                 )
                 anchors
 
-        removeAll : Ui.Element msg
-        removeAll =
-            cutOption
-                (T.migrateCurateRemoveAll (String.fromInt identity.eventCount) i18n)
-                Nothing
-                (current == All)
-                (config.onSetBound identity.id All)
+        removeAllOption : List (Ui.Element msg)
+        removeAllOption =
+            if identity.removable then
+                [ cutOption
+                    (T.migrateCurateRemoveAll (String.fromInt identity.eventCount) i18n)
+                    Nothing
+                    (current == All)
+                    (config.onSetBound identity.id All)
+                ]
+
+            else
+                []
 
         manualToggle : Ui.Element msg
         manualToggle =
@@ -368,7 +385,8 @@ curationBox i18n config identity current =
         (Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.weight Theme.fontWeight.semibold, Ui.Font.color Theme.warning.text ]
             (Ui.text (T.migrateCurateHeading i18n))
             :: anchorOptions
-            ++ [ removeAll, manualToggle ]
+            ++ removeAllOption
+            ++ [ manualToggle ]
             ++ manualOptions
             ++ [ Ui.el [ Ui.width Ui.fill, Ui.Font.size Theme.font.xs, Ui.Font.color Theme.warning.textSubtle ]
                     (Ui.text (T.migrateCurateOrderNote i18n))

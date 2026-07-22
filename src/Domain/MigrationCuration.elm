@@ -50,20 +50,26 @@ curateEvents order selection events =
 
 keep : Dict Event.Id Int -> Dict Member.Id Bound -> Envelope -> Bool
 keep order selection envelope =
-    case Dict.get envelope.triggeredBy selection of
-        Nothing ->
-            True
+    -- A group without its genesis is invalid, so it survives any selection —
+    -- even a creator set to `All`, which then sheds only the creator's later events.
+    if isGenesis envelope then
+        True
 
-        Just All ->
-            False
+    else
+        case Dict.get envelope.triggeredBy selection of
+            Nothing ->
+                True
 
-        Just (After boundary) ->
-            case Dict.get envelope.id order of
-                Just seq ->
-                    seq <= boundary
+            Just All ->
+                False
 
-                Nothing ->
-                    True
+            Just (After boundary) ->
+                case Dict.get envelope.id order of
+                    Just seq ->
+                        seq <= boundary
+
+                    Nothing ->
+                        True
 
 
 {-| A server-order split point for one identity: keep everything it authored up
@@ -77,14 +83,15 @@ type alias Boundary =
 
 
 {-| A signing identity that authored events, with the stats a migrator needs to
-judge whether it belongs. `excludable` is False for the migrator and the group
-creator — dropping either would gut the group, so they can't be toggled off.
-`isSelf` marks the migrator's own identities (so the UI can say "you" rather than
-just "can't be removed"). `linkedAt` is the device's link timestamp when this
-identity is a linked device, so the migrator can tell an expected device from one
-that appeared alongside the flood. `boundaries` are the seq split points, earliest
-first, at which the identity's history can be partially dropped (empty when it
-authored in a single batch, so only a whole-identity drop makes sense).
+judge whether it belongs. `removable` is False for the migrator and the group
+creator — dropping either entirely would gut the group (the creator's genesis, the
+migrator's establishing `MemberCreated`), so they can only be bound-cut, never
+fully removed. `isSelf` marks the migrator's own identities (so the UI can say
+"you"). `linkedAt` is the device's link timestamp when this identity is a linked
+device, so the migrator can tell an expected device from one that appeared
+alongside the flood. `boundaries` are the seq split points, earliest first, at
+which the identity's history can be partially dropped (empty when it authored in a
+single batch, so only a whole-identity drop makes sense).
 -}
 type alias Identity =
     { id : Member.Id
@@ -92,7 +99,7 @@ type alias Identity =
     , eventCount : Int
     , isDevice : Bool
     , isSelf : Bool
-    , excludable : Bool
+    , removable : Bool
     , linkedAt : Maybe Time.Posix
     , boundaries : List Boundary
     }
@@ -160,7 +167,7 @@ identities order selfRoot state events =
             , eventCount = count
             , isDevice = Dict.member id state.deviceLinks
             , isSelf = root == Just selfRoot
-            , excludable = root /= Just selfRoot && id /= creator
+            , removable = root /= Just selfRoot && id /= creator
             , linkedAt = Dict.get id state.deviceLinks |> Maybe.map .timestamp
             , boundaries = boundariesFor id count
             }

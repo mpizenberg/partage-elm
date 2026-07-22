@@ -103,6 +103,7 @@
   "migrateKept": "kept",
   "migrateToggleKeep": "Keep",
   "migrateActionRemove": "Remove",
+  "migrateActionCut": "Cut history",
   "migrateRoleYou": "you",
   "memberDevicesLabel": "Devices",
   "memberDeviceThis": "this device",

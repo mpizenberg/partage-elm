@@ -179,6 +179,11 @@ curateEventsSuite =
             \_ ->
                 MigrationCuration.curateEvents Dict.empty (Dict.singleton "mallory" All) (legitEvents ++ attackerEvents)
                     |> Expect.equal legitEvents
+        , test "the genesis survives even when its creator is set to All" <|
+            \_ ->
+                MigrationCuration.curateEvents Dict.empty (Dict.singleton "admin" All) legitEvents
+                    |> List.map .id
+                    |> Expect.equal [ "g", "e-add1" ]
         , test "the attack lands before curation" <|
             \_ ->
                 let
@@ -280,16 +285,16 @@ identitiesSuite =
             \_ ->
                 List.map (\i -> ( i.id, i.eventCount )) ids
                     |> Expect.equal [ ( "admin", 4 ), ( "mallory", 3 ), ( "alice", 1 ) ]
-        , test "the migrator/creator is not excludable" <|
+        , test "the migrator/creator is not removable" <|
             \_ ->
-                findIdentity "admin" ids |> Maybe.map .excludable |> Expect.equal (Just False)
-        , test "an injected member is excludable" <|
+                findIdentity "admin" ids |> Maybe.map .removable |> Expect.equal (Just False)
+        , test "an injected member is removable" <|
             \_ ->
-                findIdentity "mallory" ids |> Maybe.map .excludable |> Expect.equal (Just True)
+                findIdentity "mallory" ids |> Maybe.map .removable |> Expect.equal (Just True)
         , test "without a fetched order there are no boundaries" <|
             \_ ->
                 findIdentity "mallory" ids |> Maybe.map .boundaries |> Expect.equal (Just [])
-        , test "a linked device is flagged and resolves to its root for exclusion" <|
+        , test "a linked device is flagged and resolves to its root for removal" <|
             \_ ->
                 let
                     withDevice : List Domain.Event.Envelope
@@ -305,7 +310,7 @@ identitiesSuite =
                             |> findIdentity "admin-phone"
                 in
                 Expect.equal ( Just True, Just False )
-                    ( Maybe.map .isDevice deviceId, Maybe.map .excludable deviceId )
+                    ( Maybe.map .isDevice deviceId, Maybe.map .removable deviceId )
         , test "a fetched order yields the identity's split points, excluding the last batch" <|
             \_ ->
                 MigrationCuration.identities leakedKeyOrder "admin" (GroupState.applyEvents leakedKeyEvents GroupState.empty) leakedKeyEvents
