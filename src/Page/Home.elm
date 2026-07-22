@@ -337,7 +337,7 @@ groupCard i18n ctx summary =
         metaLine : String
         metaLine =
             String.join " · "
-                [ String.fromInt summary.memberCount ++ " " ++ T.homeMembers i18n
+                [ T.homeMembers (String.fromInt summary.memberCount) i18n
                 , T.homeCreated i18n ++ " " ++ formatYear summary.createdAt
                 , Currency.currencySymbol summary.defaultCurrency
                 ]

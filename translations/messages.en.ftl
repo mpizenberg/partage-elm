@@ -264,7 +264,10 @@ entryDetailReceivedBy = Received by
 entryDetailFrom = From
 entryDetailTo = To
 entriesShowDeleted = Show deleted ({ $count })
-entriesSummary = { $count } entries · { $amount } spent total
+entriesSummary = { $count ->
+    [1] { $count } entry · { $amount } spent total
+   *[other] { $count } entries · { $amount } spent total
+ }
 entriesGroupTotal = Group total
 entriesYourSpending = Your spending
 editEntryTitle = Edit Entry
@@ -293,7 +296,10 @@ mergeBannerRecommended = Recommended direction: a virtual placeholder is being m
 mergeBannerSwapHint = { $source } is a real member but { $target } is virtual. Consider swapping.
 mergeBannerBothReal = { $source } is a real member who has joined with a device. Make sure you mean to retire that one rather than the other.
 mergeEffectsTitle = Effects of this merge
-mergeEntriesRewrittenCount = { $count } entries will be rewritten
+mergeEntriesRewrittenCount = { $count ->
+    [1] { $count } entry will be rewritten
+   *[other] { $count } entries will be rewritten
+ }
 mergeSelfTransfersDeletedCount = { $count } transfers will become self-to-self and be deleted
 mergePrefsUpdatedCount = { $count } settlement preferences will be updated
 mergeSelfTransferTag = will be deleted
@@ -500,7 +506,10 @@ aboutRekeyConfirm = This replaces this device's key. Every group must then be mi
 aboutFundingTitle = Help cover the cost
 aboutFundingBody = That number above is roughly what your usage costs to run on the server. Partage has no ads and no paid tier. If you can, please chip in to keep it running for everyone.
 aboutFundingCta = Support Partage
-homeMembers = members
+homeMembers = { $count ->
+    [1] { $count } member
+   *[other] { $count } members
+ }
 homeCreated = Created
 homeSettled = Settled
 homeGoButton = Go
