@@ -1115,7 +1115,7 @@ update config msg model =
                                     T.toastRateLimited config.i18n
 
                                 else
-                                    T.toastSyncError (Server.errorToString err) config.i18n
+                                    T.toastSyncError (Server.errorToText config.i18n err) config.i18n
                         in
                         [ ShowToast Toast.Error toastMessage
                         , LogError ErrorLog.SyncSource ErrorLog.Err ("Sync: " ++ Server.errorToString err)

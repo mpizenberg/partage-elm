@@ -651,7 +651,7 @@ update msg model =
                 |> Tuple.mapFirst (\r -> { modelAfterNav | runner = r })
 
         OnInitComplete (ConcurrentTask.Error err) ->
-            ( { model | appState = InitError (Storage.errorToString err) }, Cmd.none )
+            ( { model | appState = InitError (Storage.errorToText model.i18n err) }, Cmd.none )
 
         OnInitComplete (ConcurrentTask.UnexpectedError _) ->
             ( logError ErrorLog.StorageSource
@@ -942,7 +942,7 @@ update msg model =
             ( logError ErrorLog.StorageSource
                 ErrorLog.Err
                 ("Join: load local group: " ++ Storage.errorToString err)
-                { model | joinGroupModel = Page.JoinGroup.error (Storage.errorToString err) }
+                { model | joinGroupModel = Page.JoinGroup.error (Storage.errorToText model.i18n err) }
             , Cmd.none
             )
 
@@ -1004,7 +1004,7 @@ update msg model =
                 )
 
         OnJoinGroupFetched (ConcurrentTask.Error err) ->
-            ( { model | joinGroupModel = Page.JoinGroup.error (Server.errorToString err) }
+            ( { model | joinGroupModel = Page.JoinGroup.error (Server.errorToText model.i18n err) }
             , Cmd.none
             )
 
@@ -1147,7 +1147,7 @@ update msg model =
                 cleanModel =
                     { model | pendingServerCreations = Set.remove groupId model.pendingServerCreations }
             in
-            addToast Toast.Error ("Sync: " ++ Server.errorToString err) cleanModel
+            addToast Toast.Error (T.toastSyncError (Server.errorToText cleanModel.i18n err) cleanModel.i18n) cleanModel
 
         OnServerGroupCreated groupId (ConcurrentTask.UnexpectedError _) ->
             ( logError ErrorLog.ServerSource

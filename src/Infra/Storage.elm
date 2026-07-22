@@ -4,6 +4,7 @@ module Infra.Storage exposing
     , deleteExchangeRates
     , deleteGroup
     , errorToString
+    , errorToText
     , exchangeRateKeys
     , init
     , loadExchangeRate
@@ -43,6 +44,7 @@ import Infra.UsageStats as UsageStats exposing (UsageStats)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Set exposing (Set)
+import Translations as T exposing (I18n)
 import WebCrypto.Symmetric as Symmetric
 
 
@@ -556,3 +558,22 @@ errorToString err =
 
         Idb.DatabaseError errMsg ->
             "Database error: " ++ errMsg
+
+
+{-| Localized, user-facing rendering of a storage error. `errorToString` stays
+for the error log, where a stable English string is worth grepping for.
+-}
+errorToText : I18n -> Idb.Error -> String
+errorToText i18n err =
+    case err of
+        Idb.AlreadyExists ->
+            T.errorStorageExists i18n
+
+        Idb.TransactionError _ ->
+            T.errorStorageDatabase i18n
+
+        Idb.QuotaExceeded ->
+            T.errorStorageQuota i18n
+
+        Idb.DatabaseError _ ->
+            T.errorStorageDatabase i18n

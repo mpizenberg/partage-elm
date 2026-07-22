@@ -8,6 +8,7 @@ module Infra.Server exposing
     , compact
     , createGroupOnServer
     , errorToString
+    , errorToText
     , fetchEventOrder
     , isNetworkError
     , isNotFound
@@ -40,6 +41,7 @@ import Infra.PushServer as PushServer
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Set exposing (Set)
+import Translations as T exposing (I18n)
 import WebCrypto
 import WebCrypto.ProofOfWork as PoW
 import WebCrypto.Symmetric as Symmetric
@@ -114,6 +116,44 @@ errorToString err =
 
         InternalError msg ->
             msg
+
+
+{-| Localized, user-facing rendering of a server error. `errorToString` stays
+for the error log, where a stable English string is worth grepping for.
+-}
+errorToText : I18n -> Error -> String
+errorToText i18n err =
+    case err of
+        HttpError httpErr ->
+            case httpErr of
+                Http.BadUrl _ ->
+                    T.errorServerResponse i18n
+
+                Http.Timeout ->
+                    T.errorNetwork i18n
+
+                Http.NetworkError ->
+                    T.errorNetwork i18n
+
+                Http.BadStatus meta _ ->
+                    case meta.statusCode of
+                        507 ->
+                            T.errorServerStorageFull i18n
+
+                        429 ->
+                            T.errorServerRateLimited i18n
+
+                        code ->
+                            T.errorServerStatus (String.fromInt code) i18n
+
+                Http.BadBody _ _ _ ->
+                    T.errorServerResponse i18n
+
+        CryptoError _ ->
+            T.errorCrypto i18n
+
+        InternalError _ ->
+            T.errorUnexpected i18n
 
 
 {-| True when the server says the group does not exist.
