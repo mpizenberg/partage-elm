@@ -11,7 +11,7 @@ module UI.Components exposing
     , fab
     , featherIcon, featherIconColored, animatedChevron
     , appLogo
-    , languageSelector, pwaBanners, readOnlyBanner, supersededBanner, suspicionBanner, tamperBanner, unknownEventsBanner
+    , languageSelector, pwaBanners, readOnlyBanner, recoveryBanner, supersededBanner, suspicionBanner, tamperBanner, unknownEventsBanner
     )
 
 {-| Reusable UI components.
@@ -55,7 +55,7 @@ module UI.Components exposing
 
 # Domain components
 
-@docs languageSelector, pwaBanners, readOnlyBanner, supersededBanner, suspicionBanner, tamperBanner, unknownEventsBanner
+@docs languageSelector, pwaBanners, readOnlyBanner, recoveryBanner, supersededBanner, suspicionBanner, tamperBanner, unknownEventsBanner
 
 -}
 
@@ -1018,6 +1018,20 @@ readOnlyBanner i18n =
         { bgColor = Theme.warning.tint
         , textColor = Theme.warning.text
         , action = Nothing
+        , dismiss = Nothing
+        }
+
+
+{-| Banner shown to a re-keyed device that recognises this group from a previous
+key but isn't linked under its current one: one tap links this device back to that
+member so it can post again.
+-}
+recoveryBanner : I18n -> { onRelink : msg } -> Ui.Element msg
+recoveryBanner i18n { onRelink } =
+    pwaBanner (T.groupRecoveryBanner i18n)
+        { bgColor = Theme.primary.tint
+        , textColor = Theme.primary.text
+        , action = Just ( T.groupRecoveryRelink i18n, onRelink )
         , dismiss = Nothing
         }
 

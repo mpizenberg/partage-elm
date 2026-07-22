@@ -86,6 +86,8 @@
   "groupSuspicionReview": "Review",
   "groupSupersededBanner": "This group was migrated to a new one and is now read-only.",
   "groupSupersededOpen": "Open new group",
+  "groupRecoveryBanner": "This device isn't linked to this group under its current key. Re-link it to post again.",
+  "groupRecoveryRelink": "Re-link this device",
   "groupSupersededBody": "This group's history and balances have moved to the new group.",
   "migrateTitle": "Migrate to a new group",
   "migrateIntro": "Migration creates a brand-new group with a new encryption key and moves your verified history into it. Use this if this group shows signs of tampering you didn't expect.",

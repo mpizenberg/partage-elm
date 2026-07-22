@@ -232,6 +232,7 @@ type
       -- Navigation
     | RequestNavigation GroupView
     | RequestTransfer { toMemberId : Member.Id, amountCents : Int }
+    | RelinkDevice Member.Id
       -- Tabs
     | EntriesTabMsg Page.Group.EntriesTab.Msg
     | BalanceTabMsg Page.Group.BalanceTab.Msg
@@ -511,6 +512,31 @@ update config msg model =
                     ( { model | pendingEntry = Just (PendingTransfer transferData) }, Cmd.none, [ NavigateTo (GroupRoute groupId NewEntry) ] )
 
                 _ ->
+                    ( model, Cmd.none, [] )
+
+        RelinkDevice rootId ->
+            case model.loadedGroup of
+                Just loaded ->
+                    let
+                        deviceId : Member.Id
+                        deviceId =
+                            config.identity.publicKeyHash
+                    in
+                    runSubmit (OnMemberActionSaved loaded.summary.id)
+                        config
+                        model
+                        (\ctx ->
+                            GroupOps.event ctx
+                                loaded
+                                (Event.MemberLinked
+                                    { rootId = rootId
+                                    , deviceId = deviceId
+                                    , seq = GroupState.nextLinkSeq loaded.groupState deviceId
+                                    }
+                                )
+                        )
+
+                Nothing ->
                     ( model, Cmd.none, [] )
 
         -- Tab sub-page messages
@@ -2410,7 +2436,12 @@ viewTabs config maybeUserRootId loaded model =
 
                                 Nothing ->
                                     if maybeUserRootId == Nothing then
-                                        [ UI.Components.readOnlyBanner config.i18n ]
+                                        case recoveryRootId model loaded of
+                                            Just root ->
+                                                [ UI.Components.recoveryBanner config.i18n { onRelink = config.toMsg (RelinkDevice root) } ]
+
+                                            Nothing ->
+                                                [ UI.Components.readOnlyBanner config.i18n ]
 
                                     else
                                         []
