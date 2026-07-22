@@ -12,7 +12,7 @@ module Page.Group exposing
     , init
     , resetLoadedGroup
     , serverEventMsg
-    , setIdentityHash
+    , setIdentity
     , submitJoinEvent
     , subscription
     , triggerSync
@@ -149,6 +149,7 @@ type alias Model =
     , randomSeed : Random.Seed
     , uuidState : UUID.V7State
     , identityHash : String
+    , previousDeviceIds : List String
     , loadedGroup : Maybe LoadedGroup
     , syncInProgress : Bool
 
@@ -313,6 +314,7 @@ init config =
     , randomSeed = config.randomSeed
     , uuidState = config.uuidState
     , identityHash = ""
+    , previousDeviceIds = []
     , loadedGroup = Nothing
     , syncInProgress = False
     , activeTab = BalanceTab
@@ -410,11 +412,13 @@ updateLoadedSummary summary model =
             model
 
 
-{-| Set the identity hash. Called by Main on OnInitComplete / OnIdentityGenerated.
+{-| Set the current device id and the ids of keys it has replaced. Called by Main
+on OnInitComplete / OnIdentityGenerated. The previous ids let the migrate screen
+recognise events authored under an old, re-keyed device as "you".
 -}
-setIdentityHash : String -> Model -> Model
-setIdentityHash hash model =
-    { model | identityHash = hash }
+setIdentity : String -> List String -> Model -> Model
+setIdentity hash previousDeviceIds model =
+    { model | identityHash = hash, previousDeviceIds = previousDeviceIds }
 
 
 {-| Submit a member event for joining a group (claim member or join as new).
@@ -2016,8 +2020,10 @@ initPagesIfNeeded config groupView model =
                     else
                         ( model, Cmd.none )
 
-                ( Migrate, Just _ ) ->
-                    if model.migrationOrder == Nothing then
+                ( Migrate, _ ) ->
+                    -- Reachable by a re-keyed stranger too, so gate the order fetch
+                    -- on the recovery root, not current membership.
+                    if recoveryRootId model loaded /= Nothing && loaded.summary.supersededBy == Nothing && model.migrationOrder == Nothing then
                         ( model.runner, Cmd.none )
                             |> Runner.andRun (OnMigrationOrderFetched loaded.summary.id)
                                 (Server.fetchEventOrder { serverUrl = config.serverUrl, groupId = loaded.summary.id, groupKey = loaded.groupKey })
@@ -2068,6 +2074,18 @@ Returns Nothing if the user is not a member of this group.
 currentUserRootId : Model -> LoadedGroup -> Maybe Member.Id
 currentUserRootId model loaded =
     GroupState.resolveMemberRootId loaded.groupState model.identityHash
+
+
+{-| The member root this device recovers to: its current id, or failing that any
+key it has replaced. Used only for the recovery surfaces (reaching Migrate,
+labelling one's own old account) — never for authoring, since a re-keyed device is
+a stranger to a group until it re-links and can't post there validly.
+-}
+recoveryRootId : Model -> LoadedGroup -> Maybe Member.Id
+recoveryRootId model loaded =
+    (model.identityHash :: model.previousDeviceIds)
+        |> List.filterMap (GroupState.resolveMemberRootId loaded.groupState)
+        |> List.head
 
 
 {-| The relay's id → seq order for curation, or an empty map before it is
@@ -2261,28 +2279,17 @@ viewGroupPage config groupView loaded model =
                                )
                         )
 
-        ( Migrate, Just userRootId ) ->
-            noOverlay <|
-                pageShell config (T.migrateTitle config.i18n) <|
-                    Page.Group.Migrate.view config.i18n
-                        loaded.summary.defaultCurrency
-                        { identities = MigrationCuration.identities (curationOrder model) userRootId loaded.groupState loaded.events
-                        , selection = model.migrationSelection
-                        , findings = activeFindings model.identityHash loaded
-                        , anchors = \memberId -> MigrationCuration.anchorsFor (curationOrder model) (activeFindings model.identityHash loaded) memberId loaded.events
-                        , expandedManual = model.migrationManualExpanded
-                        , resolveName = GroupState.resolveMemberName loaded.groupState
-                        , preview = model.migrationPreview
-                        , zone = config.timeZone
-                        , onToggle = config.toMsg << ToggleMigrationExclude
-                        , onSetBound = \memberId bound -> config.toMsg (SetMigrationBound memberId bound)
-                        , onToggleManual = config.toMsg << ToggleMigrationManual
-                        , onDismissFinding = \finding -> config.toMsg (DismissSuspicion (SuspicionAudit.dismissKey finding))
-                        , onExcludeFinding = \finding -> config.toMsg (SetMigrationBound finding.culprit (MigrationCuration.cutBeforeFinding (curationOrder model) finding loaded.events))
-                        , onPreview = config.toMsg PreviewMigration
-                        , onConfirm = config.toMsg ConfirmMigration
-                        , onCancel = config.toMsg (RequestNavigation (Tab BalanceTab))
-                        }
+        ( Migrate, _ ) ->
+            case recoveryRootId model loaded of
+                Just selfRoot ->
+                    if loaded.summary.supersededBy == Nothing then
+                        migrateView config loaded model selfRoot
+
+                    else
+                        viewTabs config maybeUserRootId loaded { model | activeTab = BalanceTab }
+
+                Nothing ->
+                    viewTabs config maybeUserRootId loaded { model | activeTab = BalanceTab }
 
         ( Diagnostics, _ ) ->
             if config.devMode then
@@ -2296,6 +2303,33 @@ viewGroupPage config groupView loaded model =
         -- Non-member trying to access a mutation page: fallback to balance tab
         ( _, Nothing ) ->
             viewTabs config Nothing loaded { model | activeTab = BalanceTab }
+
+
+migrateView : ViewConfig msg -> LoadedGroup -> Model -> Member.Id -> ViewResult msg
+migrateView config loaded model selfRoot =
+    { overlay = Nothing
+    , content =
+        pageShell config (T.migrateTitle config.i18n) <|
+            Page.Group.Migrate.view config.i18n
+                loaded.summary.defaultCurrency
+                { identities = MigrationCuration.identities (curationOrder model) selfRoot loaded.groupState loaded.events
+                , selection = model.migrationSelection
+                , findings = activeFindings model.identityHash loaded
+                , anchors = \memberId -> MigrationCuration.anchorsFor (curationOrder model) (activeFindings model.identityHash loaded) memberId loaded.events
+                , expandedManual = model.migrationManualExpanded
+                , resolveName = GroupState.resolveMemberName loaded.groupState
+                , preview = model.migrationPreview
+                , zone = config.timeZone
+                , onToggle = config.toMsg << ToggleMigrationExclude
+                , onSetBound = \memberId bound -> config.toMsg (SetMigrationBound memberId bound)
+                , onToggleManual = config.toMsg << ToggleMigrationManual
+                , onDismissFinding = \finding -> config.toMsg (DismissSuspicion (SuspicionAudit.dismissKey finding))
+                , onExcludeFinding = \finding -> config.toMsg (SetMigrationBound finding.culprit (MigrationCuration.cutBeforeFinding (curationOrder model) finding loaded.events))
+                , onPreview = config.toMsg PreviewMigration
+                , onConfirm = config.toMsg ConfirmMigration
+                , onCancel = config.toMsg (RequestNavigation (Tab BalanceTab))
+                }
+    }
 
 
 pageShell : ViewConfig msg -> String -> Ui.Element msg -> Ui.Element msg

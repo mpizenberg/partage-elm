@@ -537,7 +537,7 @@ update msg model =
                                 , generatingIdentity = False
                                 , route = guardedRoute
                                 , runner = runner
-                                , groupModel = Page.Group.setIdentityHash identity.publicKeyHash model.groupModel
+                                , groupModel = Page.Group.setIdentity identity.publicKeyHash identity.previousDeviceIds model.groupModel
                             }
                     in
                     -- If on a Join route, re-trigger the join fetch now that we have identity
@@ -588,7 +588,7 @@ update msg model =
                         , groupModel =
                             case readyData.identity of
                                 Just identity ->
-                                    Page.Group.setIdentityHash identity.publicKeyHash model.groupModel
+                                    Page.Group.setIdentity identity.publicKeyHash identity.previousDeviceIds model.groupModel
 
                                 Nothing ->
                                     model.groupModel
