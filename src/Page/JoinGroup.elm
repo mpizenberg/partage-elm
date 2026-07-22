@@ -1,4 +1,4 @@
-module Page.JoinGroup exposing (JoinAction(..), Model, Msg, Output(..), PreviewData, defaultAction, error, getPreview, init, showPreview, update, view)
+module Page.JoinGroup exposing (JoinAction(..), Model, Msg, Output(..), PreviewData, defaultAction, error, getPreview, init, showPreview, update, view, viewPreview)
 
 {-| Join group page shown when opening an invite link.
 Displays a group preview with options to claim a virtual member or join as new.
@@ -191,6 +191,9 @@ view i18n config model =
         )
 
 
+{-| The member picker (claim an existing member or join as new). Also used by
+the group page to let a non-member re-join an imported group.
+-}
 viewPreview : I18n -> PreviewData -> List (Ui.Element Msg)
 viewPreview i18n preview =
     let

@@ -1011,13 +1011,15 @@ pwaBanner message { bgColor, textColor, action, dismiss } =
 
 
 {-| Read-only banner displayed when the user is not a member of the group.
+The action opens the member picker so a device restored from an export can
+claim its old member (or join as new).
 -}
-readOnlyBanner : I18n -> Ui.Element msg
-readOnlyBanner i18n =
+readOnlyBanner : I18n -> { onRejoin : msg } -> Ui.Element msg
+readOnlyBanner i18n { onRejoin } =
     pwaBanner (T.readOnlyBanner i18n)
         { bgColor = Theme.warning.tint
         , textColor = Theme.warning.text
-        , action = Nothing
+        , action = Just ( T.readOnlyRejoin i18n, onRejoin )
         , dismiss = Nothing
         }
 

@@ -432,6 +432,8 @@
   "pwaJustInstalled": "Partage est installée ! Ouvre l’appli depuis ton écran d’accueil pour une meilleure expérience.",
   "pwaOffline": "Tu es hors-ligne",
   "readOnlyBanner": "Mode lecture seule. Tu n'es pas membre de ce groupe",
+  "readOnlyRejoin": "Rejoindre",
+  "rejoinTitle": "Rejoindre le groupe",
   "toastPushError": "Échec de la mise à jour des notifications",
   "aboutUsageTitle": "Statistiques d'utilisation",
   "aboutUsageHint": "Coût serveur estimé à partir de ton activité de synchronisation. Mesuré localement sur ton appareil, rien n'est tracé à distance.",

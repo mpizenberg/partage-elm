@@ -178,6 +178,10 @@ type alias Model =
     , editGroupMetadataModel : Page.Group.EditGroupMetadata.Model
     , diagnosticsModel : Page.Group.Diagnostics.Model
 
+    -- Member picker letting a non-member device (e.g. restored from an export)
+    -- claim its old member or join as new.
+    , rejoinModel : Page.JoinGroup.Model
+
     -- Migration: per-identity exclusion the migrator chose, the last previewed
     -- result, and the relay's fetched ingestion order (id → seq) that bounds a
     -- partial exclusion. All live only for the duration of a migrate visit.
@@ -246,6 +250,7 @@ type
     | NewEntryMsg NewEntryShared.Msg
       -- Group pages
     | EditGroupMetadataMsg Page.Group.EditGroupMetadata.Msg
+    | RejoinMsg Page.JoinGroup.Msg
     | SettleTransaction Settlement.Transaction
     | SaveSettlementPreferences { memberRootId : Member.Id, preferredRecipients : List Member.Id }
     | ToggleNotification
@@ -331,6 +336,7 @@ init config =
     , pendingEntry = Nothing
     , editGroupMetadataModel = Page.Group.EditGroupMetadata.init GroupState.empty.groupMeta
     , diagnosticsModel = Page.Group.Diagnostics.init
+    , rejoinModel = Page.JoinGroup.init
     , migrationSelection = Dict.empty
     , migrationPreview = Nothing
     , migrationOrder = Nothing
@@ -726,6 +732,31 @@ update config msg model =
 
                     _ ->
                         ( modelWithPage, Cmd.none, [] )
+
+        RejoinMsg subMsg ->
+            let
+                ( rejoinModel, maybeOutput ) =
+                    Page.JoinGroup.update subMsg model.rejoinModel
+
+                modelWithPage : Model
+                modelWithPage =
+                    { model | rejoinModel = rejoinModel }
+            in
+            case ( maybeOutput, model.loadedGroup ) of
+                ( Just (Page.JoinGroup.JoinConfirmed joinData), Just loaded ) ->
+                    case joinPayload config.identity.publicKeyHash { action = joinData.selectedAction, newMemberName = joinData.newMemberName } loaded of
+                        Just payload ->
+                            let
+                                ( submittedModel, cmd, outputs ) =
+                                    runSubmit (OnMemberActionSaved loaded.summary.id) config modelWithPage (\ctx -> GroupOps.event ctx loaded payload)
+                            in
+                            ( submittedModel, cmd, outputs ++ [ NavigateTo (GroupRoute loaded.summary.id (Tab MembersTab)) ] )
+
+                        Nothing ->
+                            ( modelWithPage, Cmd.none, [] )
+
+                _ ->
+                    ( modelWithPage, Cmd.none, [] )
 
         SettleTransaction tx ->
             case model.loadedGroup of
@@ -2031,6 +2062,22 @@ initPagesIfNeeded config groupView model =
                 ( EditGroupMetadata, Just _ ) ->
                     ( { model | editGroupMetadataModel = Page.Group.EditGroupMetadata.init loaded.groupState.groupMeta }, Cmd.none )
 
+                ( Rejoin, Nothing ) ->
+                    ( { model
+                        | rejoinModel =
+                            Page.JoinGroup.showPreview
+                                { groupName = loaded.groupState.groupMeta.name
+                                , groupState = loaded.groupState
+                                , events = loaded.events
+                                , syncCursor = loaded.syncCursor |> Maybe.withDefault 0
+                                , selectedAction = Page.JoinGroup.defaultAction loaded.groupState
+                                , newMemberName = ""
+                                , historyWarning = False
+                                }
+                      }
+                    , Cmd.none
+                    )
+
                 ( Diagnostics, _ ) ->
                     if config.devMode && not (Page.Group.Diagnostics.isFresh loaded model.diagnosticsModel) then
                         ( model.runner, Cmd.none )
@@ -2339,6 +2386,23 @@ viewGroupPage config groupView loaded model =
                                )
                         )
 
+        ( Rejoin, _ ) ->
+            case ( maybeUserRootId, Page.JoinGroup.getPreview model.rejoinModel ) of
+                ( Nothing, Just preview ) ->
+                    if loaded.summary.supersededBy == Nothing then
+                        noOverlay <|
+                            pageShell config (T.rejoinTitle config.i18n) <|
+                                Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill ]
+                                    (Page.JoinGroup.viewPreview config.i18n preview
+                                        |> List.map (Ui.map (config.toMsg << RejoinMsg))
+                                    )
+
+                    else
+                        viewTabs config maybeUserRootId loaded { model | activeTab = BalanceTab }
+
+                _ ->
+                    viewTabs config maybeUserRootId loaded { model | activeTab = BalanceTab }
+
         ( Migrate, _ ) ->
             case recoveryRootId model loaded of
                 Just selfRoot ->
@@ -2475,7 +2539,9 @@ viewTabs config maybeUserRootId loaded model =
                                                 [ UI.Components.recoveryBanner config.i18n { onRelink = config.toMsg (RelinkDevice root) } ]
 
                                             Nothing ->
-                                                [ UI.Components.readOnlyBanner config.i18n ]
+                                                [ UI.Components.readOnlyBanner config.i18n
+                                                    { onRejoin = config.toMsg (RequestNavigation Rejoin) }
+                                                ]
 
                                     else
                                         []

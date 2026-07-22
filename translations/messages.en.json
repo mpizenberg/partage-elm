@@ -432,6 +432,8 @@
   "pwaJustInstalled": "Partage installed! Open it from your home screen for the best experience.",
   "pwaOffline": "You are offline",
   "readOnlyBanner": "Read-only mode. You are not a member of this group",
+  "readOnlyRejoin": "Re-join",
+  "rejoinTitle": "Re-join group",
   "toastPushError": "Failed to update notification settings",
   "aboutUsageTitle": "Usage Statistics",
   "aboutUsageHint": "Estimated server cost based on your sync activity. Measured locally on your device, nothing is tracked remotely.",
