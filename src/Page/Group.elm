@@ -1054,7 +1054,7 @@ update config msg model =
                                     , runner = runner
                                     , syncInProgress = False
                                 }
-                                    |> initPagesIfNeeded config (routeToGroupView config.route)
+                                    |> refreshPagesAfterSync config
 
                             ( summaryModel, summaryCmd, summaryOutputs ) =
                                 syncGroupSummaryName config groupId modelAfterSync
@@ -1564,6 +1564,14 @@ submitMemberMetadata config model loaded output =
                 |> Maybe.map .metadata
                 |> Maybe.withDefault Member.emptyMetadata
 
+        metadataChanged : Bool
+        metadataChanged =
+            output.metadata /= oldMetadata
+
+        nameChanged : Bool
+        nameChanged =
+            output.newName /= output.oldName
+
         submitIf : Bool -> (GroupOps.Context Msg -> ( GroupOps.State Msg, Cmd Msg )) -> ( Model, Cmd Msg, List Output ) -> ( Model, Cmd Msg, List Output )
         submitIf condition makeEvent ( mdl, cmd, outs ) =
             if condition then
@@ -1576,20 +1584,26 @@ submitMemberMetadata config model loaded output =
             else
                 ( mdl, cmd, outs )
     in
-    ( model, Cmd.none, [] )
-        |> submitIf (output.metadata /= oldMetadata)
-            (\ctx -> GroupOps.event ctx loaded (Event.MemberMetadataUpdated { rootId = output.memberId, metadata = output.metadata }))
-        |> submitIf (output.newName /= output.oldName)
-            (\ctx ->
-                GroupOps.event ctx
-                    loaded
-                    (Event.MemberRenamed
-                        { rootId = output.memberId
-                        , oldName = output.oldName
-                        , newName = output.newName
-                        }
-                    )
-            )
+    if not metadataChanged && not nameChanged then
+        -- Nothing to save: mirror the success path back to the member list so
+        -- the Save button isn't a dead end.
+        ( model, Cmd.none, [ NavigateTo (GroupRoute loaded.summary.id (Tab MembersTab)) ] )
+
+    else
+        ( model, Cmd.none, [] )
+            |> submitIf metadataChanged
+                (\ctx -> GroupOps.event ctx loaded (Event.MemberMetadataUpdated { rootId = output.memberId, metadata = output.metadata }))
+            |> submitIf nameChanged
+                (\ctx ->
+                    GroupOps.event ctx
+                        loaded
+                        (Event.MemberRenamed
+                            { rootId = output.memberId
+                            , oldName = output.oldName
+                            , newName = output.newName
+                            }
+                        )
+                )
 
 
 {-| Result of looking up an incoming envelope against the in-flight merge.
@@ -2206,13 +2220,7 @@ initPagesIfNeeded config groupView model =
                     )
 
                 ( Diagnostics, _ ) ->
-                    if config.devMode && not (Page.Group.Diagnostics.isFresh loaded model.diagnosticsModel) then
-                        ( model.runner, Cmd.none )
-                            |> Runner.andRun OnDiagnosticsLoaded (Page.Group.Diagnostics.load config.db loaded)
-                            |> Tuple.mapFirst (\r -> { model | runner = r, diagnosticsModel = Page.Group.Diagnostics.init })
-
-                    else
-                        ( model, Cmd.none )
+                    reloadDiagnosticsIfStale config loaded model
 
                 ( Migrate, _ ) ->
                     -- Reachable by a re-keyed stranger too, so gate the order fetch
@@ -2230,6 +2238,34 @@ initPagesIfNeeded config groupView model =
                     ( model, Cmd.none )
 
         Nothing ->
+            ( model, Cmd.none )
+
+
+{-| Reload the diagnostics snapshot when it is stale — the only page whose model
+caches synced data, so it is refreshed both on navigation and after a sync.
+-}
+reloadDiagnosticsIfStale : UpdateConfig -> LoadedGroup -> Model -> ( Model, Cmd Msg )
+reloadDiagnosticsIfStale config loaded model =
+    if config.devMode && not (Page.Group.Diagnostics.isFresh loaded model.diagnosticsModel) then
+        ( model.runner, Cmd.none )
+            |> Runner.andRun OnDiagnosticsLoaded (Page.Group.Diagnostics.load config.db loaded)
+            |> Tuple.mapFirst (\r -> { model | runner = r, diagnosticsModel = Page.Group.Diagnostics.init })
+
+    else
+        ( model, Cmd.none )
+
+
+{-| A sync completion is never a route change, so it must not re-init pages that
+hold in-progress input. Only the diagnostics snapshot caches synced data and
+needs refreshing; every other view renders live from the loaded group state.
+-}
+refreshPagesAfterSync : UpdateConfig -> Model -> ( Model, Cmd Msg )
+refreshPagesAfterSync config model =
+    case ( routeToGroupView config.route, model.loadedGroup ) of
+        ( Diagnostics, Just loaded ) ->
+            reloadDiagnosticsIfStale config loaded model
+
+        _ ->
             ( model, Cmd.none )
 
 
@@ -2440,13 +2476,17 @@ viewGroupPage config groupView loaded model =
                         (config.toMsg << NewEntryMsg)
                         model.newEntryModel
 
-        ( EditEntry _, Just _ ) ->
-            noOverlay <|
-                pageShell config (T.editEntryTitle config.i18n) <|
-                    Page.Group.NewEntry.view config.i18n
-                        (GroupState.activeMembers loaded.groupState)
-                        (config.toMsg << NewEntryMsg)
-                        model.newEntryModel
+        ( EditEntry entryId, Just _ ) ->
+            if Dict.member entryId loaded.groupState.entries then
+                noOverlay <|
+                    pageShell config (T.editEntryTitle config.i18n) <|
+                        Page.Group.NewEntry.view config.i18n
+                            (GroupState.activeMembers loaded.groupState)
+                            (config.toMsg << NewEntryMsg)
+                            model.newEntryModel
+
+            else
+                noOverlay (notFoundShell config (T.entryNotFound config.i18n))
 
         ( AddVirtualMember, Just _ ) ->
             noOverlay <|
@@ -2457,21 +2497,20 @@ viewGroupPage config groupView loaded model =
                         model.addMemberModel
 
         ( EditMemberMetadata memberId, Just _ ) ->
-            let
-                isSelf : Bool
-                isSelf =
-                    currentUserRootId model loaded == Just memberId
-            in
-            noOverlay <|
-                pageShell config (T.memberEditMetadataButton config.i18n) <|
-                    Page.Group.EditMemberMetadata.view
-                        { i18n = config.i18n
-                        , toMsg = config.toMsg << EditMemberMetadataMsg
-                        , existingNames = GroupState.activeMembers loaded.groupState |> List.map .name
-                        , isSelf = isSelf
-                        , savedProfile = config.selfProfile
-                        }
-                        model.editMemberMetadataModel
+            if Dict.member memberId loaded.groupState.members then
+                noOverlay <|
+                    pageShell config (T.memberEditMetadataButton config.i18n) <|
+                        Page.Group.EditMemberMetadata.view
+                            { i18n = config.i18n
+                            , toMsg = config.toMsg << EditMemberMetadataMsg
+                            , existingNames = GroupState.activeMembers loaded.groupState |> List.map .name
+                            , isSelf = currentUserRootId model loaded == Just memberId
+                            , savedProfile = config.selfProfile
+                            }
+                            model.editMemberMetadataModel
+
+            else
+                noOverlay (notFoundShell config (T.memberNotFound config.i18n))
 
         ( MergeMember _ _, Just _ ) ->
             noOverlay <|
@@ -2599,6 +2638,20 @@ migrateView config loaded model selfRoot =
 pageShell : ViewConfig msg -> String -> Ui.Element msg -> Ui.Element msg
 pageShell config title content =
     UI.Shell.pageShell { title = title, onBack = config.onGoBack } content
+
+
+{-| Deep link to an entry or member that isn't in state: a back-reachable card
+instead of a stale or blank edit form.
+-}
+notFoundShell : ViewConfig msg -> String -> Ui.Element msg
+notFoundShell config message =
+    pageShell config (T.notFoundTitle config.i18n) <|
+        Ui.el
+            [ Ui.Font.size Theme.font.md
+            , Ui.Font.color Theme.base.textSubtle
+            , Ui.paddingXY 0 Theme.spacing.xxl
+            ]
+            (Ui.text message)
 
 
 viewTabs : ViewConfig msg -> Maybe Member.Id -> LoadedGroup -> Model -> ViewResult msg

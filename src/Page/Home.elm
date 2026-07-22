@@ -1,4 +1,4 @@
-module Page.Home exposing (Context, Model, Msg, Output(..), init, setImportError, update, view)
+module Page.Home exposing (Context, Model, Msg, Output(..), init, setImportError, setJoinError, update, view)
 
 import Domain.Currency as Currency
 import Domain.Group as Group
@@ -40,6 +40,7 @@ type Output
 type Model
     = Model
         { importError : Maybe String
+        , joinError : Maybe String
         , showJoinInput : Bool
         , joinLink : String
         , showArchived : Bool
@@ -65,6 +66,7 @@ init : Model
 init =
     Model
         { importError = Nothing
+        , joinError = Nothing
         , showJoinInput = False
         , joinLink = ""
         , showArchived = False
@@ -75,6 +77,11 @@ init =
 setImportError : String -> Model -> Model
 setImportError err (Model data) =
     Model { data | importError = Just err }
+
+
+setJoinError : String -> Model -> Model
+setJoinError err (Model data) =
+    Model { data | joinError = Just err }
 
 
 update : Msg -> Model -> ( Model, Cmd Msg, Maybe Output )
@@ -133,13 +140,13 @@ update msg (Model data) =
             )
 
         ShowJoinInput ->
-            ( Model { data | showJoinInput = not data.showJoinInput, joinLink = "" }
+            ( Model { data | showJoinInput = not data.showJoinInput, joinLink = "", joinError = Nothing }
             , Cmd.none
             , Nothing
             )
 
         JoinLinkChanged link ->
-            ( Model { data | joinLink = link }
+            ( Model { data | joinLink = link, joinError = Nothing }
             , Cmd.none
             , Nothing
             )
@@ -149,7 +156,7 @@ update msg (Model data) =
                 ( Model data, Cmd.none, Nothing )
 
             else
-                ( Model { data | showJoinInput = False, joinLink = "" }
+                ( Model { data | showJoinInput = False, joinLink = "", joinError = Nothing }
                 , Cmd.none
                 , Just (JoinLink (String.trim data.joinLink))
                 )
@@ -198,7 +205,15 @@ view i18n ctx toMsg (Model data) groups =
         -- Import error
         , case data.importError of
             Just error ->
-                importError error
+                errorBanner error
+
+            Nothing ->
+                Ui.none
+
+        -- Join-link error
+        , case data.joinError of
+            Just error ->
+                errorBanner error
 
             Nothing ->
                 Ui.none
@@ -465,11 +480,11 @@ formatYear posix =
 
 
 
--- IMPORT ERROR
+-- ERROR BANNER
 
 
-importError : String -> Ui.Element msg
-importError error =
+errorBanner : String -> Ui.Element msg
+errorBanner error =
     Ui.el
         [ Ui.width Ui.fill
         , Ui.paddingTop Theme.spacing.sm

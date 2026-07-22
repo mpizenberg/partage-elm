@@ -146,7 +146,7 @@ update msg model =
             ( model, Nothing )
 
 
-view : I18n -> { toMsg : Msg -> msg, onSwitchLanguage : Language -> msg } -> Model -> Ui.Element msg
+view : I18n -> { toMsg : Msg -> msg, onSwitchLanguage : Language -> msg, onRetry : msg, onGoHome : msg } -> Model -> Ui.Element msg
 view i18n config model =
     let
         content : List (Ui.Element Msg)
@@ -183,9 +183,25 @@ view i18n config model =
 
                 ShowingPreview preview ->
                     viewPreview i18n preview
+
+        errorActions : List (Ui.Element msg)
+        errorActions =
+            case model of
+                Error _ ->
+                    [ Ui.row [ Ui.centerX, Ui.spacing Theme.spacing.sm ]
+                        [ UI.Components.btnPrimary [ Ui.width Ui.shrink ]
+                            { label = T.joinGroupRetry i18n, onPress = config.onRetry }
+                        , UI.Components.btnOutline [ Ui.width Ui.shrink ]
+                            { label = T.joinGroupGoHome i18n, icon = Nothing, onPress = config.onGoHome }
+                        ]
+                    ]
+
+                _ ->
+                    []
     in
     Ui.column [ Ui.spacing Theme.spacing.xl ]
         (List.map (Ui.map config.toMsg) content
+            ++ errorActions
             ++ [ Ui.el [ Ui.centerX ]
                     (UI.Components.languageSelector config.onSwitchLanguage (T.currentLanguage i18n))
                ]

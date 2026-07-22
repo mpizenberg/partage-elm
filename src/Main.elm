@@ -169,6 +169,7 @@ type Msg
     | GroupMsg Page.Group.Msg
     | JoinGroupMsg Page.JoinGroup.Msg
       -- Join flow
+    | RetryJoinFetch
     | OnJoinGroupFetched (ConcurrentTask.Response Server.Error { syncResult : Server.SyncResult, manifestMismatch : Bool })
     | OnJoinLocalGroupLoaded (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Group.SyncCursor, unpushedIds : Set.Set String, tamperSignals : TamperSignals, suspicionDismissals : Set.Set String })
     | OnJoinGroupSaved Group.Id Member.Id (ConcurrentTask.Response Idb.Error ())
@@ -846,6 +847,24 @@ update msg model =
                 Nothing ->
                     ( { model | joinGroupModel = joinModel }, Cmd.none )
 
+        RetryJoinFetch ->
+            case model.route of
+                GroupRoute groupId (Join invite) ->
+                    let
+                        maybeIdentity : Maybe Identity
+                        maybeIdentity =
+                            case model.appState of
+                                Ready data ->
+                                    data.identity
+
+                                _ ->
+                                    Nothing
+                    in
+                    handleJoinRoute model model.route groupId invite.key maybeIdentity
+
+                _ ->
+                    ( model, Cmd.none )
+
         OnJoinLocalGroupLoaded (ConcurrentTask.Success groupData) ->
             case model.appState of
                 Ready readyData ->
@@ -1095,7 +1114,9 @@ update msg model =
                                     ( updatedModel, Cmd.batch [ cmd, Navigation.pushUrl navCmd (Route.toAppUrl route) ] )
 
                                 _ ->
-                                    ( updatedModel, cmd )
+                                    ( { updatedModel | homeModel = Page.Home.setJoinError (T.homeJoinLinkInvalid model.i18n) updatedModel.homeModel }
+                                    , cmd
+                                    )
 
                         Nothing ->
                             ( updatedModel, cmd )
@@ -1458,6 +1479,9 @@ applyRouteGuard identity route =
                     ( route, Cmd.none )
 
                 About ->
+                    ( route, Cmd.none )
+
+                ErrorLog ->
                     ( route, Cmd.none )
 
                 GroupRoute _ (Join _) ->
@@ -1919,7 +1943,14 @@ viewReady model readyData =
         GroupRoute _ (Join _) ->
             noOverlay <|
                 UI.Shell.pageShell { title = T.shellJoinGroup i18n, onBack = GoBack }
-                    (Page.JoinGroup.view i18n { toMsg = JoinGroupMsg, onSwitchLanguage = SwitchLanguage } model.joinGroupModel)
+                    (Page.JoinGroup.view i18n
+                        { toMsg = JoinGroupMsg
+                        , onSwitchLanguage = SwitchLanguage
+                        , onRetry = RetryJoinFetch
+                        , onGoHome = NavigateTo Home
+                        }
+                        model.joinGroupModel
+                    )
 
         GroupRoute groupId groupView ->
             Page.Group.view
