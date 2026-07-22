@@ -68,6 +68,8 @@
 - **There is no password recovery mechanism.** If the browser data is lost, the identity is lost.
 - The user can rejoin groups via a new invite link, but they will appear as a new member.
 - The user can link their new identity to any previous member entry (see [Device Links](#44-device-links-identity-claiming)).
+- Recovery also works from an **imported export file**: a device that imports a group it is not a member of reaches a re-join action (claim its old member, or join anew) directly from the read-only group, without a fresh invite link. Group settings (archive, delete, migrate) are likewise reachable by such a non-member device.
+- **Deliberate device re-key** (compromise response): a user can mint a fresh signing keypair from the About page without losing local groups (the identity is a separate storage record). The outgoing device id is retained as a *previous id*, so the recovery surfaces — migrate and re-link — still recognize the user. A re-keyed device is a stranger to every group until it re-links: the previous id grants recovery recognition only, never authoring in the compromised group (the new key's events fail verification there). This is the client half of the [migration endgame](#117-compromised-member-threat-model) when the compromised key was the user's own.
 
 ### 2.4 Identity Guarantees
 
