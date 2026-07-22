@@ -1998,8 +1998,9 @@ applyLoadedGroup config groupId events groupKey syncCursor unpushedIds tamperSig
 
 
 {-| Initialize the sub-page model for a given group view, if the needed data is available.
-Mutation pages (NewEntry, EditEntry, AddVirtualMember, EditMemberMetadata, EditGroupMetadata)
-are only initialized when the user is a member.
+Event-authoring pages (NewEntry, EditEntry, AddVirtualMember, EditMemberMetadata)
+are only initialized when the user is a member. EditGroupMetadata is not: its
+archive/delete actions are local-only and open to non-members.
 -}
 initPagesIfNeeded : UpdateConfig -> GroupView -> Model -> ( Model, Cmd Msg )
 initPagesIfNeeded config groupView model =
@@ -2059,7 +2060,7 @@ initPagesIfNeeded config groupView model =
                 ( MergeMember sourceId maybeTargetId, Just _ ) ->
                     ( { model | mergeMemberModel = Page.Group.MergeMember.init sourceId maybeTargetId }, Cmd.none )
 
-                ( EditGroupMetadata, Just _ ) ->
+                ( EditGroupMetadata, _ ) ->
                     ( { model | editGroupMetadataModel = Page.Group.EditGroupMetadata.init loaded.groupState.groupMeta }, Cmd.none )
 
                 ( Rejoin, Nothing ) ->
@@ -2354,25 +2355,38 @@ viewGroupPage config groupView loaded model =
                         loaded.groupState
                         model.mergeMemberModel
 
-        ( EditGroupMetadata, Just _ ) ->
+        ( EditGroupMetadata, _ ) ->
             let
                 settingsForm : Ui.Element msg
                 settingsForm =
                     Page.Group.EditGroupMetadata.view config.i18n
-                        loaded.summary.isArchived
+                        { isMember = maybeUserRootId /= Nothing
+                        , isArchived = loaded.summary.isArchived
+                        }
                         (config.toMsg << EditGroupMetadataMsg)
                         model.editGroupMetadataModel
-            in
-            noOverlay <|
-                pageShell config (T.groupSettingsTitle config.i18n) <|
-                    Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill ]
-                        ([ settingsForm
-                         , UI.Components.btnOutline []
+
+                migrateButton : List (Ui.Element msg)
+                migrateButton =
+                    -- Shown exactly when the migrate view would render: a
+                    -- member, or a stranger with a recovery root, on a
+                    -- non-superseded group.
+                    if recoveryRootId model loaded /= Nothing && loaded.summary.supersededBy == Nothing then
+                        [ UI.Components.btnOutline []
                             { label = T.migrateTitle config.i18n
                             , icon = Nothing
                             , onPress = config.toMsg (RequestNavigation Migrate)
                             }
-                         ]
+                        ]
+
+                    else
+                        []
+            in
+            noOverlay <|
+                pageShell config (T.groupSettingsTitle config.i18n) <|
+                    Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill ]
+                        (settingsForm
+                            :: migrateButton
                             ++ (if config.devMode then
                                     [ UI.Components.btnOutline []
                                         { label = T.diagTitle config.i18n

@@ -151,10 +151,12 @@ buildChange original output =
     }
 
 
-{-| Render the group metadata editing form with save and delete options.
+{-| Render the group settings page: the metadata editing form (members only —
+editing authors group events) plus archive and delete, which are local-only
+operations available to anyone holding the group data.
 -}
-view : I18n -> Bool -> (Msg -> msg) -> Model -> Ui.Element msg
-view i18n isArchived toMsg (Model data) =
+view : I18n -> { isMember : Bool, isArchived : Bool } -> (Msg -> msg) -> Model -> Ui.Element msg
+view i18n { isMember, isArchived } toMsg (Model data) =
     let
         nameError : Maybe String
         nameError =
@@ -168,43 +170,54 @@ view i18n isArchived toMsg (Model data) =
 
             else
                 Nothing
+
+        metadataForm : List (Ui.Element Msg)
+        metadataForm =
+            [ UI.Components.formTextField
+                { icon = Nothing
+                , label = T.groupSettingsName i18n
+                , required = True
+                , placeholder = Nothing
+                , value = Form.get .name data.form |> Field.toRawString
+                , onChange = InputName
+                , error = nameError
+                }
+            , UI.Components.formTextField
+                { icon = Nothing
+                , label = T.groupSettingsSubtitle i18n
+                , required = False
+                , placeholder = Just (T.groupSettingsSubtitlePlaceholder i18n)
+                , value = Form.get .subtitle data.form |> Field.toRawString
+                , onChange = InputSubtitle
+                , error = Nothing
+                }
+            , UI.Components.formTextField
+                { icon = Nothing
+                , label = T.groupSettingsDescription i18n
+                , required = False
+                , placeholder = Just (T.groupSettingsDescriptionPlaceholder i18n)
+                , value = Form.get .description data.form |> Field.toRawString
+                , onChange = InputDescription
+                , error = Nothing
+                }
+            , linksSection i18n data.submitted data.form
+            , UI.Components.btnPrimary []
+                { label = T.groupSettingsSave i18n
+                , onPress = Submit
+                }
+            ]
     in
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
-        [ UI.Components.formTextField
-            { icon = Nothing
-            , label = T.groupSettingsName i18n
-            , required = True
-            , placeholder = Nothing
-            , value = Form.get .name data.form |> Field.toRawString
-            , onChange = InputName
-            , error = nameError
-            }
-        , UI.Components.formTextField
-            { icon = Nothing
-            , label = T.groupSettingsSubtitle i18n
-            , required = False
-            , placeholder = Just (T.groupSettingsSubtitlePlaceholder i18n)
-            , value = Form.get .subtitle data.form |> Field.toRawString
-            , onChange = InputSubtitle
-            , error = Nothing
-            }
-        , UI.Components.formTextField
-            { icon = Nothing
-            , label = T.groupSettingsDescription i18n
-            , required = False
-            , placeholder = Just (T.groupSettingsDescriptionPlaceholder i18n)
-            , value = Form.get .description data.form |> Field.toRawString
-            , onChange = InputDescription
-            , error = Nothing
-            }
-        , linksSection i18n data.submitted data.form
-        , UI.Components.btnPrimary []
-            { label = T.groupSettingsSave i18n
-            , onPress = Submit
-            }
-        , archiveSection i18n isArchived
-        , deleteSection i18n data.confirmingDelete
-        ]
+        ((if isMember then
+            metadataForm
+
+          else
+            []
+         )
+            ++ [ archiveSection i18n isArchived
+               , deleteSection i18n data.confirmingDelete
+               ]
+        )
         |> Ui.map toMsg
 
 

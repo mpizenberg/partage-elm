@@ -145,7 +145,7 @@ view i18n config toMsg model maybeUserRootId state =
             Ui.none
 
         -- Group Info
-        , groupInfoSection i18n isMember config.editGroupMetadataHref config.onEditGroupMetadata state
+        , groupInfoSection i18n config.editGroupMetadataHref config.onEditGroupMetadata state
 
         -- Invite
         , if config.isSynced then
@@ -249,16 +249,12 @@ notifIcon =
 -- GROUP INFO CARD
 
 
-groupInfoSection : I18n -> Bool -> String -> msg -> GroupState -> Ui.Element msg
-groupInfoSection i18n isMember editHref onEditGroupMetadata state =
+groupInfoSection : I18n -> String -> msg -> GroupState -> Ui.Element msg
+groupInfoSection i18n editHref onEditGroupMetadata state =
     let
         meta : GroupMetadata
         meta =
             state.groupMeta
-
-        hasInfo : Bool
-        hasInfo =
-            meta.subtitle /= Nothing || meta.description /= Nothing || not (List.isEmpty meta.links)
 
         viewSubtitle : String -> Ui.Element msg
         viewSubtitle sub =
@@ -267,49 +263,31 @@ groupInfoSection i18n isMember editHref onEditGroupMetadata state =
         viewDescription : String -> Ui.Element msg
         viewDescription desc =
             Ui.el [ Ui.Font.color Theme.base.textSubtle ] (Ui.text desc)
-    in
-    if not isMember && not hasInfo then
-        Ui.none
 
-    else
-        let
-            viewLinks : Ui.Element msg
-            viewLinks =
-                if List.isEmpty meta.links then
-                    Ui.none
-
-                else
-                    Ui.column [ Ui.spacing Theme.spacing.sm ]
-                        (List.map (UI.Components.linkItem FeatherIcons.externalLink) meta.links)
-        in
-        Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
-            [ Maybe.map viewSubtitle meta.subtitle
-                |> Maybe.withDefault Ui.none
-            , Maybe.map viewDescription meta.description
-                |> Maybe.withDefault Ui.none
-            , viewLinks
-            , if isMember then
-                let
-                    editLabel : String
-                    editLabel =
-                        if hasInfo then
-                            T.groupEditInfo i18n
-
-                        else
-                            T.groupEditInfoEmpty i18n
-                in
-                UI.Components.btnOutline
-                    (Ui.paddingXY Theme.spacing.md Theme.spacing.sm
-                        :: UI.Components.spaLinkAttrs editHref onEditGroupMetadata
-                    )
-                    { label = editLabel
-                    , icon = Just (UI.Components.featherIcon 14 FeatherIcons.edit)
-                    , onPress = onEditGroupMetadata
-                    }
-
-              else
+        viewLinks : Ui.Element msg
+        viewLinks =
+            if List.isEmpty meta.links then
                 Ui.none
-            ]
+
+            else
+                Ui.column [ Ui.spacing Theme.spacing.sm ]
+                    (List.map (UI.Components.linkItem FeatherIcons.externalLink) meta.links)
+    in
+    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+        [ Maybe.map viewSubtitle meta.subtitle
+            |> Maybe.withDefault Ui.none
+        , Maybe.map viewDescription meta.description
+            |> Maybe.withDefault Ui.none
+        , viewLinks
+        , UI.Components.btnOutline
+            (Ui.paddingXY Theme.spacing.md Theme.spacing.sm
+                :: UI.Components.spaLinkAttrs editHref onEditGroupMetadata
+            )
+            { label = T.groupConfigButton i18n
+            , icon = Just (UI.Components.featherIcon 14 FeatherIcons.settings)
+            , onPress = onEditGroupMetadata
+            }
+        ]
 
 
 
