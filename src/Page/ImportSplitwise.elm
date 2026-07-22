@@ -174,7 +174,7 @@ update msg (Model data) =
             ( Model { data | newMemberName = s }, NoEffect )
 
         SelectCurrency c ->
-            ( Model { data | defaultCurrency = c }, NoEffect )
+            ( Model { data | defaultCurrency = c, rateInputs = Dict.empty, rateStatus = Dict.empty }, NoEffect )
 
         InputRate currency s ->
             ( Model { data | rateInputs = Dict.insert (Currency.currencyCode currency) s data.rateInputs }, NoEffect )
@@ -317,7 +317,7 @@ view i18n toMsg (Model data) =
 previewCard : I18n -> Data -> Ui.Element Msg
 previewCard i18n data =
     UI.Components.card [ Ui.padding Theme.spacing.lg ]
-        [ Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
+        (Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
             (Ui.text
                 (T.splitwiseImportPreview
                     { transactions = String.fromInt (List.length data.parsed.rows)
@@ -326,7 +326,15 @@ previewCard i18n data =
                     i18n
                 )
             )
-        ]
+            :: (if data.parsed.skipped > 0 then
+                    [ Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.warning.text, Ui.paddingTop Theme.spacing.xs ]
+                        (Ui.text (T.splitwiseImportSkipped (String.fromInt data.parsed.skipped) i18n))
+                    ]
+
+                else
+                    []
+               )
+        )
 
 
 textField : I18n -> String -> String -> String -> (String -> Msg) -> Bool -> Ui.Element Msg

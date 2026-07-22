@@ -69,6 +69,8 @@ suite : Test
 suite =
     describe "SplitwiseImport"
         [ parseTests
+        , skipTests
+        , tokenizerTests
         , decimalTests
         , reconstructStructureTests
         , faithfulnessTests
@@ -97,6 +99,62 @@ parseTests =
         ]
 
 
+skipTests : Test
+skipTests =
+    let
+        withRows : List String -> String
+        withRows dataRows =
+            String.join "\n"
+                ("Date,Description,Category,Cost,Currency,Alice,Bob" :: dataRows)
+    in
+    describe "parse (skip report)"
+        [ test "structural rows are not counted as skipped" <|
+            \_ ->
+                Result.map .skipped parsed
+                    |> Expect.equal (Ok 0)
+        , test "counts unreadable data rows and keeps the rest" <|
+            \_ ->
+                SplitwiseImport.parse
+                    (withRows
+                        [ "2020-01-01,Good,General,10.00,EUR,5.00,-5.00"
+                        , "2020-01-02,Bad currency,General,10.00,XYZ,5.00,-5.00"
+                        , "2020-01-03,Unbalanced,General,10.00,EUR,5.00,-3.00"
+                        ]
+                    )
+                    |> Result.map (\p -> ( List.length p.rows, p.skipped ))
+                    |> Expect.equal (Ok ( 1, 2 ))
+        ]
+
+
+tokenizerTests : Test
+tokenizerTests =
+    describe "parse (CSV tokenizer)"
+        [ test "parses a large file in linear time" <|
+            \_ ->
+                let
+                    row : String
+                    row =
+                        "2020-01-01,Lunch,General,10.00,EUR,5.00,-5.00"
+
+                    big : String
+                    big =
+                        "Date,Description,Category,Cost,Currency,Alice,Bob\n"
+                            ++ String.join "\n" (List.repeat 3000 row)
+                in
+                SplitwiseImport.parse big
+                    |> Result.map (.rows >> List.length)
+                    |> Expect.equal (Ok 3000)
+        , test "keeps RFC-4180 quoted fields with commas and doubled quotes" <|
+            \_ ->
+                SplitwiseImport.parse
+                    ("Date,Description,Category,Cost,Currency,Alice,Bob\n"
+                        ++ "2020-01-01,\"Dinner, fancy \"\"place\"\"\",Food,10.00,EUR,5.00,-5.00"
+                    )
+                    |> Result.map (.rows >> List.map .description)
+                    |> Expect.equal (Ok [ "Dinner, fancy \"place\"" ])
+        ]
+
+
 decimalTests : Test
 decimalTests =
     describe "parseDecimal"
@@ -105,14 +163,14 @@ decimalTests =
                 List.map (SplitwiseImport.parseDecimal 2)
                     [ "16.00", "33.99", "-8.00", "0.00", "8" ]
                     |> Expect.equal [ Just 1600, Just 3399, Just -800, Just 0, Just 800 ]
-        , test "pads and truncates fractional digits to precision" <|
+        , test "pads and rounds fractional digits to precision" <|
             \_ ->
-                List.map (SplitwiseImport.parseDecimal 2) [ "1.5", "1.005" ]
-                    |> Expect.equal [ Just 150, Just 100 ]
-        , test "JPY has no minor units" <|
+                List.map (SplitwiseImport.parseDecimal 2) [ "1.5", "1.004", "1.005" ]
+                    |> Expect.equal [ Just 150, Just 100, Just 101 ]
+        , test "JPY rounds to whole units" <|
             \_ ->
-                List.map (SplitwiseImport.parseDecimal 0) [ "1000", "1000.50" ]
-                    |> Expect.equal [ Just 1000, Just 1000 ]
+                List.map (SplitwiseImport.parseDecimal 0) [ "1000", "1000.4", "1000.50" ]
+                    |> Expect.equal [ Just 1000, Just 1000, Just 1001 ]
         , test "rejects non-numeric input" <|
             \_ ->
                 SplitwiseImport.parseDecimal 2 "abc"

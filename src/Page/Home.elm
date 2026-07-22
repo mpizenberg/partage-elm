@@ -539,6 +539,12 @@ importInfo i18n toMsg data =
                 , Ui.width Ui.fill
                 ]
                 (Ui.text (T.splitwiseImportInfo i18n))
+            , Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.warning.text
+                , Ui.width Ui.fill
+                ]
+                (Ui.text (T.splitwiseImportEnglishOnly i18n))
             , UI.Components.btnOutline [ Ui.width Ui.shrink ]
                 { label = T.splitwiseImportButton i18n
                 , icon = Nothing

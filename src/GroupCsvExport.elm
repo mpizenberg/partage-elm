@@ -5,7 +5,9 @@ module GroupCsvExport exposing (encode, exportFilename)
 One row per active entry (expense, transfer, or income). Member IDs are
 resolved to display names. Amounts are written as decimals in their native
 currency. Payers and beneficiaries are encoded as semicolon-joined
-`name:value` tokens. This export is one-way; it cannot be re-imported.
+`name:value` tokens; a `\`, `:`, or `;` inside a name is backslash-escaped so it
+can't break the token structure. The file is UTF-8 with a leading BOM. This
+export is one-way; it cannot be re-imported.
 
 -}
 
@@ -27,7 +29,7 @@ encode state =
                 |> List.sortBy entrySortKey
                 |> List.map (entryRow state)
     in
-    String.join "\n" (header :: rows) ++ "\n"
+    "\u{FEFF}" ++ String.join "\n" (header :: rows) ++ "\n"
 
 
 {-| Build the filename for the CSV download.
@@ -94,6 +96,10 @@ entryRow state entry =
         memberName id =
             GroupState.resolveMemberName state id
 
+        tokenName : String -> String
+        tokenName id =
+            escapeToken (memberName id)
+
         common : RowFields
         common =
             case entry.kind of
@@ -103,8 +109,8 @@ entryRow state entry =
                     , amount = formatAmount data.currency data.amount
                     , currency = Currency.currencyCode data.currency
                     , defaultAmount = maybeFormatDefault state.groupMeta.defaultCurrency data.defaultCurrencyAmount
-                    , payers = formatPayers memberName data.payers data.currency
-                    , beneficiaries = formatBeneficiaries memberName data.beneficiaries data.currency
+                    , payers = formatPayers tokenName data.payers data.currency
+                    , beneficiaries = formatBeneficiaries tokenName data.beneficiaries data.currency
                     , category = data.category |> Maybe.map Entry.categoryToString |> Maybe.withDefault ""
                     , location = data.location |> Maybe.withDefault ""
                     , notes = data.notes |> Maybe.withDefault ""
@@ -116,8 +122,8 @@ entryRow state entry =
                     , amount = formatAmount data.currency data.amount
                     , currency = Currency.currencyCode data.currency
                     , defaultAmount = maybeFormatDefault state.groupMeta.defaultCurrency data.defaultCurrencyAmount
-                    , payers = memberName data.from ++ ":" ++ formatAmount data.currency data.amount
-                    , beneficiaries = memberName data.to ++ ":" ++ formatAmount data.currency data.amount
+                    , payers = tokenName data.from ++ ":" ++ formatAmount data.currency data.amount
+                    , beneficiaries = tokenName data.to ++ ":" ++ formatAmount data.currency data.amount
                     , category = ""
                     , location = ""
                     , notes = data.notes |> Maybe.withDefault ""
@@ -129,8 +135,8 @@ entryRow state entry =
                     , amount = formatAmount data.currency data.amount
                     , currency = Currency.currencyCode data.currency
                     , defaultAmount = maybeFormatDefault state.groupMeta.defaultCurrency data.defaultCurrencyAmount
-                    , payers = memberName data.receivedBy ++ ":" ++ formatAmount data.currency data.amount
-                    , beneficiaries = formatBeneficiaries memberName data.beneficiaries data.currency
+                    , payers = tokenName data.receivedBy ++ ":" ++ formatAmount data.currency data.amount
+                    , beneficiaries = formatBeneficiaries tokenName data.beneficiaries data.currency
                     , category = ""
                     , location = ""
                     , notes = data.notes |> Maybe.withDefault ""
@@ -153,25 +159,36 @@ entryRow state entry =
 
 
 formatPayers : (String -> String) -> List Entry.Payer -> Currency -> String
-formatPayers memberName payers currency =
+formatPayers tokenName payers currency =
     payers
-        |> List.map (\p -> memberName p.memberId ++ ":" ++ formatAmount currency p.amount)
+        |> List.map (\p -> tokenName p.memberId ++ ":" ++ formatAmount currency p.amount)
         |> String.join ";"
 
 
 formatBeneficiaries : (String -> String) -> List Entry.Beneficiary -> Currency -> String
-formatBeneficiaries memberName beneficiaries currency =
+formatBeneficiaries tokenName beneficiaries currency =
     beneficiaries
         |> List.map
             (\b ->
                 case b of
                     Entry.ShareBeneficiary data ->
-                        memberName data.memberId ++ ":" ++ String.fromInt data.shares ++ "s"
+                        tokenName data.memberId ++ ":" ++ String.fromInt data.shares ++ "s"
 
                     Entry.ExactBeneficiary data ->
-                        memberName data.memberId ++ ":" ++ formatAmount currency data.amount
+                        tokenName data.memberId ++ ":" ++ formatAmount currency data.amount
             )
         |> String.join ";"
+
+
+{-| Backslash-escape the token delimiters so a member name can't break the
+`name:value` / `;`-joined structure of the payers and beneficiaries columns.
+-}
+escapeToken : String -> String
+escapeToken name =
+    name
+        |> String.replace "\\" "\\\\"
+        |> String.replace ":" "\\:"
+        |> String.replace ";" "\\;"
 
 
 maybeFormatDefault : Currency -> Maybe Int -> String
@@ -226,16 +243,37 @@ formatAmount currency minor =
             ++ String.padLeft digits '0' (String.fromInt remainder)
 
 
-{-| Quote a CSV field when needed (commas, quotes, newlines, carriage returns).
-Doubles embedded quotes per RFC 4180.
+{-| Quote a CSV field when needed (commas, quotes, newlines, carriage returns),
+doubling embedded quotes per RFC 4180. A leading `=`, `+`, `@`, `-`, tab, or CR
+is first prefixed with `'` so a spreadsheet treats the cell as text rather than a
+formula (CSV injection defense).
 -}
 csvField : String -> String
 csvField value =
-    if String.any needsQuoting value then
-        "\"" ++ String.replace "\"" "\"\"" value ++ "\""
+    let
+        guarded : String
+        guarded =
+            if startsWithFormulaChar value then
+                "'" ++ value
+
+            else
+                value
+    in
+    if String.any needsQuoting guarded then
+        "\"" ++ String.replace "\"" "\"\"" guarded ++ "\""
 
     else
-        value
+        guarded
+
+
+startsWithFormulaChar : String -> Bool
+startsWithFormulaChar value =
+    case String.uncons value of
+        Just ( c, _ ) ->
+            c == '=' || c == '+' || c == '@' || c == '-' || c == '\t' || c == '\u{000D}'
+
+        Nothing ->
+            False
 
 
 needsQuoting : Char -> Bool

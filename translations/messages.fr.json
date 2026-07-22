@@ -381,6 +381,8 @@
   "splitwiseImportRatesHint": "Splitwise suit chaque devise séparément. Choisis un taux par autre devise pour convertir les soldes dans la devise par défaut.",
   "splitwiseImportSubmit": "Créer le groupe",
   "splitwiseImportParseError": "Impossible de lire ce fichier comme un export CSV Splitwise.",
+  "splitwiseImportEnglishOnly": "L'export Splitwise doit être en anglais.",
+  "splitwiseImportSkipped": "{count} lignes illisibles ont été ignorées.",
   "importErrorAlreadyExists": "Ce groupe existe déjà sur ton appareil.",
   "importErrorInvalidFile": "Format de fichier invalide.",
   "toastGroupCreateError": "Échec de la création du groupe.",

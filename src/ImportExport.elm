@@ -126,7 +126,7 @@ update config msg runnerCmd =
                     )
 
                 Nothing ->
-                    ( runnerCmd, Nothing )
+                    ( runnerCmd, Just (ShowToast Toast.Error (T.toastExportError config.i18n)) )
 
         OnExportDataLoaded _ _ ->
             ( runnerCmd, Just (ShowToast Toast.Error (T.toastExportError config.i18n)) )
@@ -158,7 +158,7 @@ update config msg runnerCmd =
                     )
 
                 Nothing ->
-                    ( runnerCmd, Nothing )
+                    ( runnerCmd, Just (ShowToast Toast.Error (T.toastExportError config.i18n)) )
 
         OnExportCsvDataLoaded _ _ ->
             ( runnerCmd, Just (ShowToast Toast.Error (T.toastExportError config.i18n)) )

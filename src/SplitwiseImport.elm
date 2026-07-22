@@ -36,11 +36,13 @@ import Domain.Entry exposing (Beneficiary(..), Category(..), Kind(..), Payer)
 import Domain.Member as Member
 
 
-{-| A parsed Splitwise file: member column names and the data rows.
+{-| A parsed Splitwise file: member column names, the usable data rows, and the
+count of data rows that could not be read and were skipped.
 -}
 type alias Parsed =
     { memberNames : List String
     , rows : List Row
+    , skipped : Int
     }
 
 
@@ -79,8 +81,9 @@ usedCurrencies parsed =
 
 
 {-| Parse the CSV text. Returns an error string describing the first structural
-problem, or the parsed members and rows. Blank lines and the trailing
-"Total balance" summary rows are skipped.
+problem, or the parsed members and rows plus a count of skipped rows. Blank lines
+and the trailing "Total balance" summary rows are ignored silently; data rows
+that can't be read are counted into `skipped`.
 -}
 parse : String -> Result String Parsed
 parse text =
@@ -94,22 +97,47 @@ parse text =
                     Err "No member columns found in the CSV header."
 
                 memberNames ->
+                    let
+                        ( rows, skipped ) =
+                            List.foldr
+                                (\fields ( kept, dropped ) ->
+                                    case classifyRow (List.length memberNames) fields of
+                                        Kept row ->
+                                            ( row :: kept, dropped )
+
+                                        Dropped ->
+                                            ( kept, dropped + 1 )
+
+                                        Ignored ->
+                                            ( kept, dropped )
+                                )
+                                ( [], 0 )
+                                dataRows
+                    in
                     Ok
                         { memberNames = memberNames
-                        , rows = List.filterMap (parseRow (List.length memberNames)) dataRows
+                        , rows = rows
+                        , skipped = skipped
                         }
 
 
-{-| Parse a single data row, returning Nothing for rows to skip: blank rows,
-"Total balance" summaries, rows with an empty/invalid cost or currency, and rows
-whose member-column count does not match the header.
+{-| Classification of a raw CSV row: a usable `Row`, a structural non-data row
+to ignore silently ("Total balance" summary or empty cost), or a data row we
+could not read (bad date/cost/currency, wrong column count, or unbalanced nets)
+and count as skipped.
 -}
-parseRow : Int -> List String -> Maybe Row
-parseRow memberCount fields =
+type RowResult
+    = Kept Row
+    | Ignored
+    | Dropped
+
+
+classifyRow : Int -> List String -> RowResult
+classifyRow memberCount fields =
     case fields of
         dateStr :: description :: category :: costStr :: currencyStr :: netFields ->
             if description == "Total balance" || String.trim costStr == "" then
-                Nothing
+                Ignored
 
             else
                 case ( parseDate dateStr, Currency.currencyFromCode (String.trim currencyStr) ) of
@@ -127,15 +155,31 @@ parseRow memberCount fields =
                                 else
                                     Nothing
                         in
-                        Maybe.map2 (Row date description category currency)
-                            (parseDecimal prec costStr)
-                            maybeNets
+                        case Maybe.map2 (Row date description category currency) (parseDecimal prec costStr) maybeNets of
+                            Just row ->
+                                if netsBalance row.nets then
+                                    Kept row
+
+                                else
+                                    Dropped
+
+                            Nothing ->
+                                Dropped
 
                     _ ->
-                        Nothing
+                        Dropped
 
         _ ->
-            Nothing
+            Dropped
+
+
+{-| A well-formed Splitwise row conserves money: each member's net is
+`paid − owed`, so the nets sum to zero. We tolerate up to one minor unit of
+rounding drift per member; a larger miss means a truncated or malformed row.
+-}
+netsBalance : List Int -> Bool
+netsBalance nets =
+    abs (List.sum nets) <= List.length nets
 
 
 {-| Parse "YYYY-MM-DD" into a Date.
@@ -152,7 +196,8 @@ parseDate str =
 
 {-| Parse a decimal amount (e.g. "16.00", "-8.5", "33.99") into minor units for
 a currency with the given decimal `precision`. Fractional digits beyond the
-precision are truncated; missing ones are padded with zeros.
+precision are rounded to the nearest minor unit (half up, ties away from zero);
+missing ones are padded with zeros.
 -}
 parseDecimal : Int -> String -> Maybe Int
 parseDecimal prec raw =
@@ -187,17 +232,44 @@ parseDecimal prec raw =
                     |> Maybe.map (\i -> sign * i * scale)
 
             [ intStr, fracStr ] ->
-                if prec == 0 then
-                    String.toInt (orZero intStr)
-                        |> Maybe.map (\i -> sign * i)
-
-                else
-                    Maybe.map2 (\i f -> sign * (i * scale + f))
-                        (String.toInt (orZero intStr))
-                        (String.toInt (String.left prec (String.padRight prec '0' fracStr)))
+                Maybe.map2 (\i f -> sign * (i * scale + f))
+                    (String.toInt (orZero intStr))
+                    (roundedFraction prec fracStr)
 
             _ ->
                 Nothing
+
+
+{-| The fractional part of a decimal, in minor units, rounded to `prec` digits.
+`"005"` at precision 2 rounds up to `1`; `"4"` at precision 0 rounds down to `0`.
+Nothing for non-digit input.
+-}
+roundedFraction : Int -> String -> Maybe Int
+roundedFraction prec fracStr =
+    if String.all Char.isDigit fracStr then
+        let
+            padded : String
+            padded =
+                String.padRight (prec + 1) '0' fracStr
+
+            kept : Int
+            kept =
+                String.toInt (orZero (String.left prec padded)) |> Maybe.withDefault 0
+
+            roundUp : Bool
+            roundUp =
+                String.slice prec (prec + 1) padded >= "5"
+        in
+        Just
+            (if roundUp then
+                kept + 1
+
+             else
+                kept
+            )
+
+    else
+        Nothing
 
 
 orZero : String -> String
@@ -218,22 +290,21 @@ allJust =
 -- CSV TOKENIZER (RFC 4180-ish: quoted fields with embedded commas/quotes)
 
 
+{-| Tokenizer accumulator. `field`, `row`, and `rows` are built in reverse
+(cons while scanning, reverse on close) to keep parsing linear in the input size.
+-}
 type alias CsvState =
     { rows : List (List String)
     , row : List String
-    , field : String
+    , field : List Char
     , quoted : Bool
     }
 
 
 splitRows : String -> List (List String)
 splitRows text =
-    let
-        final : CsvState
-        final =
-            consume (String.toList text) { rows = [], row = [], field = "", quoted = False }
-    in
-    flush final
+    consume (String.toList text) { rows = [], row = [], field = [], quoted = False }
+        |> flush
         |> List.filter (List.any (\f -> String.trim f /= ""))
 
 
@@ -247,13 +318,13 @@ consume chars st =
             if st.quoted then
                 case ( c, rest ) of
                     ( '"', '"' :: rest2 ) ->
-                        consume rest2 { st | field = st.field ++ "\"" }
+                        consume rest2 { st | field = '"' :: st.field }
 
                     ( '"', _ ) ->
                         consume rest { st | quoted = False }
 
                     _ ->
-                        consume rest { st | field = st.field ++ String.fromChar c }
+                        consume rest { st | field = c :: st.field }
 
             else
                 case c of
@@ -261,25 +332,35 @@ consume chars st =
                         consume rest { st | quoted = True }
 
                     ',' ->
-                        consume rest { st | row = st.row ++ [ st.field ], field = "" }
+                        consume rest { st | row = closeField st, field = [] }
 
                     '\n' ->
-                        consume rest { st | rows = st.rows ++ [ st.row ++ [ st.field ] ], row = [], field = "" }
+                        consume rest { st | rows = closeRow st :: st.rows, row = [], field = [] }
 
                     '\u{000D}' ->
                         consume rest st
 
                     _ ->
-                        consume rest { st | field = st.field ++ String.fromChar c }
+                        consume rest { st | field = c :: st.field }
+
+
+closeField : CsvState -> List String
+closeField st =
+    String.fromList (List.reverse st.field) :: st.row
+
+
+closeRow : CsvState -> List String
+closeRow st =
+    List.reverse (closeField st)
 
 
 flush : CsvState -> List (List String)
 flush st =
-    if st.field == "" && List.isEmpty st.row then
-        st.rows
+    if List.isEmpty st.field && List.isEmpty st.row then
+        List.reverse st.rows
 
     else
-        st.rows ++ [ st.row ++ [ st.field ] ]
+        List.reverse (closeRow st :: st.rows)
 
 
 

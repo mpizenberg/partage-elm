@@ -381,6 +381,8 @@
   "splitwiseImportRatesHint": "Splitwise tracks each currency separately. Pick one rate per other currency to convert balances into the default currency.",
   "splitwiseImportSubmit": "Create group",
   "splitwiseImportParseError": "Could not read this file as a Splitwise CSV export.",
+  "splitwiseImportEnglishOnly": "The Splitwise export must be in English.",
+  "splitwiseImportSkipped": "{count} rows couldn't be read and were skipped.",
   "importErrorAlreadyExists": "This group already exists on your device.",
   "importErrorInvalidFile": "Invalid file format.",
   "toastGroupCreateError": "Failed to create group.",
