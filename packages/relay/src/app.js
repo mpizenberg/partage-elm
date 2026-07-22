@@ -40,7 +40,7 @@ const ACCESS_TOUCH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const DEFAULT_APPEND_LIMITS = {
   maxRecords: 50_000,
   maxTotalBytes: 50 * 1024 * 1024,
-  rateBytes: 10 * 1024 * 1024,
+  rateBytes: 5 * 1024 * 1024,
   windowMs: 30 * 24 * 60 * 60 * 1000,
 };
 
