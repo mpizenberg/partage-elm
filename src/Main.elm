@@ -399,6 +399,25 @@ processGroupOutputs model groupCmd outputs =
                             in
                             ( toggledModel, toggleCmd :: cmds )
 
+                        Page.Group.UnsubscribeGroupNotification groupId memberRootId ->
+                            case m.pwaState.pushSubscription of
+                                Just subscription ->
+                                    let
+                                        ( runner, unsubCmd ) =
+                                            ( m.runner, Cmd.none )
+                                                |> Runner.andRun (always NoOp)
+                                                    (PushServer.unsubscribeFromGroup
+                                                        { subscription = subscription
+                                                        , groupId = groupId
+                                                        , memberRootId = memberRootId
+                                                        }
+                                                    )
+                                    in
+                                    ( { m | runner = runner }, unsubCmd :: cmds )
+
+                                Nothing ->
+                                    ( m, cmds )
+
                         Page.Group.RequestServerGroupCreation groupId groupKey ->
                             attemptServerGroupCreation groupId (Just groupKey) m
                                 |> Tuple.mapSecond (\attemptCmd -> attemptCmd :: cmds)

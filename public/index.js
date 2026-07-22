@@ -143,6 +143,18 @@ function createRelayTasks(notify) {
       }
       return null;
     },
+    "relay:unsubscribe": function ({ groupId }) {
+      var entry = sockets.get(groupId);
+      if (entry) {
+        sockets.delete(groupId);
+        if (entry.timer) clearTimeout(entry.timer);
+        if (entry.ws) {
+          entry.ws.onclose = null;
+          entry.ws.close();
+        }
+      }
+      return null;
+    },
   };
 }
 

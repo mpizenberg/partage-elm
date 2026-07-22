@@ -1034,7 +1034,11 @@ postSyncTasks db ctx result =
 
           else
             Nothing
-        , Just <| ConcurrentTask.onError (\_ -> ConcurrentTask.succeed ()) (Server.subscribeToGroup ctx)
+        , if result.updatedGroup.summary.isArchived then
+            Nothing
+
+          else
+            Just <| ConcurrentTask.onError (\_ -> ConcurrentTask.succeed ()) (Server.subscribeToGroup ctx)
         ]
         |> ConcurrentTask.batch
         |> ConcurrentTask.map (\_ -> ())

@@ -216,8 +216,12 @@ subscription model =
         , -- Periodic flush/pull safety net: heals failed syncs and missed
           -- WebSocket notifications that no event-driven trigger can see.
           case model.loadedGroup of
-            Just _ ->
-                Time.every (100 * 1000) (\_ -> SyncTick)
+            Just loaded ->
+                if loaded.summary.isArchived then
+                    Sub.none
+
+                else
+                    Time.every (100 * 1000) (\_ -> SyncTick)
 
             Nothing ->
                 Sub.none
@@ -299,6 +303,7 @@ type Output
     | RemoveGroup Group.Id Member.Id
     | UpdateCurrentTime Time.Posix
     | ToggleGroupNotification Group.Id Member.Id
+    | UnsubscribeGroupNotification Group.Id Member.Id
     | RequestServerGroupCreation Group.Id Symmetric.Key
     | LogError ErrorLog.Source ErrorLog.Severity String
     | SaveSelfProfile Member.Metadata
@@ -1833,7 +1838,7 @@ triggerSyncInternal config groupId model =
     else
         case model.loadedGroup of
             Just loaded ->
-                if loaded.summary.id == groupId then
+                if loaded.summary.id == groupId && not loaded.summary.isArchived then
                     let
                         unpushedEvents : List Event.Envelope
                         unpushedEvents =
@@ -1958,16 +1963,24 @@ syncGroupSummaryName config groupId model =
             ( model, Cmd.none, [] )
 
 
+{-| Flip a group's archived flag. Archiving silences the group entirely:
+the live WebSocket is closed and the push subscription dropped (best-effort).
+Unarchiving resumes syncing on the spot.
+-}
 toggleArchiveGroup : UpdateConfig -> Model -> LoadedGroup -> ( Model, Cmd Msg, List Output )
 toggleArchiveGroup config model loaded =
     let
+        archiving : Bool
+        archiving =
+            not loaded.summary.isArchived
+
         updatedSummary : Group.Summary
         updatedSummary =
             { id = loaded.summary.id
             , name = loaded.summary.name
             , defaultCurrency = loaded.summary.defaultCurrency
-            , isSubscribed = loaded.summary.isSubscribed
-            , isArchived = not loaded.summary.isArchived
+            , isSubscribed = loaded.summary.isSubscribed && not archiving
+            , isArchived = archiving
             , createdAt = loaded.summary.createdAt
             , memberCount = loaded.summary.memberCount
             , myBalanceCents = loaded.summary.myBalanceCents
@@ -1977,27 +1990,43 @@ toggleArchiveGroup config model loaded =
         updatedModel : Model
         updatedModel =
             { model | loadedGroup = Just { loaded | summary = updatedSummary } }
-    in
-    ( model.runner, Cmd.none )
-        |> Runner.andRun OnGroupSummarySaved (Storage.saveGroupSummary config.db updatedSummary)
-        |> (\( r, cmd ) ->
-                ( { updatedModel | runner = r }
-                , cmd
-                , UpdateGroupSummary updatedSummary
-                    :: (if updatedSummary.isArchived then
-                            [ NavigateTo Home ]
 
-                        else
-                            []
-                       )
-                )
-           )
+        ( savedModel, saveCmd ) =
+            ( model.runner, Cmd.none )
+                |> Runner.andRun OnGroupSummarySaved (Storage.saveGroupSummary config.db updatedSummary)
+                |> Tuple.mapFirst (\r -> { updatedModel | runner = r })
+    in
+    if archiving then
+        ( savedModel.runner, saveCmd )
+            |> Runner.andRun (\_ -> NoOp) (Server.unsubscribeFromGroup updatedSummary.id)
+            |> (\( r, cmd ) ->
+                    ( { savedModel | runner = r }
+                    , cmd
+                    , UpdateGroupSummary updatedSummary
+                        :: NavigateTo Home
+                        :: (case ( loaded.summary.isSubscribed, currentUserRootId model loaded ) of
+                                ( True, Just rootId ) ->
+                                    [ UnsubscribeGroupNotification updatedSummary.id rootId ]
+
+                                _ ->
+                                    []
+                           )
+                    )
+               )
+
+    else
+        let
+            ( syncModel, syncCmd ) =
+                triggerSyncInternal config updatedSummary.id savedModel
+        in
+        ( syncModel, Cmd.batch [ saveCmd, syncCmd ], [ UpdateGroupSummary updatedSummary ] )
 
 
 deleteGroup : UpdateConfig -> Model -> Group.Id -> ( Model, Cmd Msg, List Output )
 deleteGroup config model groupId =
     ( model.runner, Cmd.none )
         |> Runner.andRun (OnGroupRemoved groupId) (Storage.deleteGroup config.db groupId)
+        |> Runner.andRun (\_ -> NoOp) (Server.unsubscribeFromGroup groupId)
         |> (\( r, cmd ) -> ( { model | runner = r }, cmd, [] ))
 
 

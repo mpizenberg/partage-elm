@@ -114,7 +114,9 @@ Each group has the following metadata, all **encrypted**:
 - A user can **archive a group** to hide it from the main group list.
 - Archived groups appear in a separate collapsible section on the home screen with reduced visual prominence.
 - Archiving is a **local-only** operation (not an event, not synced to other members).
-- Archived groups can be **unarchived** at any time.
+- An archived group is **read-only and offline**: it renders like a group the user is not a member of, and the client never contacts the relay for it — no sync, no live-update WebSocket. Archiving also drops the group's push-notification subscription (best-effort).
+- Archived groups can be **unarchived** at any time — a banner on the group offers it — which resumes syncing immediately. The push subscription is not restored automatically.
+- Migration ([11.7](#117-compromised-member-threat-model)) archives the old group after re-homing its history into the new one; the archived copy is kept only as a local record and can be deleted from the group settings.
 
 ### 3.4 Group Removal
 

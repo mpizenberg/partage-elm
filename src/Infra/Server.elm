@@ -17,6 +17,7 @@ module Infra.Server exposing
     , serverEventDecoder
     , subscribeToGroup
     , sync
+    , unsubscribeFromGroup
     )
 
 {-| Relay server sync module.
@@ -717,6 +718,19 @@ subscribeToGroup ctx =
                             ]
                     }
             )
+
+
+{-| Close the live-update WebSocket for a group, if one is open, and stop
+reconnecting. Archived groups must produce no network activity.
+-}
+unsubscribeFromGroup : String -> ConcurrentTask x ()
+unsubscribeFromGroup groupId =
+    ConcurrentTask.define
+        { function = "relay:unsubscribe"
+        , expect = ConcurrentTask.expectWhatever
+        , errors = ConcurrentTask.expectNoErrors
+        , args = Encode.object [ ( "groupId", Encode.string groupId ) ]
+        }
 
 
 {-| Decode a live-update notification from the onServerEvent port.
