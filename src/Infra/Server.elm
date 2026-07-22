@@ -242,43 +242,40 @@ createGroupOnServer { serverUrl, groupId, groupKey, createdBy } =
 -- Event push
 
 
-{-| Push local events to the server as a single encrypted batch.
-Compresses the payload before encryption when gzip achieves at least 30% reduction.
+{-| Push local events to the server, split into content-bounded chunks so no
+single encrypted record can exceed the relay's size cap (a large offline
+backlog would otherwise be rejected wholesale). Each chunk's payload is gzipped
+before encryption when it saves at least 30%.
 
-The recordId is derived from the batched event ids (not generated fresh)
-so that re-pushing the same batch — after a push whose response was lost —
-hits the server's uniqueness check instead of storing a duplicate record.
+Every chunk's recordId is derived from its own event ids (not generated fresh),
+so re-pushing a chunk — after a push whose response was lost — hits the server's
+uniqueness check instead of storing a duplicate record.
 
 -}
 pushEvents : ServerContext -> String -> String -> List Event.Envelope -> ConcurrentTask Error ()
 pushEvents ctx secret actorId envelopes =
-    if List.isEmpty envelopes then
-        ConcurrentTask.succeed ()
+    Compaction.chunkEnvelopes maxChunkBytes envelopes
+        |> List.map (pushChunk ctx secret actorId)
+        |> ConcurrentTask.batch
+        |> ConcurrentTask.map (\_ -> ())
 
-    else
-        ConcurrentTask.map2 Tuple.pair
-            (WebCrypto.sha256 (String.join "\n" (List.sort (List.map .id envelopes))))
-            (Compression.encryptJson ctx.groupKey (Encode.list Event.encodeEnvelope envelopes))
-            |> ConcurrentTask.mapError CryptoError
-            |> ConcurrentTask.andThen
-                (\( recordId, result ) ->
-                    Http.post
-                        { url = eventsUrl ctx
-                        , headers = [ authHeader secret ]
-                        , body =
-                            Http.jsonBody
-                                (Encode.object
-                                    [ ( "actorId", Encode.string actorId )
-                                    , ( "recordId", Encode.string recordId )
-                                    , ( "eventData", Encode.string (Encode.encode 0 (Compression.encodeEventData result)) )
-                                    , ( "compressed", Encode.bool result.compressed )
-                                    ]
-                                )
-                        , expect = Http.expectWhatever
-                        , timeout = Nothing
-                        }
-                        |> ConcurrentTask.mapError HttpError
-                )
+
+{-| Encrypt one chunk and POST it to the events endpoint.
+-}
+pushChunk : ServerContext -> String -> String -> List Event.Envelope -> ConcurrentTask Error ()
+pushChunk ctx secret actorId envelopes =
+    packRecord ctx.groupKey actorId envelopes
+        |> ConcurrentTask.andThen
+            (\record ->
+                Http.post
+                    { url = eventsUrl ctx
+                    , headers = [ authHeader secret ]
+                    , body = Http.jsonBody record
+                    , expect = Http.expectWhatever
+                    , timeout = Nothing
+                    }
+                    |> ConcurrentTask.mapError HttpError
+            )
 
 
 
@@ -526,9 +523,9 @@ type CompactOutcome
     | CompactRaced
 
 
-{-| The plaintext-bytes bound per consolidation batch. Guarantees the
-encrypted record stays under the relay's 1 MB cap even for incompressible
-content (base64 expands by a third).
+{-| The plaintext-bytes bound per record, shared by push chunks and
+consolidation batches. Guarantees the encrypted record stays under the relay's
+1 MB cap even for incompressible content (base64 expands by a third).
 -}
 maxChunkBytes : Int
 maxChunkBytes =
@@ -664,8 +661,8 @@ dedupById envelopes =
         |> List.reverse
 
 
-{-| Encrypt one consolidation batch, with the same content-derived
-recordId as regular pushes so retries and racing executors dedup.
+{-| Encrypt one record — a push chunk or a consolidation batch — with a
+content-derived recordId so retries and racing executors dedup.
 -}
 packRecord : Symmetric.Key -> String -> List Event.Envelope -> ConcurrentTask Error Encode.Value
 packRecord groupKey actorId envelopes =

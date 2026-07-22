@@ -383,6 +383,7 @@
   "toastEntryRestored": "Écriture restaurée.",
   "toastEntryActionError": "Échec de la mise à jour.",
   "toastMemberActionError": "Échec de la mise à jour du membre.",
+  "toastGroupLoadError": "Échec du chargement des données de ce groupe sur cet appareil.",
   "toastGroupSettingsError": "Échec de la sauvegarde des paramètres.",
   "toastGroupRemoved": "Groupe supprimé.",
   "toastGroupRemoveError": "Échec de la suppression du groupe.",

@@ -383,6 +383,7 @@
   "toastEntryRestored": "Entry restored.",
   "toastEntryActionError": "Failed to update entry.",
   "toastMemberActionError": "Failed to update member.",
+  "toastGroupLoadError": "Failed to load this group's data on this device.",
   "toastGroupSettingsError": "Failed to save group settings.",
   "toastGroupRemoved": "Group removed.",
   "toastGroupRemoveError": "Failed to remove group.",

@@ -766,23 +766,27 @@ update msg model =
                         ( modelAfterOutputs, outputCmd ) =
                             processGroupOutputs { model | groupModel = groupModel } groupCmd outputs
                     in
-                    -- Check for pending join action after group loads
+                    -- Consume a pending join action only once its own group is loaded
                     case ( modelAfterOutputs.pendingJoinAction, modelAfterOutputs.groupModel.loadedGroup ) of
-                        ( Just joinAction, Just _ ) ->
-                            case buildGroupConfig modelAfterOutputs of
-                                Just configAfter ->
-                                    let
-                                        ( joinGroupModel, joinCmd ) =
-                                            Page.Group.submitJoinEvent configAfter
-                                                { action = joinAction.action, newMemberName = joinAction.newMemberName }
-                                                modelAfterOutputs.groupModel
-                                    in
-                                    ( { modelAfterOutputs | groupModel = joinGroupModel, pendingJoinAction = Nothing }
-                                    , Cmd.batch [ outputCmd, Cmd.map GroupMsg joinCmd ]
-                                    )
+                        ( Just joinAction, Just loaded ) ->
+                            if joinAction.groupId /= loaded.summary.id then
+                                ( modelAfterOutputs, outputCmd )
 
-                                Nothing ->
-                                    ( modelAfterOutputs, outputCmd )
+                            else
+                                case buildGroupConfig modelAfterOutputs of
+                                    Just configAfter ->
+                                        let
+                                            ( joinGroupModel, joinCmd ) =
+                                                Page.Group.submitJoinEvent configAfter
+                                                    { action = joinAction.action, newMemberName = joinAction.newMemberName }
+                                                    modelAfterOutputs.groupModel
+                                        in
+                                        ( { modelAfterOutputs | groupModel = joinGroupModel, pendingJoinAction = Nothing }
+                                        , Cmd.batch [ outputCmd, Cmd.map GroupMsg joinCmd ]
+                                        )
+
+                                    Nothing ->
+                                        ( modelAfterOutputs, outputCmd )
 
                         _ ->
                             ( modelAfterOutputs, outputCmd )
@@ -915,8 +919,21 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
 
-        OnJoinLocalGroupLoaded _ ->
-            ( model, Cmd.none )
+        OnJoinLocalGroupLoaded (ConcurrentTask.Error err) ->
+            ( logError ErrorLog.StorageSource
+                ErrorLog.Err
+                ("Join: load local group: " ++ Storage.errorToString err)
+                { model | joinGroupModel = Page.JoinGroup.error (Storage.errorToString err) }
+            , Cmd.none
+            )
+
+        OnJoinLocalGroupLoaded (ConcurrentTask.UnexpectedError _) ->
+            ( logError ErrorLog.StorageSource
+                ErrorLog.Err
+                "Unexpected error loading local group for join"
+                { model | joinGroupModel = Page.JoinGroup.error "Unexpected error" }
+            , Cmd.none
+            )
 
         OnJoinGroupFetched (ConcurrentTask.Success fetched) ->
             let
@@ -1005,7 +1022,7 @@ update msg model =
                     ( model, Cmd.none )
 
         OnJoinGroupSaved _ _ _ ->
-            addToast Toast.Error (T.toastJoinError model.i18n) model
+            addToast Toast.Error (T.toastJoinError model.i18n) { model | pendingJoinAction = Nothing }
 
         -- Import / Export
         ImportExportMsg ieMsg ->

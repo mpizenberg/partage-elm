@@ -888,6 +888,15 @@ The following data is stored locally per group in IndexedDB:
   a purge — so the pull finds rows, reports no reset, and the loss would
   otherwise go undetected. A forged epoch has the same bounded effect as a
   forged `resetCursor`: one redundant re-pull and re-push, never deletion.
+- **Group switch during sync** (known limitation): a sync runs against the
+  group that was open when it started. If the user navigates to a different
+  group before it finishes, the completed sync's pulled events, advanced
+  cursor, and cleared `unpushedIds` are discarded rather than applied to a
+  group that is no longer loaded. Nothing is lost — the next open of that
+  group re-pulls from the stored cursor and re-pushes any still-unpushed
+  events (deduped by the idempotent `recordId`); the only cost is that
+  redundant work. Accepted rather than persisting the result in the
+  background, to keep sync state tied to the loaded group.
 
 ### 14.4 Event Compression & Batching
 
@@ -896,7 +905,7 @@ Event data is **compressed and batched** before encryption to reduce bandwidth a
 - Compression uses gzip (via the browser's `CompressionStream` API).
 - Compression is applied conditionally: the compressed payload is kept only when it is at least **30% smaller** than the uncompressed version, otherwise the original bytes are stored uncompressed.
 - A `compressed` flag on each record indicates whether decompression is needed on read.
-- **Batching:** Multiple unpushed events are flushed into a single compressed+encrypted record on a periodic timer (current cadence: every ~100 seconds), as well as on explicit user actions and when transitioning back online.
+- **Batching:** Multiple unpushed events are flushed together on a periodic timer (current cadence: every ~100 seconds), as well as on explicit user actions and when transitioning back online. The flush is packed into compressed+encrypted records bounded to **512 KiB of plaintext each** (the same bound compaction uses), so a large offline backlog becomes several records instead of one oversized push the relay's 1 MB record cap would reject. Each record keeps its own content-derived `recordId`, so the idempotent-retry guarantee ([14.3](#143-synchronization)) holds per record.
 - JSON wire identifiers in encoded events are kept short to further reduce payload size.
 
 ### 14.5 Event Ordering & Conflict Resolution

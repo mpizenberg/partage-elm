@@ -152,6 +152,7 @@ type alias Model =
     , previousDeviceIds : List String
     , loadedGroup : Maybe LoadedGroup
     , syncInProgress : Bool
+    , resyncRequested : Bool
 
     -- Tabs
     , activeTab : GroupTab
@@ -330,6 +331,7 @@ init config =
     , previousDeviceIds = []
     , loadedGroup = Nothing
     , syncInProgress = False
+    , resyncRequested = False
     , activeTab = BalanceTab
     , entriesTabModel = Page.Group.EntriesTab.init
     , balanceTabModel = Page.Group.BalanceTab.init
@@ -998,8 +1000,21 @@ update config msg model =
             in
             ( syncModel, Cmd.batch [ syncCmd, initCmd ], [] )
 
-        OnGroupEventsLoaded _ _ ->
-            ( model, Cmd.none, [] )
+        OnGroupEventsLoaded _ (ConcurrentTask.Error err) ->
+            ( model
+            , Cmd.none
+            , [ ShowToast Toast.Error (T.toastGroupLoadError config.i18n)
+              , LogError ErrorLog.StorageSource ErrorLog.Err ("Load group: " ++ Storage.errorToString err)
+              ]
+            )
+
+        OnGroupEventsLoaded _ (ConcurrentTask.UnexpectedError _) ->
+            ( model
+            , Cmd.none
+            , [ ShowToast Toast.Error (T.toastGroupLoadError config.i18n)
+              , LogError ErrorLog.StorageSource ErrorLog.Err "Unexpected error loading group events"
+              ]
+            )
 
         OnGroupSynced groupId pushedIds (ConcurrentTask.Success syncResult) ->
             case model.loadedGroup of
@@ -1055,8 +1070,9 @@ update config msg model =
                                 else
                                     summaryOutputs
                         in
-                        -- If new events were added during sync, trigger follow-up
-                        if Set.isEmpty result.updatedGroup.unpushedIds then
+                        -- Follow up once if events were added during the sync, or
+                        -- if another sync was requested while this one ran.
+                        if Set.isEmpty result.updatedGroup.unpushedIds && not summaryModel.resyncRequested then
                             ( summaryModel, Cmd.batch [ taskCmds, summaryCmd, initCmd ], outputs )
 
                         else
@@ -1883,12 +1899,13 @@ addUnpushedIdToModel eventId model =
             model
 
 
-{-| Internal sync trigger. Skips if sync is already in progress.
+{-| Internal sync trigger. If a sync is already running, records the request so
+`OnGroupSynced` fires one follow-up on completion instead of dropping it.
 -}
 triggerSyncInternal : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
 triggerSyncInternal config groupId model =
     if model.syncInProgress then
-        ( model, Cmd.none )
+        ( { model | resyncRequested = True }, Cmd.none )
 
     else
         case model.loadedGroup of
@@ -1957,7 +1974,7 @@ triggerSyncInternal config groupId model =
                                 }
                                 |> ConcurrentTask.andThen verifySignatures
                             )
-                        |> Tuple.mapFirst (\r -> { model | runner = r, syncInProgress = True })
+                        |> Tuple.mapFirst (\r -> { model | runner = r, syncInProgress = True, resyncRequested = False })
 
                 else
                     ( model, Cmd.none )
