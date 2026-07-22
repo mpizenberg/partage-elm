@@ -59,6 +59,28 @@ describe('inactivity retention', () => {
     // A group accessed within the window is untouched.
     assert.equal((await pullEvents(app, active.groupId, active.secret)).status, 200);
   });
+
+  it('a resurrected group serves a new epoch even when fresh appends mask the cursor gap', async () => {
+    const { app, storage } = makeApp();
+    const { groupId, secret } = await createGroup(app, { groupId: 'resur' });
+    await pushEvent(app, groupId, secret, { recordId: 'old-1' });
+    const staleCursor = (await (await pushEvent(app, groupId, secret, { recordId: 'old-2' })).json()).seq;
+    const before = await (await pullEvents(app, groupId, secret)).json();
+
+    storage.touchAccess(groupId, '2000-01-01T00:00:00.000Z', '2999-01-01T00:00:00.000Z');
+    storage.purgeIdleGroups('2001-01-01T00:00:00.000Z');
+    assert.equal((await createGroup(app, { groupId: 'resur', secret })).res.status, 201);
+
+    // The events table's AUTOINCREMENT counter survives the purge, so a fresh
+    // append lands above the stale cursor: this pull finds rows and cannot
+    // signal resetCursor — the changed epoch is the only sign that the old
+    // history is gone and the client must restart from 0 and re-push.
+    await pushEvent(app, groupId, secret, { recordId: 'new-1' });
+    const after = await (await pullEvents(app, groupId, secret, staleCursor)).json();
+    assert.ok(after.events.length > 0);
+    assert.equal('resetCursor' in after, false);
+    assert.notEqual(after.groupEpoch, before.groupEpoch);
+  });
 });
 
 describe('storage limits', () => {

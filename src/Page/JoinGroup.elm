@@ -6,6 +6,7 @@ Displays a group preview with options to claim a virtual member or join as new.
 
 import Dict
 import Domain.Event as Event
+import Domain.Group as Group
 import Domain.GroupState exposing (GroupState)
 import Domain.Member as Member
 import Translations as T exposing (I18n, Language)
@@ -26,7 +27,7 @@ type alias PreviewData =
     { groupName : String
     , groupState : GroupState
     , events : List Event.Envelope
-    , syncCursor : Int
+    , syncCursor : Maybe Group.SyncCursor
     , selectedAction : JoinAction
     , newMemberName : String
     , historyWarning : Bool

@@ -69,6 +69,7 @@ export function openStorage(path) {
   );
   const selectVerifier = db.prepare('SELECT auth_verifier FROM groups WHERE id = ?');
   const selectLastAccess = db.prepare('SELECT last_access FROM groups WHERE id = ?');
+  const selectEpoch = db.prepare('SELECT pow_challenge FROM groups WHERE id = ?');
   const touchAccessStmt = db.prepare(
     'UPDATE groups SET last_access = ? WHERE id = ? AND (last_access IS NULL OR last_access < ?)',
   );
@@ -149,6 +150,11 @@ export function openStorage(path) {
     getLastAccess(groupId) {
       const row = selectLastAccess.get(groupId);
       return row === undefined ? null : row.last_access;
+    },
+
+    getGroupEpoch(groupId) {
+      const row = selectEpoch.get(groupId);
+      return row === undefined ? null : row.pow_challenge;
     },
 
     touchAccess(groupId, now, staleBefore) {

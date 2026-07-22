@@ -266,7 +266,7 @@ type
     | OnGroupMetadataActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnGroupRemoved Group.Id (ConcurrentTask.Response Idb.Error ())
     | OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)
-    | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set String, tamperSignals : TamperSignals, suspicionDismissals : Set String })
+    | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Group.SyncCursor, unpushedIds : Set String, tamperSignals : TamperSignals, suspicionDismissals : Set String })
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
     | OnCompactionStep Group.Id (ConcurrentTask.Response Server.Error GroupOps.CompactionOutcome)
     | OnCompactionEventSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
@@ -1136,20 +1136,31 @@ update config msg model =
                                     GroupOps.ExecutedCompaction (Server.Compacted maxSeq) ->
                                         -- The appended records hold exactly what this
                                         -- executor sent: fast-forward the cursor so the
-                                        -- next pull skips re-downloading them.
-                                        let
-                                            ( runner, cursorCmd ) =
-                                                ( model.runner, Cmd.none )
-                                                    |> Runner.andRun PostSyncTasksDone
-                                                        (Storage.saveSyncCursor config.db groupId maxSeq)
-                                        in
-                                        ( { model
-                                            | loadedGroup = Just { loaded | syncCursor = Just maxSeq }
-                                            , runner = runner
-                                          }
-                                        , cursorCmd
-                                        , []
-                                        )
+                                        -- next pull skips re-downloading them. Compaction
+                                        -- never re-creates the group row, so the epoch
+                                        -- carries over.
+                                        case loaded.syncCursor of
+                                            Just cursor ->
+                                                let
+                                                    forwarded : Group.SyncCursor
+                                                    forwarded =
+                                                        { cursor | seq = maxSeq }
+
+                                                    ( runner, cursorCmd ) =
+                                                        ( model.runner, Cmd.none )
+                                                            |> Runner.andRun PostSyncTasksDone
+                                                                (Storage.saveSyncCursor config.db groupId forwarded)
+                                                in
+                                                ( { model
+                                                    | loadedGroup = Just { loaded | syncCursor = Just forwarded }
+                                                    , runner = runner
+                                                  }
+                                                , cursorCmd
+                                                , []
+                                                )
+
+                                            Nothing ->
+                                                ( model, Cmd.none, [] )
 
                                     GroupOps.ExecutedCompaction Server.CompactRaced ->
                                         ( model, Cmd.none, [] )
@@ -1898,7 +1909,7 @@ triggerSyncInternal config groupId model =
                                 { serverUrl = config.serverUrl, groupId = groupId, groupKey = loaded.groupKey }
                                 config.identity.publicKeyHash
                                 { unpushedEvents = unpushedEvents
-                                , pullCursor = loaded.syncCursor
+                                , syncCursor = loaded.syncCursor
                                 , notifyContext = notifyContext
                                 }
                                 |> ConcurrentTask.andThen verifySignatures
@@ -2037,7 +2048,7 @@ deleteGroup config model groupId =
 
 {-| Apply loaded group data from IndexedDB, constructing a LoadedGroup.
 -}
-applyLoadedGroup : UpdateConfig -> Group.Id -> List Event.Envelope -> Symmetric.Key -> Maybe Int -> Set String -> TamperSignals -> Set String -> Model -> Maybe Model
+applyLoadedGroup : UpdateConfig -> Group.Id -> List Event.Envelope -> Symmetric.Key -> Maybe Group.SyncCursor -> Set String -> TamperSignals -> Set String -> Model -> Maybe Model
 applyLoadedGroup config groupId events groupKey syncCursor unpushedIds tamperSignals suspicionDismissals model =
     Dict.get groupId config.groups
         |> Maybe.map (\summary -> GroupOps.initLoadedGroup events summary groupKey syncCursor unpushedIds tamperSignals suspicionDismissals)
@@ -2125,7 +2136,7 @@ initPagesIfNeeded config groupView model =
                                 { groupName = loaded.groupState.groupMeta.name
                                 , groupState = loaded.groupState
                                 , events = loaded.events
-                                , syncCursor = loaded.syncCursor |> Maybe.withDefault 0
+                                , syncCursor = loaded.syncCursor
                                 , selectedAction = Page.JoinGroup.defaultAction loaded.groupState
                                 , newMemberName = ""
                                 , historyWarning = False

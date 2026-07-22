@@ -219,6 +219,9 @@ function computeCost({ levels, history, nowMs }) {
  * - listEventsSince(groupId, sinceSeq, limit)
  *     → [{seq, actorId, eventData, compressed, created}]
  * - getMaxSeq(groupId) → number (0 when the group has no events)
+ * - getGroupEpoch(groupId) → string | null — an opaque token unique to this
+ *     incarnation of the group row (the creation PoW challenge), so a
+ *     resurrection always yields a different epoch.
  *
  * Optional observability methods (self-host only; absent on the Durable Object
  * adapter until Cloudflare parity lands, so calls go through `storage.bumpMetric?.`):
@@ -345,13 +348,18 @@ export function createApp({
     // relay holds far more records than a consolidated history would need —
     // the trigger heuristic for proposing a compaction.
     const recordCount = (await storage.getGroupStats(c.req.param('id')))?.recordCount ?? 0;
+    // The epoch identifies this incarnation of the group row. A cursor is only
+    // valid within the epoch it was issued under: after a purge-and-resurrection
+    // fresh appends can land above a stale cursor, so cursor arithmetic alone
+    // cannot reveal the loss — the client compares epochs instead.
+    const groupEpoch = await storage.getGroupEpoch(c.req.param('id'));
     if (rows.length === 0 && since > 0) {
       // A cursor beyond the group's history means the server lost events the
       // client has seen (purge, compaction, resurrection): tell the client to
       // restart its pull from 0 instead of silently reporting "up to date".
       const maxSeq = await storage.getMaxSeq(c.req.param('id'));
       if (since > maxSeq) {
-        return c.json({ events: [], hasMore: false, recordCount, resetCursor: true });
+        return c.json({ events: [], hasMore: false, recordCount, groupEpoch, resetCursor: true });
       }
     }
     const events = hasMore ? rows.slice(0, PULL_PAGE_SIZE) : rows;
@@ -359,7 +367,7 @@ export function createApp({
     if (bytesServed > 0) {
       bump('bytes_served', bytesServed);
     }
-    return c.json({ events, hasMore, recordCount });
+    return c.json({ events, hasMore, recordCount, groupEpoch });
   });
 
   app.post('/api/groups/:id/events', bodyLimit({ maxSize: MAX_BODY_BYTES }), async (c) => {

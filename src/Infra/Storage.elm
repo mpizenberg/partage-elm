@@ -282,23 +282,35 @@ loadGroupEvents db groupId =
         |> ConcurrentTask.map (List.map Tuple.second)
 
 
-{-| Save a sync cursor for a group.
+{-| Save a sync cursor for a group. Seq and epoch are one record: a seq is
+only meaningful within the group incarnation it was issued under.
 -}
-saveSyncCursor : Idb.Db -> Group.Id -> Int -> ConcurrentTask Idb.Error ()
+saveSyncCursor : Idb.Db -> Group.Id -> Group.SyncCursor -> ConcurrentTask Idb.Error ()
 saveSyncCursor db groupId cursor =
-    Idb.putAt db syncCursorsStore (Idb.StringKey groupId) (Encode.int cursor)
+    Idb.putAt db
+        syncCursorsStore
+        (Idb.StringKey groupId)
+        (Encode.object [ ( "seq", Encode.int cursor.seq ), ( "epoch", Encode.string cursor.epoch ) ])
 
 
 {-| Load the sync cursor for a group, if it exists.
-Cursors written before the relay migration were PocketBase timestamp strings;
-they are meaningless against the relay and read back as "never synced".
+Cursors written by earlier schema generations (bare relay ints, PocketBase
+timestamp strings) carry no epoch and read back as "never synced".
 -}
-loadSyncCursor : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error (Maybe Int)
+loadSyncCursor : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error (Maybe Group.SyncCursor)
 loadSyncCursor db groupId =
     Idb.get db
         syncCursorsStore
         (Idb.StringKey groupId)
-        (Decode.oneOf [ Decode.map Just Decode.int, Decode.succeed Nothing ])
+        (Decode.oneOf
+            [ Decode.map Just
+                (Decode.map2 Group.SyncCursor
+                    (Decode.field "seq" Decode.int)
+                    (Decode.field "epoch" Decode.string)
+                )
+            , Decode.succeed Nothing
+            ]
+        )
         |> ConcurrentTask.map (Maybe.andThen identity)
 
 
@@ -349,7 +361,7 @@ loadSuspicionDismissals db groupId =
 {-| Load all data needed for a group: events, encryption key, sync cursor,
 unpushed IDs, and tamper-signal counters.
 -}
-loadGroup : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set String, tamperSignals : TamperSignals, suspicionDismissals : Set String }
+loadGroup : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Group.SyncCursor, unpushedIds : Set String, tamperSignals : TamperSignals, suspicionDismissals : Set String }
 loadGroup db groupId =
     ConcurrentTask.map5 (\events key cursor unpushed ( signals, dismissals ) -> { events = events, groupKey = key, syncCursor = cursor, unpushedIds = unpushed, tamperSignals = signals, suspicionDismissals = dismissals })
         (loadGroupEvents db groupId)
@@ -402,7 +414,7 @@ deleteGroup db groupId =
 
 {-| Save a group summary, events, optional encryption key, and optional sync cursor.
 -}
-saveGroup : Idb.Db -> Group.Summary -> Maybe String -> List Event.Envelope -> Maybe Int -> ConcurrentTask Idb.Error ()
+saveGroup : Idb.Db -> Group.Summary -> Maybe String -> List Event.Envelope -> Maybe Group.SyncCursor -> ConcurrentTask Idb.Error ()
 saveGroup db summary maybeKey events maybeCursor =
     let
         saveKeyTask : ConcurrentTask Idb.Error ()

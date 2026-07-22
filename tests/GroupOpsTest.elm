@@ -44,13 +44,13 @@ cursorResetTests =
 
                 loaded : GroupOps.LoadedGroup
                 loaded =
-                    GroupOps.initLoadedGroup existing testSummary (Symmetric.importKey "test-key") (Just 50) Set.empty TamperSignals.empty Set.empty
+                    GroupOps.initLoadedGroup existing testSummary (Symmetric.importKey "test-key") (Just { seq = 50, epoch = "epoch-1" }) Set.empty TamperSignals.empty Set.empty
 
                 result : GroupOps.SyncApplyResult
                 result =
                     GroupOps.applySyncResult (Time.millisToPosix 0)
                         Set.empty
-                        { pullResult = { events = existing ++ [ fresh ], cursor = 4, undecodable = 0, didReset = True, recordCount = 0, forgedAuthors = [] }, pushedCount = 0 }
+                        { pullResult = { events = existing ++ [ fresh ], cursor = 4, epoch = "epoch-1", undecodable = 0, didReset = True, recordCount = 0, forgedAuthors = [] }, pushedCount = 0 }
                         loaded
             in
             result
@@ -58,7 +58,7 @@ cursorResetTests =
                     [ \r ->
                         List.map .id r.updatedGroup.events
                             |> Expect.equal (List.map .id (List.reverse (Event.sortEvents (fresh :: existing))))
-                    , \r -> r.updatedGroup.syncCursor |> Expect.equal (Just 4)
+                    , \r -> r.updatedGroup.syncCursor |> Expect.equal (Just { seq = 4, epoch = "epoch-1" })
                     , \r -> List.map .id r.newEvents |> Expect.equal [ "e-fresh" ]
 
                     -- The relay returned every local event (plus one new), so
@@ -80,7 +80,7 @@ healRepushTests =
         healAfter { events, didReset } =
             GroupOps.applySyncResult (Time.millisToPosix 0)
                 Set.empty
-                { pullResult = { events = events, cursor = 0, undecodable = 0, didReset = didReset, recordCount = 0, forgedAuthors = [] }, pushedCount = 0 }
+                { pullResult = { events = events, cursor = 0, epoch = "epoch-1", undecodable = 0, didReset = didReset, recordCount = 0, forgedAuthors = [] }, pushedCount = 0 }
                 (loadedFrom localLog)
     in
     [ test "a purge (reset pull returns nothing) queues every local event for re-push" <|
@@ -105,7 +105,7 @@ tamperSignalTests =
         syncWithForged forgedAuthors =
             GroupOps.applySyncResult (Time.millisToPosix 1000)
                 Set.empty
-                { pullResult = { events = [], cursor = 0, undecodable = 0, didReset = False, recordCount = 0, forgedAuthors = forgedAuthors }, pushedCount = 0 }
+                { pullResult = { events = [], cursor = 0, epoch = "epoch-1", undecodable = 0, didReset = False, recordCount = 0, forgedAuthors = forgedAuthors }, pushedCount = 0 }
                 (loadedFrom bootstrapMembers)
     in
     [ test "a pull carrying forged signatures tallies the claimed authors and raises the banner" <|
@@ -213,7 +213,7 @@ syncWith : List Event.Envelope -> GroupOps.LoadedGroup -> GroupOps.SyncApplyResu
 syncWith newEvents loaded =
     GroupOps.applySyncResult (Time.millisToPosix 0)
         Set.empty
-        { pullResult = { events = newEvents, cursor = 1, undecodable = 0, didReset = False, recordCount = 0, forgedAuthors = [] }, pushedCount = 0 }
+        { pullResult = { events = newEvents, cursor = 1, epoch = "epoch-1", undecodable = 0, didReset = False, recordCount = 0, forgedAuthors = [] }, pushedCount = 0 }
         loaded
 
 

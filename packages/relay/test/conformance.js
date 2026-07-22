@@ -207,14 +207,16 @@ export function conformanceSuite({ describe, it, makeApp }) {
       const { groupId, secret } = await createGroup(app, { groupId: uid() });
       const seq = (await (await pushEvent(app, groupId, secret)).json()).seq;
       const pulled = await (await pullEvents(app, groupId, secret, seq + 10)).json();
-      assert.deepEqual(pulled, { events: [], hasMore: false, recordCount: 1, resetCursor: true });
+      assert.deepEqual(pulled, { events: [], hasMore: false, recordCount: 1, groupEpoch: pulled.groupEpoch, resetCursor: true });
+      assert.equal(typeof pulled.groupEpoch, 'string');
     });
 
     it('asks for a cursor reset when the group has no events but since > 0', async () => {
       const app = await makeApp();
       const { groupId, secret } = await createGroup(app, { groupId: uid() });
       const pulled = await (await pullEvents(app, groupId, secret, 5)).json();
-      assert.deepEqual(pulled, { events: [], hasMore: false, recordCount: 0, resetCursor: true });
+      assert.deepEqual(pulled, { events: [], hasMore: false, recordCount: 0, groupEpoch: pulled.groupEpoch, resetCursor: true });
+      assert.equal(typeof pulled.groupEpoch, 'string');
     });
 
     it('omits resetCursor on an up-to-date pull', async () => {
@@ -222,9 +224,19 @@ export function conformanceSuite({ describe, it, makeApp }) {
       const { groupId, secret } = await createGroup(app, { groupId: uid() });
       const seq = (await (await pushEvent(app, groupId, secret)).json()).seq;
       const atTip = await (await pullEvents(app, groupId, secret, seq)).json();
-      assert.deepEqual(atTip, { events: [], hasMore: false, recordCount: 1 });
+      assert.deepEqual(atTip, { events: [], hasMore: false, recordCount: 1, groupEpoch: atTip.groupEpoch });
       const fromZero = await (await pullEvents(app, groupId, secret, 0)).json();
       assert.equal('resetCursor' in fromZero, false);
+    });
+
+    it('serves the same groupEpoch on every pull of one group incarnation', async () => {
+      const app = await makeApp();
+      const { groupId, secret } = await createGroup(app, { groupId: uid() });
+      const first = await (await pullEvents(app, groupId, secret)).json();
+      assert.equal(typeof first.groupEpoch, 'string');
+      await pushEvent(app, groupId, secret);
+      const second = await (await pullEvents(app, groupId, secret)).json();
+      assert.equal(second.groupEpoch, first.groupEpoch);
     });
 
     it('rejects an invalid since cursor', async () => {

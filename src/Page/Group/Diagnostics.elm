@@ -386,7 +386,7 @@ syncSection i18n loaded =
         [ metricRow (T.diagSyncCursor i18n)
             (case loaded.syncCursor of
                 Just cursor ->
-                    String.fromInt cursor
+                    String.fromInt cursor.seq
 
                 Nothing ->
                     T.diagNeverSynced i18n

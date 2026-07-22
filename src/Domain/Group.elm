@@ -1,4 +1,4 @@
-module Domain.Group exposing (Id, Link, Summary, encodeLink, encodeSummary, linkDecoder, summaryDecoder)
+module Domain.Group exposing (Id, Link, Summary, SyncCursor, encodeLink, encodeSummary, linkDecoder, summaryDecoder)
 
 {-| Group identity, metadata, and configuration.
 -}
@@ -13,6 +13,18 @@ import Time
 -}
 type alias Id =
     String
+
+
+{-| A device's sync position within one relay-side incarnation of the group.
+`seq` is only meaningful under `epoch` (the relay group row's creation stamp):
+a purge-and-resurrection mints a new epoch, and any seq from an older epoch
+must be discarded — new records can land above a stale seq, so seq arithmetic
+alone cannot detect the loss. The two therefore travel as one value.
+-}
+type alias SyncCursor =
+    { seq : Int
+    , epoch : String
+    }
 
 
 {-| An external link attached to a group (e.g. shared document, planning page).

@@ -87,7 +87,7 @@ type alias LoadedGroup =
     , groupState : GroupState.GroupState
     , summary : Group.Summary
     , groupKey : Symmetric.Key
-    , syncCursor : Maybe Int
+    , syncCursor : Maybe Group.SyncCursor
     , unpushedIds : Set String
     , tamperSignals : TamperSignals
     , suspicionDismissals : Set String
@@ -113,7 +113,7 @@ addUnpushedId eventId loaded =
 
 {-| Build a LoadedGroup from raw events, a summary, and the group key, applying all events to compute state.
 -}
-initLoadedGroup : List Event.Envelope -> Group.Summary -> Symmetric.Key -> Maybe Int -> Set String -> TamperSignals -> Set String -> LoadedGroup
+initLoadedGroup : List Event.Envelope -> Group.Summary -> Symmetric.Key -> Maybe Group.SyncCursor -> Set String -> TamperSignals -> Set String -> LoadedGroup
 initLoadedGroup events summary key cursor unpushed tamperSignals suspicionDismissals =
     -- We store the events in reverse order for efficient prepending of new events
     { events = List.reverse events
@@ -798,7 +798,7 @@ compactionApprovalsDue myRoot loaded =
 type alias SyncApplyResult =
     { updatedGroup : LoadedGroup
     , newEvents : List Event.Envelope
-    , pullCursor : Int
+    , pullCursor : Group.SyncCursor
     }
 
 
@@ -892,12 +892,12 @@ applySyncResult now pushedIds syncResult loaded =
         { loaded
             | events = mergedEventsNewestFirst
             , groupState = updatedGroupState
-            , syncCursor = Just pullResult.cursor
+            , syncCursor = Just { seq = pullResult.cursor, epoch = pullResult.epoch }
             , unpushedIds = remainingUnpushedIds
             , tamperSignals = tamperSignals
         }
     , newEvents = sortedNewEvents
-    , pullCursor = pullResult.cursor
+    , pullCursor = { seq = pullResult.cursor, epoch = pullResult.epoch }
     }
 
 
@@ -1029,11 +1029,7 @@ postSyncTasks db ctx result =
 
           else
             Just <| Storage.saveEvents db ctx.groupId result.newEvents
-        , if result.pullCursor > 0 then
-            Just <| Storage.saveSyncCursor db ctx.groupId result.pullCursor
-
-          else
-            Nothing
+        , Just <| Storage.saveSyncCursor db ctx.groupId result.pullCursor
         , if result.updatedGroup.summary.isArchived then
             Nothing
 

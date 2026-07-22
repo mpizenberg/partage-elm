@@ -170,7 +170,7 @@ type Msg
     | JoinGroupMsg Page.JoinGroup.Msg
       -- Join flow
     | OnJoinGroupFetched (ConcurrentTask.Response Server.Error { syncResult : Server.SyncResult, manifestMismatch : Bool })
-    | OnJoinLocalGroupLoaded (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Int, unpushedIds : Set.Set String, tamperSignals : TamperSignals, suspicionDismissals : Set.Set String })
+    | OnJoinLocalGroupLoaded (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Group.SyncCursor, unpushedIds : Set.Set String, tamperSignals : TamperSignals, suspicionDismissals : Set.Set String })
     | OnJoinGroupSaved Group.Id Member.Id (ConcurrentTask.Response Idb.Error ())
       -- Form submission responses
     | OnGroupCreated (ConcurrentTask.Response Idb.Error Group.Summary)
@@ -833,7 +833,7 @@ update msg model =
                             in
                             ( model.runner, Cmd.none )
                                 |> Runner.andRun (OnJoinGroupSaved groupId memberId)
-                                    (Storage.saveGroup readyData.db summary (Just (Symmetric.exportKey groupKey)) preview.events (Just preview.syncCursor))
+                                    (Storage.saveGroup readyData.db summary (Just (Symmetric.exportKey groupKey)) preview.events preview.syncCursor)
                                 |> Tuple.mapFirst (\r -> { updatedModel | runner = r })
 
                         _ ->
@@ -903,7 +903,7 @@ update msg model =
                                     { groupName = groupState.groupMeta.name
                                     , groupState = groupState
                                     , events = groupData.events
-                                    , syncCursor = Maybe.withDefault 0 groupData.syncCursor
+                                    , syncCursor = groupData.syncCursor
                                     , selectedAction = Page.JoinGroup.defaultAction groupState
                                     , newMemberName = ""
                                     , historyWarning = False
@@ -958,7 +958,7 @@ update msg model =
                             { groupName = groupState.groupMeta.name
                             , groupState = groupState
                             , events = verified
-                            , syncCursor = fetched.syncResult.pullResult.cursor
+                            , syncCursor = Just { seq = fetched.syncResult.pullResult.cursor, epoch = fetched.syncResult.pullResult.epoch }
                             , selectedAction = Page.JoinGroup.defaultAction groupState
                             , newMemberName = ""
                             , historyWarning = fetched.manifestMismatch
@@ -1518,7 +1518,7 @@ handleJoinRoute model route groupId key maybeIdentity =
                                     |> Runner.andRun OnJoinGroupFetched
                                         (Server.sync serverCtx
                                             ""
-                                            { unpushedEvents = [], pullCursor = Nothing, notifyContext = Nothing }
+                                            { unpushedEvents = [], syncCursor = Nothing, notifyContext = Nothing }
                                             |> ConcurrentTask.andThen
                                                 (\syncResult ->
                                                     EventVerification.filterVerifiedEvents GroupState.empty syncResult.pullResult.events

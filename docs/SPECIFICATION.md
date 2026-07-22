@@ -854,7 +854,7 @@ The following data is stored locally per group in IndexedDB:
 | `groups` | Group summaries (name, currency, member count, balance, archive state). |
 | `groupKeys` | Symmetric encryption keys per group. |
 | `events` | The full append-only event log per group, indexed by group ID. Each row is `{ id, groupId, env }` where `env` is the raw envelope JSON as received or authored — stored verbatim so events from newer app versions survive and re-decode after an update (see [11.3b](#113b-forward-compatibility)). |
-| `syncCursors` | Last sync cursor per group (server-assigned `seq` integer). |
+| `syncCursors` | Last sync position per group: the server-assigned `seq` integer plus the group **epoch** it was issued under (see [14.3](#143-synchronization)). Stored as one record — a seq is meaningless outside its epoch. |
 | `unpushedIds` | Set of event IDs created locally but not yet pushed to server. |
 | `usageStats` | Network and storage tracking data. |
 
@@ -878,6 +878,16 @@ The following data is stored locally per group in IndexedDB:
   sync); the dedup-by-event-id merge makes the restart loss-free. A forged
   `resetCursor` cannot cause data loss — the merge never deletes — so the
   worst case is a redundant re-pull.
+- **Group epoch**: every pull response carries `groupEpoch`, an opaque token
+  unique to the current incarnation of the group row (the relay uses the
+  group's creation PoW challenge). The client stores it beside the sync
+  cursor and treats a changed epoch exactly like `resetCursor: true`. This
+  closes the hole `resetCursor` cannot see: after a purge-and-resurrection,
+  fresh appends (the healing client's own push-before-pull, or another
+  member's) can land **above** a stale cursor — relay `seq`s are not reset by
+  a purge — so the pull finds rows, reports no reset, and the loss would
+  otherwise go undetected. A forged epoch has the same bounded effect as a
+  forged `resetCursor`: one redundant re-pull and re-push, never deletion.
 
 ### 14.4 Event Compression & Batching
 
@@ -953,8 +963,10 @@ server retention policy, and makes honest replicas the tamper resistance of
   archival-export nudge for long-idle groups.
 - **Resurrection.** A purged group is re-registered through the normal
   offline-group machinery (PoW + create) on a member's next sync, followed by
-  a re-push of local history. Surviving stale cursors recover via the
-  `resetCursor` flow ([14.3](#143-synchronization)).
+  a re-push of local history. Surviving stale cursors recover via the group
+  epoch and `resetCursor` flows ([14.3](#143-synchronization)) — the epoch is
+  what makes recovery reliable, since post-resurrection appends can mask the
+  seq gap from every stale cursor.
 - **Heal re-push.** After a cursor-reset re-pull completes, the client diffs
   its full local log against what the relay returned and re-pushes every
   event the relay lacks. This is computed from the log itself — `unpushedIds`

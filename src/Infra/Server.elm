@@ -287,7 +287,7 @@ pushEvents ctx secret actorId envelopes =
 
 type alias SyncData =
     { unpushedEvents : List Event.Envelope
-    , pullCursor : Maybe Int
+    , syncCursor : Maybe Group.SyncCursor
     , notifyContext : Maybe PushServer.NotifyContext
     }
 
@@ -303,7 +303,7 @@ type alias SyncResult =
 {-| Sync a group: push unpushed events, then pull new events from the server.
 -}
 sync : ServerContext -> String -> SyncData -> ConcurrentTask Error SyncResult
-sync ctx actorId { unpushedEvents, pullCursor, notifyContext } =
+sync ctx actorId { unpushedEvents, syncCursor, notifyContext } =
     let
         pushedCount : Int
         pushedCount =
@@ -332,7 +332,7 @@ sync ctx actorId { unpushedEvents, pullCursor, notifyContext } =
                             -- Discard errors on the notify task
                             (ConcurrentTask.onError (\_ -> ConcurrentTask.succeed ()) notifyTask)
                             -- Pull events
-                            (pullEvents ctx secret pullCursor)
+                            (pullEvents ctx secret syncCursor)
                         )
             )
 
@@ -345,8 +345,11 @@ sync ctx actorId { unpushedEvents, pullCursor, notifyContext } =
 `undecodable` counts skipped items: records that failed to decrypt plus
 envelopes whose JSON shape could not be decoded. Skipping instead of
 failing keeps one bad record from bricking the group's sync forever.
-`didReset` is set when the pull restarted from 0 on a `resetCursor` — the
-relay lost events this client has seen, so the caller re-pushes the gap.
+`didReset` is set when the pull restarted from 0 — on a `resetCursor`, or on
+an epoch change (the relay's group row was purged and re-created, so the seq
+cursor belongs to a dead incarnation) — the relay lost events this client has
+seen, so the caller re-pushes the gap. `epoch` is the incarnation the pull was
+served under; the caller stores it beside the new cursor.
 `recordCount` is the relay's total record count for the group, the
 compaction-trigger signal (spec §14.9). `forgedAuthors` lists the claimed
 author id of every envelope the caller's signature verification later dropped
@@ -355,6 +358,7 @@ author id of every envelope the caller's signature verification later dropped
 type alias PullResult =
     { events : List Event.Envelope
     , cursor : Int
+    , epoch : String
     , undecodable : Int
     , didReset : Bool
     , recordCount : Int
@@ -364,19 +368,30 @@ type alias PullResult =
 
 {-| Pull events from the server since the given cursor. Decrypts each event.
 
-A `resetCursor` response (the server no longer holds events up to our
-cursor — purge, compaction, or resurrection) restarts the pull from 0, at
-most once per sync so a misbehaving server cannot loop us forever. The
-caller's dedup-by-event-id merge makes the restart loss-free.
+The pull restarts from 0 when the server signals `resetCursor` (it no longer
+holds events up to our cursor — same-incarnation truncation) or when the
+served epoch differs from the stored one (the group row was purged and
+re-created; fresh appends can sit above a stale cursor, so only the epoch
+reveals the loss). At most one restart per sync so a misbehaving server
+cannot loop us forever. The caller's dedup-by-event-id merge makes the
+restart loss-free.
 
 -}
-pullEvents : ServerContext -> String -> Maybe Int -> ConcurrentTask Error PullResult
-pullEvents ctx secret maybeCursor =
-    pullAllPages ctx secret True (Maybe.withDefault 0 maybeCursor) { events = [], undecodable = 0, didReset = False }
+pullEvents : ServerContext -> String -> Maybe Group.SyncCursor -> ConcurrentTask Error PullResult
+pullEvents ctx secret maybeSync =
+    pullAllPages ctx
+        secret
+        { allowReset = True, storedEpoch = Maybe.map .epoch maybeSync }
+        (maybeSync |> Maybe.map .seq |> Maybe.withDefault 0)
+        { events = [], undecodable = 0, didReset = False }
 
 
-pullAllPages : ServerContext -> String -> Bool -> Int -> { events : List Event.Envelope, undecodable : Int, didReset : Bool } -> ConcurrentTask Error PullResult
-pullAllPages ctx secret allowReset cursor acc =
+{-| `allowReset` is cleared after one restart; `storedEpoch` is `Nothing` when
+this device never synced, in which case only the server's `resetCursor` can
+trigger a restart.
+-}
+pullAllPages : ServerContext -> String -> { allowReset : Bool, storedEpoch : Maybe String } -> Int -> { events : List Event.Envelope, undecodable : Int, didReset : Bool } -> ConcurrentTask Error PullResult
+pullAllPages ctx secret resetCheck cursor acc =
     Http.get
         { url = eventsUrl ctx ++ "?since=" ++ String.fromInt cursor
         , headers = [ authHeader secret ]
@@ -386,8 +401,15 @@ pullAllPages ctx secret allowReset cursor acc =
         |> ConcurrentTask.mapError HttpError
         |> ConcurrentTask.andThen
             (\page ->
-                if page.resetCursor && allowReset then
-                    pullAllPages ctx secret False 0 { acc | didReset = True }
+                let
+                    epochChanged : Bool
+                    epochChanged =
+                        resetCheck.storedEpoch
+                            |> Maybe.map ((/=) page.groupEpoch)
+                            |> Maybe.withDefault False
+                in
+                if resetCheck.allowReset && (page.resetCursor || epochChanged) then
+                    pullAllPages ctx secret { resetCheck | allowReset = False } 0 { acc | didReset = True }
 
                 else
                     decryptServerEvents ctx.groupKey page.events
@@ -408,12 +430,13 @@ pullAllPages ctx secret allowReset cursor acc =
                                             |> Maybe.withDefault cursor
                                 in
                                 if page.hasMore then
-                                    pullAllPages ctx secret allowReset newCursor newAcc
+                                    pullAllPages ctx secret resetCheck newCursor newAcc
 
                                 else
                                     ConcurrentTask.succeed
                                         { events = newAcc.events
                                         , cursor = newCursor
+                                        , epoch = page.groupEpoch
                                         , undecodable = newAcc.undecodable
                                         , didReset = newAcc.didReset
                                         , recordCount = page.recordCount
@@ -472,13 +495,14 @@ decryptServerEventBatch key record =
             ConcurrentTask.succeed { events = [], undecodable = 1 }
 
 
-pullPageDecoder : Decode.Decoder { events : List ServerEventRecord, hasMore : Bool, resetCursor : Bool, recordCount : Int }
+pullPageDecoder : Decode.Decoder { events : List ServerEventRecord, hasMore : Bool, resetCursor : Bool, recordCount : Int, groupEpoch : String }
 pullPageDecoder =
-    Decode.map4 (\events hasMore resetCursor recordCount -> { events = events, hasMore = hasMore, resetCursor = resetCursor, recordCount = recordCount })
+    Decode.map5 (\events hasMore resetCursor recordCount groupEpoch -> { events = events, hasMore = hasMore, resetCursor = resetCursor, recordCount = recordCount, groupEpoch = groupEpoch })
         (Decode.field "events" (Decode.list serverEventRecordDecoder))
         (Decode.field "hasMore" Decode.bool)
         (Decode.oneOf [ Decode.field "resetCursor" Decode.bool, Decode.succeed False ])
         (Decode.oneOf [ Decode.field "recordCount" Decode.int, Decode.succeed 0 ])
+        (Decode.field "groupEpoch" Decode.string)
 
 
 serverEventRecordDecoder : Decode.Decoder ServerEventRecord

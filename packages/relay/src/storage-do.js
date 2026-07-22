@@ -84,6 +84,11 @@ export function createDoStorage(sql) {
       return rows.length === 0 ? null : rows[0].last_access;
     },
 
+    getGroupEpoch(groupId) {
+      const rows = sql.exec('SELECT pow_challenge FROM groups WHERE id = ?', groupId).toArray();
+      return rows.length === 0 ? null : rows[0].pow_challenge;
+    },
+
     touchAccess(groupId, now, staleBefore) {
       sql.exec(
         'UPDATE groups SET last_access = ? WHERE id = ? AND (last_access IS NULL OR last_access < ?)',
