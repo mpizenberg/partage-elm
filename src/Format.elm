@@ -79,7 +79,7 @@ formatCentsSigned lang amount currency =
 
 {-| Format cents with a currency symbol, respecting the locale's symbol position.
 e.g. (En, 1050, EUR) -> "€10.50", (Fr, 1050, EUR) -> "10,50 €",
-(En, 1050, JPY) -> "¥1050", (Fr, 1050, JPY) -> "1 050 ¥".
+(En, 1050, JPY) -> "¥1,050", (Fr, 1050, JPY) -> "1 050 ¥".
 -}
 formatCentsWithCurrency : Language -> Int -> Currency -> String
 formatCentsWithCurrency lang amount currency =
