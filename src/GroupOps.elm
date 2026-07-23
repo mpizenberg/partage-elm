@@ -259,9 +259,7 @@ newGroup ctx onComplete output =
             Crypto.generateGroupKey
                 |> ConcurrentTask.andThen
                     (\key ->
-                        Storage.saveGroupSummary ctx.db summary
-                            |> ConcurrentTask.andThen (\_ -> Storage.saveGroupKey ctx.db groupId (Symmetric.exportKey key))
-                            |> ConcurrentTask.andThen (\_ -> Storage.saveEvents ctx.db groupId Storage.Unpushed allEvents)
+                        Storage.saveGroup ctx.db summary (Just (Symmetric.exportKey key)) Storage.Unpushed allEvents Nothing
                             |> ConcurrentTask.map (\_ -> summary)
                     )
     in
@@ -481,9 +479,7 @@ importSplitwiseGroup ctx onComplete cfg =
             Crypto.generateGroupKey
                 |> ConcurrentTask.andThen
                     (\key ->
-                        Storage.saveGroupSummary ctx.db summary
-                            |> ConcurrentTask.andThen (\_ -> Storage.saveGroupKey ctx.db groupId (Symmetric.exportKey key))
-                            |> ConcurrentTask.andThen (\_ -> Storage.saveEvents ctx.db groupId Storage.Unpushed allEvents)
+                        Storage.saveGroup ctx.db summary (Just (Symmetric.exportKey key)) Storage.Unpushed allEvents Nothing
                             |> ConcurrentTask.map (\_ -> summary)
                     )
     in

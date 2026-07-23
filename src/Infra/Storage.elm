@@ -19,7 +19,6 @@ module Infra.Storage exposing
     , saveEvents
     , saveExchangeRate
     , saveGroup
-    , saveGroupKey
     , saveGroupSummary
     , saveIdentity
     , saveLanguage
@@ -389,33 +388,37 @@ loadGroup db groupId =
 
 
 {-| Delete a group and all its associated data (summary, key, events, sync cursor).
+
+The summary is what lists a group and makes it openable, so it goes first: an
+interrupted delete then leaves unreferenced rows rather than a group the user
+can still see but that no longer has the key to open it.
+
 -}
 deleteGroup : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error ()
 deleteGroup db groupId =
-    ConcurrentTask.batch
-        -- Delete group summary
-        [ Idb.delete db groupsStore (Idb.StringKey groupId)
-
-        -- Delete group key
-        , Idb.delete db groupKeysStore (Idb.StringKey groupId)
-
-        -- Delete sync cursor
-        , Idb.delete db syncCursorsStore (Idb.StringKey groupId)
-
-        -- Delete tamper-signal counters
-        , Idb.delete db tamperSignalsStore (Idb.StringKey groupId)
-
-        -- Delete dismissed suspicion-finding keys
-        , Idb.delete db suspicionDismissalsStore (Idb.StringKey groupId)
-
-        -- Delete group events
-        , Idb.getKeysByIndex db eventsStore byGroupIdIndex (Idb.only (Idb.StringKey groupId))
-            |> ConcurrentTask.andThen (\keys -> Idb.deleteMany db eventsStore keys)
-        ]
+    Idb.delete db groupsStore (Idb.StringKey groupId)
+        |> ConcurrentTask.andThen
+            (\_ ->
+                ConcurrentTask.batch
+                    [ Idb.delete db groupKeysStore (Idb.StringKey groupId)
+                    , Idb.delete db syncCursorsStore (Idb.StringKey groupId)
+                    , Idb.delete db tamperSignalsStore (Idb.StringKey groupId)
+                    , Idb.delete db suspicionDismissalsStore (Idb.StringKey groupId)
+                    , Idb.getKeysByIndex db eventsStore byGroupIdIndex (Idb.only (Idb.StringKey groupId))
+                        |> ConcurrentTask.andThen (\keys -> Idb.deleteMany db eventsStore keys)
+                    ]
+            )
         |> ConcurrentTask.map (\_ -> ())
 
 
 {-| Save a group summary, events, optional encryption key, and optional sync cursor.
+
+The summary lands last. It is what makes a group visible and openable, while
+the key and events are what make it work — writing it first would let an
+interrupted save leave a group the user can see but that fails to open, since
+loading one requires its key. Landing it last leaves invisible orphan rows
+instead.
+
 -}
 saveGroup : Idb.Db -> Group.Summary -> Maybe String -> PushState -> List Event.Envelope -> Maybe Group.SyncCursor -> ConcurrentTask Idb.Error ()
 saveGroup db summary maybeKey pushState events maybeCursor =
@@ -439,11 +442,11 @@ saveGroup db summary maybeKey pushState events maybeCursor =
                     ConcurrentTask.succeed ()
     in
     ConcurrentTask.batch
-        [ saveGroupSummary db summary |> ConcurrentTask.map (\_ -> ())
-        , saveEvents db summary.id pushState events
+        [ saveEvents db summary.id pushState events
         , saveKeyTask
         , saveCursorTask
         ]
+        |> ConcurrentTask.andThen (\_ -> saveGroupSummary db summary)
         |> ConcurrentTask.map (\_ -> ())
 
 
