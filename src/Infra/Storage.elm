@@ -1,6 +1,6 @@
 module Infra.Storage exposing
     ( InitData
-    , addUnpushedIds
+    , PushState(..)
     , deleteExchangeRates
     , deleteGroup
     , errorToString
@@ -28,7 +28,6 @@ module Infra.Storage exposing
     , saveSuspicionDismissals
     , saveSyncCursor
     , saveTamperSignals
-    , saveUnpushedIds
     , saveUsageStats
     )
 
@@ -66,13 +65,12 @@ type alias InitData =
 
 dbSchema : Idb.Schema
 dbSchema =
-    Idb.schema "partage" 8
+    Idb.schema "partage" 9
         |> Idb.withStore identityStore
         |> Idb.withStore groupsStore
         |> Idb.withStore groupKeysStore
         |> Idb.withStore eventsStore
         |> Idb.withStore syncCursorsStore
-        |> Idb.withStore unpushedIdsStore
         |> Idb.withStore usageStatsStore
         |> Idb.withStore exchangeRatesStore
         |> Idb.withStore tamperSignalsStore
@@ -110,11 +108,6 @@ byGroupIdIndex =
 syncCursorsStore : Idb.Store Idb.ExplicitKey
 syncCursorsStore =
     Idb.defineStore "syncCursors"
-
-
-unpushedIdsStore : Idb.Store Idb.ExplicitKey
-unpushedIdsStore =
-    Idb.defineStore "unpushedIds"
 
 
 usageStatsStore : Idb.Store Idb.ExplicitKey
@@ -269,18 +262,37 @@ loadGroupKeyRequired db groupId =
             )
 
 
-{-| Save a list of event envelopes for a group.
+{-| Whether an event still owes the relay a push.
+
+Stored on the event record rather than in a queue of its own, so writing an
+event and recording that it needs pushing is one `putMany` — a single
+transaction. An event that exists without its queue state is unrepresentable,
+and concurrent writers touch disjoint records instead of one shared set.
+
 -}
-saveEvents : Idb.Db -> Group.Id -> List Event.Envelope -> ConcurrentTask Idb.Error ()
-saveEvents db groupId envelopes =
-    Idb.putMany db eventsStore (List.map (encodeEventForStorage groupId) envelopes)
+type PushState
+    = Unpushed
+    | Pushed
+
+
+{-| Save a list of event envelopes for a group, all in the given push state.
+Also the way to change that state: `putMany` overwrites.
+-}
+saveEvents : Idb.Db -> Group.Id -> PushState -> List Event.Envelope -> ConcurrentTask Idb.Error ()
+saveEvents db groupId pushState envelopes =
+    Idb.putMany db eventsStore (List.map (encodeEventForStorage groupId pushState) envelopes)
 
 
 {-| Load all event envelopes for a group.
 -}
 loadGroupEvents : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error (List Event.Envelope)
 loadGroupEvents db groupId =
-    Idb.getByIndex db eventsStore byGroupIdIndex (Idb.only (Idb.StringKey groupId)) (Decode.field "env" Event.envelopeDecoder)
+    loadStoredEvents db groupId |> ConcurrentTask.map (List.map .envelope)
+
+
+loadStoredEvents : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error (List { envelope : Event.Envelope, pushState : PushState })
+loadStoredEvents db groupId =
+    Idb.getByIndex db eventsStore byGroupIdIndex (Idb.only (Idb.StringKey groupId)) storedEventDecoder
         |> ConcurrentTask.map (List.map Tuple.second)
 
 
@@ -314,21 +326,6 @@ loadSyncCursor db groupId =
             ]
         )
         |> ConcurrentTask.map (Maybe.andThen identity)
-
-
-{-| Save unpushed event IDs for a group.
--}
-saveUnpushedIds : Idb.Db -> Group.Id -> Set String -> ConcurrentTask Idb.Error ()
-saveUnpushedIds db groupId ids =
-    Idb.putAt db unpushedIdsStore (Idb.StringKey groupId) (Encode.set Encode.string ids)
-
-
-{-| Load unpushed event IDs for a group.
--}
-loadUnpushedIds : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error (Set String)
-loadUnpushedIds db groupId =
-    Idb.get db unpushedIdsStore (Idb.StringKey groupId) (Decode.list Decode.string)
-        |> ConcurrentTask.map (Maybe.map Set.fromList >> Maybe.withDefault Set.empty)
 
 
 {-| Save a group's tamper-signal counters (spec §11.7).
@@ -365,26 +362,33 @@ unpushed IDs, and tamper-signal counters.
 -}
 loadGroup : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Group.SyncCursor, unpushedIds : Set String, tamperSignals : TamperSignals, suspicionDismissals : Set String }
 loadGroup db groupId =
-    ConcurrentTask.map5 (\events key cursor unpushed ( signals, dismissals ) -> { events = events, groupKey = key, syncCursor = cursor, unpushedIds = unpushed, tamperSignals = signals, suspicionDismissals = dismissals })
-        (loadGroupEvents db groupId)
+    ConcurrentTask.map4
+        (\stored key cursor ( signals, dismissals ) ->
+            { events = List.map .envelope stored
+            , groupKey = key
+            , syncCursor = cursor
+            , unpushedIds =
+                List.filterMap
+                    (\e ->
+                        if e.pushState == Unpushed then
+                            Just e.envelope.id
+
+                        else
+                            Nothing
+                    )
+                    stored
+                    |> Set.fromList
+            , tamperSignals = signals
+            , suspicionDismissals = dismissals
+            }
+        )
+        (loadStoredEvents db groupId)
         (loadGroupKeyRequired db groupId)
         (loadSyncCursor db groupId)
-        (loadUnpushedIds db groupId)
         (ConcurrentTask.map2 Tuple.pair (loadTamperSignals db groupId) (loadSuspicionDismissals db groupId))
 
 
-{-| Add event IDs to the unpushed set for a group (read-modify-write).
--}
-addUnpushedIds : Idb.Db -> Group.Id -> List String -> ConcurrentTask Idb.Error ()
-addUnpushedIds db groupId newIds =
-    loadUnpushedIds db groupId
-        |> ConcurrentTask.andThen
-            (\existing ->
-                saveUnpushedIds db groupId (List.foldl Set.insert existing newIds)
-            )
-
-
-{-| Delete a group and all its associated data (summary, key, events, sync cursor, unpushed IDs).
+{-| Delete a group and all its associated data (summary, key, events, sync cursor).
 -}
 deleteGroup : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error ()
 deleteGroup db groupId =
@@ -397,9 +401,6 @@ deleteGroup db groupId =
 
         -- Delete sync cursor
         , Idb.delete db syncCursorsStore (Idb.StringKey groupId)
-
-        -- Delete unpushed IDs
-        , Idb.delete db unpushedIdsStore (Idb.StringKey groupId)
 
         -- Delete tamper-signal counters
         , Idb.delete db tamperSignalsStore (Idb.StringKey groupId)
@@ -416,8 +417,8 @@ deleteGroup db groupId =
 
 {-| Save a group summary, events, optional encryption key, and optional sync cursor.
 -}
-saveGroup : Idb.Db -> Group.Summary -> Maybe String -> List Event.Envelope -> Maybe Group.SyncCursor -> ConcurrentTask Idb.Error ()
-saveGroup db summary maybeKey events maybeCursor =
+saveGroup : Idb.Db -> Group.Summary -> Maybe String -> PushState -> List Event.Envelope -> Maybe Group.SyncCursor -> ConcurrentTask Idb.Error ()
+saveGroup db summary maybeKey pushState events maybeCursor =
     let
         saveKeyTask : ConcurrentTask Idb.Error ()
         saveKeyTask =
@@ -439,7 +440,7 @@ saveGroup db summary maybeKey events maybeCursor =
     in
     ConcurrentTask.batch
         [ saveGroupSummary db summary |> ConcurrentTask.map (\_ -> ())
-        , saveEvents db summary.id events
+        , saveEvents db summary.id pushState events
         , saveKeyTask
         , saveCursorTask
         ]
@@ -529,13 +530,33 @@ deleteExchangeRates db keys =
 -- Internal codecs
 
 
-encodeEventForStorage : Group.Id -> Event.Envelope -> Encode.Value
-encodeEventForStorage groupId envelope =
+encodeEventForStorage : Group.Id -> PushState -> Event.Envelope -> Encode.Value
+encodeEventForStorage groupId pushState envelope =
     Encode.object
         [ ( "id", Encode.string envelope.id )
         , ( "groupId", Encode.string groupId )
         , ( "env", Event.encodeEnvelope envelope )
+        , ( "unpushed", Encode.bool (pushState == Unpushed) )
         ]
+
+
+storedEventDecoder : Decode.Decoder { envelope : Event.Envelope, pushState : PushState }
+storedEventDecoder =
+    Decode.map2 (\envelope pushState -> { envelope = envelope, pushState = pushState })
+        (Decode.field "env" Event.envelopeDecoder)
+        (Decode.oneOf
+            [ Decode.field "unpushed" Decode.bool
+                |> Decode.map
+                    (\unpushed ->
+                        if unpushed then
+                            Unpushed
+
+                        else
+                            Pushed
+                    )
+            , Decode.succeed Pushed
+            ]
+        )
 
 
 

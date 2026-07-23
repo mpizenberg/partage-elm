@@ -853,10 +853,15 @@ The following data is stored locally per group in IndexedDB:
 | `identity` | User's cryptographic keypair, language preference, notification translations. |
 | `groups` | Group summaries (name, currency, member count, balance, archive state). |
 | `groupKeys` | Symmetric encryption keys per group. |
-| `events` | The full append-only event log per group, indexed by group ID. Each row is `{ id, groupId, env }` where `env` is the raw envelope JSON as received or authored — stored verbatim so events from newer app versions survive and re-decode after an update (see [11.3b](#113b-forward-compatibility)). |
+| `events` | The full append-only event log per group, indexed by group ID. Each row is `{ id, groupId, env, unpushed }` where `env` is the raw envelope JSON as received or authored — stored verbatim so events from newer app versions survive and re-decode after an update (see [11.3b](#113b-forward-compatibility)) — and `unpushed` marks an event the relay has not acknowledged yet. |
 | `syncCursors` | Last sync position per group: the server-assigned `seq` integer plus the group **epoch** it was issued under (see [14.3](#143-synchronization)). Stored as one record — a seq is meaningless outside its epoch. |
-| `unpushedIds` | Set of event IDs created locally but not yet pushed to server. |
 | `usageStats` | Network and storage tracking data. |
+
+The offline queue is a field on the event row rather than a set of its own, so
+appending an event and recording that it still owes the relay a push are one
+IndexedDB transaction. An event cannot exist without its queue state, and
+concurrent writers — a second tab, or a sync completing while the user saves —
+touch disjoint rows instead of racing to rewrite one shared set.
 
 ### 14.3 Synchronization
 
@@ -864,7 +869,7 @@ The following data is stored locally per group in IndexedDB:
 - **Initial sync**: Fetches all historical events (paginated, 200 per page) and replays them in deterministic order to build local state.
 - **Incremental sync**: Pushes local unpushed events and pulls remote events since last cursor.
 - **Real-time subscriptions**: The app subscribes to server-sent events via WebSocket for live updates from other devices/users.
-- **Offline queue**: Events created while offline are queued (tracked in `unpushedIds`) and synced when connectivity returns. Groups **created** while offline are also queued and registered on the server when connectivity returns (the server account is created on the first successful push).
+- **Offline queue**: Events created while offline are queued (each event row's `unpushed` flag) and synced when connectivity returns. Groups **created** while offline are also queued and registered on the server when connectivity returns (the server account is created on the first successful push).
 - **Idempotent push**: each pushed batch carries a `recordId` derived from its
   content (SHA-256 of the sorted event ids). The relay enforces
   `UNIQUE(group_id, record_id)` and answers a replayed push with the original
@@ -891,7 +896,7 @@ The following data is stored locally per group in IndexedDB:
 - **Group switch during sync** (known limitation): a sync runs against the
   group that was open when it started. If the user navigates to a different
   group before it finishes, the completed sync's pulled events, advanced
-  cursor, and cleared `unpushedIds` are discarded rather than applied to a
+  cursor, and cleared `unpushed` flags are discarded rather than applied to a
   group that is no longer loaded. Nothing is lost — the next open of that
   group re-pulls from the stored cursor and re-pushes any still-unpushed
   events (deduped by the idempotent `recordId`); the only cost is that
@@ -978,8 +983,8 @@ server retention policy, and makes honest replicas the tamper resistance of
   seq gap from every stale cursor.
 - **Heal re-push.** After a cursor-reset re-pull completes, the client diffs
   its full local log against what the relay returned and re-pushes every
-  event the relay lacks. This is computed from the log itself — `unpushedIds`
-  only tracks never-pushed events. With it, any relay truncation (purge,
+  event the relay lacks. This is computed from the log itself — the `unpushed`
+  flag only tracks never-pushed events. With it, any relay truncation (purge,
   botched resurrection, unsanctioned compaction, hostile relay) converges
   back to full history as soon as one honest member syncs.
 - **Absolute quota.** The relay maintains `record_count` and `total_bytes`

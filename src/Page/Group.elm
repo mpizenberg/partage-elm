@@ -203,7 +203,6 @@ type alias PendingMerge =
     { sourceRootId : Member.Id
     , targetRootId : Member.Id
     , pendingIds : Set Event.Id
-    , allIds : Set Event.Id
     }
 
 
@@ -265,7 +264,6 @@ type
     | OnEntrySaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnEntryActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnMemberActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
-    | OnMergeTracked (ConcurrentTask.Response Idb.Error ())
     | OnGroupMetadataActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnGroupRemoved Group.Id (ConcurrentTask.Response Idb.Error ())
     | OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)
@@ -862,61 +860,36 @@ update config msg model =
             case applyAndSync config groupId envelope model of
                 Just ( syncModel, syncCmd, timeOutputs ) ->
                     let
-                        ( afterMergeModel, mergeStatus, mergeOutputs ) =
+                        ( mergeModel, mergeStatus, mergeOutputs ) =
                             handleMergeCompletion config envelope syncModel
-
-                        -- On the final merge write, record every merge event id
-                        -- as unpushed in one shot; per-event writes were skipped
-                        -- to avoid concurrent read-modify-writes clobbering the set.
-                        ( trackedModel, mergeCmd ) =
-                            case mergeStatus of
-                                MergeCompleted idsToTrack ->
-                                    ( afterMergeModel.runner, Cmd.none )
-                                        |> Runner.andRun OnMergeTracked
-                                            (Storage.addUnpushedIds config.db groupId (Set.toList idsToTrack))
-                                        |> Tuple.mapBoth
-                                            (\r -> { afterMergeModel | runner = r })
-                                            (\trackCmd -> Cmd.batch [ syncCmd, trackCmd ])
-
-                                _ ->
-                                    ( afterMergeModel, syncCmd )
                     in
                     case ( mergeStatus, config.route ) of
                         ( _, GroupRoute gid AddVirtualMember ) ->
-                            ( { trackedModel | addMemberModel = Page.Group.AddMember.init }
-                            , mergeCmd
+                            ( { mergeModel | addMemberModel = Page.Group.AddMember.init }
+                            , syncCmd
                             , NavigateTo (GroupRoute gid (Tab MembersTab)) :: mergeOutputs ++ timeOutputs
                             )
 
                         ( _, GroupRoute gid (EditMemberMetadata _) ) ->
-                            ( trackedModel
-                            , mergeCmd
+                            ( mergeModel
+                            , syncCmd
                             , NavigateTo (GroupRoute gid (Tab MembersTab)) :: mergeOutputs ++ timeOutputs
                             )
 
                         ( NotMergeEvent, _ ) ->
                             let
                                 ( initModel, initCmd ) =
-                                    initPagesIfNeeded config (routeToGroupView config.route) trackedModel
+                                    initPagesIfNeeded config (routeToGroupView config.route) mergeModel
                             in
-                            ( initModel, Cmd.batch [ mergeCmd, initCmd ], timeOutputs )
+                            ( initModel, Cmd.batch [ syncCmd, initCmd ], timeOutputs )
 
                         _ ->
                             -- Merge event still pending or just completed: don't re-init
                             -- pages (would wipe the merge form mid-flight).
-                            ( trackedModel, mergeCmd, mergeOutputs ++ timeOutputs )
+                            ( mergeModel, syncCmd, mergeOutputs ++ timeOutputs )
 
                 Nothing ->
                     ( model, Cmd.none, [] )
-
-        OnMergeTracked (ConcurrentTask.Success ()) ->
-            ( model, Cmd.none, [] )
-
-        OnMergeTracked _ ->
-            ( model
-            , Cmd.none
-            , [ LogError ErrorLog.StorageSource ErrorLog.Err "Failed to record merged events as unpushed" ]
-            )
 
         OnMemberActionSaved _ _ ->
             -- We can't tell from a failure whether the failed envelope belonged
@@ -1610,14 +1583,15 @@ submitMemberMetadata config model loaded output =
 type MergeStatus
     = NotMergeEvent
     | MergeStillPending
-    | MergeCompleted (Set Event.Id)
+    | MergeCompleted
 
 
 {-| Inspect an incoming envelope against the in-flight merge (if any).
 If the envelope's id is in the pending set, it's removed; when the set drains
-the merge is reported as completed (carrying every merge event id so the
-caller records them as unpushed in one write), the model is cleared, and the
-success toast + (if still on the merge route) navigation outputs are emitted.
+the merge is reported as completed, the model is cleared, and the success toast
+
+  - (if still on the merge route) navigation outputs are emitted.
+
 -}
 handleMergeCompletion : UpdateConfig -> Event.Envelope -> Model -> ( Model, MergeStatus, List Output )
 handleMergeCompletion config envelope model =
@@ -1631,7 +1605,7 @@ handleMergeCompletion config envelope model =
                 in
                 if Set.isEmpty remainingIds then
                     ( { model | pendingMerge = Nothing }
-                    , MergeCompleted pm.allIds
+                    , MergeCompleted
                     , mergeSuccessOutputs config model pm
                     )
 
@@ -1681,11 +1655,10 @@ mergeSuccessOutputs config model pm =
 
 
 {-| Submit a member merge as a sequence of events. Each action in the plan is
-mapped to one Event.Payload, submitted as a separate ConcurrentTask that saves
-the event without recording it as unpushed, and its freshly generated envelope
-id is collected. The full set of ids is stashed in `model.pendingMerge` so the
-completion handler can detect when every event write has landed, at which point
-it records all ids as unpushed in one write and fires the success toast.
+mapped to one Event.Payload, submitted as a separate ConcurrentTask, and its
+freshly generated envelope id is collected. The set of ids is stashed in
+`model.pendingMerge` so the completion handler can detect when every event
+write has landed, at which point it fires the success toast.
 -}
 submitMerge :
     UpdateConfig
@@ -1741,7 +1714,6 @@ submitMerge config model loaded mergeData =
                 { sourceRootId = mergeData.sourceRootId
                 , targetRootId = mergeData.targetRootId
                 , pendingIds = ids
-                , allIds = ids
                 }
       }
     , Cmd.batch cmds

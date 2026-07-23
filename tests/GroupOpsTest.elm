@@ -24,8 +24,67 @@ suite =
         , describe "applySyncResult with late arrivals" lateArrivalTests
         , describe "applySyncResult after a cursor reset" cursorResetTests
         , describe "applySyncResult heal re-push" healRepushTests
+        , describe "applySyncResult stored push state" pushStateTests
         , describe "applySyncResult tamper signals" tamperSignalTests
         ]
+
+
+{-| The push state of every event is stored on the event record itself, so a
+sync must name exactly which records change state. Getting this set wrong is
+how an event ends up in the log but never on the relay.
+-}
+pushStateTests : List Test
+pushStateTests =
+    let
+        localLog : List Event.Envelope
+        localLog =
+            bootstrapMembers
+                ++ [ makeEnvelope "e-add" 100 "alice" (EntryAdded (makeExpenseEntry "entry1" 100 defaultExpenseData)) ]
+
+        syncPushing : List String -> { didReset : Bool, relayHas : List Event.Envelope } -> Set.Set String -> GroupOps.SyncApplyResult
+        syncPushing pushedIds { didReset, relayHas } stillUnpushed =
+            GroupOps.applySyncResult (Time.millisToPosix 0)
+                (Set.fromList pushedIds)
+                { pullResult = { events = relayHas, cursor = 1, epoch = "epoch-1", undecodable = 0, didReset = didReset, recordCount = 0, forgedAuthors = [] }, pushedCount = 0 }
+                (GroupOps.initLoadedGroup localLog testSummary (Symmetric.importKey "test-key") Nothing stillUnpushed TamperSignals.empty Set.empty)
+
+        normalPull : { didReset : Bool, relayHas : List Event.Envelope }
+        normalPull =
+            { didReset = False, relayHas = [] }
+    in
+    [ test "events the relay accepted are marked pushed" <|
+        \_ ->
+            syncPushing [ "e-add" ] normalPull (Set.singleton "e-add")
+                |> Expect.all
+                    [ \r -> List.map .id r.acknowledged |> Expect.equal [ "e-add" ]
+                    , \r -> r.reQueued |> Expect.equal []
+                    , \r -> r.updatedGroup.unpushedIds |> Expect.equal Set.empty
+                    ]
+    , test "an event authored while the sync was in flight is not marked pushed" <|
+        \_ ->
+            -- The sync captured its push set before "e-new" existed. Marking
+            -- the whole queue clean here is what strands the new event.
+            syncPushing [ "e-add" ] normalPull (Set.fromList [ "e-add", "e-new" ])
+                |> Expect.all
+                    [ \r -> List.map .id r.acknowledged |> Expect.equal [ "e-add" ]
+                    , \r -> r.updatedGroup.unpushedIds |> Expect.equal (Set.singleton "e-new")
+                    ]
+    , test "a sync that pushed nothing rewrites no event records" <|
+        \_ ->
+            syncPushing [] normalPull Set.empty
+                |> Expect.all
+                    [ \r -> r.acknowledged |> Expect.equal []
+                    , \r -> r.reQueued |> Expect.equal []
+                    ]
+    , test "an event the relay accepted and then lost to a reset is re-queued, not marked pushed" <|
+        \_ ->
+            syncPushing [ "e-add" ] { didReset = True, relayHas = bootstrapMembers } (Set.singleton "e-add")
+                |> Expect.all
+                    [ \r -> r.acknowledged |> Expect.equal []
+                    , \r -> List.map .id r.reQueued |> Expect.equal [ "e-add" ]
+                    , \r -> r.updatedGroup.unpushedIds |> Expect.equal (Set.singleton "e-add")
+                    ]
+    ]
 
 
 cursorResetTests : List Test

@@ -128,18 +128,7 @@ initLoadedGroup events summary key cursor unpushed tamperSignals suspicionDismis
 
 
 attempt : Context msg -> (Time.Posix -> Event.Envelope) -> LoadedGroup -> ( State msg, Cmd msg )
-attempt =
-    attemptTracking True
-
-
-{-| Like `attempt`, but `track` decides whether the new event id is recorded in
-the unpushed set as part of the same task. Single-event submissions track
-individually (`attempt`); multi-event submissions (merge) pass `False` and
-record all ids in one write afterwards, so their concurrent load-modify-save
-pairs can't clobber each other's unpushed set.
--}
-attemptTracking : Bool -> Context msg -> (Time.Posix -> Event.Envelope) -> LoadedGroup -> ( State msg, Cmd msg )
-attemptTracking track ctx makeUnsignedEnvelope loaded =
+attempt ctx makeUnsignedEnvelope loaded =
     let
         signingKeyPair : Signature.SigningKeyPair
         signingKeyPair =
@@ -155,15 +144,7 @@ attemptTracking track ctx makeUnsignedEnvelope loaded =
                 |> ConcurrentTask.andThen (signEnvelope signingKeyPair)
                 |> ConcurrentTask.andThen
                     (\envelope ->
-                        (Storage.saveEvents ctx.db groupId [ envelope ]
-                            :: (if track then
-                                    [ Storage.addUnpushedIds ctx.db groupId [ envelope.id ] ]
-
-                                else
-                                    []
-                               )
-                        )
-                            |> ConcurrentTask.batch
+                        Storage.saveEvents ctx.db groupId Storage.Unpushed [ envelope ]
                             |> ConcurrentTask.map (\_ -> envelope)
                     )
     in
@@ -275,18 +256,12 @@ newGroup ctx onComplete output =
 
         allTasks : List Event.Envelope -> ConcurrentTask Idb.Error Group.Summary
         allTasks allEvents =
-            let
-                allEventIds : List String
-                allEventIds =
-                    List.map .id allEvents
-            in
             Crypto.generateGroupKey
                 |> ConcurrentTask.andThen
                     (\key ->
                         Storage.saveGroupSummary ctx.db summary
                             |> ConcurrentTask.andThen (\_ -> Storage.saveGroupKey ctx.db groupId (Symmetric.exportKey key))
-                            |> ConcurrentTask.andThen (\_ -> Storage.saveEvents ctx.db groupId allEvents)
-                            |> ConcurrentTask.andThen (\_ -> Storage.addUnpushedIds ctx.db groupId allEventIds)
+                            |> ConcurrentTask.andThen (\_ -> Storage.saveEvents ctx.db groupId Storage.Unpushed allEvents)
                             |> ConcurrentTask.map (\_ -> summary)
                     )
     in
@@ -367,8 +342,7 @@ migrateGroup ctx onComplete order selection loaded =
                                 GroupState.summarize ctx.identity.publicKeyHash newId ctx.currentTime (GroupState.applyEvents verified GroupState.empty)
                         in
                         ConcurrentTask.batch
-                            [ Storage.saveGroup ctx.db newSummary (Just (Symmetric.exportKey key)) verified Nothing
-                            , Storage.addUnpushedIds ctx.db newId (List.map .id verified)
+                            [ Storage.saveGroup ctx.db newSummary (Just (Symmetric.exportKey key)) Storage.Unpushed verified Nothing
                             , Storage.saveGroupSummary ctx.db oldSummary |> ConcurrentTask.map (\_ -> ())
                             ]
                             |> ConcurrentTask.map (\_ -> { newSummary = newSummary, oldSummary = oldSummary })
@@ -509,8 +483,7 @@ importSplitwiseGroup ctx onComplete cfg =
                     (\key ->
                         Storage.saveGroupSummary ctx.db summary
                             |> ConcurrentTask.andThen (\_ -> Storage.saveGroupKey ctx.db groupId (Symmetric.exportKey key))
-                            |> ConcurrentTask.andThen (\_ -> Storage.saveEvents ctx.db groupId allEvents)
-                            |> ConcurrentTask.andThen (\_ -> Storage.addUnpushedIds ctx.db groupId (List.map .id allEvents))
+                            |> ConcurrentTask.andThen (\_ -> Storage.saveEvents ctx.db groupId Storage.Unpushed allEvents)
                             |> ConcurrentTask.map (\_ -> summary)
                     )
     in
@@ -624,10 +597,8 @@ event =
     simpleEvent
 
 
-{-| Same as `event`, but returns the freshly generated envelope id and does
-**not** record it in the unpushed set. Used by multi-event submissions
-(merge) that track completion of every id and then record them all in one
-unpushed-set write; see `attemptTracking`.
+{-| Same as `event`, but returns the freshly generated envelope id. Used by
+multi-event submissions (merge), which track completion of every id.
 -}
 eventWithId : Context msg -> LoadedGroup -> Event.Payload -> ( State msg, Cmd msg, Event.Id )
 eventWithId ctx loaded payload =
@@ -636,7 +607,7 @@ eventWithId ctx loaded payload =
             IdGen.v7 ctx.currentTime ctx.uuidState
 
         ( state, cmd ) =
-            attemptTracking False
+            attempt
                 { ctx | uuidState = uuidStateAfter }
                 (\now -> Event.wrap eventId now (author ctx) payload "")
                 loaded
@@ -816,6 +787,8 @@ compactionApprovalsDue myRoot loaded =
 type alias SyncApplyResult =
     { updatedGroup : LoadedGroup
     , newEvents : List Event.Envelope
+    , acknowledged : List Event.Envelope
+    , reQueued : List Event.Envelope
     , pullCursor : Group.SyncCursor
     }
 
@@ -915,6 +888,11 @@ applySyncResult now pushedIds syncResult loaded =
             , tamperSignals = tamperSignals
         }
     , newEvents = sortedNewEvents
+    , acknowledged =
+        List.filter
+            (\e -> Set.member e.id pushedIds && not (Set.member e.id remainingUnpushedIds))
+            loaded.events
+    , reQueued = List.filter (\e -> Set.member e.id lostOnReset) loaded.events
     , pullCursor = { seq = pullResult.cursor, epoch = pullResult.epoch }
     }
 
@@ -1036,22 +1014,25 @@ mergeEventsHelp xs ys acc =
 postSyncTasks : Idb.Db -> Server.ServerContext -> SyncApplyResult -> ConcurrentTask Idb.Error ()
 postSyncTasks db ctx result =
     let
+        write : Storage.PushState -> List Event.Envelope -> ConcurrentTask Idb.Error ()
+        write pushState events =
+            if List.isEmpty events then
+                ConcurrentTask.succeed ()
+
+            else
+                Storage.saveEvents db ctx.groupId pushState events
+
         -- The cursor must never persist ahead of its events: a crash between the
         -- two would make the next open trust the cursor and skip the missing
         -- events forever. Chaining guarantees events land first.
         persistEventsThenCursor : ConcurrentTask Idb.Error ()
         persistEventsThenCursor =
-            (if List.isEmpty result.newEvents then
-                ConcurrentTask.succeed ()
-
-             else
-                Storage.saveEvents db ctx.groupId result.newEvents
-            )
+            write Storage.Pushed (result.newEvents ++ result.acknowledged)
+                |> ConcurrentTask.andThen (\_ -> write Storage.Unpushed result.reQueued)
                 |> ConcurrentTask.andThen (\_ -> Storage.saveSyncCursor db ctx.groupId result.pullCursor)
     in
     List.filterMap identity
-        [ Just <| Storage.saveUnpushedIds db ctx.groupId result.updatedGroup.unpushedIds
-        , if TamperSignals.isClean result.updatedGroup.tamperSignals then
+        [ if TamperSignals.isClean result.updatedGroup.tamperSignals then
             Nothing
 
           else

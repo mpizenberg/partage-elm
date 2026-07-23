@@ -866,7 +866,7 @@ update msg model =
                             in
                             ( model.runner, Cmd.none )
                                 |> Runner.andRun (OnJoinGroupSaved groupId memberId)
-                                    (Storage.saveGroup readyData.db summary (Just (Symmetric.exportKey groupKey)) preview.events preview.syncCursor)
+                                    (Storage.saveGroup readyData.db summary (Just (Symmetric.exportKey groupKey)) Storage.Pushed preview.events preview.syncCursor)
                                 |> Tuple.mapFirst (\r -> { updatedModel | runner = r })
 
                         _ ->

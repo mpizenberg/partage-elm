@@ -199,7 +199,7 @@ update config msg runnerCmd =
                                                 , droppedCount = List.length exportData.events - List.length verified
                                                 }
                                         in
-                                        Storage.saveGroup config.db summary exportData.groupKey verified Nothing
+                                        Storage.saveGroup config.db summary exportData.groupKey Storage.Pushed verified Nothing
                                             |> ConcurrentTask.map (\_ -> result)
                                     )
                             )
