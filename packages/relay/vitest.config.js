@@ -12,5 +12,9 @@ export default defineConfig({
   ],
   test: {
     include: ['test-workers/**/*.spec.js'],
+    // Each request boots through workerd and a per-group Durable Object, and the
+    // whole suite shares one Miniflare instance; the 5s default is too tight for
+    // the heaviest cases on a loaded CI runner.
+    testTimeout: 30_000,
   },
 });
