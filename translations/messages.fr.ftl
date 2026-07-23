@@ -401,6 +401,7 @@ splitwiseImportSkipped = { $count } lignes illisibles ont été ignorées.
 importErrorAlreadyExists = Ce groupe existe déjà sur ton appareil.
 importErrorInvalidFile = Format de fichier invalide.
 toastGroupCreateError = Échec de la création du groupe.
+toastIdentitySaveError = Impossible d'enregistrer l'identité de ton appareil. Vérifie l'espace de stockage disponible et réessaie.
 toastEntrySaveError = Échec de l'enregistrement.
 toastEntryDeleted = Écriture supprimée.
 toastEntryRestored = Écriture restaurée.

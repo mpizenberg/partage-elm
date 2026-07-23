@@ -399,6 +399,7 @@ splitwiseImportSkipped = { $count } rows couldn't be read and were skipped.
 importErrorAlreadyExists = This group already exists on your device.
 importErrorInvalidFile = Invalid file format.
 toastGroupCreateError = Failed to create group.
+toastIdentitySaveError = Could not save your device identity. Check your available storage and try again.
 toastEntrySaveError = Failed to save entry.
 toastEntryDeleted = Entry deleted.
 toastEntryRestored = Entry restored.

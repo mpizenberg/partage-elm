@@ -165,7 +165,7 @@ type Msg
     | VisibilityChanged Browser.Events.Visibility
     | OnIdentityGenerated (ConcurrentTask.Response WebCrypto.Error Identity)
     | OnInitComplete (ConcurrentTask.Response Idb.Error Storage.InitData)
-    | OnIdentitySaved (ConcurrentTask.Response Idb.Error ())
+    | OnIdentitySaved Identity (ConcurrentTask.Response Idb.Error ())
       -- Page form messages
     | NewGroupMsg Page.NewGroup.Msg
     | ImportSplitwiseMsg Page.ImportSplitwise.Msg
@@ -578,42 +578,13 @@ update msg model =
         OnIdentityGenerated (ConcurrentTask.Success identity) ->
             case model.appState of
                 Ready readyData ->
-                    let
-                        updatedReadyData : Storage.InitData
-                        updatedReadyData =
-                            { readyData | identity = Just identity }
-
-                        ( guardedRoute, navCmd_ ) =
-                            applyRouteGuard (Just identity) model.route
-
-                        ( runner, taskCmd ) =
-                            ( model.runner, Cmd.none )
-                                |> Runner.andRun OnIdentitySaved
-                                    (Storage.saveIdentity readyData.db identity)
-
-                        modelWithIdentity : Model
-                        modelWithIdentity =
-                            { model
-                                | appState = Ready updatedReadyData
-                                , generatingIdentity = False
-                                , route = guardedRoute
-                                , runner = runner
-                                , groupModel = Page.Group.setIdentity identity.publicKeyHash identity.previousDeviceIds model.groupModel
-                            }
-                    in
-                    -- If on a Join route, re-trigger the join fetch now that we have identity
-                    case model.route of
-                        GroupRoute groupId (Join invite) ->
-                            handleJoinRoute modelWithIdentity model.route groupId invite.key (Just identity)
-                                |> Update.addCmd (Cmd.batch [ navCmd_, taskCmd ])
-
-                        Welcome ->
-                            ( modelWithIdentity
-                            , Cmd.batch [ navCmd_, taskCmd, Navigation.pushUrl navCmd (Route.toAppUrl Home) ]
-                            )
-
-                        _ ->
-                            ( modelWithIdentity, Cmd.batch [ navCmd_, taskCmd ] )
+                    -- Nothing adopts this identity until it is on disk. Everything
+                    -- signed under a key that never persisted — groups included —
+                    -- is unrecoverable after a reload.
+                    ( model.runner, Cmd.none )
+                        |> Runner.andRun (OnIdentitySaved identity)
+                            (Storage.saveIdentity readyData.db identity)
+                        |> Tuple.mapFirst (\r -> { model | runner = r })
 
                 _ ->
                     ( { model | generatingIdentity = False }, Cmd.none )
@@ -689,11 +660,43 @@ update msg model =
             , Cmd.none
             )
 
-        OnIdentitySaved (ConcurrentTask.Success _) ->
-            ( model, Cmd.none )
+        OnIdentitySaved identity (ConcurrentTask.Success _) ->
+            case model.appState of
+                Ready readyData ->
+                    let
+                        ( guardedRoute, navCmd_ ) =
+                            applyRouteGuard (Just identity) model.route
 
-        OnIdentitySaved _ ->
-            ( logError ErrorLog.IdentitySource ErrorLog.Err "Unexpected error saving identity" model, Cmd.none )
+                        modelWithIdentity : Model
+                        modelWithIdentity =
+                            { model
+                                | appState = Ready { readyData | identity = Just identity }
+                                , generatingIdentity = False
+                                , route = guardedRoute
+                                , groupModel = Page.Group.setIdentity identity.publicKeyHash identity.previousDeviceIds model.groupModel
+                            }
+                    in
+                    -- If on a Join route, re-trigger the join fetch now that we have identity
+                    case model.route of
+                        GroupRoute groupId (Join invite) ->
+                            handleJoinRoute modelWithIdentity model.route groupId invite.key (Just identity)
+                                |> Update.addCmd navCmd_
+
+                        Welcome ->
+                            ( modelWithIdentity
+                            , Cmd.batch [ navCmd_, Navigation.pushUrl navCmd (Route.toAppUrl Home) ]
+                            )
+
+                        _ ->
+                            ( modelWithIdentity, navCmd_ )
+
+                _ ->
+                    ( { model | generatingIdentity = False }, Cmd.none )
+
+        OnIdentitySaved _ _ ->
+            addToast Toast.Error
+                (T.toastIdentitySaveError model.i18n)
+                (logError ErrorLog.IdentitySource ErrorLog.Err "Failed to save identity" { model | generatingIdentity = False })
 
         -- Page form messages
         NewGroupMsg subMsg ->
