@@ -2470,7 +2470,7 @@ viewGroupPage config groupView loaded model =
 
         ( NewEntry, Just _ ) ->
             noOverlay <|
-                pageShell config (T.shellNewEntry config.i18n) <|
+                pageShell config (Page.Group.NewEntry.pageTitle config.i18n model.newEntryModel) <|
                     Page.Group.NewEntry.view config.i18n
                         (GroupState.activeMembers loaded.groupState)
                         (config.toMsg << NewEntryMsg)
@@ -2479,7 +2479,7 @@ viewGroupPage config groupView loaded model =
         ( EditEntry entryId, Just _ ) ->
             if Dict.member entryId loaded.groupState.entries then
                 noOverlay <|
-                    pageShell config (T.editEntryTitle config.i18n) <|
+                    pageShell config (Page.Group.NewEntry.pageTitle config.i18n model.newEntryModel) <|
                         Page.Group.NewEntry.view config.i18n
                             (GroupState.activeMembers loaded.groupState)
                             (config.toMsg << NewEntryMsg)

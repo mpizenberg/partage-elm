@@ -337,7 +337,7 @@ view i18n config maybeUserRootId today (Model data) state =
             Ui.el [ Ui.paddingXY 0 Theme.spacing.lg ] <|
                 UI.Components.btnPrimary
                     (UI.Components.spaLinkAttrs config.newEntryHref config.onNewEntry)
-                    { label = T.newEntryTitle i18n, onPress = config.onNewEntry }
+                    { label = T.newEntryTitle "expense" i18n, onPress = config.onNewEntry }
 
           else
             Ui.none

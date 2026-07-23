@@ -3,9 +3,8 @@ shellNewGroup = Nouveau groupe
 shellJoinGroup = Rejoindre
 homeJoinLinkPlaceholder = Coller le lien d'invitation ici
 homeJoinLinkInvalid = Ce lien d'invitation n'est pas valide.
-shellNewEntry = Nouvelle dépense
 tabBalance = Soldes
-tabEntries = Entrées
+tabEntries = Dépenses
 tabMembers = Groupe
 tabActivity = Activité
 loadingApp = Chargement...
@@ -32,7 +31,7 @@ welcomeScreenshotActivity = Journal d'activité complet avec historique des modi
 welcomeScreenshotInvite = Inviter par lien ou QR code
 welcomeScreenshotPending = Capture à venir
 welcomeDetailsTitle = Les détails qui comptent
-welcomeDetailFilter = Filtrer les entrées par personne, catégorie, devise ou date
+welcomeDetailFilter = Filtrer par personne, catégorie, devise ou date
 welcomeDetailBackup = Export CSV gratuit et sauvegarde JSON complète
 welcomeDetailPaymentMethods = Raccourcis de remboursement : IBAN, Wero, Lydia, Revolut, PayPal, Venmo, BTC, ADA
 welcomeDetailMembers = Membres virtuels, fusion, retrait sans perte d'historique
@@ -193,7 +192,11 @@ fieldRequired = Ce champ est requis.
 fieldInvalidFormat = Format invalide.
 fieldInvalidEmail = Adresse email invalide.
 fieldInvalidUrl = Doit commencer par http:// ou https://
-newEntryTitle = Nouvelle dépense
+newEntryTitle = { $kind ->
+    [transfer] Nouveau transfert
+    [income] Nouveau revenu
+   *[expense] Nouvelle dépense
+ }
 newEntryKindExpense = Dépense
 newEntryKindTransfer = Transfert
 newEntryKindIncome = Revenu
@@ -271,7 +274,11 @@ entriesSummary = { $count ->
  }
 entriesGroupTotal = Total du groupe
 entriesYourSpending = Tes dépenses
-editEntryTitle = Modifier l'écriture
+editEntryTitle = { $kind ->
+    [transfer] Modifier le transfert
+    [income] Modifier le revenu
+   *[expense] Modifier la dépense
+ }
 editEntrySubmit = Enregistrer
 memberDetailTypeReal = Membre réel
 memberDetailTypeVirtual = Membre virtuel
@@ -284,7 +291,7 @@ memberMergeButton = Fusionner avec un autre membre
 memberLinkSelfButton = C'est moi — lier mon appareil
 mergePageTitle = Fusionner des membres
 mergeStep1Title = Choisir le membre à conserver
-mergeStep1Subtitle = Toutes les dépenses et préférences de remboursement du membre retiré seront déplacées vers le membre conservé.
+mergeStep1Subtitle = Toutes les entrées et préférences de remboursement du membre retiré seront déplacées vers le membre conservé.
 mergeStep1PickerLabel = Membres
 mergeNoOtherMember = Il n'y a aucun autre membre vers lequel fusionner.
 mergeRetiringLabel = Retiré
@@ -307,7 +314,7 @@ mergePrefsUpdatedCount = { $count } préférences de remboursement seront mises 
 mergeSelfTransferTag = sera supprimé
 mergePrefUpdated = Préférences de remboursement de { $owner }
 mergeRetireLine = { $source } sera retiré (fusionné dans { $target }).
-mergeAuthorshipNote = L'auteur d'origine de chaque dépense est conservé. Seuls les payeurs et bénéficiaires sont modifiés.
+mergeAuthorshipNote = L'auteur d'origine de chaque entrée est conservé. Seuls les payeurs et bénéficiaires sont modifiés.
 mergeIrreversibleWarning = Cela créera { $count } événements. Revenir en arrière ne sera possible qu’en éditant manuellement les changements nécessaires.
 mergeNothingToRewrite = Rien à réécrire. { $source } sera simplement retiré.
 mergeConfirmHint = Rentre { $name } pour confirmer.

@@ -3,9 +3,8 @@ shellNewGroup = New Group
 shellJoinGroup = Join Group
 homeJoinLinkPlaceholder = Paste join link here
 homeJoinLinkInvalid = That doesn't look like a valid invite link.
-shellNewEntry = New Entry
 tabBalance = Balance
-tabEntries = Entries
+tabEntries = Expenses
 tabMembers = Group
 tabActivity = Activity
 loadingApp = Loading...
@@ -32,11 +31,11 @@ welcomeScreenshotActivity = Full activity log with edit history
 welcomeScreenshotInvite = Invite by link or QR code
 welcomeScreenshotPending = Screenshot coming soon
 welcomeDetailsTitle = Details that matter
-welcomeDetailFilter = Filter entries by person, category, currency, or date
+welcomeDetailFilter = Filter by person, category, currency, or date
 welcomeDetailBackup = Free CSV export and full JSON backup
 welcomeDetailPaymentMethods = Payment hints: IBAN, Wero, Lydia, Revolut, PayPal, Venmo, BTC, ADA
 welcomeDetailMembers = Add virtual members, merge them, retire without losing history
-welcomeDetailEntryTypes = Expenses, transfers, and income as first-class entries
+welcomeDetailEntryTypes = Expenses, transfers, and income, all first-class
 welcomeDetailHistory = Soft-delete with restore and field-level edit history
 welcomeDetailPreferences = Per-member settle-up preferences
 welcomeDetailNoLimits = No daily limits, no caps, no ads
@@ -54,9 +53,9 @@ aboutTitle = About Partage
 aboutDescription = A fully encrypted, local-first bill-splitting application for trusted groups.
 balanceTabTitle = Balances
 balanceYourBalance = YOUR BALANCE
-balanceNoEntries = No expenses yet. Add your first entry to see balances here.
+balanceNoEntries = No expenses yet. Add your first expense to see balances here.
 balanceSettlementPlan = Settlement Plan
-entriesNone = No entries yet.
+entriesNone = No expenses yet.
 membersTabTitle = Members
 membersDeparted = Departed
 activityComingSoon = Activity feed coming soon.
@@ -193,7 +192,11 @@ fieldRequired = This field is required.
 fieldInvalidFormat = Invalid format.
 fieldInvalidEmail = Invalid email address.
 fieldInvalidUrl = Must start with http:// or https://
-newEntryTitle = New Entry
+newEntryTitle = { $kind ->
+    [transfer] New Transfer
+    [income] New Income
+   *[expense] New Expense
+ }
 newEntryKindExpense = Expense
 newEntryKindTransfer = Transfer
 newEntryKindIncome = Income
@@ -236,7 +239,7 @@ newEntryNotesPlaceholder = Optional notes...
 newEntryAttachmentsLabel = Attachments
 newEntryAttachmentLabelPlaceholder = Label (optional)
 newEntryAttachmentsHint = Take a photo, share it to your cloud storage, then copy the link and paste it here.
-newEntrySubmit = Add Entry
+newEntrySubmit = Add
 newEntrySplitExact = Exact amounts
 newEntryExactMismatch = Exact amounts must add up to the total.
 newEntryNoBeneficiaries = Select at least one member.
@@ -270,7 +273,11 @@ entriesSummary = { $count ->
  }
 entriesGroupTotal = Group total
 entriesYourSpending = Your spending
-editEntryTitle = Edit Entry
+editEntryTitle = { $kind ->
+    [transfer] Edit Transfer
+    [income] Edit Income
+   *[expense] Edit Expense
+ }
 editEntrySubmit = Save Changes
 memberDetailTypeReal = Real member
 memberDetailTypeVirtual = Virtual member
@@ -283,7 +290,7 @@ memberMergeButton = Merge with another member
 memberLinkSelfButton = This is me — link my device
 mergePageTitle = Merge members
 mergeStep1Title = Pick the member to keep
-mergeStep1Subtitle = All expenses and settlement preferences from the retiring member will move to the kept member.
+mergeStep1Subtitle = All entries and settlement preferences from the retiring member will move to the kept member.
 mergeStep1PickerLabel = Members
 mergeNoOtherMember = There is no other member to merge into.
 mergeRetiringLabel = Retiring
@@ -536,7 +543,7 @@ notificationsEnabled = Enabled
 notificationsDisabled = Disabled
 groupConfigButton = Group Config
 initErrorTitle = Error
-entriesSearchLabel = Search entries
+entriesSearchLabel = Search
 memberJoinedDate = Joined { $date }
 monthJanuary = January
 monthFebruary = February

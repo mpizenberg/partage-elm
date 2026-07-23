@@ -1,4 +1,4 @@
-module Page.Group.NewEntry exposing (Model, init, initDuplicate, initFromEntry, outputToKind, update, view)
+module Page.Group.NewEntry exposing (Model, init, initDuplicate, initFromEntry, outputToKind, pageTitle, update, view)
 
 import Dict exposing (Dict)
 import Domain.Currency as Currency
@@ -923,6 +923,30 @@ modeBtn config =
         [ UI.Components.featherIcon 16 config.icon
         , Ui.text config.label
         ]
+
+
+{-| Title for the entry form page, reflecting create-vs-edit and the entry kind.
+-}
+pageTitle : I18n -> Model -> String
+pageTitle i18n (Model data) =
+    if data.isEditing then
+        T.editEntryTitle (kindParam data.kind) i18n
+
+    else
+        T.newEntryTitle (kindParam data.kind) i18n
+
+
+kindParam : EntryKind -> String
+kindParam kind =
+    case kind of
+        ExpenseKind ->
+            "expense"
+
+        TransferKind ->
+            "transfer"
+
+        IncomeKind ->
+            "income"
 
 
 {-| Convert a validated Output into an Entry.Kind for storage.
