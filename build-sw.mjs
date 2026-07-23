@@ -37,7 +37,7 @@ writeFileSync(
     precacheUrls,
     navigationFallback: "/",
     networkFirstPrefixes: [],
-    networkOnlyPrefixes: ["/api/"],
+    networkOnlyPrefixes: ["/api/", "/admin"],
     transformNotification: readFileSync(
       "public/sw-transform-notification.js",
       "utf-8",
