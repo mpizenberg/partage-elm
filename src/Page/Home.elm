@@ -315,7 +315,8 @@ notifSection i18n ctx =
                         (Ui.text (T.homeNotificationsHint i18n))
                     , UI.Components.iconButton
                         [ Ui.background Theme.primary.tint ]
-                        { onPress = ctx.onEnableNotifications
+                        { label = T.homeEnableNotificationsLabel i18n
+                        , onPress = ctx.onEnableNotifications
                         , size = toFloat Theme.sizing.sm
                         , icon = FeatherIcons.bell
                         }

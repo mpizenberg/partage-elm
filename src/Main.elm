@@ -61,6 +61,7 @@ import UI.Theme as Theme
 import UI.Toast as Toast
 import UUID
 import Ui
+import Ui.Accessibility
 import Ui.Font
 import Ui.Input
 import Ui.Responsive
@@ -1814,6 +1815,7 @@ view model =
                         ]
                         (Ui.el
                             [ Ui.Input.button (NavigateTo Route.ErrorLog)
+                            , Ui.Accessibility.description (T.errorLogOpenLabel model.i18n)
                             , Ui.pointer
                             , Ui.background Theme.danger.solid
                             , Ui.rounded 8

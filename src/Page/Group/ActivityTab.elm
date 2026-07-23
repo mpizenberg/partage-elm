@@ -116,7 +116,7 @@ view i18n config (Model data) activities =
             List.filter (Filter.matchesActivityFilters data.filters) activities
     in
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
-        [ filterToggleRow config.toMsg data.showFilters data.filters
+        [ filterToggleRow i18n config.toMsg data.showFilters data.filters
         , if data.showFilters then
             filterPanel i18n config data.filters
 
@@ -139,11 +139,12 @@ view i18n config (Model data) activities =
         ]
 
 
-filterToggleRow : (Msg -> msg) -> Bool -> ActivityFilters -> Ui.Element msg
-filterToggleRow toMsg showFilters filters =
+filterToggleRow : I18n -> (Msg -> msg) -> Bool -> ActivityFilters -> Ui.Element msg
+filterToggleRow i18n toMsg showFilters filters =
     Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY, Ui.width Ui.fill ]
         [ UI.Components.filterToggleButton
-            { showFilters = showFilters
+            { label = T.filterToggleLabel i18n
+            , showFilters = showFilters
             , hasActiveFilters = Filter.isActivityFilterActive filters
             , onPress = toMsg ToggleFilters
             }

@@ -2665,7 +2665,7 @@ viewTabs config maybeUserRootId loaded model =
             case maybeUserRootId of
                 Just _ ->
                     UI.Components.fab
-                        { label = "+"
+                        { label = T.groupAddEntryLabel config.i18n
                         , href = Route.toPath (GroupRoute config.groupId NewEntry)
                         , onPress = config.toMsg (RequestNavigation NewEntry)
                         }

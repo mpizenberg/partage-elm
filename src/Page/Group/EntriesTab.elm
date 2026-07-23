@@ -471,7 +471,8 @@ searchFilterRow i18n showFilters hasActiveFilters query =
                 }
             ]
         , UI.Components.filterToggleButton
-            { showFilters = showFilters
+            { label = T.filterToggleLabel i18n
+            , showFilters = showFilters
             , hasActiveFilters = hasActiveFilters
             , onPress = ToggleFilters
             }

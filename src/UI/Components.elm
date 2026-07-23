@@ -60,6 +60,7 @@ module UI.Components exposing
 -}
 
 import FeatherIcons
+import Html.Attributes
 import Json.Decode
 import Pwa
 import Svg
@@ -67,6 +68,7 @@ import Svg.Attributes
 import Translations as T exposing (I18n, Language(..))
 import UI.Theme as Theme
 import Ui
+import Ui.Accessibility
 import Ui.Anim as Anim
 import Ui.Events
 import Ui.Font
@@ -331,11 +333,17 @@ spaLinkAttrs href onPress =
 
 
 {-| Icon-only button (square, rounded, with a single Feather icon).
+
+`label` names the action for screen readers: an SVG shape contributes nothing to
+the accessible name. It describes what the button does ("Add expense"), never the
+symbol it draws.
+
 -}
-iconButton : List (Ui.Attribute msg) -> { onPress : msg, size : Float, icon : FeatherIcons.Icon } -> Ui.Element msg
+iconButton : List (Ui.Attribute msg) -> { label : String, onPress : msg, size : Float, icon : FeatherIcons.Icon } -> Ui.Element msg
 iconButton attrs config =
     Ui.el
         (Ui.Input.button config.onPress
+            :: Ui.Accessibility.description config.label
             :: Ui.width (Ui.px Theme.sizing.lg)
             :: Ui.height (Ui.px Theme.sizing.lg)
             :: Ui.rounded Theme.radius.md
@@ -634,7 +642,7 @@ toggleMemberBtn config =
 
 {-| Filter toggle button with active/inactive styling.
 -}
-filterToggleButton : { showFilters : Bool, hasActiveFilters : Bool, onPress : msg } -> Ui.Element msg
+filterToggleButton : { label : String, showFilters : Bool, hasActiveFilters : Bool, onPress : msg } -> Ui.Element msg
 filterToggleButton config =
     let
         ( bg, border, fontColor ) =
@@ -647,13 +655,22 @@ filterToggleButton config =
     iconButton
         [ Ui.alignRight
         , Ui.border Theme.border
+        , Ui.htmlAttribute
+            (Html.Attributes.attribute "aria-expanded"
+                (if config.showFilters then
+                    "true"
+
+                 else
+                    "false"
+                )
+            )
         , Anim.transition (Anim.ms 200)
             [ Anim.backgroundColor bg
             , Anim.borderColor border
             , Anim.fontColor fontColor
             ]
         ]
-        { onPress = config.onPress, size = 18, icon = FeatherIcons.filter }
+        { label = config.label, onPress = config.onPress, size = 18, icon = FeatherIcons.filter }
 
 
 {-| Filter section with uppercase label and wrapped row of chips.
@@ -726,7 +743,8 @@ fab : { label : String, href : String, onPress : msg } -> Ui.Element msg
 fab config =
     Ui.el
         (spaLinkAttrs config.href config.onPress
-            ++ [ Ui.width (Ui.px Theme.sizing.xl)
+            ++ [ Ui.Accessibility.description config.label
+               , Ui.width (Ui.px Theme.sizing.xl)
                , Ui.height (Ui.px Theme.sizing.xl)
                , Ui.rounded Theme.radius.lg
                , Ui.background Theme.primary.solid

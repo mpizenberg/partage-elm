@@ -317,7 +317,7 @@ pairView i18n source target =
                 , member = source
                 , tone = ToneRetiring
                 }
-            , swapButton
+            , swapButton i18n
             , memberSlot
                 { label = T.mergeKeepingLabel i18n
                 , member = target
@@ -332,8 +332,8 @@ pairView i18n source target =
         ]
 
 
-swapButton : Ui.Element Msg
-swapButton =
+swapButton : I18n -> Ui.Element Msg
+swapButton i18n =
     UI.Components.iconButton
         [ Ui.background Theme.base.bgSubtle
         , Ui.border Theme.border
@@ -341,7 +341,8 @@ swapButton =
         , Ui.width Ui.shrink
         , Ui.width (Ui.px Theme.sizing.lg)
         ]
-        { onPress = Swap
+        { label = T.mergeSwapButton i18n
+        , onPress = Swap
         , size = 18
         , icon = FeatherIcons.repeat
         }
