@@ -304,7 +304,6 @@ type Output
     | ShowToast Toast.ToastLevel String
     | UpdateGroupSummary Group.Summary
     | RemoveGroup Group.Id Member.Id
-    | UpdateCurrentTime Time.Posix
     | ToggleGroupNotification Group.Id Member.Id
     | UnsubscribeGroupNotification Group.Id Member.Id
     | RequestServerGroupCreation Group.Id Symmetric.Key
@@ -945,7 +944,7 @@ update config msg model =
                     in
                     ( syncModel
                     , Cmd.batch [ summaryCmd, syncCmd ]
-                    , NavigateTo (GroupRoute groupId (Tab MembersTab)) :: UpdateCurrentTime envelope.clientTimestamp :: summaryOutputs
+                    , NavigateTo (GroupRoute groupId (Tab MembersTab)) :: summaryOutputs
                     )
 
                 Nothing ->
@@ -1876,7 +1875,7 @@ applyAndSync config groupId envelope model =
                     ( syncModel, syncCmd ) =
                         triggerSyncInternal config groupId summaryModel
                 in
-                ( syncModel, Cmd.batch [ summaryCmd, syncCmd ], UpdateCurrentTime envelope.clientTimestamp :: summaryOutputs )
+                ( syncModel, Cmd.batch [ summaryCmd, syncCmd ], summaryOutputs )
             )
 
 

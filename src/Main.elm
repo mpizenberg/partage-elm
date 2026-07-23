@@ -3,6 +3,7 @@ port module Main exposing (AppState, Flags, Model, Msg, main)
 import AppUrl
 import Browser
 import Browser.Dom
+import Browser.Events
 import ConcurrentTask exposing (ConcurrentTask)
 import ConcurrentTask.Http as Http
 import Dict
@@ -159,6 +160,8 @@ type Msg
     | GenerateIdentity
     | OnTaskProgress ( TaskRunner Msg, Cmd Msg )
     | GotTimeZone Time.Zone
+    | GotCurrentTime Time.Posix
+    | VisibilityChanged Browser.Events.Visibility
     | OnIdentityGenerated (ConcurrentTask.Response WebCrypto.Error Identity)
     | OnInitComplete (ConcurrentTask.Response Idb.Error Storage.InitData)
     | OnIdentitySaved (ConcurrentTask.Response Idb.Error ())
@@ -204,7 +207,20 @@ subscriptions model =
         , onClipboardCopy (\() -> ClipboardCopied)
         , onServerEvent (GroupMsg << Page.Group.serverEventMsg)
         , PwaState.subscription pwaIn PwaStateMsg
+        , Time.every clockIntervalMs GotCurrentTime
+        , Browser.Events.onVisibilityChange VisibilityChanged
         ]
+
+
+{-| How often the wall clock is refreshed. Every date-derived value (entry date
+defaults, `createdAt`, event ids, relative "last synced" text) reads
+`model.currentTime`, so this bounds how stale any of them can be. A minute keeps
+the cost in the same range as the group sync tick; the visibility handler covers
+the case that actually bites, resuming an installed app the next day.
+-}
+clockIntervalMs : Float
+clockIntervalMs =
+    60 * 1000
 
 
 {-| Application entry point.
@@ -403,9 +419,6 @@ processGroupOutputs model groupCmd outputs =
                                 _ ->
                                     ( m, cmds )
 
-                        Page.Group.UpdateCurrentTime time ->
-                            ( { m | currentTime = time }, cmds )
-
                         Page.Group.ToggleGroupNotification groupId memberRootId ->
                             let
                                 ( toggledModel, toggleCmd ) =
@@ -474,6 +487,20 @@ update msg model =
 
         GotTimeZone zone ->
             ( { model | timeZone = zone }, Cmd.none )
+
+        GotCurrentTime time ->
+            ( { model | currentTime = time }, Cmd.none )
+
+        VisibilityChanged visibility ->
+            case visibility of
+                Browser.Events.Visible ->
+                    -- Timers stop while the page is frozen, so a resumed session
+                    -- would keep serving the clock it slept with until the next
+                    -- tick — long enough to date an entry with yesterday.
+                    ( model, Task.perform GotCurrentTime Time.now )
+
+                Browser.Events.Hidden ->
+                    ( model, Cmd.none )
 
         OnNavEvent event ->
             let
