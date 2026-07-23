@@ -1,560 +1,119 @@
-# Storage Growth & Performance Report
+# Storage & Performance
 
-Exploration of how to prevent unbounded storage growth and improve
-performance, on the relay (server) side and the client (user) side.
-Written against the 2026-07 codebase; follows up review finding 21
-("server storage only ever grows"). Revised 2026-07-20 to incorporate
-the compromised-member threat model (§3), which reshapes the deletion
-and compaction designs.
+How Partage keeps storage bounded and the two hot paths fast, and why that
+lets it run on a free or near-free budget. The normative rules live in
+[SPECIFICATION.md](SPECIFICATION.md) — retention and quotas in
+[§14.8](SPECIFICATION.md#148-relay-retention--storage-limits), compaction in
+[§14.9](SPECIFICATION.md#149-log-consolidation-compaction), the threat model
+they answer to in [§11.7](SPECIFICATION.md#117-compromised-member-threat-model).
+This document is the rationale and the numbers behind them.
 
-## TL;DR
+## Guiding principle
 
-- Organic per-group growth is tiny (~1–2 MB/year for a _busy_ group).
-  The real growth drivers are **dead groups that are never deleted**,
-  **duplicate records from sync-retry bugs**, and **abuse** (no quota).
-  Those are all fixable with cheap, non-breaking server changes.
-- **Threat model (§3): a compromised member must not be able to destroy
-  or rewrite group history.** Read access is unpreventable (they hold
-  the key), and the relay cannot tell members apart (shared bearer
-  secret), so destructive relay operations must be _absent_,
-  _consensus-gated via multi-signed events_, or at worst _detectable
-  and healable_ by honest members' full replicas. This kills the
-  member-triggered delete route and adds a signature quorum to
-  compaction. Detection gets a user-facing stage, and the endgame for a
-  confirmed compromise is **migration to a fresh group with a new key**.
-- The only lever that caps growth for long-lived active groups is
-  **compaction**. A _state-snapshot_ scheme would be breaking and
-  trust-damaging — rejected. A _log-consolidation_ scheme (re-batch raw
-  envelopes into a few large records) is **compatible with the existing
-  pull/merge protocol** and preserves signatures, audit trail, and
-  activity feed. Under §3 it is gated by a **multi-signed compaction
-  manifest** (all involved authors, ≥50% floor) recorded in the log
-  itself, and anchored for new joiners by an attestation carried in the
-  invite link.
-- On the client, storage is not the problem — **durability and replay
-  cost** are. The browser may evict the local event log (the actual
-  system of record) unless persistence is granted — now requested at
-  first group creation/join (§6). Every group open replays the full log
-  from scratch; a computed-state cache is planned pending measurement
-  (§8, spec §14.6).
-- Guiding principle: **the relay is a cache; the clients are the system
-  of record.** Every member holds the full log and the key, so honest
-  members can restore a purged or truncated relay copy by re-pushing.
-  This licenses an aggressive server retention policy — provided
-  clients are made durable (persist + export nudges) and the protocol
-  gains a cursor reset-and-heal flow. Under §3 the replicas do double
-  duty: they are also what makes history destruction non-permanent.
+**The relay is a cache; the clients are the system of record.** Every member
+holds the full event log and the group key, so an honest member can restore a
+purged or truncated relay copy by re-pushing. Storage on the relay is therefore
+a *cost to bound*, never data to protect — which licenses an aggressive
+retention policy the moment clients are made durable ([§14.1](SPECIFICATION.md#141-local-first-architecture)).
 
-## 1. Where bytes live today
+## The budget it has to fit
 
-**Server.** One row per pushed record: `{seq, group_id, actor_id, data,
-compressed, created}` (`packages/relay/src/storage-do.js`,
-`storage-sqlite.js`). `data` is a base64 AES-256-GCM blob containing a
-gzip-compressed _batch_ of one or more event envelopes (batch flush
-every ~100 s, on explicit actions, and on reconnect). Records are
-capped at 1 MB; pull is paginated at 200 records/page. There is no
-delete route, no TTL, no quota, no vacuum. Cloudflare: one Durable
-Object per group (billed for storage, requests, duration); self-host:
-one SQLite file for all groups (WAL, never shrinks without VACUUM).
+Partage is meant to be hostable for near-zero cost: one Cloudflare Worker
+(one SQLite Durable Object per group, WebSockets hibernating while idle — this
+typically fits the free plan), or a single self-hosted container with one
+SQLite file. Both bill for stored bytes, requests, and compute. So the design
+must keep *aggregate* storage and request volume inside those limits
+indefinitely — not just today, but after years of accumulated groups.
 
-**Client.** IndexedDB, one row per event (`{id, groupId, env}` with the
-raw envelope JSON stored verbatim for forward compatibility), plus
-group summaries, keys, cursors, unpushed-id sets
-(`src/Infra/Storage.elm`). Opening a group loads all rows and replays
-from `GroupState.empty` (`src/Main.elm:814`); sync merges apply
-incrementally with a conflict-triggered full rebuild
-(`src/GroupOps.elm`).
+## What honest usage costs
 
-## 2. Growth model — what actually grows
+Order of magnitude: an entry envelope with short wire keys is ~400–800 bytes
+of JSON; encryption + base64 adds ~40%, gzip takes most of it back — call it
+**~0.5–1 KB per event on the relay**. A group logging 1000 entries a year
+with edits lands around **1–2 MB/year**; a typical group sits well below that.
+Client-side, IndexedDB quotas are measured in gigabytes, so local *space* is a
+non-issue for years. Honest usage never threatens the budget.
 
-Order-of-magnitude estimate (unmeasured; see §8 on benchmarking): an
-entry envelope with short wire keys is ~400–800 bytes of JSON;
-encryption + base64 adds ~40%, gzip takes most of that back. Call it
-**~0.5–1 KB per event on the server**. A group logging 1 000 entries a
-year with edits lands around 1–2 MB/year. A typical group is far below
-that. Honest usage will not fill anyone's disk for years.
+## What actually grows — and the lever for each
 
-What actually drives growth:
+The cost drivers are not organic usage; they are failure modes:
 
-1. **Dead groups.** A group deleted on every client still occupies its
-   rows (and its Durable Object) forever. This is the only driver that
-   scales with _total groups ever created_ rather than with activity.
-2. **Duplicate records.** Finding 11 (pull failure after successful
-   push → re-push) and the S3 note about switching groups mid-sync
-   (skipped `postSyncTasks` → cursor/unpushed not persisted) both
-   re-push already-stored batches. Clients dedup by event id on pull,
-   so the duplicates are invisible — and immortal — on the server.
-3. **Abuse.** The bearer secret is derived from the group key, PoW
-   gates only group _creation_, and there is no per-group quota: any
-   key holder can append 1 MB records in a loop. Separately, on
-   Cloudflare any unauthenticated request to a fresh group id
-   materializes a billable DO (S3 relay-hardening note).
-4. **Record fragmentation** (a size multiplier, not a driver): in
-   trickle usage every entry flushes as its own record, so record count
-   ≈ event count, and per-record gzip cannot exploit cross-event
-   redundancy (repeated member ids, keys, JSON structure). One-by-one
-   records compress far worse than the same history re-compressed as a
-   whole — this is what consolidation (§5) reclaims.
+| Driver | Why it grows | Lever |
+|---|---|---|
+| **Dead groups** | A group deleted on every client still occupies its rows (and its Durable Object) forever. The one driver that scales with *total groups ever created*, not activity. | **Inactivity TTL** ([§14.8](SPECIFICATION.md#148-relay-retention--storage-limits)): purge groups idle past the retention window (12 months). A purge needs *every* member absent, so no single member can starve a live group. |
+| **Duplicate records** | A push whose response is lost, or a group switched mid-sync, re-pushes an already-stored batch. Clients dedup on pull, so duplicates are invisible — and immortal — on the relay. | **Idempotent append** ([§14.3](SPECIFICATION.md#143-synchronization)): each push carries a content-derived `recordId` (`UNIQUE(group_id, record_id)`); a replay returns the existing `seq` instead of inserting. |
+| **Abuse** | The bearer secret is derived from the group key and there is no natural per-group quota: any key holder can append 1 MB records in a loop. | **Absolute quota** (50 MB / 50 000 records) + **monthly rate cap** (~5 MB/group/month) ([§14.8](SPECIFICATION.md#148-relay-retention--storage-limits)). The quota bounds total damage; the rate cap bounds its *speed*, buying months of detection time. Honest groups sit orders of magnitude below both. |
+| **Record fragmentation** | In trickle usage every entry flushes as its own record, so record count ≈ event count and per-record gzip can't exploit cross-event redundancy (repeated ids, keys, JSON shape). A compression multiplier, not a driver. | **Compaction** (below). |
 
-Client-side, the same organic curve applies against browser quotas
-measured in gigabytes: local _space_ is a non-issue for years. The
-client problems are durability (§6) and time (§7), not bytes.
+## Compaction: the only lever for long-lived active groups
 
-## 3. Threat model: the compromised member
+A busy group that never goes idle is the one case the TTL can't help. Compaction
+([§14.9](SPECIFICATION.md#149-log-consolidation-compaction)) **re-batches, never
+summarizes**: a member holding the full verified log re-packs the same raw
+envelopes — verbatim — sorted, into large batches (each bounded to 512 KiB of
+plaintext, the same bound normal push flushes use, so the encrypted record stays
+under the relay's 1 MB cap), gzipped as a whole. Record count collapses from
+~event-count to ~history-size, whole-history gzip exploits the cross-event
+redundancy per-record gzip couldn't, and joins shrink from ⌈records/200⌉
+sequential pages to a handful.
 
-Assume any member's device — and therefore their signing key and the
-group key — may fall into hostile hands. Read access is then
-unpreventable: the attacker holds the group key, and key immutability
-means there is no rotation. The line to defend is the **history**:
-destroying or rewriting it must be impossible, or require member
-consensus, or — where the relay's design makes prevention impossible —
-be reliably detectable and healable by honest members.
+State snapshots were rejected for this: they would be signed by one member
+(forgeable history), erase the audit trail, and break the wire format. Because
+deleting relay records is destruction-shaped and the relay cannot tell members
+apart, compaction is **consensus-gated in the log** and verified by clients, not
+the server — the mechanism, quorum, and manifest form are specified in
+[§14.9](SPECIFICATION.md#149-log-consolidation-compaction).
 
-**The constraint that shapes everything: the relay authenticates the
-group, not the member.** The bearer secret is derived from the group
-key, so every key holder looks identical to the server, and signatures
-live inside encrypted blobs the server cannot read. Server-side
-member-level authorization or quorum verification is therefore
-impossible without per-member server identities — a membership-metadata
-leak the zero-knowledge design deliberately avoids, rejected here for
-the same reason. Consequence: **any destructive relay operation is
-available to every key holder or to nobody.** That yields a three-rung
-enforcement ladder, best first:
+## Durability: what makes aggressive retention safe
 
-1. **Impossible** — don't ship the operation (no member-triggered
-   delete route, §4.2).
-2. **Consensus-gated, client-verified** — the operation is authorized
-   by multi-signed events in the log; clients, not the server, verify
-   the quorum (compaction, §5.2).
-3. **Detect and heal** — for relay-level truncation that cannot be
-   prevented (a bearer holder abusing the compact route, a hostile
-   relay): honest members hold full replicas, notice missing events,
-   and re-push them (§4.4).
+The retention policy only works because honest replicas survive. The browser may
+silently evict IndexedDB under storage pressure — combined with a TTL purge,
+that is real data loss. So the app calls `navigator.storage.persist()` once at
+first group creation/join and surfaces the result on the About screen
+([§14.1](SPECIFICATION.md#141-local-first-architecture)). Export is the offline
+backup; once retention is announced, long-idle groups get an archival-export
+nudge. Local log *pruning* is deliberately not done: the log is the audit trail,
+the activity feed, and the healing source, and local space is a non-issue.
 
-**What already holds up.** The existing design is a strong baseline:
+## Performance: the two hot paths
 
-- Per-event signatures + key immutability mean a compromised member
-  cannot forge other members' events or take over their identities;
-  forged events are dropped at pull, join-fetch, and import time.
-- The event vocabulary is append-only and non-destructive: entries are
-  tombstoned and restorable (`EntryDeleted`/`EntryUndeleted`), members
-  are retired, never erased (`MemberRetired`/`MemberUnretired`)
-  (`src/Domain/Event.elm:65-76`). Content vandalism — junk entries,
-  renames, mass tombstoning — remains possible, but it is signed,
-  attributed in the activity feed, and reversible from the log. That is
-  the model working as intended; this report defends the log itself.
-- The merge never deletes: pulled data can only _add_ to the local log
-  (dedup by id, `src/GroupOps.elm`). No relay response can make a
-  client discard events, so honest members' replicas are out of the
-  attacker's reach entirely.
+**Group open (the everyday path).** Every open reads all event rows,
+JSON-decodes each envelope, and replays from scratch. On-device measurement at
+10k–50k events showed this stays within interactive budget, so a persisted
+materialized-state cache is **not** warranted
+([§14.6](SPECIFICATION.md#146-incremental-sync-optimization)) — it would remain a
+fallback-guarded optimization only if replay time ever regresses. The sync fast
+path (incremental apply, conflict-triggered rebuild) already avoids replay on
+the common case.
 
-**Gaps the rest of this report must close:**
+**First join (the first-impression path).** A join fetches ⌈records/200⌉
+*sequential* pages, decrypts and de-gzips each record, then verifies every
+signature — WebCrypto ECDSA verify is ~0.1–1 ms each, so this dominates at large
+histories (multi-second for 10k events), not replay. Compaction is the lever:
+fewer round trips and better compression at the same verify cost. If
+verification still dominates, chunk it behind a progress indicator rather than
+weakening it.
 
-- _Healing is not implemented._ `unpushedIds` tracks only never-pushed
-  events; re-pushing already-pushed events the relay has lost has no
-  code path today. Rung 3 needs one (§4.4).
-- _Joining is the weak moment._ A new joiner has no prior replica to
-  compare against, so truncation is invisible to them. Their trust
-  anchor must ride the invite link (§5.2).
-- _Detection is silent and compromise has no exit._ Closed by
-  surface-and-migrate, below.
-
-**Respond: surface and migrate.** Today the client silently drops
-forged envelopes and would silently heal truncation — correct behavior,
-but the user never learns their group is under attack. Each detection
-signal — envelopes rejected by signature verification, an unexpected
-`resetCursor` (§4.4), a compaction-manifest mismatch (§5.2), an
-abnormal data-rate burst (§4.5) — should feed a per-group tamper
-indicator surfaced in the UI. And because read access is unpreventable
-and keys never rotate, the endgame for a confirmed compromise is
-**migration**: create a fresh group with a new key, seed it from the
-local verified history, and re-invite members out-of-band; the old
-group is abandoned to the TTL (§4.3). The existing export→import path
-(which re-verifies every event) does most of the work. Seeding the new
-group from a state snapshot is acceptable here despite §5.1's
-rejection: a migration is a new group, human-initiated, with membership
-re-established out-of-band — none of the trust properties §5.1 protects
-are at stake.
-
-## 4. Server: cheap, non-breaking measures
-
-Ordered by value/effort. All are additive protocol changes.
-
-### 4.1 Idempotent append
-
-**Implemented.** Client sends a `recordId` with each push — derived from
-the batch content (SHA-256 of the sorted event ids) rather than a fresh
-UUID, so the id survives the cross-sync retry that actually causes
-duplicates; server adds `UNIQUE(group_id, record_id)` and, on conflict,
-returns the existing `seq` instead of inserting. This closes the storage
-side of finding 11 and every future retry bug in one stroke: pushes
-become retry-safe by construction instead of by careful client
-bookkeeping. Old clients that omit the field keep today's behavior.
-
-### 4.2 No member-triggered deletion
-
-An earlier draft proposed `DELETE /api/groups/:id` behind the bearer
-secret. **Rejected under §3**: the server cannot tell members apart, so
-the route hands every key holder — including a compromised one — a
-one-request destroy button for the relay copy. Recoverability (honest
-members re-push, §4.4) softens the blow but does not excuse the route:
-recovery requires an honest member to sync, and anyone joining in the
-gap gets nothing.
-
-Dead-group cleanup comes from the inactivity TTL alone (§4.3), which no
-single member can trigger. Client UX stays as it is today: "remove from
-this device" is the only deletion a member gets; the relay copy dies by
-unanimous neglect. If a true "delete for everyone" is ever wanted
-(e.g. a privacy-motivated group dissolution), it must be consensus-
-gated exactly like compaction — a multi-signed deletion manifest in the
-log, verified by clients — and is out of scope here.
-
-### 4.3 Inactivity retention (TTL)
-
-Track `last_access` per group (update at most once per day on any
-authenticated request — one cheap conditional write). Purge groups idle
-longer than a policy window (proposal: from 12 months for small groups, to 1 month for big ones).
-Make sure that there is no automatic sync happening when a group is not opened.
-On Cloudflare, deleting all DO storage drops that group's storage bill to zero; on
-Node, pair periodic purges with `VACUUM` (or `auto_vacuum=INCREMENTAL`)
+**Relay.** Cap pull pages by bytes as well as by 200 records (a 1 MB record cap
+alone lets a page reach 200 MB). Indexes are already right (`events(group_id,
+seq)` on Node, per-group DB keyed by `seq` on Cloudflare); DO WebSockets
+hibernate; `VACUUM` (or `auto_vacuum=INCREMENTAL`) reclaims space after purges,
 since SQLite files never shrink on their own.
 
-This is compatible with §3: a purge requires _every_ member to stay
-away for the whole window — any honest member's sync renews it — so a
-compromised member cannot starve a live group into deletion; they can
-only keep it alive. Resurrection after a purge is re-register (PoW +
-create, the same machinery that already registers groups created
-offline) followed by re-push.
+## Measuring, not guessing
 
-The policy must be stated in the spec and surfaced in-app ("the relay
-keeps idle groups for 12 months; any sync renews") _before_ it is
-enforced — it changes what users should expect from the relay and
-motivates the client durability work in §6.
+Every timing figure here is an estimate until measured on real data. The
+per-group **diagnostics page** ([§19](SPECIFICATION.md#193-screen-descriptions),
+developer-mode only) is the instrument: event count and per-type histogram,
+plaintext vs. stored size, whole-log recompression (exactly what compaction
+would reclaim), sync/quota state, storage-persistence status, and a live timed
+replay and full-log verify. Only the client can compute any of it — the relay
+sees ciphertext.
 
-### 4.4 Cursor reset-and-heal
+## Keeping the budget observable
 
-TTL purges (§4.3), resurrection, and compaction (§5.2) create one
-dangerous state: a re-created group starts `seq` back at 1, while
-surviving clients hold cursors from the previous incarnation.
-`since=<big cursor>` then returns nothing forever — silent permanent
-desync. The fix is one additive rule: **when `since` exceeds the
-group's current max seq, the pull response says so** (e.g.
-`{resetCursor: true}`); the client resets its cursor to 0, re-pulls,
-and dedups by event id (which the merge in `src/GroupOps.elm` already
-does). **Implemented** — reserved pre-launch, so every deployed client
-handles it by the time any TTL or compaction feature ships.
-
-**Heal** is the second half, and it is what makes §3's rung 3 real:
-after a reset re-pull completes, the client diffs the relay's content
-against its local log and **re-pushes every event the relay lacks**.
-This needs a new code path — `unpushedIds` only tracks never-pushed
-events (`src/GroupOps.elm`, `src/Infra/Storage.elm`), so the diff must
-come from comparing the full local log against the re-pulled set. With
-it, every honest member is a repair agent: relay truncation — a purge,
-a botched resurrection, an unsanctioned compaction, a hostile relay —
-converges back to full history as soon as one honest member syncs.
-
-Note the safety asymmetry: the reset path is purely additive on the
-client (the merge never deletes), so neither a malicious member nor a
-malicious relay can use a forged `resetCursor` to make clients lose
-data — the worst case is a redundant re-pull.
-
-### 4.5 Per-group quota and monthly rate limit
-
-Maintain `record_count` and `total_bytes` on the groups row (updated on
-append/compact — no `SUM` scans). Reject appends over a generous cap
-(proposal: 50 MB or 50 000 records) with a distinct error code the
-client can surface ("group is full — compact or export"). With §4.1 and
-§5 in place, honest groups should never hit it; the cap exists purely
-to bound abuse. Complements the S3 relay-hardening items (PoW checked
-in the worker before DO materialization, groupId shape validation,
-throw on missing `POW_SECRET`).
-
-Add a second, time-based cap: **at most ~10 MB of new data per group
-per month**. The absolute quota bounds total damage; the rate cap
-bounds damage _speed_ — a compromised member can no longer fill a group
-to its quota in one session, buying months of detection time (§3) at
-zero cost to honest use, which sits orders of magnitude below the cap
-(§2). Tracking is one `bytes_this_window, window_start` pair on the
-groups row. The compact route (§5.2) must be accounted **net** — bytes
-inserted minus bytes deleted, floored at zero — not exempted: an
-exemption would let a spammer tunnel unlimited data through compact
-calls with a tiny `uptoSeq`, while net accounting makes legitimate
-consolidation free (it is net-negative) and gives spam nothing. Heal
-re-pushes (§4.4) fit comfortably: a full realistic history is well
-under one month's allowance. Over-limit appends get their own error
-code with a retry-after hint.
-
-§3 residual, accepted: a compromised member can still fill the quota to
-block honest appends — denial of service, not destruction — though the
-rate cap stretches this over months. Spam is either
-attributable (validly signed events name their author) or inert
-(undecryptable/unverifiable records are dropped by every client and,
-being absent from verified local logs, are squeezed out by the next
-consensus compaction, §5.2). Honest members' local operation is
-unaffected; only sync is blocked until the group compacts or moves.
-
-## 5. Server: compaction for long-lived groups
-
-The only measure that bends the curve for _active_ groups. Two designs
-were considered; they differ radically in cost.
-
-### 5.1 Rejected: state snapshots
-
-An encrypted materialized `GroupState` at seq N, with events ≤ N
-dropped. Rejected because it (a) breaks the signature model — the
-snapshot is signed only by the snapshotting member, making history
-forgeable by one member: under §3 this is precisely the capability we
-must not create; (b) erases the audit trail and activity feed for new
-joiners, contradicting spec §8.4's immutability guarantee; (c) is a
-breaking wire change — old clients would see an Unknown event and
-silently show an empty group. Every problem finding 21 warned about,
-confirmed.
-
-### 5.2 Proposed: consensus-gated log consolidation
-
-Re-batch, don't summarize. A client that holds the full verified log
-authors consolidation records: the same raw envelopes (verbatim, per
-§11.3b), sorted, packed into a few large batches (up to the existing
-1 MB record cap), gzipped as a whole, encrypted with the same group
-key. A new route applies it transactionally:
-
-```
-POST /api/groups/:id/compact   { uptoSeq, records: [...] }
-```
-
-The server, in one transaction: verifies `uptoSeq` ≤ current max seq,
-deletes records with `seq ≤ uptoSeq`, appends the consolidation
-records (they get fresh, _higher_ seqs — AUTOINCREMENT never reuses).
-Concurrent pushes are unaffected (their seqs are > `uptoSeq` or they
-serialize after the transaction). If two members race to compact, the
-loser's `uptoSeq` may now cover deleted rows — reject with 409, client
-re-pulls and retries or gives up.
-
-**Consensus gate (required by §3).** Because the compact route deletes
-relay records, it is destruction-shaped, and the server cannot restrict
-who calls it (§3). So authorization moves into the log, where clients
-_can_ verify it:
-
-- Two new event types. `CompactionProposed { uptoEventId, eventCount,
-manifestHash }` — the manifest hash commits to the exact envelope
-  contents of the sorted history up to the boundary (canonical form
-  pinned in spec §14.9; hash envelope bytes, not just event ids, so an
-  author cannot swap their own event's content behind a reused id).
-  `CompactionApproved { proposalId }` — a co-signature. Both are
-  ordinary signed events: replicated, auditable, and preserved verbatim
-  by the consolidation they authorize.
-- **Approval is computed, not asked.** An honest client, on sync,
-  recomputes the manifest from its _own_ local log and auto-signs an
-  approval only on exact match. No UI, no human judgment — the
-  signature attests "my replica agrees the history up to this boundary
-  is exactly this". A compromised proposer who omits or alters anything
-  gets no honest signatures, because no honest replica matches.
-- **Quorum: every involved actor should co-sign — every member who
-  authored at least one event in the compacted range — with a floor of
-  strictly more than 50% of them** to keep retired members, lost
-  devices, and long-offline users from blocking forever. The proposer's
-  signature is always required. The 50% denominator counts non-retired
-  involved actors (ratified in spec §14.9).
-- Only once the quorum is present in the log may any member call the
-  compact route, and the consolidation records must contain the
-  proposal and approval events themselves, so the authorization travels
-  with the result.
-
-Active groups reach quorum in days (approvals ride the ~100 s batch
-flush of normal syncs); the compaction itself is not urgent, so the
-latency is free.
-
-**Verification and enforcement.** The server never sees the quorum —
-enforcement is client-side, per §3's ladder:
-
-- _Existing members_ need no protection: consolidation or its abuse
-  never deletes anything locally, and an unsanctioned compaction that
-  dropped events is undone by the first honest member's heal re-push
-  (§4.4).
-- _New joiners_ verify the received history against the latest
-  compaction manifest in it: recompute the hash over the received
-  pre-boundary envelopes, check the quorum signatures (signer keys are
-  in the log; envelope-level key introduction per §11.3 keeps them
-  available). Mismatch or missing quorum → treat the history as
-  untrusted and say so.
-- The joiner's blind spot — a truncator would omit the manifest too,
-  and a joiner cannot distinguish "truncated" from "never compacted" —
-  is closed by the **invite attestation**: the invite link fragment
-  (today `/join/:groupId#key`, `src/Route.elm`) additionally carries
-  the inviter's current head attestation (latest event count + manifest
-  or head hash — a few dozen URL characters). The joiner requires the
-  fetched history to reach it. An attestation from the attacker proves
-  nothing, but an inviter is trusted by the joiner by construction —
-  that trust is what an invitation _is_.
-
-Why this is _not_ a breaking change:
-
-- **Record shape is unchanged.** Records are already multi-event
-  batches; a consolidation record is just a big batch. Old clients
-  decrypt and decode it with zero new code.
-- **Cursors survive.** New seqs are strictly greater than all old seqs,
-  so no live cursor exceeds max seq. A client whose cursor predates
-  `uptoSeq` re-pulls history it already has, and the existing
-  dedup-by-event-id merge drops it — one-time bandwidth cost, no
-  correctness cost.
-- **Nothing about replay changes.** Same envelopes, same signatures,
-  same sort order, same state, same activity feed. The proposal and
-  approval events are unknown types to old clients, which store them
-  verbatim and skip them (§11.3b) — they affect no state.
-- The invite-fragment extension does need a **pre-launch format
-  reservation**: today the join flow treats the entire fragment as the
-  key (`src/Route.elm:70`), so a fragment like `key.attestation` would
-  break old joiners' key parsing. Define the fragment grammar now as
-  `key[.extra]` (parsers split on the separator and ignore the tail)
-  so attestations can be added later without breaking deployed clients.
-
-What it buys: record count collapses from ~event-count to ~history-size
-/ 1 MB, whole-history gzip exploits cross-event redundancy (estimated
-5–10×, to be measured), joins go from ⌈records/200⌉ sequential pages to
-a handful, and §4.5's byte quota becomes reachable only by abuse.
-
-When to compact: client-side heuristic on sync — e.g. when pull
-metadata (add `recordCount` to the pull response, additive) shows
-records ≫ what the local history would consolidate to. Any member may
-propose; quorum gates execution; the 409 rule serializes racers.
-
-Ship it after §4.1 (idempotency makes compact-then-crash-then-retry
-trivial) and behind the §4.4 reservation and a spec section covering
-the quorum rule and manifest canonical form.
-
-## 6. Client: durability before size
-
-The analyses in §3 and §4 lean on "clients are the system of record" —
-honest replicas are both the backup _and_ the tamper resistance: every
-durable honest copy is a check on history rewriting. Today that record
-is evictable:
-
-- **`navigator.storage.persist()` — implemented.** Under storage
-  pressure the browser may silently wipe IndexedDB — combined with a
-  server TTL purge, that is real data loss; combined with §3, fewer
-  replicas means weaker healing. The app now requests persistence at
-  first group creation/join and surfaces the status (including the
-  denied case) in the About/usage screen, via sibling handlers to the
-  `usageStats:estimateStorage` app-glue task (`public/index.js`); the
-  vendored `elm-indexeddb` package needed no change.
-- **Export is the offline backup** and already exists; once a retention
-  policy is announced (§4.3), nudge archival exports for long-idle
-  groups ("this group hasn't synced in 10 months — download a backup").
-- Local _pruning_ of the event log was considered and rejected: the log
-  is the audit trail, the activity feed, and now the healing source
-  (§4.4); local space is a non-issue (§2); and divergent local pruning
-  would complicate export/merge for zero user-visible benefit.
-
-## 7. Performance
-
-### 7.1 Client: group open (the everyday path)
-
-Every group open reads all event rows, JSON-decodes each envelope, and
-replays from scratch (`src/Main.elm:814`). At 10k events this is likely
-hundreds of ms of IDB reads + decode + sort + fold — noticeable, not
-fatal, and linear in history. Two mitigations, in order:
-
-1. **Persist the materialized state** keyed by a log fingerprint (count
-   - max sort key, or last event id): on open, load state + verify
-     fingerprint; on mismatch or decode failure, fall back to full
-     replay. The cache is pure derived data — always safe to discard.
-     Spec §14.6 now marks this as planned, pending measurement (§8).
-     Cost: encoders/decoders for `GroupState` including activities;
-     moderate, mechanical.
-2. Store/load events pre-sorted to skip the `sortEvents` pass on load —
-   only worth it if measurement (§8) shows the sort matters; the merge
-   path already maintains sorted order in memory.
-
-The sync fast path (incremental apply with conflict-triggered rebuild,
-`src/GroupOps.elm:600-660`) is already the right design; no change.
-
-### 7.2 Client: first join (the first-impression path)
-
-Join fetches ⌈records/200⌉ _sequential_ pages, decrypts and
-de-gzips each record, verifies every signature (WebCrypto ECDSA verify
-is ~0.1–1 ms each → multi-second for 10k events), then replays.
-Consolidation (§5.2) is the big lever: few round trips, better
-compression, same verify cost. Its manifest check adds one hash pass
-over the received envelopes plus a handful of signature checks —
-negligible next to per-event verification. If verification dominates
-after that, chunk it with a progress indicator rather than weakening
-it.
-
-### 7.3 Server
-
-- **Byte-based page limit.** 200 records/page with a 1 MB record cap
-  means a page can theoretically reach 200 MB. Cap pages at ~2–4 MB of
-  payload as well as 200 records. Additive; matters more once
-  consolidation makes big records common.
-- Indexes are already right (`events(group_id, seq)` on Node; per-group
-  DB with `seq` PK on Cloudflare). DO WebSockets already hibernate.
-- `VACUUM` after purges on Node (§4.3); DO storage shrinks on delete by
-  itself.
-- Base64-in-JSON inflates transfer ~33%; a binary endpoint (CBOR/raw)
-  was considered and rejected as not worth a second wire format at
-  these sizes.
-
-## 8. Measure before optimizing — the diagnostics page
-
-All client timing figures above are estimates. Before implementing
-§7.1: generate a synthetic 10k–50k event group (a small script through
-the existing event codecs), and time (a) IDB load, (b) decode, (c)
-sort+replay, (d) join verify, on a mid-range phone. This decides
-whether the state cache is a launch-window task or a someday task, and
-gives the §4.5 quota numbers an empirical basis.
-
-The natural home for these measurements is a **hidden diagnostics
-page**, enabled by a dev-mode toggle in settings, for developers and
-power users alike. Only the client can compute any of it — the relay
-sees ciphertext. Per group:
-
-- event count and per-type histogram;
-- average/median plaintext envelope size, and plaintext vs. stored
-  size;
-- compression potential: re-compress the whole log with
-  `CompressionStream` and compare against the sum of per-record sizes —
-  this measures exactly what consolidation (§5.2) would reclaim;
-- sync cursor, unpushed count, and server `recordCount` from the pull
-  metadata (§5.2);
-- `navigator.storage.estimate()` and persistence status (§6);
-- a timed full replay (the §7.1 benchmark, live).
-
-Read-only, so cheap and safe. It doubles as the surface where a power
-user notices bloat and triggers a compaction proposal, and where §3's
-tamper indicator gets its detailed view.
-
-## 9. Recommended sequence
-
-Pre-launch (small, and they gate everything else):
-
-1. **§4.4 cursor-reset reservation** — the one server field that must
-   precede any deployed client population.
-2. **§5.2 invite-fragment grammar** (`key[.extra]`) — same logic on the
-   client side: deployed parsers must tolerate the attestation before
-   it can ever be sent.
-3. **§4.1 idempotent append** — also closes finding 11's storage leak.
-4. **Spec updates**: the §3 threat model, enforcement ladder, and
-   migration endgame; retention-policy contract (§4.3); quota and
-   monthly rate limit (§4.5); compaction design with quorum rule and
-   manifest canonical form (§5.2); fix or implement §14.6's state-cache
-   claim.
-5. **§6 `navigator.storage.persist()`** — one small JS + UX change.
-
-Post-launch, safe at any time, in value order:
-
-6. **§8 diagnostics page** — first, because it is the measurement
-   instrument for everything below.
-7. §4.3 TTL purge + resurrection flow.
-8. §4.4 heal re-push (diff local log vs. relay on reset).
-9. §4.5 quota + monthly rate limit (+ S3 relay hardening batch).
-10. §5.2 consensus consolidation: proposal/approval events, auto-sign
-    on sync, compact route (net-accounted per §4.5), joiner manifest
-    verification, invite attestation.
-11. §3 compromise surfacing + migration flow — early signals (rejected
-    envelopes) can ship any time; the full signal set lands with 8–10.
-12. §7.1 client state cache, informed by §8 measurements.
-
-Explicitly rejected: state snapshots (§5.1), a member-triggered delete
-route (§4.2), per-member server identities (§3 — membership-metadata
-leak), local log pruning (§6), binary wire format (§7.3).
+The per-user cost estimate on the About screen
+([§18.2](SPECIFICATION.md#182-cost-estimation)) and the operator dashboard's
+run-rate ([Appendix C.7](SPECIFICATION.md#c7-operator-observability-self-host))
+turn the budget into a number the user and the operator can watch. The levers
+above are what keep that number inside the free tier as groups accumulate.

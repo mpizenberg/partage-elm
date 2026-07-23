@@ -585,7 +585,7 @@ The application supports 10 currencies:
 | BRL | R$ | Brazilian Real | 2 decimal places |
 | ARS | AR$ | Argentine Peso | 2 decimal places |
 
-**Currency precision** determines the number of fractional digits when formatting amounts and the interpretation of the smallest unit. For example, 1050 cents in EUR formats as "10.50 EUR", while 1050 in JPY formats as "1050 ¥" (no fractional part). All amounts are stored internally as integers in the currency's **smallest unit** (cents for most currencies, whole units for JPY).
+**Currency precision** determines the number of fractional digits when formatting amounts and the interpretation of the smallest unit. For example, 1050 cents in EUR formats as "€10.50", while 1050 in JPY formats as "¥1,050" (no fractional part). All amounts are stored internally as integers in the currency's **smallest unit** (cents for most currencies, whole units for JPY).
 
 ### 10.2 Currency Behavior
 
@@ -603,7 +603,7 @@ The application supports 10 currencies:
 
 ### 10.4 Currency Formatting
 
-- Amounts are formatted with the currency symbol and **locale-aware decimal and grouping separators** (e.g., `€10.50` / `1,234.56` in English, `10,50 €` / `1 234,56` in French) and the currency-specific precision (e.g., `¥1050` with no fractional part).
+- Amounts are formatted with the currency symbol and **locale-aware decimal and grouping separators** (e.g., `€10.50` / `1,234.56` in English, `10,50 €` / `1 234,56` in French) and the currency-specific precision (e.g., `¥1,050` with no fractional part).
 - Formatting is done in Elm against per-language locale config; no dependency on `Intl.NumberFormat`.
 
 ---
@@ -986,7 +986,7 @@ server retention policy, and makes honest replicas the tamper resistance of
   per group and rejects appends beyond a generous cap (**50 MB or 50 000
   records**) with a distinct error the client surfaces ("group is full —
   compact or export"). Honest groups sit orders of magnitude below it.
-- **Monthly rate limit.** At most **~10 MB of new data per group per month**
+- **Monthly rate limit.** At most **~5 MB of new data per group per month**
   (tracked as `bytes_this_window`/`window_start` on the group row), rejected
   with a distinct error and a retry-after hint. The quota bounds total abuse
   damage; the rate cap bounds its *speed*, buying months of detection time.
@@ -1007,8 +1007,10 @@ batch, so record count approaches event count and per-record gzip cannot
 exploit cross-event redundancy. Consolidation **re-batches, never
 summarizes**: a member holding the full verified log re-packs the same raw
 envelopes — verbatim, per [11.3b](#113b-forward-compatibility) — sorted, into
-a few large batches (up to the 1 MB record cap), gzipped as a whole and
-encrypted with the group key. Replay, signatures, audit trail, and activity
+large batches (each bounded to 512 KiB of plaintext, the same bound normal push
+flushes use per [14.4](#144-event-compression--batching), so the encrypted
+record stays under the relay's 1 MB cap), gzipped as a whole and encrypted with
+the group key. Replay, signatures, audit trail, and activity
 feed are unchanged; state snapshots were rejected (one-member-signed history,
 audit-trail erasure, breaking wire change).
 
@@ -1218,7 +1220,7 @@ Spanish support is **deferred** (see Appendix B) and is not currently selectable
 
 | Format | Description |
 |---|---|
-| Currency | Symbol prefix with precision-aware decimal formatting (e.g., "€10.50", "¥1050"). |
+| Currency | Symbol prefix with precision-aware decimal formatting (e.g., "€10.50", "¥1,050"). |
 | Date | Short and long date formats with localized month names. |
 | Numbers | Currency-appropriate decimal separators. |
 | Date grouping | Labels like "Today", "Yesterday", month names in the active language. |
@@ -1279,6 +1281,7 @@ The app estimates the user's share of infrastructure costs:
 | `/groups/:groupId/members/:sourceId/merge` | Member merge - pick target | Yes |
 | `/groups/:groupId/members/:sourceId/merge/:targetId` | Member merge - preview & confirm | Yes |
 | `/groups/:groupId/settings` | Edit group metadata | Yes |
+| `/groups/:groupId/diagnostics` | Group view - Diagnostics (developer mode) | Yes |
 | `/about` | About & usage stats | No |
 | `/error-log` | In-memory error log & debug report | No |
 | `*` (catch-all) | NotFound screen | - |
@@ -1304,8 +1307,9 @@ The app estimates the user's share of infrastructure costs:
 | **EditMemberMetadataScreen** | Form to edit a member's display name, contact info, and payment methods. For the current user, also exposes **Pre-fill from saved profile** and **Save as my profile** actions to share metadata across groups. Prevents duplicate names on rename. |
 | **MergeMemberScreen** | Two-step page to merge one member into another (pick target, then preview effects and type-to-confirm). |
 | **EditGroupMetadataScreen** | Form to edit group name, subtitle, description, links, and archive state. |
-| **AboutScreen** | App information, motivation, privacy info, usage statistics, language switcher, and links to GitHub, Sponsors, and Discussions (each opening in a new tab). |
+| **AboutScreen** | App information, motivation, privacy info, usage statistics, language switcher, a **developer-mode toggle** (reveals the per-group diagnostics page), and links to GitHub, Sponsors, and Discussions (each opening in a new tab). |
 | **ErrorLogScreen** | Displays in-memory error entries collected during the session. Provides **Copy** and **Share** buttons to send a debug report (via the Web Share API when available). |
+| **DiagnosticsScreen** | Hidden per-group diagnostics (developer mode only): event count and per-type histogram, plaintext vs. stored size and whole-log compression potential, sync/quota state, storage-persistence status, and live timed runs of the expensive paths (IndexedDB load + decode, full-log signature verification, sort + replay). Also the detailed view for the tamper and suspicion signals ([11.7](#117-compromised-member-threat-model)). Read-only; everything is computed client-side. |
 
 ### 19.4 Tab System (GroupViewScreen)
 
@@ -1467,7 +1471,7 @@ The client handles **all** application logic:
 | **Cryptography** | Key generation (ECDSA P-256), AES-256-GCM encryption/decryption, event signing and verification, bearer-secret derivation, PoW solving. |
 | **Event sourcing** | Encoding changes as immutable events, replaying events in deterministic order (by timestamp and event ID after decryption), computing current state from the event log. |
 | **Business logic** | Entry management, member state computation, balance calculation, settlement planning, activity feed generation. |
-| **Local storage** | IndexedDB for identity, group keys, event log, computed state cache, pending events, sync cursors, and usage statistics. |
+| **Local storage** | IndexedDB for identity, group keys, event log, pending events, sync cursors, and usage statistics. |
 | **Sync management** | Pushing local events (with optional compression), pulling remote events (using the server `seq` as sync cursor), offline queue, live-update subscription handling. |
 | **Push notifications** | Sending push notifications to affected members after sync, managing subscriptions, localizing notification messages. |
 | **UI & routing** | All screens, navigation, forms, modals, i18n, PWA installation, service worker. |
