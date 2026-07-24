@@ -107,6 +107,40 @@ docker build -t partage-relay:latest -f packages/relay/Dockerfile .
 docker image save partage-relay:latest | ssh dokku@your-vps git:load-image partage partage-relay:latest
 ```
 
+### Operations and recovery (self-host)
+
+Day-2 operations for the container. The relay stores only **encrypted** events and is a cache: every client keeps its own copy and re-pushes unacknowledged events when it reconnects, so clients recover the relay's recent state by syncing.
+
+**Health.** `GET /health` returns `{"status":"ok"}` with no authentication. The image ships a Docker `HEALTHCHECK` that probes it; point any orchestrator liveness/readiness check at the same path. A single process over embedded SQLite is either serving or down, so liveness is also the readiness signal.
+
+**Shutdown and restart.** On `SIGTERM`/`SIGINT` the relay stops accepting, closes the server, closes SQLite (checkpointing the WAL), and exits `0`; if that stalls it force-exits after 10 s. Give the orchestrator at least that long to stop — `docker stop --time=15`, or compose `stop_grace_period: 15s` — so the clean path wins. Restart or redeploy at any time; in-flight clients reconnect and resync.
+
+**Backup.** SQLite runs in WAL mode, so a raw copy of `relay.db` while the relay is running can miss writes still in the `-wal` file. The simplest consistent snapshot uses the graceful shutdown above, which checkpoints the WAL, then copies the file (brief downtime; clients queue and resync):
+
+```sh
+docker stop <container>
+docker run --rm -v partage-data:/data -v "$PWD:/backup" alpine \
+  cp /data/relay.db "/backup/relay-$(date +%F).db"
+docker start <container>
+```
+
+Event content stays encrypted in the backup. (For a hot backup with no downtime, run `sqlite3 /data/relay.db ".backup …"` — the `sqlite3` CLI is not in the image, so install it or use a sidecar.)
+
+**Restore.** Stop the relay, replace the database, and delete any stale sidecar files so SQLite does not replay an old WAL onto the restored file:
+
+```sh
+docker stop <container>
+docker run --rm -v partage-data:/data -v "$PWD:/backup" alpine sh -c \
+  'cp /backup/relay-YYYY-MM-DD.db /data/relay.db && rm -f /data/relay.db-wal /data/relay.db-shm'
+docker start <container>
+```
+
+Clients re-push anything newer than the snapshot on their next sync.
+
+**Disk full.** When the volume fills, SQLite writes fail and appends are rejected with a server error; clients keep those events queued locally and retry on reconnect, so nothing is lost client-side. Relay growth is bounded — a per-group quota (50 MB / 50 000 records) plus purging of groups idle past the 12-month retention window ([§14.8](SPECIFICATION.md#148-relay-retention--storage-limits)) — and `ADMIN_STORAGE_BUDGET_BYTES` flags the [operator dashboard](#operator-dashboard-self-host) before you reach the limit. Recover by enlarging the volume or letting retention reclaim space; writes resume once there is room.
+
+**Rollback.** Redeploy the previous image by commit sha against the same volume (`dokku git:from-image partage ghcr.io/mpizenberg/partage-elm/relay:<sha>`). The relay's SQLite schema is stable across releases; when a release notes a schema change, back up first.
+
 ## Separate frontend hosting
 
 To host the frontend elsewhere (a static host, CDN, …), build it with `SERVER_URL` pointing at the relay instead:
