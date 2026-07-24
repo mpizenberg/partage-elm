@@ -19,6 +19,11 @@ import { ADMIN_PAGE } from './admin-page.js';
 import { createAdminThrottle } from './admin-throttle.js';
 
 export const PULL_PAGE_SIZE = 200;
+// A pull page is capped by bytes as well as by record count: the 1 MiB per-record
+// limit alone would let a 200-record page reach ~200 MiB and spike a joining
+// client's memory. At least one record is always returned so a lone large record
+// can still be pulled and the cursor advances.
+export const PULL_PAGE_BYTES = 4 * 1024 * 1024;
 const MAX_EVENT_DATA_BYTES = 1024 * 1024;
 const MAX_BODY_BYTES = MAX_EVENT_DATA_BYTES + 16 * 1024;
 // A compact request carries a whole consolidated history in one transaction.
@@ -242,6 +247,7 @@ export function createApp({
   powSecret,
   onAppend,
   appendLimits = DEFAULT_APPEND_LIMITS,
+  pullPageBytes = PULL_PAGE_BYTES,
   adminSecret = null,
   adminStorageBudgetBytes = null,
 }) {
@@ -348,7 +354,7 @@ export function createApp({
       return c.json({ error: 'Invalid since cursor' }, 400);
     }
     const rows = await storage.listEventsSince(c.req.param('id'), since, PULL_PAGE_SIZE + 1);
-    const hasMore = rows.length > PULL_PAGE_SIZE;
+    const moreByCount = rows.length > PULL_PAGE_SIZE;
     // The group's total record count rides along so clients can tell when the
     // relay holds far more records than a consolidated history would need —
     // the trigger heuristic for proposing a compaction.
@@ -367,8 +373,20 @@ export function createApp({
         return c.json({ events: [], hasMore: false, recordCount, groupEpoch, resetCursor: true });
       }
     }
-    const events = hasMore ? rows.slice(0, PULL_PAGE_SIZE) : rows;
-    const bytesServed = events.reduce((sum, event) => sum + event.eventData.length, 0);
+    const capped = moreByCount ? rows.slice(0, PULL_PAGE_SIZE) : rows;
+    let events = capped;
+    let bytesTruncated = false;
+    let bytesServed = 0;
+    for (let i = 0; i < capped.length; i++) {
+      bytesServed += capped[i].eventData.length;
+      if (bytesServed > pullPageBytes && i > 0) {
+        events = capped.slice(0, i);
+        bytesServed -= capped[i].eventData.length;
+        bytesTruncated = true;
+        break;
+      }
+    }
+    const hasMore = moreByCount || bytesTruncated;
     if (bytesServed > 0) {
       bump('bytes_served', bytesServed);
     }

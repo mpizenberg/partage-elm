@@ -92,6 +92,44 @@ describe('inactivity retention', () => {
   });
 });
 
+describe('byte-bounded pull', () => {
+  const TEN = '0123456789';
+
+  it('caps a page by bytes and the cursor drains the remaining records in order', async () => {
+    // Budget of 20 bytes fits two 10-byte records per page.
+    const { app } = makeApp({ pullPageBytes: 20 });
+    const { groupId, secret } = await createGroup(app);
+    for (let i = 1; i <= 5; i++) {
+      await pushEvent(app, groupId, secret, { eventData: TEN, recordId: `r${i}` });
+    }
+
+    const first = await (await pullEvents(app, groupId, secret)).json();
+    assert.equal(first.events.length, 2);
+    assert.equal(first.hasMore, true);
+
+    // Follow the cursor to completion and check nothing is dropped or reordered.
+    const seqs = first.events.map((e) => e.seq);
+    let page = first;
+    while (page.hasMore) {
+      page = await (await pullEvents(app, groupId, secret, page.events.at(-1).seq)).json();
+      assert.ok(page.events.length >= 1);
+      seqs.push(...page.events.map((e) => e.seq));
+    }
+    assert.deepEqual(seqs, [1, 2, 3, 4, 5]);
+  });
+
+  it('always returns at least one record even when it exceeds the byte budget', async () => {
+    const { app } = makeApp({ pullPageBytes: 4 });
+    const { groupId, secret } = await createGroup(app);
+    await pushEvent(app, groupId, secret, { eventData: TEN, recordId: 'r1' });
+    await pushEvent(app, groupId, secret, { eventData: TEN, recordId: 'r2' });
+
+    const page = await (await pullEvents(app, groupId, secret)).json();
+    assert.equal(page.events.length, 1);
+    assert.equal(page.hasMore, true);
+  });
+});
+
 describe('storage limits', () => {
   it('tracks record count and bytes, counting a batch once', async () => {
     const { app, storage } = makeApp({ appendLimits: GENEROUS });

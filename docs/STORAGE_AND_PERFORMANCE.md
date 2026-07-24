@@ -94,8 +94,9 @@ fewer round trips and better compression at the same verify cost. If
 verification still dominates, chunk it behind a progress indicator rather than
 weakening it.
 
-**Relay.** Cap pull pages by bytes as well as by 200 records (a 1 MB record cap
-alone lets a page reach 200 MB). Indexes are already right (`events(group_id,
+**Relay.** Pull pages are capped by bytes (4 MiB) as well as by 200 records — a
+1 MB record cap alone would let a page reach 200 MB — always returning at least
+one record so a lone large record still drains. Indexes are already right (`events(group_id,
 seq)` on Node, per-group DB keyed by `seq` on Cloudflare); DO WebSockets
 hibernate; `VACUUM` (or `auto_vacuum=INCREMENTAL`) reclaims space after purges,
 since SQLite files never shrink on their own.
