@@ -161,3 +161,9 @@ SERVER_URL=https://relay.example.com pnpm build:optimize
 ```
 
 The relay already answers cross-origin requests (permissive CORS), so no server-side change is needed.
+
+Set `CANONICAL_ORIGIN` to your own domain so the built `canonical` and Open Graph tags identify your instance rather than the project site (the default). Link previews and search indexing then point at the host you actually serve:
+
+```sh
+SERVER_URL=https://relay.example.com CANONICAL_ORIGIN=https://partage.example.com pnpm build:optimize
+```

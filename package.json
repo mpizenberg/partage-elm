@@ -5,7 +5,7 @@
   "scripts": {
     "i18n": "travelm-agency translations --elm_path=src/Translations.elm --inline",
     "prepare:dist": "rimraf dist && shx mkdir dist",
-    "bundle:html": "shx cp public/index.html dist/",
+    "bundle:html": "node build-html.mjs",
     "bundle:assets": "shx cp public/manifest.webmanifest public/*.svg public/icon-*.png dist/",
     "bundle:js": "esbuild public/index.js --bundle --outfile=dist/index.js --format=iife --define:__SERVER_URL__=\\\"${SERVER_URL-http://127.0.0.1:8090}\\\" --define:__PUSH_SERVER_URL__=\\\"${PUSH_SERVER_URL-}\\\"",
     "make": "elm-watch make",

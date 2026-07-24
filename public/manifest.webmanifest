@@ -3,6 +3,8 @@
   "short_name": "Partage",
   "start_url": "/groups?source=pwa",
   "display": "standalone",
+  "orientation": "portrait",
+  "categories": ["finance", "utilities"],
   "background_color": "#FFF8F0",
   "theme_color": "#E8725C",
   "icons": [
