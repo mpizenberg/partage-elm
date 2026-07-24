@@ -17,6 +17,7 @@ import Task
 import Translations as T exposing (I18n)
 import UI.Theme as Theme
 import Ui
+import Ui.Accessibility
 import Ui.Font
 
 
@@ -105,27 +106,25 @@ dismiss toastId model =
     { model | toasts = List.filter (\t -> t.id /= toastId) model.toasts }
 
 
-{-| Render the toast overlay. Returns `Ui.none` when there are no toasts.
+{-| Render the toast overlay. The container renders even with no toasts, so its
+`aria-live` region is already in the DOM when a message arrives — a region
+inserted together with its first message is not reliably announced.
 -}
 view : Model -> Ui.Element msg
 view model =
-    if List.isEmpty model.toasts then
-        Ui.none
-
-    else
-        Ui.column
-            [ Ui.spacing Theme.spacing.lg
-            , Ui.htmlAttribute (Html.Attributes.style "pointer-events" "none")
+    Ui.column
+        [ Ui.spacing Theme.spacing.lg
+        , Ui.htmlAttribute (Html.Attributes.style "pointer-events" "none")
+        ]
+        [ Ui.column
+            [ Ui.centerX
+            , Ui.spacing Theme.spacing.sm
+            , Ui.width Ui.shrink
+            , Ui.Accessibility.announce
             ]
-        <|
-            [ Ui.column
-                [ Ui.centerX
-                , Ui.spacing Theme.spacing.sm
-                , Ui.width Ui.shrink
-                ]
-                (keyframesStyle :: List.map viewToast model.toasts)
-            , tabBarSpacer
-            ]
+            (keyframesStyle :: List.map viewToast model.toasts)
+        , tabBarSpacer
+        ]
 
 
 tabBarSpacer : Ui.Element msg

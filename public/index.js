@@ -115,6 +115,10 @@ initNavigation({
   onNavEvent: app.ports.onNavEvent,
 });
 
+app.ports.setDocumentLang.subscribe((lang) => {
+  document.documentElement.lang = lang;
+});
+
 // Live-update WebSockets: one connection per group, auto-reconnecting with
 // capped backoff. Incoming messages only signal "something new" — the Elm side
 // reacts with a normal authenticated pull.

@@ -108,6 +108,9 @@ port pwaIn : (Json.Decode.Value -> msg) -> Sub msg
 port pwaOut : Json.Encode.Value -> Cmd msg
 
 
+port setDocumentLang : String -> Cmd msg
+
+
 type alias Flags =
     { initialUrl : String
     , language : String
@@ -322,7 +325,11 @@ init flags =
       , pwaState = PwaState.init { isOnline = flags.isOnline, installHint = flags.installHint }
       , errorLog = ErrorLog.empty
       }
-    , Cmd.batch [ initCmds, Task.perform GotTimeZone Time.here ]
+    , Cmd.batch
+        [ initCmds
+        , Task.perform GotTimeZone Time.here
+        , setDocumentLang (T.languageToString language)
+        ]
     )
 
 
@@ -550,6 +557,10 @@ update msg model =
                 updatedModel : Model
                 updatedModel =
                     { model | i18n = T.load lang model.i18n }
+
+                langCmd : Cmd Msg
+                langCmd =
+                    setDocumentLang (T.languageToString lang)
             in
             case model.appState of
                 -- Save the current language notifications translations to IndexedDB
@@ -563,9 +574,10 @@ update msg model =
                                 )
                             )
                         |> Tuple.mapFirst (\r -> { updatedModel | runner = r })
+                        |> Tuple.mapSecond (\c -> Cmd.batch [ c, langCmd ])
 
                 _ ->
-                    ( updatedModel, Cmd.none )
+                    ( updatedModel, langCmd )
 
         GenerateIdentity ->
             ( model.runner, Cmd.none )
