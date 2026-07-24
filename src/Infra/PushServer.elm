@@ -1,4 +1,4 @@
-module Infra.PushServer exposing (Error, NotifyContext, fetchVapidKey, notificationTranslations, notifyAffectedMembers, toggleGroupNotification, unsubscribeFromGroup)
+module Infra.PushServer exposing (Error, NotifyContext, fetchVapidKey, notificationKey, notificationTranslations, notifyAffectedMembers, templates, toggleGroupNotification, unsubscribeFromGroup)
 
 {-| HTTP wrappers for push notification server communication.
 
@@ -174,28 +174,47 @@ notifyTopic topic { title, body, url, tag, icon, templateData } =
         }
 
 
-{-| Notification translations for the service worker to resolve template keys.
+{-| Notification templates for the service worker to resolve template keys.
 Stored in IndexedDB so the SW can display localized push notifications.
 -}
 notificationTranslations : Language -> Encode.Value
 notificationTranslations lang =
-    case lang of
-        En ->
-            Encode.object
-                [ ( "new_activity", Encode.string "New activity" )
-                , ( "expense_added", Encode.string "{name} added an expense" )
-                , ( "transfer_added", Encode.string "{name} added a transfer" )
-                , ( "income_added", Encode.string "{name} added an income" )
-                , ( "member_joined", Encode.string "{name} joined the group" )
+    templates lang
+        |> Dict.toList
+        |> List.map (Tuple.mapSecond Encode.string)
+        |> Encode.object
+
+
+{-| The push-notification message templates keyed by event type, per language.
+The service worker interpolates `{name}` at display time; the English set also
+backs the fallback body sent with each notification.
+-}
+templates : Language -> Dict String String
+templates lang =
+    Dict.fromList <|
+        case lang of
+            En ->
+                [ ( "new_activity", "New activity" )
+                , ( "expense_added", "{name} added an expense" )
+                , ( "transfer_added", "{name} added a transfer" )
+                , ( "income_added", "{name} added an income" )
+                , ( "expense_modified", "{name} edited an expense" )
+                , ( "transfer_modified", "{name} edited a transfer" )
+                , ( "income_modified", "{name} edited an income" )
+                , ( "entry_deleted", "{name} deleted an entry" )
+                , ( "member_joined", "{name} joined the group" )
                 ]
 
-        Fr ->
-            Encode.object
-                [ ( "new_activity", Encode.string "Nouvelle activité" )
-                , ( "expense_added", Encode.string "{name} a ajouté une dépense" )
-                , ( "transfer_added", Encode.string "{name} a ajouté un transfert" )
-                , ( "income_added", Encode.string "{name} a ajouté un revenu" )
-                , ( "member_joined", Encode.string "{name} a rejoint le groupe" )
+            Fr ->
+                [ ( "new_activity", "Nouvelle activité" )
+                , ( "expense_added", "{name} a ajouté une dépense" )
+                , ( "transfer_added", "{name} a ajouté un transfert" )
+                , ( "income_added", "{name} a ajouté un revenu" )
+                , ( "expense_modified", "{name} a modifié une dépense" )
+                , ( "transfer_modified", "{name} a modifié un transfert" )
+                , ( "income_modified", "{name} a modifié un revenu" )
+                , ( "entry_deleted", "{name} a supprimé une entrée" )
+                , ( "member_joined", "{name} a rejoint le groupe" )
                 ]
 
 
@@ -203,46 +222,76 @@ notificationTranslations lang =
 -- Internal
 
 
-{-| Build an English fallback body and structured template data from event payloads.
-The body is a readable English string (shown if the SW transform doesn't run).
-The templateData carries the template key and params in the data field for the SW.
+{-| Build the outgoing notification body and template data for a batch of pushed
+payloads. The body is a readable English fallback (shown only if the SW can't
+read the stored translations); the template data carries the key and `{name}`
+for the SW to localize.
 -}
 notificationBodyAndData : String -> List Event.Payload -> { body : String, templateData : List ( String, Encode.Value ) }
 notificationBodyAndData actorName payloads =
     let
-        result : String -> String -> { body : String, templateData : List ( String, Encode.Value ) }
-        result key englishBody =
-            { body = englishBody
-            , templateData =
-                [ ( "key", Encode.string key )
-                , ( "name", Encode.string actorName )
-                ]
-            }
+        key : String
+        key =
+            notificationKey payloads
+
+        body : String
+        body =
+            Dict.get key (templates En)
+                |> Maybe.withDefault "New activity"
+                |> String.replace "{name}" actorName
     in
+    { body = body
+    , templateData =
+        [ ( "key", Encode.string key )
+        , ( "name", Encode.string actorName )
+        ]
+    }
+
+
+{-| The notification template key for a batch of pushed payloads. A single added,
+edited, or deleted entry, or a joining member, gets its specific key; anything
+else — a mixed batch, an undelete, a metadata change — is generic activity.
+-}
+notificationKey : List Event.Payload -> String
+notificationKey payloads =
     case payloads of
         [ EntryAdded entry ] ->
             case entry.kind of
                 Expense _ ->
-                    result "expense_added" (actorName ++ " added an expense")
+                    "expense_added"
 
                 Transfer _ ->
-                    result "transfer_added" (actorName ++ " added a transfer")
+                    "transfer_added"
 
                 Income _ ->
-                    result "income_added" (actorName ++ " added an income")
+                    "income_added"
+
+        [ EntryModified entry ] ->
+            case entry.kind of
+                Expense _ ->
+                    "expense_modified"
+
+                Transfer _ ->
+                    "transfer_modified"
+
+                Income _ ->
+                    "income_modified"
+
+        [ EntryDeleted _ ] ->
+            "entry_deleted"
 
         [ MemberCreated data ] ->
             if data.memberType == Member.Real then
-                result "member_joined" (actorName ++ " joined the group")
+                "member_joined"
 
             else
-                result "new_activity" "New activity"
+                "new_activity"
 
         [ MemberLinked _ ] ->
-            result "member_joined" (actorName ++ " joined the group")
+            "member_joined"
 
         _ ->
-            result "new_activity" "New activity"
+            "new_activity"
 
 
 {-| Extract involved member IDs from an event payload.

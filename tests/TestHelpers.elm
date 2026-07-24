@@ -1,9 +1,11 @@
 module TestHelpers exposing
     ( bootstrapMembers
     , defaultExpenseData
+    , defaultIncomeData
     , defaultTransferData
     , makeEnvelope
     , makeExpenseEntry
+    , makeIncomeEntry
     , makeTransferEntry
     )
 
@@ -79,4 +81,28 @@ makeTransferEntry : String -> Int -> Entry.TransferData -> Entry
 makeTransferEntry entryId timestamp transferData =
     { meta = makeEntryMeta entryId timestamp
     , kind = Transfer transferData
+    }
+
+
+defaultIncomeData : Entry.IncomeData
+defaultIncomeData =
+    { description = "Test income"
+    , amount = 1000
+    , currency = EUR
+    , defaultCurrencyAmount = Nothing
+    , date = { year = 2025, month = 1, day = 1 }
+    , receivedBy = "alice"
+    , beneficiaries =
+        [ ShareBeneficiary { memberId = "alice", shares = 1 }
+        , ShareBeneficiary { memberId = "bob", shares = 1 }
+        ]
+    , notes = Nothing
+    , attachments = []
+    }
+
+
+makeIncomeEntry : String -> Int -> Entry.IncomeData -> Entry
+makeIncomeEntry entryId timestamp incomeData =
+    { meta = makeEntryMeta entryId timestamp
+    , kind = Income incomeData
     }
