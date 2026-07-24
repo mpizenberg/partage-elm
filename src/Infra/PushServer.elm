@@ -2,7 +2,9 @@ module Infra.PushServer exposing (Error, NotifyContext, fetchVapidKey, notificat
 
 {-| HTTP wrappers for push notification server communication.
 
-Uses the same push server as the elm-pwa example: <https://push.dokploy.zidev.ovh>
+The push-server base URL is supplied per call from deployment configuration
+(`PUSH_SERVER_URL`); an empty value means the deployment ships without push and
+these functions are never reached.
 
 -}
 
@@ -26,15 +28,10 @@ type alias Error =
     Http.Error
 
 
-pushServerUrl : String
-pushServerUrl =
-    "https://push.dokploy.zidev.ovh"
-
-
 {-| Fetch the VAPID public key from the push server.
 -}
-fetchVapidKey : ConcurrentTask Error String
-fetchVapidKey =
+fetchVapidKey : String -> ConcurrentTask Error String
+fetchVapidKey pushServerUrl =
     Http.get
         { url = pushServerUrl ++ "/vapid-public-key"
         , headers = []
@@ -47,41 +44,43 @@ fetchVapidKey =
 Returns the new isSubscribed value (True if subscribed, False if unsubscribed).
 -}
 toggleGroupNotification :
-    { db : Idb.Db
+    { pushServerUrl : String
+    , db : Idb.Db
     , summary : Group.Summary
     , subscription : Encode.Value
     , memberRootId : Member.Id
     }
     -> ConcurrentTask Error Bool
-toggleGroupNotification { db, summary, subscription, memberRootId } =
+toggleGroupNotification { pushServerUrl, db, summary, subscription, memberRootId } =
     let
         topic : String
         topic =
             summary.id ++ "-" ++ memberRootId
     in
     if summary.isSubscribed then
-        unregister { topic = topic, subscription = subscription }
+        unregister pushServerUrl { topic = topic, subscription = subscription }
             |> ConcurrentTask.andThenDo (saveSummary db { summary | isSubscribed = False })
             |> ConcurrentTask.map (\_ -> False)
 
     else
-        register { topic = topic, subscription = subscription }
+        register pushServerUrl { topic = topic, subscription = subscription }
             |> ConcurrentTask.andThenDo (saveSummary db { summary | isSubscribed = True })
             |> ConcurrentTask.map (\_ -> True)
 
 
 {-| Unsubscribe from a group's push notification topic.
 -}
-unsubscribeFromGroup : { subscription : Encode.Value, groupId : String, memberRootId : Member.Id } -> ConcurrentTask Error ()
-unsubscribeFromGroup { subscription, groupId, memberRootId } =
-    unregister { topic = groupId ++ "-" ++ memberRootId, subscription = subscription }
+unsubscribeFromGroup : { pushServerUrl : String, subscription : Encode.Value, groupId : String, memberRootId : Member.Id } -> ConcurrentTask Error ()
+unsubscribeFromGroup { pushServerUrl, subscription, groupId, memberRootId } =
+    unregister pushServerUrl { topic = groupId ++ "-" ++ memberRootId, subscription = subscription }
 
 
 {-| Context for sending push notifications after sync.
 Only provided when there are events to push.
 -}
 type alias NotifyContext =
-    { groupId : String
+    { pushServerUrl : String
+    , groupId : String
     , groupName : String
     , actorRootId : Member.Id
     , actorName : String
@@ -95,7 +94,7 @@ Extracts involved member rootIds from each event, deduplicates, removes the acto
 and notifies each topic.
 -}
 notifyAffectedMembers : NotifyContext -> List Event.Envelope -> ConcurrentTask Error ()
-notifyAffectedMembers { groupId, groupName, actorRootId, actorName, entries, url } events =
+notifyAffectedMembers { pushServerUrl, groupId, groupName, actorRootId, actorName, entries, url } events =
     let
         entryCurrentVersion : Entry.Id -> Maybe Entry.Entry
         entryCurrentVersion rootId =
@@ -115,7 +114,8 @@ notifyAffectedMembers { groupId, groupName, actorRootId, actorName, entries, url
     affectedIds
         |> List.map
             (\memberId ->
-                notifyTopic (groupId ++ "-" ++ memberId)
+                notifyTopic pushServerUrl
+                    (groupId ++ "-" ++ memberId)
                     { title = groupName
                     , body = body
                     , tag = groupId
@@ -150,8 +150,8 @@ type alias NotificationPayload =
 Uses legacy mode to ensure the service worker handles the notification
 (required for SW-based i18n transform).
 -}
-notifyTopic : String -> NotificationPayload -> ConcurrentTask Error ()
-notifyTopic topic { title, body, url, tag, icon, templateData } =
+notifyTopic : String -> String -> NotificationPayload -> ConcurrentTask Error ()
+notifyTopic pushServerUrl topic { title, body, url, tag, icon, templateData } =
     Http.post
         { url = pushServerUrl ++ "/topics/" ++ topic ++ "/notify"
         , headers = []
@@ -383,8 +383,8 @@ beneficiaryMemberId beneficiary =
             data.memberId
 
 
-register : { topic : String, subscription : Encode.Value } -> ConcurrentTask Error ()
-register { topic, subscription } =
+register : String -> { topic : String, subscription : Encode.Value } -> ConcurrentTask Error ()
+register pushServerUrl { topic, subscription } =
     Http.post
         { url = pushServerUrl ++ "/subscriptions"
         , headers = []
@@ -400,8 +400,8 @@ register { topic, subscription } =
         }
 
 
-unregister : { topic : String, subscription : Encode.Value } -> ConcurrentTask Error ()
-unregister { topic, subscription } =
+unregister : String -> { topic : String, subscription : Encode.Value } -> ConcurrentTask Error ()
+unregister pushServerUrl { topic, subscription } =
     Http.request
         { url = pushServerUrl ++ "/subscriptions"
         , method = "DELETE"

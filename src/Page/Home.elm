@@ -25,6 +25,8 @@ type alias Context msg =
     , onExport : Group.Id -> msg
     , onExportCsv : Group.Id -> msg
     , notificationPermission : Maybe Pwa.NotificationPermission
+    , pushConfigured : Bool
+    , notificationUnavailable : Bool
     , pushActive : Bool
     , onEnableNotifications : msg
     , currentTime : Time.Posix
@@ -307,6 +309,25 @@ homeHeader i18n =
 
 notifSection : I18n -> Context msg -> Ui.Element msg
 notifSection i18n ctx =
+    if not ctx.pushConfigured then
+        Ui.none
+
+    else if ctx.notificationUnavailable then
+        Ui.column []
+            [ UI.Components.sectionLabel (T.homeNotificationsTitle i18n)
+            , Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.base.textSubtle
+                ]
+                (Ui.text (T.homeNotificationsUnavailable i18n))
+            ]
+
+    else
+        notifEnableSection i18n ctx
+
+
+notifEnableSection : I18n -> Context msg -> Ui.Element msg
+notifEnableSection i18n ctx =
     case ctx.notificationPermission of
         Just Pwa.Granted ->
             Ui.none

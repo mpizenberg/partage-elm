@@ -109,6 +109,7 @@ type alias UpdateConfig =
     { db : Idb.Db
     , identity : Identity
     , serverUrl : String
+    , pushServerUrl : Maybe String
     , currentTime : Time.Posix
     , timeZone : Time.Zone
     , route : Route
@@ -133,6 +134,7 @@ type alias ViewConfig msg =
     , groupId : Group.Id
     , isKnownGroup : Bool
     , origin : String
+    , pushConfigured : Bool
     , pushActive : Bool
     , selfProfile : Member.Metadata
     , devMode : Bool
@@ -1904,10 +1906,11 @@ triggerSyncInternal config groupId model =
 
                         notifyContext : Maybe PushServer.NotifyContext
                         notifyContext =
-                            case ( List.isEmpty unpushedEvents, currentUserRootId model loaded ) of
-                                ( False, Just actorId ) ->
+                            case ( config.pushServerUrl, List.isEmpty unpushedEvents, currentUserRootId model loaded ) of
+                                ( Just pushServerUrl, False, Just actorId ) ->
                                     Just
-                                        { groupId = groupId
+                                        { pushServerUrl = pushServerUrl
+                                        , groupId = groupId
                                         , groupName = loaded.groupState.groupMeta.name
                                         , actorRootId = actorId
                                         , actorName = GroupState.resolveMemberName loaded.groupState actorId
@@ -2776,6 +2779,7 @@ tabContent config maybeUserRootId loaded model =
                 , onToggleNotification = config.toMsg ToggleNotification
                 , isSubscribed = loaded.summary.isSubscribed
                 , isArchived = loaded.summary.isArchived
+                , pushConfigured = config.pushConfigured
                 , pushActive = config.pushActive
                 , timeZone = config.timeZone
                 , identityHash = model.identityHash

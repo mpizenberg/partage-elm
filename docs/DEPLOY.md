@@ -8,6 +8,15 @@ In both setups the frontend and the API share one origin, so build the frontend 
 SERVER_URL= pnpm build:optimize
 ```
 
+**Push notifications are opt-in and separate.** They rely on an external web-push
+service (the [elm-pwa](https://github.com/mpizenberg/elm-pwa) push server), not the
+relay. Point the build at one with `PUSH_SERVER_URL`; leave it unset and the app
+ships without push — the enable control and the per-group toggles are hidden.
+
+```sh
+SERVER_URL= PUSH_SERVER_URL=https://push.example.com pnpm build:optimize
+```
+
 > **Migrating from the PocketBase deployment:** the relay starts with an empty database — there is no server-side data migration. Group members move a group by exporting it to JSON in the app and importing it again once the new instance is live.
 
 ## Option A: Cloudflare Workers

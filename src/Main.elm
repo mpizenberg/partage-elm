@@ -117,6 +117,7 @@ type alias Flags =
     , randomSeed : List Int
     , currentTime : Int
     , serverUrl : String
+    , pushServerUrl : String
     , origin : String
     , isOnline : Bool
     , installHint : String
@@ -142,6 +143,7 @@ type alias Model =
     , joinGroupModel : Page.JoinGroup.Model
     , pendingJoinAction : Maybe { groupId : Group.Id, action : Page.JoinGroup.JoinAction, newMemberName : String }
     , serverUrl : String
+    , pushServerUrl : Maybe String
     , origin : String
     , pendingServerCreations : Set Group.Id
     , pwaState : PwaState.Model
@@ -282,6 +284,14 @@ init flags =
                 (PushServer.notificationTranslations language)
                 |> ConcurrentTask.map (\_ -> initData)
 
+        pushServerUrl : Maybe String
+        pushServerUrl =
+            if String.isEmpty flags.pushServerUrl then
+                Nothing
+
+            else
+                Just flags.pushServerUrl
+
         ( runner, initCmds ) =
             ( Runner.initTaskRunner
                 { pool = ConcurrentTask.pool
@@ -293,7 +303,7 @@ init flags =
             )
                 |> Runner.andRun OnInitComplete
                     (initStorage |> ConcurrentTask.andThen storeNotificationTranslations)
-                |> PwaState.initTask PwaStateMsg
+                |> PwaState.initTask pushServerUrl PwaStateMsg
     in
     ( { route = route
       , appState = Loading
@@ -320,9 +330,10 @@ init flags =
       , pendingJoinAction = Nothing
       , toastModel = Toast.init
       , serverUrl = flags.serverUrl
+      , pushServerUrl = pushServerUrl
       , origin = flags.origin
       , pendingServerCreations = Set.empty
-      , pwaState = PwaState.init { isOnline = flags.isOnline, installHint = flags.installHint }
+      , pwaState = PwaState.init { pushServerUrl = pushServerUrl, isOnline = flags.isOnline, installHint = flags.installHint }
       , errorLog = ErrorLog.empty
       }
     , Cmd.batch
@@ -357,6 +368,7 @@ buildGroupConfig model =
                         { db = readyData.db
                         , identity = identity
                         , serverUrl = model.serverUrl
+                        , pushServerUrl = model.pushServerUrl
                         , currentTime = model.currentTime
                         , timeZone = model.timeZone
                         , route = model.route
@@ -402,27 +414,31 @@ processGroupOutputs model groupCmd outputs =
                                     ( m, cmds )
 
                         Page.Group.RemoveGroup groupId memberRootId ->
-                            case ( m.appState, m.pwaState.pushSubscription ) of
-                                ( Ready readyData, Just subscription ) ->
+                            case m.appState of
+                                Ready readyData ->
                                     let
-                                        ( runner, unsubCmd ) =
-                                            ( m.runner, Cmd.none )
-                                                |> Runner.andRun (always NoOp)
-                                                    (PushServer.unsubscribeFromGroup
-                                                        { subscription = subscription
-                                                        , groupId = groupId
-                                                        , memberRootId = memberRootId
-                                                        }
-                                                    )
+                                        removedModel : Model
+                                        removedModel =
+                                            { m | appState = Ready { readyData | groups = Dict.remove groupId readyData.groups } }
                                     in
-                                    ( { m | runner = runner, appState = Ready { readyData | groups = Dict.remove groupId readyData.groups } }
-                                    , unsubCmd :: cmds
-                                    )
+                                    case ( m.pushServerUrl, m.pwaState.pushSubscription ) of
+                                        ( Just pushServerUrl, Just subscription ) ->
+                                            let
+                                                ( runner, unsubCmd ) =
+                                                    ( m.runner, Cmd.none )
+                                                        |> Runner.andRun (always NoOp)
+                                                            (PushServer.unsubscribeFromGroup
+                                                                { pushServerUrl = pushServerUrl
+                                                                , subscription = subscription
+                                                                , groupId = groupId
+                                                                , memberRootId = memberRootId
+                                                                }
+                                                            )
+                                            in
+                                            ( { removedModel | runner = runner }, unsubCmd :: cmds )
 
-                                ( Ready readyData, Nothing ) ->
-                                    ( { m | appState = Ready { readyData | groups = Dict.remove groupId readyData.groups } }
-                                    , cmds
-                                    )
+                                        _ ->
+                                            ( removedModel, cmds )
 
                                 _ ->
                                     ( m, cmds )
@@ -435,14 +451,15 @@ processGroupOutputs model groupCmd outputs =
                             ( toggledModel, toggleCmd :: cmds )
 
                         Page.Group.UnsubscribeGroupNotification groupId memberRootId ->
-                            case m.pwaState.pushSubscription of
-                                Just subscription ->
+                            case ( m.pushServerUrl, m.pwaState.pushSubscription ) of
+                                ( Just pushServerUrl, Just subscription ) ->
                                     let
                                         ( runner, unsubCmd ) =
                                             ( m.runner, Cmd.none )
                                                 |> Runner.andRun (always NoOp)
                                                     (PushServer.unsubscribeFromGroup
-                                                        { subscription = subscription
+                                                        { pushServerUrl = pushServerUrl
+                                                        , subscription = subscription
                                                         , groupId = groupId
                                                         , memberRootId = memberRootId
                                                         }
@@ -450,7 +467,7 @@ processGroupOutputs model groupCmd outputs =
                                     in
                                     ( { m | runner = runner }, unsubCmd :: cmds )
 
-                                Nothing ->
+                                _ ->
                                     ( m, cmds )
 
                         Page.Group.RequestServerGroupCreation groupId groupKey ->
@@ -1762,12 +1779,13 @@ handleToggleGroupNotification : Group.Id -> String -> Model -> ( Model, Cmd Msg 
 handleToggleGroupNotification groupId memberRootId model =
     case model.appState of
         Ready readyData ->
-            case ( Dict.get groupId readyData.groups, model.pwaState.pushSubscription ) of
-                ( Just summary, Just subscription ) ->
+            case ( model.pushServerUrl, Dict.get groupId readyData.groups, model.pwaState.pushSubscription ) of
+                ( Just pushServerUrl, Just summary, Just subscription ) ->
                     ( model.runner, Cmd.none )
                         |> Runner.andRun (OnToggleNotifResult groupId)
                             (PushServer.toggleGroupNotification
-                                { db = readyData.db
+                                { pushServerUrl = pushServerUrl
+                                , db = readyData.db
                                 , summary = summary
                                 , subscription = subscription
                                 , memberRootId = memberRootId
@@ -1972,6 +1990,8 @@ viewReady model readyData =
                     , onExport = ImportExportMsg << ImportExport.exportMsg
                     , onExportCsv = ImportExportMsg << ImportExport.exportCsvMsg
                     , notificationPermission = model.pwaState.notificationPermission
+                    , pushConfigured = model.pushServerUrl /= Nothing
+                    , notificationUnavailable = model.pwaState.notificationUnavailable
                     , pushActive = PwaState.pushIsActive model.pwaState
                     , onEnableNotifications = PwaStateMsg PwaState.enableNotificationsMsg
                     , currentTime = model.currentTime
@@ -2020,6 +2040,7 @@ viewReady model readyData =
                 , groupId = groupId
                 , isKnownGroup = Dict.member groupId readyData.groups
                 , origin = model.origin
+                , pushConfigured = model.pushServerUrl /= Nothing
                 , pushActive = PwaState.pushIsActive model.pwaState
                 , selfProfile = readyData.selfProfile
                 , devMode = readyData.devMode

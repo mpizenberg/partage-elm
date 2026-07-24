@@ -29,34 +29,44 @@ type alias Model =
     , installHint : Pwa.InstallHint
     , installHintDismissed : Bool
     , justInstalled : Bool
+    , pushServerUrl : Maybe String
     , notificationPermission : Maybe Pwa.NotificationPermission
     , pushSubscription : Maybe Json.Encode.Value
     , vapidKey : Maybe String
+    , notificationUnavailable : Bool
     }
 
 
-init : { isOnline : Bool, installHint : String } -> Model
+init : { pushServerUrl : Maybe String, isOnline : Bool, installHint : String } -> Model
 init flags =
     { isOnline = flags.isOnline
     , updateAvailable = False
     , installHint = Pwa.installHintFromString flags.installHint
     , installHintDismissed = False
     , justInstalled = False
+    , pushServerUrl = flags.pushServerUrl
     , notificationPermission = Nothing
     , pushSubscription = Nothing
     , vapidKey = Nothing
+    , notificationUnavailable = False
     }
 
 
-{-| Start the VAPID key fetch task. Call during app init.
+{-| Start the VAPID key fetch task, when a push server is configured. Call during
+app init; a deployment without push (`Nothing`) skips it.
 
     ( runner, initCmds )
-        |> PwaState.initTask PwaStateMsg
+        |> PwaState.initTask pushServerUrl PwaStateMsg
 
 -}
-initTask : (Msg -> msg) -> ( TaskRunner msg, Cmd msg ) -> ( TaskRunner msg, Cmd msg )
-initTask toMsg =
-    Runner.andRun (toMsg << OnVapidKeyFetched) PushServer.fetchVapidKey
+initTask : Maybe String -> (Msg -> msg) -> ( TaskRunner msg, Cmd msg ) -> ( TaskRunner msg, Cmd msg )
+initTask pushServerUrl toMsg =
+    case pushServerUrl of
+        Just url ->
+            Runner.andRun (toMsg << OnVapidKeyFetched) (PushServer.fetchVapidKey url)
+
+        Nothing ->
+            identity
 
 
 {-| Subscribe to PWA events from the JS runtime.
@@ -142,23 +152,30 @@ update pwaOut msg model =
             ( { model | justInstalled = False }, Cmd.none, [] )
 
         EnableNotifications ->
-            case model.notificationPermission of
-                Just Pwa.Granted ->
-                    case model.vapidKey of
-                        Just key ->
-                            ( model, Pwa.subscribePush pwaOut key, [] )
+            case model.pushServerUrl of
+                Nothing ->
+                    ( model, Cmd.none, [] )
 
-                        Nothing ->
-                            ( model, Cmd.none, [] )
+                Just _ ->
+                    case model.notificationPermission of
+                        Just Pwa.Granted ->
+                            case model.vapidKey of
+                                Just key ->
+                                    ( { model | notificationUnavailable = False }, Pwa.subscribePush pwaOut key, [] )
 
-                _ ->
-                    ( model, Pwa.requestNotificationPermission pwaOut, [] )
+                                Nothing ->
+                                    -- Permission is granted but the key never arrived; the
+                                    -- push server is unreachable, so say so rather than no-op.
+                                    ( { model | notificationUnavailable = True }, Cmd.none, [] )
+
+                        _ ->
+                            ( model, Pwa.requestNotificationPermission pwaOut, [] )
 
         OnVapidKeyFetched (ConcurrentTask.Success key) ->
             let
                 newModel : Model
                 newModel =
-                    { model | vapidKey = Just key }
+                    { model | vapidKey = Just key, notificationUnavailable = False }
             in
             case model.notificationPermission of
                 Just Pwa.Granted ->
@@ -168,7 +185,10 @@ update pwaOut msg model =
                     ( newModel, Cmd.none, [] )
 
         OnVapidKeyFetched _ ->
-            ( model, Cmd.none, [ LogError ErrorLog.PwaSource ErrorLog.Err "Failed to fetch VAPID key" ] )
+            ( { model | notificationUnavailable = True }
+            , Cmd.none
+            , [ LogError ErrorLog.PwaSource ErrorLog.Err "Failed to fetch VAPID key" ]
+            )
 
 
 handleEvent : (Json.Encode.Value -> Cmd msg) -> Pwa.Event -> Model -> ( Model, Cmd msg, List OutMsg )

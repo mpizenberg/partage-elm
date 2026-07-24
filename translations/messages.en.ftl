@@ -537,6 +537,7 @@ homeGoButton = Go
 homeNotificationsTitle = NOTIFICATIONS
 homeNotificationsHint = This is a global setting to activate notifications in the app. Per-group Push notifications are configured inside each group.
 homeEnableNotificationsLabel = Enable notifications
+homeNotificationsUnavailable = Notifications aren't available right now. Please try again later.
 homeYourBalance = Your balance:
 aboutLanguageTitle = Language
 newGroupVirtualMembersHint = Add the names of other members of this group.

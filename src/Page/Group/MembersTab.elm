@@ -106,6 +106,7 @@ type alias Config msg =
     , onToggleNotification : msg
     , isSubscribed : Bool
     , isArchived : Bool
+    , pushConfigured : Bool
     , pushActive : Bool
     , timeZone : Time.Zone
     , identityHash : String
@@ -138,9 +139,10 @@ view i18n config toMsg model maybeUserRootId state =
                 |> List.sortBy (\m -> String.toLower m.name)
     in
     Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill ]
-        [ -- Push Notifications (hidden while archived: the group is
-          -- unsubscribed on archive and the toggle would call the relay)
-          if config.isSynced && not config.isArchived then
+        [ -- Push Notifications (absent when the deployment ships no push server;
+          -- hidden while archived, since archive unsubscribes and the toggle
+          -- would call the relay)
+          if config.pushConfigured && config.isSynced && not config.isArchived then
             notificationRow i18n config
 
           else

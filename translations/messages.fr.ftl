@@ -540,6 +540,7 @@ homeGoButton = Go
 homeNotificationsTitle = NOTIFICATIONS
 homeNotificationsHint = Clique sur la cloche pour autoriser les notifications. Ensuite tu pourras souscrire aux notifications push indépendamment dans chaque groupe.
 homeEnableNotificationsLabel = Activer les notifications
+homeNotificationsUnavailable = Les notifications ne sont pas disponibles pour le moment. Réessaie plus tard.
 homeYourBalance = Ton solde :
 aboutLanguageTitle = Choix de la langue
 newGroupVirtualMembersHint = Ajoute les noms des autres membres de ce groupe.
