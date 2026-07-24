@@ -113,9 +113,7 @@ inserted together with its first message is not reliably announced.
 view : Model -> Ui.Element msg
 view model =
     Ui.column
-        [ Ui.spacing Theme.spacing.lg
-        , Ui.htmlAttribute (Html.Attributes.style "pointer-events" "none")
-        ]
+        [ Ui.spacing Theme.spacing.lg ]
         [ Ui.column
             [ Ui.centerX
             , Ui.spacing Theme.spacing.sm

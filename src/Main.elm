@@ -1821,8 +1821,15 @@ view model =
 
         toasts : Ui.Attribute Msg
         toasts =
+            -- inFront re-enables pointer events on its direct child, but this
+            -- overlay reaches down over the tab bar, so the wrapper stays
+            -- click-through and only the toast bubbles themselves react.
             Ui.inFront <|
-                Ui.el (Ui.alignBottom :: innerAppArea)
+                Ui.el
+                    (Ui.alignBottom
+                        :: Ui.htmlAttribute (Html.Attributes.style "pointer-events" "none")
+                        :: innerAppArea
+                    )
                     (Toast.view model.toastModel)
 
         errorLogButton : Ui.Attribute Msg
