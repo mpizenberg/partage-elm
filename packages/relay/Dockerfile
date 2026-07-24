@@ -11,4 +11,6 @@ COPY dist ./static
 ENV RELAY_DB=/data/relay.db STATIC_DIR=./static PORT=8090
 EXPOSE 8090
 VOLUME /data
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget -q -T 3 -O /dev/null "http://127.0.0.1:${PORT}/health" || exit 1
 CMD ["node", "src/server.js"]

@@ -259,6 +259,11 @@ export function createApp({
     c.header('Timing-Allow-Origin', '*');
   });
 
+  // Liveness probe for orchestration and the Docker HEALTHCHECK. The relay is a
+  // single process over embedded SQLite opened at startup, so a process that
+  // accepts requests is also ready to serve them.
+  app.get('/health', (c) => c.json({ status: 'ok' }));
+
   app.get('/api/pow/challenge', async (c) => {
     const groupId = c.req.query('groupId') ?? '';
     if (groupId === '') {

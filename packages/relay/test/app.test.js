@@ -17,6 +17,15 @@ describe('node adapter specifics', () => {
   });
 });
 
+describe('health probe', () => {
+  it('answers unauthenticated with an ok status', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/health');
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { status: 'ok' });
+  });
+});
+
 describe('inactivity retention', () => {
   it('stamps last_access at group creation', async () => {
     const { app, storage } = makeApp();
