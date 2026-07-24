@@ -183,20 +183,33 @@ export function openStorage(path) {
     },
 
     appendEvent(groupId, { recordId, actorId, eventData, compressed, created }, limits) {
-      if (recordId !== null) {
-        const existing = selectSeqByRecordId.get(groupId, recordId);
-        if (existing !== undefined) {
-          return { status: 'ok', seq: existing.seq };
+      // The insert and the accounting update must commit together, or a crash
+      // between them leaves record_count/total_bytes/window stale forever. The
+      // duplicate check and quota read sit inside the write lock too, so a
+      // concurrent append can't slip past the quota between read and insert.
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        if (recordId !== null) {
+          const existing = selectSeqByRecordId.get(groupId, recordId);
+          if (existing !== undefined) {
+            db.exec('ROLLBACK');
+            return { status: 'ok', seq: existing.seq };
+          }
         }
+        const size = eventData.length;
+        const plan = planChange(selectStats.get(groupId), { records: 1, bytes: size }, created, limits);
+        if (plan.rejection) {
+          db.exec('ROLLBACK');
+          return plan.rejection;
+        }
+        const result = insertEvent.run(groupId, recordId, actorId, eventData, compressed ? 1 : 0, created);
+        updateStats.run(1, size, plan.windowStart, plan.bytesThisWindow, groupId);
+        db.exec('COMMIT');
+        return { status: 'ok', seq: Number(result.lastInsertRowid) };
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
       }
-      const size = eventData.length;
-      const plan = planChange(selectStats.get(groupId), { records: 1, bytes: size }, created, limits);
-      if (plan.rejection) {
-        return plan.rejection;
-      }
-      const result = insertEvent.run(groupId, recordId, actorId, eventData, compressed ? 1 : 0, created);
-      updateStats.run(1, size, plan.windowStart, plan.bytesThisWindow, groupId);
-      return { status: 'ok', seq: Number(result.lastInsertRowid) };
     },
 
     compact(groupId, uptoSeq, expectedCount, records, created, limits) {
