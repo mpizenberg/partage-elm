@@ -17,6 +17,8 @@ ships without push — the enable control and the per-group toggles are hidden.
 SERVER_URL= PUSH_SERVER_URL=https://push.example.com pnpm build:optimize
 ```
 
+> **Before a release:** CI covers Elm and relay logic but not browser/PWA behaviour. Run through [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) (a manual two-browser + one-installed-PWA pass) before tagging or deploying.
+
 > **Migrating from the PocketBase deployment:** the relay starts with an empty database — there is no server-side data migration. Group members move a group by exporting it to JSON in the app and importing it again once the new instance is live.
 
 ## Option A: Cloudflare Workers
