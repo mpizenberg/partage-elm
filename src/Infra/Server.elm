@@ -449,37 +449,46 @@ pullAllPages ctx secret resetCheck cursor acc =
                     pullAllPages ctx secret { resetCheck | allowReset = False } 0 { acc | didReset = True }
 
                 else
-                    decryptServerEvents ctx.groupKey page.events
-                        |> ConcurrentTask.andThen
-                            (\decrypted ->
-                                let
-                                    newAcc : { events : List Event.Envelope, undecodable : Int, didReset : Bool }
-                                    newAcc =
-                                        { acc
-                                            | events = acc.events ++ decrypted.events
-                                            , undecodable = acc.undecodable + decrypted.undecodable
-                                        }
+                    let
+                        newCursor : Int
+                        newCursor =
+                            List.head (List.reverse page.events)
+                                |> Maybe.map .seq
+                                |> Maybe.withDefault cursor
+                    in
+                    -- A relay that sets hasMore must return a later seq; an empty
+                    -- or non-advancing page would recurse forever on the same
+                    -- cursor, so treat it as a protocol fault before decrypting.
+                    if page.hasMore && newCursor <= cursor then
+                        ConcurrentTask.fail
+                            (InternalError "Relay reported more events but the pull cursor did not advance")
 
-                                    newCursor : Int
-                                    newCursor =
-                                        List.head (List.reverse page.events)
-                                            |> Maybe.map .seq
-                                            |> Maybe.withDefault cursor
-                                in
-                                if page.hasMore then
-                                    pullAllPages ctx secret resetCheck newCursor newAcc
+                    else
+                        decryptServerEvents ctx.groupKey page.events
+                            |> ConcurrentTask.andThen
+                                (\decrypted ->
+                                    let
+                                        newAcc : { events : List Event.Envelope, undecodable : Int, didReset : Bool }
+                                        newAcc =
+                                            { acc
+                                                | events = acc.events ++ decrypted.events
+                                                , undecodable = acc.undecodable + decrypted.undecodable
+                                            }
+                                    in
+                                    if page.hasMore then
+                                        pullAllPages ctx secret resetCheck newCursor newAcc
 
-                                else
-                                    ConcurrentTask.succeed
-                                        { events = newAcc.events
-                                        , cursor = newCursor
-                                        , epoch = page.groupEpoch
-                                        , undecodable = newAcc.undecodable
-                                        , didReset = newAcc.didReset
-                                        , recordCount = page.recordCount
-                                        , forgedAuthors = []
-                                        }
-                            )
+                                    else
+                                        ConcurrentTask.succeed
+                                            { events = newAcc.events
+                                            , cursor = newCursor
+                                            , epoch = page.groupEpoch
+                                            , undecodable = newAcc.undecodable
+                                            , didReset = newAcc.didReset
+                                            , recordCount = page.recordCount
+                                            , forgedAuthors = []
+                                            }
+                                )
             )
 
 
