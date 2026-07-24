@@ -23,6 +23,7 @@ import { RETENTION_MS, fleetLevelParams } from './app.js';
 const dev = process.argv.includes('--dev');
 
 const SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const SHUTDOWN_TIMEOUT_MS = 10 * 1000;
 
 const powSecret = process.env.POW_SECRET ?? (dev ? 'partage-pow-secret-dev-only' : null);
 if (powSecret === null) {
@@ -51,7 +52,7 @@ function dailyMaintenance() {
   storage.recordDailyLevels(day, storage.getFleetLevels(fleetLevelParams(now)));
 }
 
-const { url } = await startServer({
+const { url, close } = await startServer({
   storage,
   powSecret,
   port: Number(process.env.PORT ?? 8090),
@@ -66,3 +67,33 @@ dailyMaintenance();
 setInterval(dailyMaintenance, SWEEP_INTERVAL_MS).unref();
 
 console.log(`Partage relay listening on ${url}${dev ? ' (dev mode)' : ''}`);
+
+// Orchestrators stop a container by sending SIGTERM and killing it if it lingers.
+// Drain and close the server and the SQLite handle so no request commits an event
+// without its accounting; a stuck close must not wedge the container, so a bounded
+// timer forces exit.
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+  console.log(`Received ${signal}, shutting down`);
+  const forceExit = setTimeout(() => {
+    console.error(`Shutdown exceeded ${SHUTDOWN_TIMEOUT_MS}ms, forcing exit`);
+    process.exit(1);
+  }, SHUTDOWN_TIMEOUT_MS);
+  forceExit.unref();
+  try {
+    await close();
+    storage.close();
+    console.log('Shutdown complete');
+    process.exit(0);
+  } catch (err) {
+    console.error('Error during shutdown', err);
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
