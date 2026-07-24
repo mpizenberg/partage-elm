@@ -398,6 +398,7 @@ splitwiseImportEnglishOnly = The Splitwise export must be in English.
 splitwiseImportSkipped = { $count } rows couldn't be read and were skipped.
 importErrorAlreadyExists = This group already exists on your device.
 importErrorInvalidFile = Invalid file format.
+importErrorTooLarge = This file is too large to import.
 toastGroupCreateError = Failed to create group.
 toastIdentitySaveError = Could not save your device identity. Check your available storage and try again.
 toastEntrySaveError = Failed to save entry.

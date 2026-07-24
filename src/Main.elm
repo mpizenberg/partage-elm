@@ -1125,6 +1125,11 @@ update msg model =
                                 |> ImportExport.startImport ImportExportMsg base64
                                 |> Tuple.mapFirst (\r -> { updatedModel | runner = r })
 
+                        Just Page.Home.ImportTooLarge ->
+                            ( { updatedModel | homeModel = Page.Home.setImportError (T.importErrorTooLarge model.i18n) updatedModel.homeModel }
+                            , cmd
+                            )
+
                         Just (Page.Home.SplitwiseFileLoaded { filename, content }) ->
                             case SplitwiseImport.parse content of
                                 Ok parsed ->

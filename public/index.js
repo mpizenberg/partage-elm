@@ -337,6 +337,11 @@ function createCompressionTasks() {
 }
 
 function createExportTasks() {
+  // Well above any legitimate export (the relay caps a group at 50 MB), far
+  // below what would freeze the tab. Pairs with the compressed-size gate in
+  // Page.Home so neither buffer can blow up.
+  const MAX_DECOMPRESSED_IMPORT_BYTES = 512 * 1024 * 1024;
+
   function toBase64(uint8array) {
     let binary = "";
     for (let i = 0; i < uint8array.length; i++) {
@@ -375,17 +380,34 @@ function createExportTasks() {
       }
     },
 
-    // Decompress a base64-encoded gzip payload to a JSON string.
+    // Decompress a base64-encoded gzip payload to a JSON string. Read the
+    // stream in chunks and stop past a size cap, so a gzip bomb (tiny input,
+    // gigabytes of output) can't exhaust memory before we ever see the total.
     "export:decompress": async ({ base64 }) => {
       try {
         const compressed = fromBase64(base64);
-        const decompressed = new Uint8Array(
-          await new Response(
-            new Blob([compressed])
-              .stream()
-              .pipeThrough(new DecompressionStream("gzip")),
-          ).arrayBuffer(),
-        );
+        const reader = new Blob([compressed])
+          .stream()
+          .pipeThrough(new DecompressionStream("gzip"))
+          .getReader();
+        const chunks = [];
+        let total = 0;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          total += value.length;
+          if (total > MAX_DECOMPRESSED_IMPORT_BYTES) {
+            await reader.cancel();
+            return { error: "DECOMPRESSION_TOO_LARGE" };
+          }
+          chunks.push(value);
+        }
+        const decompressed = new Uint8Array(total);
+        let offset = 0;
+        for (const chunk of chunks) {
+          decompressed.set(chunk, offset);
+          offset += chunk.length;
+        }
         return new TextDecoder().decode(decompressed);
       } catch (e) {
         return { error: "DECOMPRESSION_FAILED:" + e.message };

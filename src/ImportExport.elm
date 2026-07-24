@@ -206,6 +206,9 @@ update config msg runnerCmd =
                     , Nothing
                     )
 
+        OnImportDecompressed (ConcurrentTask.Error "DECOMPRESSION_TOO_LARGE") ->
+            ( runnerCmd, Just (SetImportError (T.importErrorTooLarge config.i18n)) )
+
         OnImportDecompressed _ ->
             ( runnerCmd, Just (SetImportError (T.importErrorInvalidFile config.i18n)) )
 

@@ -33,6 +33,7 @@ type alias Context msg =
 
 type Output
     = ImportFileLoaded String
+    | ImportTooLarge
     | SplitwiseFileLoaded { filename : String, content : String }
     | JoinLink String
 
@@ -84,6 +85,15 @@ setJoinError err (Model data) =
     Model { data | joinError = Just err }
 
 
+{-| Reject a `.partage` import larger than this before reading it, so a huge or
+truncated file can't build the multi-hundred-MB base64 and decompressed buffers
+that would freeze the tab. A real export sits far below the 50 MB group cap.
+-}
+maxCompressedImportBytes : Int
+maxCompressedImportBytes =
+    64 * 1024 * 1024
+
+
 update : Msg -> Model -> ( Model, Cmd Msg, Maybe Output )
 update msg (Model data) =
     case msg of
@@ -100,10 +110,14 @@ update msg (Model data) =
             )
 
         FileSelected file ->
-            ( Model data
-            , Task.perform FileLoaded (File.toUrl file)
-            , Nothing
-            )
+            if File.size file > maxCompressedImportBytes then
+                ( Model data, Cmd.none, Just ImportTooLarge )
+
+            else
+                ( Model data
+                , Task.perform FileLoaded (File.toUrl file)
+                , Nothing
+                )
 
         FileLoaded dataUrl ->
             let
