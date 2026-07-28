@@ -1,4 +1,4 @@
-module UI.PaymentMethods exposing (Handle, all, handles, label)
+module UI.PaymentMethods exposing (Handle, Presentation, all, handles, presentation)
 
 {-| Display order and presentation for the payment methods this version knows.
 
@@ -41,11 +41,6 @@ toHandle i18n method value =
     , value = value
     , url = Maybe.map (\toUrl -> toUrl value) shown.url
     }
-
-
-label : I18n -> Method -> String
-label i18n method =
-    (presentation method).label i18n
 
 
 all : List Method
@@ -91,9 +86,14 @@ next method =
             Nothing
 
 
+{-| `domId` is a stable name for the method in the DOM; it is deliberately not
+the wire key, which stays inside `Domain.PaymentMethod`.
+-}
 type alias Presentation =
     { icon : FeatherIcons.Icon
     , label : I18n -> String
+    , placeholder : String
+    , domId : String
     , url : Maybe (String -> String)
     }
 
@@ -104,48 +104,64 @@ presentation method =
         Iban ->
             { icon = FeatherIcons.creditCard
             , label = T.memberMetadataIban
+            , placeholder = "FR76 1234 5678 9012 3456 7890 123"
+            , domId = "iban"
             , url = Nothing
             }
 
         Wero ->
             { icon = FeatherIcons.smartphone
             , label = T.memberMetadataWero
+            , placeholder = "+33 6 12 34 56 78"
+            , domId = "wero"
             , url = Nothing
             }
 
         Lydia ->
             { icon = FeatherIcons.dollarSign
             , label = T.memberMetadataLydia
+            , placeholder = "antoniop6hcr"
+            , domId = "lydia"
             , url = Just (normalizeHandle "https://pay.lydia.me/l?t=")
             }
 
         Revolut ->
             { icon = FeatherIcons.dollarSign
             , label = T.memberMetadataRevolut
+            , placeholder = "@username"
+            , domId = "revolut"
             , url = Just (normalizeHandle "https://revolut.me/")
             }
 
         Paypal ->
             { icon = FeatherIcons.dollarSign
             , label = T.memberMetadataPaypal
+            , placeholder = "rogerfed"
+            , domId = "paypal"
             , url = Just (normalizeHandle "https://paypal.me/")
             }
 
         Venmo ->
             { icon = FeatherIcons.dollarSign
             , label = T.memberMetadataVenmo
+            , placeholder = "@username"
+            , domId = "venmo"
             , url = Just (normalizeHandle "https://venmo.com/")
             }
 
         Btc ->
             { icon = FeatherIcons.key
             , label = T.memberMetadataBtc
+            , placeholder = "bc1q..."
+            , domId = "btc"
             , url = Just (\value -> "bitcoin:" ++ value)
             }
 
         Ada ->
             { icon = FeatherIcons.key
             , label = T.memberMetadataAda
+            , placeholder = "addr1..."
+            , domId = "ada"
             , url = Nothing
             }
 

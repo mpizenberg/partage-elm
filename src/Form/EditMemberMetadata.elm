@@ -5,12 +5,16 @@ module Form.EditMemberMetadata exposing
     , State
     , form
     , initFromMember
+    , payment
     )
 
 import Domain.Member as Member
-import Domain.PaymentMethod as PaymentMethod
+import Domain.PaymentMethod as PaymentMethod exposing (Method)
 import Field exposing (Field)
 import Form exposing (Accessor)
+import List.Extra
+import UI.PaymentMethods as PaymentMethods
+import Validation as V
 
 
 {-| The member metadata editing form type.
@@ -20,38 +24,26 @@ type alias Form =
 
 
 {-| Form state for all member metadata fields (contact info and payment methods).
+Payment handles are keyed by method rather than named, so a new method needs no
+field here; only the ones the form has touched are present.
 -}
 type alias State =
     { name : Field String
     , phone : Field (Maybe String)
     , email : Field (Maybe String)
     , notes : Field (Maybe String)
-    , iban : Field (Maybe String)
-    , wero : Field (Maybe String)
-    , lydia : Field (Maybe String)
-    , revolut : Field (Maybe String)
-    , paypal : Field (Maybe String)
-    , venmo : Field (Maybe String)
-    , btcAddress : Field (Maybe String)
-    , adaAddress : Field (Maybe String)
+    , payment : List ( Method, Field (Maybe String) )
     }
 
 
-{-| Accessors for reading and modifying each metadata field.
+{-| Accessors for reading and modifying each contact field. Payment handles have
+no fixed field to name, so they are reached through `payment` instead.
 -}
 type alias Accessors =
     { name : Accessor State (Field String)
     , phone : Accessor State (Field (Maybe String))
     , email : Accessor State (Field (Maybe String))
     , notes : Accessor State (Field (Maybe String))
-    , iban : Accessor State (Field (Maybe String))
-    , wero : Accessor State (Field (Maybe String))
-    , lydia : Accessor State (Field (Maybe String))
-    , revolut : Accessor State (Field (Maybe String))
-    , paypal : Accessor State (Field (Maybe String))
-    , venmo : Accessor State (Field (Maybe String))
-    , btcAddress : Accessor State (Field (Maybe String))
-    , adaAddress : Accessor State (Field (Maybe String))
     }
 
 
@@ -62,14 +54,7 @@ type alias Output =
     , phone : Maybe String
     , email : Maybe String
     , notes : Maybe String
-    , iban : Maybe String
-    , wero : Maybe String
-    , lydia : Maybe String
-    , revolut : Maybe String
-    , paypal : Maybe String
-    , venmo : Maybe String
-    , btcAddress : Maybe String
-    , adaAddress : Maybe String
+    , payment : List ( Method, Maybe String )
     }
 
 
@@ -130,22 +115,15 @@ initFromMember name meta =
                 Nothing ->
                     f
 
-        handle : PaymentMethod.Method -> Maybe String
-        handle method =
-            PaymentMethod.get method meta.payment
+        setHandle : Method -> Form -> Form
+        setHandle method =
+            setField (payment method) (PaymentMethod.get method meta.payment)
     in
     Form.modify .name (Field.setFromString name)
         >> setField .phone meta.phone
         >> setField .email meta.email
         >> setField .notes meta.notes
-        >> setField .iban (handle PaymentMethod.Iban)
-        >> setField .wero (handle PaymentMethod.Wero)
-        >> setField .lydia (handle PaymentMethod.Lydia)
-        >> setField .revolut (handle PaymentMethod.Revolut)
-        >> setField .paypal (handle PaymentMethod.Paypal)
-        >> setField .venmo (handle PaymentMethod.Venmo)
-        >> setField .btcAddress (handle PaymentMethod.Btc)
-        >> setField .adaAddress (handle PaymentMethod.Ada)
+        >> (\f -> List.foldl setHandle f PaymentMethods.all)
 
 
 init : State
@@ -154,14 +132,7 @@ init =
     , phone = Field.empty optionalString
     , email = Field.empty optionalEmail
     , notes = Field.empty optionalString
-    , iban = Field.empty optionalString
-    , wero = Field.empty optionalString
-    , lydia = Field.empty optionalString
-    , revolut = Field.empty optionalString
-    , paypal = Field.empty optionalString
-    , venmo = Field.empty optionalString
-    , btcAddress = Field.empty optionalString
-    , adaAddress = Field.empty optionalString
+    , payment = []
     }
 
 
@@ -187,39 +158,46 @@ accessors =
         { get = .notes
         , modify = \f state -> { state | notes = f state.notes }
         }
-    , iban =
-        { get = .iban
-        , modify = \f state -> { state | iban = f state.iban }
-        }
-    , wero =
-        { get = .wero
-        , modify = \f state -> { state | wero = f state.wero }
-        }
-    , lydia =
-        { get = .lydia
-        , modify = \f state -> { state | lydia = f state.lydia }
-        }
-    , revolut =
-        { get = .revolut
-        , modify = \f state -> { state | revolut = f state.revolut }
-        }
-    , paypal =
-        { get = .paypal
-        , modify = \f state -> { state | paypal = f state.paypal }
-        }
-    , venmo =
-        { get = .venmo
-        , modify = \f state -> { state | venmo = f state.venmo }
-        }
-    , btcAddress =
-        { get = .btcAddress
-        , modify = \f state -> { state | btcAddress = f state.btcAddress }
-        }
-    , adaAddress =
-        { get = .adaAddress
-        , modify = \f state -> { state | adaAddress = f state.adaAddress }
-        }
     }
+
+
+{-| The accessor for one payment handle. Shaped like the fields of `Accessors`
+so it can be passed to `Form.get`/`Form.modify` the same way, but built from the
+method instead of read out of the record.
+-}
+payment : Method -> Accessors -> Accessor State (Field (Maybe String))
+payment method _ =
+    { get = \state -> handleField method state.payment
+    , modify = \f state -> { state | payment = updateHandle method f state.payment }
+    }
+
+
+handleField : Method -> List ( Method, Field (Maybe String) ) -> Field (Maybe String)
+handleField method handles =
+    List.Extra.find (\( m, _ ) -> m == method) handles
+        |> Maybe.map Tuple.second
+        |> Maybe.withDefault (Field.empty optionalString)
+
+
+updateHandle :
+    Method
+    -> (Field (Maybe String) -> Field (Maybe String))
+    -> List ( Method, Field (Maybe String) )
+    -> List ( Method, Field (Maybe String) )
+updateHandle method f handles =
+    if List.any (\( m, _ ) -> m == method) handles then
+        List.map
+            (\(( m, field ) as entry) ->
+                if m == method then
+                    ( m, f field )
+
+                else
+                    entry
+            )
+            handles
+
+    else
+        ( method, f (Field.empty optionalString) ) :: handles
 
 
 
@@ -233,11 +211,11 @@ validate state =
         |> Field.applyValidation state.phone
         |> Field.applyValidation state.email
         |> Field.applyValidation state.notes
-        |> Field.applyValidation state.iban
-        |> Field.applyValidation state.wero
-        |> Field.applyValidation state.lydia
-        |> Field.applyValidation state.revolut
-        |> Field.applyValidation state.paypal
-        |> Field.applyValidation state.venmo
-        |> Field.applyValidation state.btcAddress
-        |> Field.applyValidation state.adaAddress
+        |> V.apply (validateHandles state.payment)
+
+
+validateHandles : List ( Method, Field (Maybe String) ) -> Field.Validation Field.Error (List ( Method, Maybe String ))
+validateHandles =
+    List.foldr
+        (\( method, field ) acc -> V.map2 (\value rest -> ( method, value ) :: rest) (Field.toValidation field) acc)
+        (Field.succeed [])

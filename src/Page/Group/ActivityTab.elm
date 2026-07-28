@@ -1196,7 +1196,7 @@ paymentDiffRows i18n old new =
             rows =
                 List.filterMap
                     (\method ->
-                        maybeDiffRow (PaymentMethods.label i18n method)
+                        maybeDiffRow ((PaymentMethods.presentation method).label i18n)
                             (PaymentMethod.get method old)
                             (PaymentMethod.get method new)
                     )

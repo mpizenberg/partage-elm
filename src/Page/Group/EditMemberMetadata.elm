@@ -22,6 +22,7 @@ import Form
 import Form.EditMemberMetadata as MetadataForm
 import Translations as T exposing (I18n)
 import UI.Components
+import UI.PaymentMethods as PaymentMethods
 import UI.Theme as Theme
 import Ui
 import Ui.Font
@@ -71,37 +72,19 @@ type Panel
 
 
 type alias FieldSelections =
-    { phone : Bool
-    , email : Bool
-    , notes : Bool
-    , iban : Bool
-    , wero : Bool
-    , lydia : Bool
-    , revolut : Bool
-    , paypal : Bool
-    , venmo : Bool
-    , btcAddress : Bool
-    , adaAddress : Bool
-    }
+    List ProfileField
 
 
 type ProfileField
     = PhoneField
     | EmailField
     | NotesField
-    | IbanField
-    | WeroField
-    | LydiaField
-    | RevolutField
-    | PaypalField
-    | VenmoField
-    | BtcField
-    | AdaField
+    | PaymentField PaymentMethod.Method
 
 
 allFields : List ProfileField
 allFields =
-    [ PhoneField, EmailField, NotesField, IbanField, WeroField, LydiaField, RevolutField, PaypalField, VenmoField, BtcField, AdaField ]
+    [ PhoneField, EmailField, NotesField ] ++ List.map PaymentField PaymentMethods.all
 
 
 {-| Messages produced by user interaction on the metadata form.
@@ -111,14 +94,7 @@ type Msg
     | InputPhone String
     | InputEmail String
     | InputNotes String
-    | InputIban String
-    | InputWero String
-    | InputLydia String
-    | InputRevolut String
-    | InputPaypal String
-    | InputVenmo String
-    | InputBtc String
-    | InputAda String
+    | InputPayment PaymentMethod.Method String
     | Submit
     | OpenFillPanel
     | OpenSavePanel
@@ -165,29 +141,8 @@ update config msg (Model data) =
         InputNotes s ->
             ( Model { data | form = Form.modify .notes (Field.setFromString s) data.form }, Nothing )
 
-        InputIban s ->
-            ( Model { data | form = Form.modify .iban (Field.setFromString s) data.form }, Nothing )
-
-        InputWero s ->
-            ( Model { data | form = Form.modify .wero (Field.setFromString s) data.form }, Nothing )
-
-        InputLydia s ->
-            ( Model { data | form = Form.modify .lydia (Field.setFromString s) data.form }, Nothing )
-
-        InputRevolut s ->
-            ( Model { data | form = Form.modify .revolut (Field.setFromString s) data.form }, Nothing )
-
-        InputPaypal s ->
-            ( Model { data | form = Form.modify .paypal (Field.setFromString s) data.form }, Nothing )
-
-        InputVenmo s ->
-            ( Model { data | form = Form.modify .venmo (Field.setFromString s) data.form }, Nothing )
-
-        InputBtc s ->
-            ( Model { data | form = Form.modify .btcAddress (Field.setFromString s) data.form }, Nothing )
-
-        InputAda s ->
-            ( Model { data | form = Form.modify .adaAddress (Field.setFromString s) data.form }, Nothing )
+        InputPayment method s ->
+            ( Model { data | form = Form.modify (MetadataForm.payment method) (Field.setFromString s) data.form }, Nothing )
 
         Submit ->
             case Form.validateAsMaybe data.form of
@@ -271,76 +226,11 @@ update config msg (Model data) =
 
 toggleField : ProfileField -> FieldSelections -> FieldSelections
 toggleField field sel =
-    case field of
-        PhoneField ->
-            { sel | phone = not sel.phone }
+    if List.member field sel then
+        List.filter ((/=) field) sel
 
-        EmailField ->
-            { sel | email = not sel.email }
-
-        NotesField ->
-            { sel | notes = not sel.notes }
-
-        IbanField ->
-            { sel | iban = not sel.iban }
-
-        WeroField ->
-            { sel | wero = not sel.wero }
-
-        LydiaField ->
-            { sel | lydia = not sel.lydia }
-
-        RevolutField ->
-            { sel | revolut = not sel.revolut }
-
-        PaypalField ->
-            { sel | paypal = not sel.paypal }
-
-        VenmoField ->
-            { sel | venmo = not sel.venmo }
-
-        BtcField ->
-            { sel | btcAddress = not sel.btcAddress }
-
-        AdaField ->
-            { sel | adaAddress = not sel.adaAddress }
-
-
-getSelection : ProfileField -> FieldSelections -> Bool
-getSelection field sel =
-    case field of
-        PhoneField ->
-            sel.phone
-
-        EmailField ->
-            sel.email
-
-        NotesField ->
-            sel.notes
-
-        IbanField ->
-            sel.iban
-
-        WeroField ->
-            sel.wero
-
-        LydiaField ->
-            sel.lydia
-
-        RevolutField ->
-            sel.revolut
-
-        PaypalField ->
-            sel.paypal
-
-        VenmoField ->
-            sel.venmo
-
-        BtcField ->
-            sel.btcAddress
-
-        AdaField ->
-            sel.adaAddress
+    else
+        field :: sel
 
 
 {-| For Fill: default-check fields where the form is currently empty (safe pre-fill).
@@ -348,46 +238,14 @@ Fields the user has already filled stay unchecked to avoid surprise overwrites.
 -}
 defaultFillSelections : MetadataForm.Form -> FieldSelections
 defaultFillSelections form =
-    let
-        isEmpty : (MetadataForm.Accessors -> Form.Accessor MetadataForm.State (Field.Field (Maybe String))) -> Bool
-        isEmpty accessor =
-            Form.get accessor form |> Field.toRawString |> String.trim |> String.isEmpty
-    in
-    { phone = isEmpty .phone
-    , email = isEmpty .email
-    , notes = isEmpty .notes
-    , iban = isEmpty .iban
-    , wero = isEmpty .wero
-    , lydia = isEmpty .lydia
-    , revolut = isEmpty .revolut
-    , paypal = isEmpty .paypal
-    , venmo = isEmpty .venmo
-    , btcAddress = isEmpty .btcAddress
-    , adaAddress = isEmpty .adaAddress
-    }
+    List.filter (\field -> String.isEmpty (String.trim (formValue field form))) allFields
 
 
 {-| For Save: default-check fields where the form has a non-empty value.
 -}
 defaultSaveSelections : MetadataForm.Form -> FieldSelections
 defaultSaveSelections form =
-    let
-        nonEmpty : (MetadataForm.Accessors -> Form.Accessor MetadataForm.State (Field.Field (Maybe String))) -> Bool
-        nonEmpty accessor =
-            Form.get accessor form |> Field.toRawString |> String.trim |> String.isEmpty |> not
-    in
-    { phone = nonEmpty .phone
-    , email = nonEmpty .email
-    , notes = nonEmpty .notes
-    , iban = nonEmpty .iban
-    , wero = nonEmpty .wero
-    , lydia = nonEmpty .lydia
-    , revolut = nonEmpty .revolut
-    , paypal = nonEmpty .paypal
-    , venmo = nonEmpty .venmo
-    , btcAddress = nonEmpty .btcAddress
-    , adaAddress = nonEmpty .adaAddress
-    }
+    List.filter (\field -> not (String.isEmpty (String.trim (formValue field form)))) allFields
 
 
 {-| Fold the form's handles into the payment info the member already had, so
@@ -398,16 +256,7 @@ metadataFromOutput basePayment output =
     { phone = output.phone
     , email = output.email
     , notes = output.notes
-    , payment =
-        basePayment
-            |> PaymentMethod.set PaymentMethod.Iban output.iban
-            |> PaymentMethod.set PaymentMethod.Wero output.wero
-            |> PaymentMethod.set PaymentMethod.Lydia output.lydia
-            |> PaymentMethod.set PaymentMethod.Revolut output.revolut
-            |> PaymentMethod.set PaymentMethod.Paypal output.paypal
-            |> PaymentMethod.set PaymentMethod.Venmo output.venmo
-            |> PaymentMethod.set PaymentMethod.Btc output.btcAddress
-            |> PaymentMethod.set PaymentMethod.Ada output.adaAddress
+    , payment = List.foldl (\( method, value ) -> PaymentMethod.set method value) basePayment output.payment
     }
 
 
@@ -418,36 +267,26 @@ is invalid).
 selectedMetadataFromRawForm : FieldSelections -> MetadataForm.Form -> Member.Metadata
 selectedMetadataFromRawForm sel form =
     let
-        pick : Bool -> ProfileField -> Maybe String
-        pick flag field =
-            if flag then
-                let
-                    raw : String
-                    raw =
-                        formValue field form |> String.trim
-                in
-                if String.isEmpty raw then
-                    Nothing
+        pick : ProfileField -> Maybe String
+        pick field =
+            if List.member field sel then
+                case String.trim (formValue field form) of
+                    "" ->
+                        Nothing
 
-                else
-                    Just raw
+                    raw ->
+                        Just raw
 
             else
                 Nothing
     in
-    { phone = pick sel.phone PhoneField
-    , email = pick sel.email EmailField
-    , notes = pick sel.notes NotesField
+    { phone = pick PhoneField
+    , email = pick EmailField
+    , notes = pick NotesField
     , payment =
-        PaymentMethod.empty
-            |> PaymentMethod.set PaymentMethod.Iban (pick sel.iban IbanField)
-            |> PaymentMethod.set PaymentMethod.Wero (pick sel.wero WeroField)
-            |> PaymentMethod.set PaymentMethod.Lydia (pick sel.lydia LydiaField)
-            |> PaymentMethod.set PaymentMethod.Revolut (pick sel.revolut RevolutField)
-            |> PaymentMethod.set PaymentMethod.Paypal (pick sel.paypal PaypalField)
-            |> PaymentMethod.set PaymentMethod.Venmo (pick sel.venmo VenmoField)
-            |> PaymentMethod.set PaymentMethod.Btc (pick sel.btcAddress BtcField)
-            |> PaymentMethod.set PaymentMethod.Ada (pick sel.adaAddress AdaField)
+        List.foldl (\method -> PaymentMethod.set method (pick (PaymentField method)))
+            PaymentMethod.empty
+            PaymentMethods.all
     }
 
 
@@ -478,36 +317,16 @@ mergeMetadata delta base =
 applyFillToForm : FieldSelections -> Member.Metadata -> MetadataForm.Form -> MetadataForm.Form
 applyFillToForm sel profile form =
     let
-        maybeFill :
-            Bool
-            -> Maybe String
-            -> (MetadataForm.Accessors -> Form.Accessor MetadataForm.State (Field.Field (Maybe String)))
-            -> MetadataForm.Form
-            -> MetadataForm.Form
-        maybeFill flag maybeValue accessor f =
-            case ( flag, maybeValue ) of
-                ( True, Just v ) ->
-                    Form.modify accessor (Field.setFromString v) f
+        fill : ProfileField -> MetadataForm.Form -> MetadataForm.Form
+        fill field f =
+            case profileValue field profile of
+                Just value ->
+                    Form.modify (accessorFor field) (Field.setFromString value) f
 
-                _ ->
+                Nothing ->
                     f
-
-        handle : PaymentMethod.Method -> Maybe String
-        handle method =
-            PaymentMethod.get method profile.payment
     in
-    form
-        |> maybeFill sel.phone profile.phone .phone
-        |> maybeFill sel.email profile.email .email
-        |> maybeFill sel.notes profile.notes .notes
-        |> maybeFill sel.iban (handle PaymentMethod.Iban) .iban
-        |> maybeFill sel.wero (handle PaymentMethod.Wero) .wero
-        |> maybeFill sel.lydia (handle PaymentMethod.Lydia) .lydia
-        |> maybeFill sel.revolut (handle PaymentMethod.Revolut) .revolut
-        |> maybeFill sel.paypal (handle PaymentMethod.Paypal) .paypal
-        |> maybeFill sel.venmo (handle PaymentMethod.Venmo) .venmo
-        |> maybeFill sel.btcAddress (handle PaymentMethod.Btc) .btcAddress
-        |> maybeFill sel.adaAddress (handle PaymentMethod.Ada) .adaAddress
+    List.foldl fill form sel
 
 
 
@@ -617,15 +436,21 @@ view config (Model data) =
         , Ui.column []
             [ UI.Components.sectionLabel (T.memberMetadataPayment i18n)
             , Ui.column [ Ui.spacing Theme.spacing.lg ]
-                [ optionalField FeatherIcons.creditCard (T.memberMetadataIban i18n) (Just "FR76 1234 5678 9012 3456 7890 123") InputIban .iban
-                , optionalField FeatherIcons.smartphone (T.memberMetadataWero i18n) (Just "+33 6 12 34 56 78") InputWero .wero
-                , optionalField FeatherIcons.dollarSign (T.memberMetadataLydia i18n) (Just "antoniop6hcr") InputLydia .lydia
-                , optionalField FeatherIcons.dollarSign (T.memberMetadataRevolut i18n) (Just "@username") InputRevolut .revolut
-                , optionalField FeatherIcons.dollarSign (T.memberMetadataPaypal i18n) (Just "rogerfed") InputPaypal .paypal
-                , optionalField FeatherIcons.dollarSign (T.memberMetadataVenmo i18n) (Just "@username") InputVenmo .venmo
-                , optionalField FeatherIcons.key (T.memberMetadataBtc i18n) (Just "bc1q...") InputBtc .btcAddress
-                , optionalField FeatherIcons.key (T.memberMetadataAda i18n) (Just "addr1...") InputAda .adaAddress
-                ]
+                (List.map
+                    (\method ->
+                        let
+                            shown : PaymentMethods.Presentation
+                            shown =
+                                PaymentMethods.presentation method
+                        in
+                        optionalField shown.icon
+                            (shown.label i18n)
+                            (Just shown.placeholder)
+                            (InputPayment method)
+                            (MetadataForm.payment method)
+                    )
+                    PaymentMethods.all
+                )
             ]
         , UI.Components.btnPrimary []
             { label = T.memberMetadataSave i18n
@@ -691,7 +516,7 @@ viewFillPanel i18n profile sel =
                     (\field ->
                         case profileValue field profile of
                             Just value ->
-                                Just (fieldRow i18n field value (getSelection field sel))
+                                Just (fieldRow i18n field value (List.member field sel))
 
                             Nothing ->
                                 Nothing
@@ -711,7 +536,7 @@ viewFillPanel i18n profile sel =
         , description = T.editMetadataProfileFillDescription i18n
         , body = body
         , applyLabel = T.editMetadataProfileFillApply i18n
-        , applyEnabled = not (List.isEmpty rows) && anySelected sel
+        , applyEnabled = not (List.isEmpty rows) && not (List.isEmpty sel)
         , onApply = ApplyFill
         }
 
@@ -733,7 +558,7 @@ viewSavePanel i18n form sel =
                             Nothing
 
                         else
-                            Just (fieldRow i18n field value (getSelection field sel))
+                            Just (fieldRow i18n field value (List.member field sel))
                     )
 
         body : Ui.Element Msg
@@ -750,7 +575,7 @@ viewSavePanel i18n form sel =
         , description = T.editMetadataProfileSaveDescription i18n
         , body = body
         , applyLabel = T.editMetadataProfileSaveApply i18n
-        , applyEnabled = not (List.isEmpty rows) && anySelected sel
+        , applyEnabled = not (List.isEmpty rows) && not (List.isEmpty sel)
         , onApply = ApplySave
         }
 
@@ -859,29 +684,8 @@ fieldDomId field =
         NotesField ->
             "notes"
 
-        IbanField ->
-            "iban"
-
-        WeroField ->
-            "wero"
-
-        LydiaField ->
-            "lydia"
-
-        RevolutField ->
-            "revolut"
-
-        PaypalField ->
-            "paypal"
-
-        VenmoField ->
-            "venmo"
-
-        BtcField ->
-            "btc"
-
-        AdaField ->
-            "ada"
+        PaymentField method ->
+            (PaymentMethods.presentation method).domId
 
 
 fieldLabel : I18n -> ProfileField -> String
@@ -896,38 +700,12 @@ fieldLabel i18n field =
         NotesField ->
             T.memberMetadataNotes i18n
 
-        IbanField ->
-            T.memberMetadataIban i18n
-
-        WeroField ->
-            T.memberMetadataWero i18n
-
-        LydiaField ->
-            T.memberMetadataLydia i18n
-
-        RevolutField ->
-            T.memberMetadataRevolut i18n
-
-        PaypalField ->
-            T.memberMetadataPaypal i18n
-
-        VenmoField ->
-            T.memberMetadataVenmo i18n
-
-        BtcField ->
-            T.memberMetadataBtc i18n
-
-        AdaField ->
-            T.memberMetadataAda i18n
+        PaymentField method ->
+            (PaymentMethods.presentation method).label i18n
 
 
 profileValue : ProfileField -> Member.Metadata -> Maybe String
 profileValue field meta =
-    let
-        handle : PaymentMethod.Method -> Maybe String
-        handle method =
-            PaymentMethod.get method meta.payment
-    in
     case field of
         PhoneField ->
             meta.phone
@@ -938,83 +716,26 @@ profileValue field meta =
         NotesField ->
             meta.notes
 
-        IbanField ->
-            handle PaymentMethod.Iban
+        PaymentField method ->
+            PaymentMethod.get method meta.payment
 
-        WeroField ->
-            handle PaymentMethod.Wero
 
-        LydiaField ->
-            handle PaymentMethod.Lydia
+accessorFor : ProfileField -> (MetadataForm.Accessors -> Form.Accessor MetadataForm.State (Field.Field (Maybe String)))
+accessorFor field =
+    case field of
+        PhoneField ->
+            .phone
 
-        RevolutField ->
-            handle PaymentMethod.Revolut
+        EmailField ->
+            .email
 
-        PaypalField ->
-            handle PaymentMethod.Paypal
+        NotesField ->
+            .notes
 
-        VenmoField ->
-            handle PaymentMethod.Venmo
-
-        BtcField ->
-            handle PaymentMethod.Btc
-
-        AdaField ->
-            handle PaymentMethod.Ada
+        PaymentField method ->
+            MetadataForm.payment method
 
 
 formValue : ProfileField -> MetadataForm.Form -> String
 formValue field form =
-    let
-        get : (MetadataForm.Accessors -> Form.Accessor MetadataForm.State (Field.Field (Maybe String))) -> String
-        get accessor =
-            Form.get accessor form |> Field.toRawString
-    in
-    case field of
-        PhoneField ->
-            get .phone
-
-        EmailField ->
-            get .email
-
-        NotesField ->
-            get .notes
-
-        IbanField ->
-            get .iban
-
-        WeroField ->
-            get .wero
-
-        LydiaField ->
-            get .lydia
-
-        RevolutField ->
-            get .revolut
-
-        PaypalField ->
-            get .paypal
-
-        VenmoField ->
-            get .venmo
-
-        BtcField ->
-            get .btcAddress
-
-        AdaField ->
-            get .adaAddress
-
-
-anySelected : FieldSelections -> Bool
-anySelected sel =
-    sel.phone
-        || sel.email
-        || sel.notes
-        || sel.iban
-        || sel.wero
-        || sel.lydia
-        || sel.revolut
-        || sel.paypal
-        || sel.venmo
-        || sel.btcAddress
-        || sel.adaAddress
+    Form.get (accessorFor field) form |> Field.toRawString
