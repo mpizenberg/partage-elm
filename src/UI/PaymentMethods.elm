@@ -1,10 +1,7 @@
-module UI.PaymentMethods exposing (Handle, Presentation, all, handles, presentation)
+module UI.PaymentMethods exposing (Handle, Presentation, handles, presentation)
 
-{-| Display order and presentation for the payment methods this version knows.
-
-Order lives in `next` rather than in a literal list, so a method added to
-`PaymentMethod.Method` fails to compile until it has been given a position.
-
+{-| How the payment methods this version knows are labelled, iconified and
+linked. Which methods exist, and in what order, is `PaymentMethod.all`.
 -}
 
 import Domain.PaymentMethod as PaymentMethod exposing (Method(..), PaymentInfo)
@@ -26,7 +23,7 @@ type alias Handle =
 -}
 handles : I18n -> PaymentInfo -> List Handle
 handles i18n info =
-    List.filterMap (\method -> Maybe.map (toHandle i18n method) (PaymentMethod.get method info)) all
+    List.filterMap (\method -> Maybe.map (toHandle i18n method) (PaymentMethod.get method info)) PaymentMethod.all
 
 
 toHandle : I18n -> Method -> String -> Handle
@@ -41,52 +38,6 @@ toHandle i18n method value =
     , value = value
     , url = Maybe.map (\toUrl -> toUrl value) shown.url
     }
-
-
-all : List Method
-all =
-    unfold Iban []
-
-
-unfold : Method -> List Method -> List Method
-unfold method acc =
-    case next method of
-        Just following ->
-            unfold following (method :: acc)
-
-        Nothing ->
-            List.reverse (method :: acc)
-
-
-next : Method -> Maybe Method
-next method =
-    case method of
-        Iban ->
-            Just Wero
-
-        Wero ->
-            Just Lydia
-
-        Lydia ->
-            Just Revolut
-
-        Revolut ->
-            Just Paypal
-
-        Paypal ->
-            Just Venmo
-
-        Venmo ->
-            Just Cashapp
-
-        Cashapp ->
-            Just Btc
-
-        Btc ->
-            Just Ada
-
-        Ada ->
-            Nothing
 
 
 {-| `domId` is a stable name for the method in the DOM; it is deliberately not

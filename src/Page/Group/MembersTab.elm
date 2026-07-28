@@ -525,7 +525,7 @@ metadataIcons isCurrentUser meta =
         -- IBAN gets its own icon below, so the generic one stands for the rest.
         hasPaymentMethod : Bool
         hasPaymentMethod =
-            PaymentMethods.all
+            PaymentMethod.all
                 |> List.filter ((/=) PaymentMethod.Iban)
                 |> List.any (\method -> PaymentMethod.get method meta.payment /= Nothing)
 

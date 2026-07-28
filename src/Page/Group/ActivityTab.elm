@@ -1200,7 +1200,7 @@ paymentDiffRows i18n old new =
                             (PaymentMethod.get method old)
                             (PaymentMethod.get method new)
                     )
-                    PaymentMethods.all
+                    PaymentMethod.all
         in
         case rows of
             [] ->

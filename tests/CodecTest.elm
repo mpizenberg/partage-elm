@@ -14,7 +14,6 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import Test exposing (Test, describe, fuzz, test)
 import Time
-import UI.PaymentMethods as PaymentMethods
 
 
 suite : Test
@@ -86,7 +85,7 @@ paymentInfoFuzzer =
     List.foldl
         (\method info -> Fuzz.map2 (PaymentMethod.set method) (Fuzz.maybe handleFuzzer) info)
         (Fuzz.constant PaymentMethod.empty)
-        PaymentMethods.all
+        PaymentMethod.all
 
 
 memberMetadataFuzzer : Fuzzer Member.Metadata
@@ -367,7 +366,7 @@ paymentInfoTests =
                     |> Expect.equal (Ok wireJson)
         , test "the wire fixture covers every known method" <|
             \_ ->
-                PaymentMethods.all
+                PaymentMethod.all
                     |> List.filter (\method -> PaymentMethod.get method (paymentIn wireJson) == Nothing)
                     |> Expect.equalLists []
         , test "a handle this version has no method for survives the wire" <|

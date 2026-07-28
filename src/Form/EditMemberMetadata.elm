@@ -13,7 +13,6 @@ import Domain.PaymentMethod as PaymentMethod exposing (Method)
 import Field exposing (Field)
 import Form exposing (Accessor)
 import List.Extra
-import UI.PaymentMethods as PaymentMethods
 import Validation as V
 
 
@@ -123,7 +122,7 @@ initFromMember name meta =
         >> setField .phone meta.phone
         >> setField .email meta.email
         >> setField .notes meta.notes
-        >> (\f -> List.foldl setHandle f PaymentMethods.all)
+        >> (\f -> List.foldl setHandle f PaymentMethod.all)
 
 
 init : State

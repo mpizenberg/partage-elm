@@ -1,4 +1,4 @@
-module Domain.PaymentMethod exposing (Method(..), PaymentInfo, decoder, empty, encode, get, set)
+module Domain.PaymentMethod exposing (Method(..), PaymentInfo, all, decoder, empty, encode, get, set)
 
 {-| Payment handles a member shares for receiving settlements.
 
@@ -24,6 +24,58 @@ type Method
     | Cashapp
     | Btc
     | Ada
+
+
+{-| Every method this version knows, in canonical order.
+
+The order lives in `next` rather than in a literal list, so a method added to
+`Method` fails to compile until it has been given a position.
+
+-}
+all : List Method
+all =
+    unfold Iban []
+
+
+unfold : Method -> List Method -> List Method
+unfold method acc =
+    case next method of
+        Just following ->
+            unfold following (method :: acc)
+
+        Nothing ->
+            List.reverse (method :: acc)
+
+
+next : Method -> Maybe Method
+next method =
+    case method of
+        Iban ->
+            Just Wero
+
+        Wero ->
+            Just Lydia
+
+        Lydia ->
+            Just Revolut
+
+        Revolut ->
+            Just Paypal
+
+        Paypal ->
+            Just Venmo
+
+        Venmo ->
+            Just Cashapp
+
+        Cashapp ->
+            Just Btc
+
+        Btc ->
+            Just Ada
+
+        Ada ->
+            Nothing
 
 
 type alias PaymentInfo =

@@ -21,9 +21,9 @@ suite =
         [ -- `all` is unfolded from `next`, whose exhaustiveness only forces each
           -- method to name a successor: a method nothing points at compiles and
           -- silently never renders. This pins the whole chain instead.
-          test "every known method appears in display order" <|
+          test "every known method appears in canonical order" <|
             \_ ->
-                PaymentMethods.all
+                PaymentMethod.all
                     |> Expect.equal [ Iban, Wero, Lydia, Revolut, Paypal, Venmo, Cashapp, Btc, Ada ]
         , test "a handle typed with its sigil does not double it up" <|
             \_ ->

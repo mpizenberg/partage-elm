@@ -84,7 +84,7 @@ type ProfileField
 
 allFields : List ProfileField
 allFields =
-    [ PhoneField, EmailField, NotesField ] ++ List.map PaymentField PaymentMethods.all
+    [ PhoneField, EmailField, NotesField ] ++ List.map PaymentField PaymentMethod.all
 
 
 {-| Messages produced by user interaction on the metadata form.
@@ -286,7 +286,7 @@ selectedMetadataFromRawForm sel form =
     , payment =
         List.foldl (\method -> PaymentMethod.set method (pick (PaymentField method)))
             PaymentMethod.empty
-            PaymentMethods.all
+            PaymentMethod.all
     }
 
 
@@ -449,7 +449,7 @@ view config (Model data) =
                             (InputPayment method)
                             (MetadataForm.payment method)
                     )
-                    PaymentMethods.all
+                    PaymentMethod.all
                 )
             ]
         , UI.Components.btnPrimary []
