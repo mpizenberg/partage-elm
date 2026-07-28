@@ -8,6 +8,7 @@ import Domain.Balance as Balance exposing (MemberBalance)
 import Domain.Currency as Currency
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
+import Domain.PaymentMethod as PaymentMethod
 import Domain.Settlement as Settlement
 import Domain.StableSettlement as StableSettlement
 import FeatherIcons
@@ -430,28 +431,29 @@ settlementItem i18n config resolveName maybeUserRootId showTopBorder isSelected 
 settlementDetail : I18n -> Config msg -> Bool -> (Member.Id -> String) -> Settlement.Transaction -> GroupState -> Ui.Element msg
 settlementDetail i18n config isMember resolveName t state =
     let
-        recipientMetadata : Maybe Member.Metadata
-        recipientMetadata =
-            Dict.get t.to state.members
-                |> Maybe.map .metadata
-
         paymentMethodRows : List (Ui.Element msg)
         paymentMethodRows =
-            case recipientMetadata |> Maybe.andThen .payment of
-                Just payment ->
-                    List.filterMap identity
-                        [ Maybe.map (\v -> paymentRow FeatherIcons.creditCard (T.memberMetadataIban i18n) v Nothing) payment.iban
-                        , Maybe.map (\v -> paymentRow FeatherIcons.smartphone (T.memberMetadataWero i18n) v Nothing) payment.wero
-                        , Maybe.map (\v -> paymentRow FeatherIcons.dollarSign (T.memberMetadataLydia i18n) v (Just (normalizeHandle "https://pay.lydia.me/l?t=" v))) payment.lydia
-                        , Maybe.map (\v -> paymentRow FeatherIcons.dollarSign (T.memberMetadataRevolut i18n) v (Just (normalizeHandle "https://revolut.me/" v))) payment.revolut
-                        , Maybe.map (\v -> paymentRow FeatherIcons.dollarSign (T.memberMetadataPaypal i18n) v (Just (normalizeHandle "https://paypal.me/" v))) payment.paypal
-                        , Maybe.map (\v -> paymentRow FeatherIcons.dollarSign (T.memberMetadataVenmo i18n) v (Just (normalizeHandle "https://venmo.com/" v))) payment.venmo
-                        , Maybe.map (\v -> paymentRow FeatherIcons.key (T.memberMetadataBtc i18n) v (Just ("bitcoin:" ++ v))) payment.btcAddress
-                        , Maybe.map (\v -> paymentRow FeatherIcons.key (T.memberMetadataAda i18n) v Nothing) payment.adaAddress
-                        ]
+            let
+                payment : PaymentMethod.PaymentInfo
+                payment =
+                    Dict.get t.to state.members
+                        |> Maybe.map (.metadata >> .payment)
+                        |> Maybe.withDefault PaymentMethod.empty
 
-                Nothing ->
-                    []
+                handle : PaymentMethod.Method -> Maybe String
+                handle method =
+                    PaymentMethod.get method payment
+            in
+            List.filterMap identity
+                [ Maybe.map (\v -> paymentRow FeatherIcons.creditCard (T.memberMetadataIban i18n) v Nothing) (handle PaymentMethod.Iban)
+                , Maybe.map (\v -> paymentRow FeatherIcons.smartphone (T.memberMetadataWero i18n) v Nothing) (handle PaymentMethod.Wero)
+                , Maybe.map (\v -> paymentRow FeatherIcons.dollarSign (T.memberMetadataLydia i18n) v (Just (normalizeHandle "https://pay.lydia.me/l?t=" v))) (handle PaymentMethod.Lydia)
+                , Maybe.map (\v -> paymentRow FeatherIcons.dollarSign (T.memberMetadataRevolut i18n) v (Just (normalizeHandle "https://revolut.me/" v))) (handle PaymentMethod.Revolut)
+                , Maybe.map (\v -> paymentRow FeatherIcons.dollarSign (T.memberMetadataPaypal i18n) v (Just (normalizeHandle "https://paypal.me/" v))) (handle PaymentMethod.Paypal)
+                , Maybe.map (\v -> paymentRow FeatherIcons.dollarSign (T.memberMetadataVenmo i18n) v (Just (normalizeHandle "https://venmo.com/" v))) (handle PaymentMethod.Venmo)
+                , Maybe.map (\v -> paymentRow FeatherIcons.key (T.memberMetadataBtc i18n) v (Just ("bitcoin:" ++ v))) (handle PaymentMethod.Btc)
+                , Maybe.map (\v -> paymentRow FeatherIcons.key (T.memberMetadataAda i18n) v Nothing) (handle PaymentMethod.Ada)
+                ]
     in
     Ui.column
         [ Ui.paddingXY Theme.spacing.lg Theme.spacing.md

@@ -7,6 +7,7 @@ import Dict exposing (Dict)
 import Domain.Date as Date
 import Domain.GroupState exposing (GroupMetadata, GroupState)
 import Domain.Member as Member
+import Domain.PaymentMethod as PaymentMethod
 import FeatherIcons
 import Html
 import Html.Attributes
@@ -522,20 +523,22 @@ metadataIcons isCurrentUser meta =
     let
         hasPaymentMethod : Bool
         hasPaymentMethod =
-            case meta.payment of
-                Just p ->
-                    List.any ((/=) Nothing)
-                        [ p.lydia, p.revolut, p.paypal, p.venmo, p.btcAddress, p.adaAddress, p.wero ]
-
-                Nothing ->
-                    False
+            List.any (\method -> PaymentMethod.get method meta.payment /= Nothing)
+                [ PaymentMethod.Lydia
+                , PaymentMethod.Revolut
+                , PaymentMethod.Paypal
+                , PaymentMethod.Venmo
+                , PaymentMethod.Btc
+                , PaymentMethod.Ada
+                , PaymentMethod.Wero
+                ]
 
         icons : List (Ui.Element msg)
         icons =
             List.filterMap identity
                 [ Maybe.map (\_ -> UI.Components.featherIcon 14 FeatherIcons.phone) meta.phone
                 , Maybe.map (\_ -> UI.Components.featherIcon 14 FeatherIcons.atSign) meta.email
-                , Maybe.map (\_ -> UI.Components.featherIcon 14 FeatherIcons.creditCard) (meta.payment |> Maybe.andThen .iban)
+                , Maybe.map (\_ -> UI.Components.featherIcon 14 FeatherIcons.creditCard) (PaymentMethod.get PaymentMethod.Iban meta.payment)
                 , if hasPaymentMethod then
                     Just (UI.Components.featherIcon 14 FeatherIcons.dollarSign)
 
@@ -695,21 +698,21 @@ memberDetail i18n zone identityHash deviceLinks toMsg isCurrentUser maybeUserRoo
 
                 paymentMethods : List (Ui.Element msg)
                 paymentMethods =
-                    case meta.payment of
-                        Just payment ->
-                            List.filterMap identity
-                                [ Maybe.map (\v -> infoRow subtleColor FeatherIcons.creditCard (T.memberMetadataIban i18n) v Nothing) payment.iban
-                                , Maybe.map (\v -> infoRow subtleColor FeatherIcons.smartphone (T.memberMetadataWero i18n) v Nothing) payment.wero
-                                , Maybe.map (\v -> infoRow subtleColor FeatherIcons.dollarSign (T.memberMetadataLydia i18n) v (Just (normalizeHandle "https://pay.lydia.me/l?t=" v))) payment.lydia
-                                , Maybe.map (\v -> infoRow subtleColor FeatherIcons.dollarSign (T.memberMetadataRevolut i18n) v (Just (normalizeHandle "https://revolut.me/" v))) payment.revolut
-                                , Maybe.map (\v -> infoRow subtleColor FeatherIcons.dollarSign (T.memberMetadataPaypal i18n) v (Just (normalizeHandle "https://paypal.me/" v))) payment.paypal
-                                , Maybe.map (\v -> infoRow subtleColor FeatherIcons.dollarSign (T.memberMetadataVenmo i18n) v (Just (normalizeHandle "https://venmo.com/" v))) payment.venmo
-                                , Maybe.map (\v -> infoRow subtleColor FeatherIcons.key (T.memberMetadataBtc i18n) v (Just ("bitcoin:" ++ v))) payment.btcAddress
-                                , Maybe.map (\v -> infoRow subtleColor FeatherIcons.key (T.memberMetadataAda i18n) v Nothing) payment.adaAddress
-                                ]
-
-                        Nothing ->
-                            []
+                    let
+                        handle : PaymentMethod.Method -> Maybe String
+                        handle method =
+                            PaymentMethod.get method meta.payment
+                    in
+                    List.filterMap identity
+                        [ Maybe.map (\v -> infoRow subtleColor FeatherIcons.creditCard (T.memberMetadataIban i18n) v Nothing) (handle PaymentMethod.Iban)
+                        , Maybe.map (\v -> infoRow subtleColor FeatherIcons.smartphone (T.memberMetadataWero i18n) v Nothing) (handle PaymentMethod.Wero)
+                        , Maybe.map (\v -> infoRow subtleColor FeatherIcons.dollarSign (T.memberMetadataLydia i18n) v (Just (normalizeHandle "https://pay.lydia.me/l?t=" v))) (handle PaymentMethod.Lydia)
+                        , Maybe.map (\v -> infoRow subtleColor FeatherIcons.dollarSign (T.memberMetadataRevolut i18n) v (Just (normalizeHandle "https://revolut.me/" v))) (handle PaymentMethod.Revolut)
+                        , Maybe.map (\v -> infoRow subtleColor FeatherIcons.dollarSign (T.memberMetadataPaypal i18n) v (Just (normalizeHandle "https://paypal.me/" v))) (handle PaymentMethod.Paypal)
+                        , Maybe.map (\v -> infoRow subtleColor FeatherIcons.dollarSign (T.memberMetadataVenmo i18n) v (Just (normalizeHandle "https://venmo.com/" v))) (handle PaymentMethod.Venmo)
+                        , Maybe.map (\v -> infoRow subtleColor FeatherIcons.key (T.memberMetadataBtc i18n) v (Just ("bitcoin:" ++ v))) (handle PaymentMethod.Btc)
+                        , Maybe.map (\v -> infoRow subtleColor FeatherIcons.key (T.memberMetadataAda i18n) v Nothing) (handle PaymentMethod.Ada)
+                        ]
 
                 paymentMethodsSection : Maybe (Ui.Element msg)
                 paymentMethodsSection =

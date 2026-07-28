@@ -1,8 +1,10 @@
-module Domain.Member exposing (DeviceLink, Id, Metadata, PaymentInfo, State, Type(..), emptyMetadata, emptyPaymentInfo, encodeMetadata, encodePaymentInfo, encodeType, metadataDecoder, paymentInfoDecoder, pickLink, shortId, typeDecoder)
+module Domain.Member exposing (DeviceLink, Id, Metadata, State, Type(..), emptyMetadata, encodeMetadata, encodeType, metadataDecoder, pickLink, shortId, typeDecoder)
 
 {-| Group members, their lifecycle, and contact metadata.
 -}
 
+import Dict
+import Domain.PaymentMethod as PaymentMethod exposing (PaymentInfo)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Time
@@ -79,48 +81,19 @@ shortId id =
 type alias Metadata =
     { phone : Maybe String
     , email : Maybe String
-    , payment : Maybe PaymentInfo
+    , payment : PaymentInfo
     , notes : Maybe String
     }
 
 
-{-| Payment method details a member can share for receiving settlements.
--}
-type alias PaymentInfo =
-    { iban : Maybe String
-    , wero : Maybe String
-    , lydia : Maybe String
-    , revolut : Maybe String
-    , paypal : Maybe String
-    , venmo : Maybe String
-    , btcAddress : Maybe String
-    , adaAddress : Maybe String
-    }
-
-
-{-| A Metadata with all fields set to Nothing.
+{-| A Metadata with nothing provided.
 -}
 emptyMetadata : Metadata
 emptyMetadata =
     { phone = Nothing
     , email = Nothing
-    , payment = Nothing
+    , payment = PaymentMethod.empty
     , notes = Nothing
-    }
-
-
-{-| A PaymentInfo with all fields set to Nothing.
--}
-emptyPaymentInfo : PaymentInfo
-emptyPaymentInfo =
-    { iban = Nothing
-    , wero = Nothing
-    , lydia = Nothing
-    , revolut = Nothing
-    , paypal = Nothing
-    , venmo = Nothing
-    , btcAddress = Nothing
-    , adaAddress = Nothing
     }
 
 
@@ -157,40 +130,7 @@ typeDecoder =
             )
 
 
-{-| Encode PaymentInfo as a JSON object, omitting Nothing fields.
--}
-encodePaymentInfo : PaymentInfo -> Encode.Value
-encodePaymentInfo info =
-    Encode.object
-        (List.filterMap identity
-            [ Maybe.map (\v -> ( "ib", Encode.string v )) info.iban
-            , Maybe.map (\v -> ( "we", Encode.string v )) info.wero
-            , Maybe.map (\v -> ( "ly", Encode.string v )) info.lydia
-            , Maybe.map (\v -> ( "rv", Encode.string v )) info.revolut
-            , Maybe.map (\v -> ( "pp", Encode.string v )) info.paypal
-            , Maybe.map (\v -> ( "vn", Encode.string v )) info.venmo
-            , Maybe.map (\v -> ( "btc", Encode.string v )) info.btcAddress
-            , Maybe.map (\v -> ( "ada", Encode.string v )) info.adaAddress
-            ]
-        )
-
-
-{-| Decode PaymentInfo from JSON, with all fields optional.
--}
-paymentInfoDecoder : Decode.Decoder PaymentInfo
-paymentInfoDecoder =
-    Decode.map8 PaymentInfo
-        (Decode.maybe (Decode.field "ib" Decode.string))
-        (Decode.maybe (Decode.field "we" Decode.string))
-        (Decode.maybe (Decode.field "ly" Decode.string))
-        (Decode.maybe (Decode.field "rv" Decode.string))
-        (Decode.maybe (Decode.field "pp" Decode.string))
-        (Decode.maybe (Decode.field "vn" Decode.string))
-        (Decode.maybe (Decode.field "btc" Decode.string))
-        (Decode.maybe (Decode.field "ada" Decode.string))
-
-
-{-| Encode member Metadata as a JSON object, omitting Nothing fields.
+{-| Encode member Metadata as a JSON object, omitting what is not provided.
 -}
 encodeMetadata : Metadata -> Encode.Value
 encodeMetadata meta =
@@ -198,7 +138,11 @@ encodeMetadata meta =
         (List.filterMap identity
             [ Maybe.map (\v -> ( "ph", Encode.string v )) meta.phone
             , Maybe.map (\v -> ( "em", Encode.string v )) meta.email
-            , Maybe.map (\v -> ( "pm", encodePaymentInfo v )) meta.payment
+            , if Dict.isEmpty meta.payment then
+                Nothing
+
+              else
+                Just ( "pm", PaymentMethod.encode meta.payment )
             , Maybe.map (\v -> ( "nt", Encode.string v )) meta.notes
             ]
         )
@@ -211,5 +155,5 @@ metadataDecoder =
     Decode.map4 Metadata
         (Decode.maybe (Decode.field "ph" Decode.string))
         (Decode.maybe (Decode.field "em" Decode.string))
-        (Decode.maybe (Decode.field "pm" paymentInfoDecoder))
+        (Decode.oneOf [ Decode.field "pm" PaymentMethod.decoder, Decode.succeed PaymentMethod.empty ])
         (Decode.maybe (Decode.field "nt" Decode.string))

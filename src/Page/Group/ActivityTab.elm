@@ -11,6 +11,7 @@ import Domain.Entry as Entry exposing (Kind(..))
 import Domain.Event as Event
 import Domain.Filter as Filter exposing (ActivityFilters, ActivityType(..))
 import Domain.Member as Member
+import Domain.PaymentMethod as PaymentMethod
 import FeatherIcons
 import Format
 import List.Extra
@@ -1183,32 +1184,28 @@ memberMetadataDiffRows i18n old new =
         ]
 
 
-paymentDiffRows : I18n -> Maybe Member.PaymentInfo -> Maybe Member.PaymentInfo -> Maybe (Ui.Element msg)
-paymentDiffRows i18n oldPayment newPayment =
-    if oldPayment == newPayment then
+paymentDiffRows : I18n -> PaymentMethod.PaymentInfo -> PaymentMethod.PaymentInfo -> Maybe (Ui.Element msg)
+paymentDiffRows i18n old new =
+    if old == new then
         Nothing
 
     else
         let
-            old : Member.PaymentInfo
-            old =
-                Maybe.withDefault Member.emptyPaymentInfo oldPayment
-
-            new : Member.PaymentInfo
-            new =
-                Maybe.withDefault Member.emptyPaymentInfo newPayment
+            methodDiffRow : String -> PaymentMethod.Method -> Maybe (Ui.Element msg)
+            methodDiffRow label method =
+                maybeDiffRow label (PaymentMethod.get method old) (PaymentMethod.get method new)
 
             rows : List (Ui.Element msg)
             rows =
                 List.filterMap identity
-                    [ maybeDiffRow (T.memberMetadataIban i18n) old.iban new.iban
-                    , maybeDiffRow (T.memberMetadataWero i18n) old.wero new.wero
-                    , maybeDiffRow (T.memberMetadataLydia i18n) old.lydia new.lydia
-                    , maybeDiffRow (T.memberMetadataRevolut i18n) old.revolut new.revolut
-                    , maybeDiffRow (T.memberMetadataPaypal i18n) old.paypal new.paypal
-                    , maybeDiffRow (T.memberMetadataVenmo i18n) old.venmo new.venmo
-                    , maybeDiffRow (T.memberMetadataBtc i18n) old.btcAddress new.btcAddress
-                    , maybeDiffRow (T.memberMetadataAda i18n) old.adaAddress new.adaAddress
+                    [ methodDiffRow (T.memberMetadataIban i18n) PaymentMethod.Iban
+                    , methodDiffRow (T.memberMetadataWero i18n) PaymentMethod.Wero
+                    , methodDiffRow (T.memberMetadataLydia i18n) PaymentMethod.Lydia
+                    , methodDiffRow (T.memberMetadataRevolut i18n) PaymentMethod.Revolut
+                    , methodDiffRow (T.memberMetadataPaypal i18n) PaymentMethod.Paypal
+                    , methodDiffRow (T.memberMetadataVenmo i18n) PaymentMethod.Venmo
+                    , methodDiffRow (T.memberMetadataBtc i18n) PaymentMethod.Btc
+                    , methodDiffRow (T.memberMetadataAda i18n) PaymentMethod.Ada
                     ]
         in
         case rows of

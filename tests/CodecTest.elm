@@ -6,6 +6,7 @@ import Domain.Entry as Entry exposing (Beneficiary(..), Category(..), Kind(..))
 import Domain.Event as Event exposing (Payload(..))
 import Domain.Group as Group
 import Domain.Member as Member
+import Domain.PaymentMethod as PaymentMethod
 import Domain.Settlement as Settlement
 import Expect
 import Fuzz exposing (Fuzzer)
@@ -73,17 +74,31 @@ memberTypeFuzzer =
         ]
 
 
-paymentInfoFuzzer : Fuzzer Member.PaymentInfo
+knownMethods : List PaymentMethod.Method
+knownMethods =
+    [ PaymentMethod.Iban
+    , PaymentMethod.Wero
+    , PaymentMethod.Lydia
+    , PaymentMethod.Revolut
+    , PaymentMethod.Paypal
+    , PaymentMethod.Venmo
+    , PaymentMethod.Btc
+    , PaymentMethod.Ada
+    ]
+
+
+paymentInfoFuzzer : Fuzzer PaymentMethod.PaymentInfo
 paymentInfoFuzzer =
-    Fuzz.map8 Member.PaymentInfo
-        (Fuzz.maybe Fuzz.string)
-        (Fuzz.maybe Fuzz.string)
-        (Fuzz.maybe Fuzz.string)
-        (Fuzz.maybe Fuzz.string)
-        (Fuzz.maybe Fuzz.string)
-        (Fuzz.maybe Fuzz.string)
-        (Fuzz.maybe Fuzz.string)
-        (Fuzz.maybe Fuzz.string)
+    let
+        -- Prefixed so the handle survives the blank-is-absent rule.
+        handleFuzzer : Fuzzer String
+        handleFuzzer =
+            Fuzz.map (String.append "h") Fuzz.string
+    in
+    List.foldl
+        (\method info -> Fuzz.map2 (PaymentMethod.set method) (Fuzz.maybe handleFuzzer) info)
+        (Fuzz.constant PaymentMethod.empty)
+        knownMethods
 
 
 memberMetadataFuzzer : Fuzzer Member.Metadata
@@ -91,7 +106,7 @@ memberMetadataFuzzer =
     Fuzz.map4 Member.Metadata
         (Fuzz.maybe Fuzz.string)
         (Fuzz.maybe Fuzz.string)
-        (Fuzz.maybe paymentInfoFuzzer)
+        paymentInfoFuzzer
         (Fuzz.maybe Fuzz.string)
 
 
@@ -337,8 +352,38 @@ memberTypeTests =
 
 paymentInfoTests : Test
 paymentInfoTests =
-    fuzz paymentInfoFuzzer "PaymentInfo roundtrips" <|
-        roundtrip Member.encodePaymentInfo Member.paymentInfoDecoder
+    let
+        -- Every known method, as the wire carries them. Frozen: these keys are
+        -- written into signed events, so changing one orphans existing data.
+        wireJson : String
+        wireJson =
+            """{"t":"mmu","r":"m1","md":{"pm":{"ada":"addr1","btc":"addr2","ib":"FR7630001","ly":"lyd","pp":"pal","rv":"rev","vn":"ven","we":"wer"}}}"""
+    in
+    describe "PaymentInfo"
+        [ fuzz paymentInfoFuzzer "roundtrips" <|
+            roundtrip PaymentMethod.encode PaymentMethod.decoder
+        , test "every known method survives the wire unchanged" <|
+            \_ ->
+                Decode.decodeString Event.payloadDecoder wireJson
+                    |> Result.map (Event.encodePayload >> Encode.encode 0)
+                    |> Expect.equal (Ok wireJson)
+        , test "a handle this version has no method for survives the wire" <|
+            \_ ->
+                let
+                    json : String
+                    json =
+                        """{"t":"mmu","r":"m1","md":{"pm":{"ib":"FR7630001","xmr":"4Bx"}}}"""
+                in
+                Decode.decodeString Event.payloadDecoder json
+                    |> Result.map (Event.encodePayload >> Encode.encode 0)
+                    |> Expect.equal (Ok json)
+        , test "a blank handle is absence, not an empty value" <|
+            \_ ->
+                """{"t":"mmu","r":"m1","md":{"pm":{"ib":"  "}}}"""
+                    |> Decode.decodeString Event.payloadDecoder
+                    |> Result.map (Event.encodePayload >> Encode.encode 0)
+                    |> Expect.equal (Ok """{"t":"mmu","r":"m1","md":{}}""")
+        ]
 
 
 memberMetadataTests : Test

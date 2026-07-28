@@ -33,6 +33,7 @@ import Dict exposing (Dict)
 import Domain.Event as Event exposing (Envelope, Payload(..))
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
+import Domain.PaymentMethod as PaymentMethod
 import Set exposing (Set)
 
 
@@ -88,12 +89,12 @@ foreignPaymentFindings state authorsByRoot ordered =
         selfPresent =
             Dict.keys authorsByRoot |> Set.fromList
 
-        step : Envelope -> ( Dict Member.Id (Maybe Member.PaymentInfo), List Finding ) -> ( Dict Member.Id (Maybe Member.PaymentInfo), List Finding )
+        step : Envelope -> ( Dict Member.Id PaymentMethod.PaymentInfo, List Finding ) -> ( Dict Member.Id PaymentMethod.PaymentInfo, List Finding )
         step e ( prior, acc ) =
             case e.payload of
                 MemberMetadataUpdated data ->
                     let
-                        newPayment : Maybe Member.PaymentInfo
+                        newPayment : PaymentMethod.PaymentInfo
                         newPayment =
                             data.metadata.payment
 
@@ -104,7 +105,7 @@ foreignPaymentFindings state authorsByRoot ordered =
                         flagged : Bool
                         flagged =
                             newPayment
-                                /= (Dict.get data.rootId prior |> Maybe.withDefault Nothing)
+                                /= (Dict.get data.rootId prior |> Maybe.withDefault PaymentMethod.empty)
                                 && foreign
                                 && Set.member data.rootId selfPresent
                     in

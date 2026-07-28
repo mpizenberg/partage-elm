@@ -8,6 +8,7 @@ module Form.EditMemberMetadata exposing
     )
 
 import Domain.Member as Member
+import Domain.PaymentMethod as PaymentMethod
 import Field exposing (Field)
 import Form exposing (Accessor)
 
@@ -129,22 +130,22 @@ initFromMember name meta =
                 Nothing ->
                     f
 
-        payment : Member.PaymentInfo
-        payment =
-            Maybe.withDefault Member.emptyPaymentInfo meta.payment
+        handle : PaymentMethod.Method -> Maybe String
+        handle method =
+            PaymentMethod.get method meta.payment
     in
     Form.modify .name (Field.setFromString name)
         >> setField .phone meta.phone
         >> setField .email meta.email
         >> setField .notes meta.notes
-        >> setField .iban payment.iban
-        >> setField .wero payment.wero
-        >> setField .lydia payment.lydia
-        >> setField .revolut payment.revolut
-        >> setField .paypal payment.paypal
-        >> setField .venmo payment.venmo
-        >> setField .btcAddress payment.btcAddress
-        >> setField .adaAddress payment.adaAddress
+        >> setField .iban (handle PaymentMethod.Iban)
+        >> setField .wero (handle PaymentMethod.Wero)
+        >> setField .lydia (handle PaymentMethod.Lydia)
+        >> setField .revolut (handle PaymentMethod.Revolut)
+        >> setField .paypal (handle PaymentMethod.Paypal)
+        >> setField .venmo (handle PaymentMethod.Venmo)
+        >> setField .btcAddress (handle PaymentMethod.Btc)
+        >> setField .adaAddress (handle PaymentMethod.Ada)
 
 
 init : State

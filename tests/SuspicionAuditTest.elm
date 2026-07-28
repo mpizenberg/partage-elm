@@ -5,6 +5,7 @@ import Domain.Entry as Entry exposing (Kind(..))
 import Domain.Event exposing (Envelope, Payload(..))
 import Domain.GroupState as GroupState exposing (GroupState)
 import Domain.Member as Member
+import Domain.PaymentMethod as PaymentMethod
 import Domain.SuspicionAudit as SuspicionAudit exposing (Kind(..))
 import Expect
 import Test exposing (Test, describe, test)
@@ -14,15 +15,15 @@ import TestHelpers exposing (defaultExpenseData, makeEnvelope, makeExpenseEntry)
 attackerMetadata : Member.Metadata
 attackerMetadata =
     let
-        emptyPay : Member.PaymentInfo
-        emptyPay =
-            Member.emptyPaymentInfo
-
         emptyMeta : Member.Metadata
         emptyMeta =
             Member.emptyMetadata
     in
-    { emptyMeta | payment = Just { emptyPay | iban = Just "MALLORY-IBAN" } }
+    { emptyMeta
+        | payment =
+            PaymentMethod.empty
+                |> PaymentMethod.set PaymentMethod.Iban (Just "MALLORY-IBAN")
+    }
 
 
 stateOf : List Envelope -> GroupState

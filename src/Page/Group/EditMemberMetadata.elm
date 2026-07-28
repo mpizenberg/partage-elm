@@ -13,7 +13,9 @@ module Page.Group.EditMemberMetadata exposing
 {-| Page for editing a member's contact info and payment methods.
 -}
 
+import Dict
 import Domain.Member as Member
+import Domain.PaymentMethod as PaymentMethod
 import FeatherIcons
 import Field
 import Form
@@ -53,6 +55,10 @@ type alias ModelData =
     , form : MetadataForm.Form
     , submitted : Bool
     , panel : Panel
+
+    -- Kept whole so handles this version has no field for are written back
+    -- untouched instead of being dropped on save.
+    , basePayment : PaymentMethod.PaymentInfo
     }
 
 
@@ -132,6 +138,7 @@ init memberId name meta =
         , form = MetadataForm.form |> MetadataForm.initFromMember name meta
         , submitted = False
         , panel = NoPanel
+        , basePayment = meta.payment
         }
 
 
@@ -198,7 +205,7 @@ update config msg (Model data) =
                                 { memberId = data.memberId
                                 , oldName = data.originalName
                                 , newName = output.name
-                                , metadata = metadataFromOutput output
+                                , metadata = metadataFromOutput data.basePayment output
                                 }
                             )
                         )
@@ -383,30 +390,24 @@ defaultSaveSelections form =
     }
 
 
-metadataFromOutput : MetadataForm.Output -> Member.Metadata
-metadataFromOutput output =
-    let
-        paymentInfo : Member.PaymentInfo
-        paymentInfo =
-            { iban = output.iban
-            , wero = output.wero
-            , lydia = output.lydia
-            , revolut = output.revolut
-            , paypal = output.paypal
-            , venmo = output.venmo
-            , btcAddress = output.btcAddress
-            , adaAddress = output.adaAddress
-            }
-    in
+{-| Fold the form's handles into the payment info the member already had, so
+keys this version does not know survive the edit.
+-}
+metadataFromOutput : PaymentMethod.PaymentInfo -> MetadataForm.Output -> Member.Metadata
+metadataFromOutput basePayment output =
     { phone = output.phone
     , email = output.email
     , notes = output.notes
     , payment =
-        if paymentInfo == Member.emptyPaymentInfo then
-            Nothing
-
-        else
-            Just paymentInfo
+        basePayment
+            |> PaymentMethod.set PaymentMethod.Iban output.iban
+            |> PaymentMethod.set PaymentMethod.Wero output.wero
+            |> PaymentMethod.set PaymentMethod.Lydia output.lydia
+            |> PaymentMethod.set PaymentMethod.Revolut output.revolut
+            |> PaymentMethod.set PaymentMethod.Paypal output.paypal
+            |> PaymentMethod.set PaymentMethod.Venmo output.venmo
+            |> PaymentMethod.set PaymentMethod.Btc output.btcAddress
+            |> PaymentMethod.set PaymentMethod.Ada output.adaAddress
     }
 
 
@@ -433,33 +434,25 @@ selectedMetadataFromRawForm sel form =
 
             else
                 Nothing
-
-        paymentInfo : Member.PaymentInfo
-        paymentInfo =
-            { iban = pick sel.iban IbanField
-            , wero = pick sel.wero WeroField
-            , lydia = pick sel.lydia LydiaField
-            , revolut = pick sel.revolut RevolutField
-            , paypal = pick sel.paypal PaypalField
-            , venmo = pick sel.venmo VenmoField
-            , btcAddress = pick sel.btcAddress BtcField
-            , adaAddress = pick sel.adaAddress AdaField
-            }
     in
     { phone = pick sel.phone PhoneField
     , email = pick sel.email EmailField
     , notes = pick sel.notes NotesField
     , payment =
-        if paymentInfo == Member.emptyPaymentInfo then
-            Nothing
-
-        else
-            Just paymentInfo
+        PaymentMethod.empty
+            |> PaymentMethod.set PaymentMethod.Iban (pick sel.iban IbanField)
+            |> PaymentMethod.set PaymentMethod.Wero (pick sel.wero WeroField)
+            |> PaymentMethod.set PaymentMethod.Lydia (pick sel.lydia LydiaField)
+            |> PaymentMethod.set PaymentMethod.Revolut (pick sel.revolut RevolutField)
+            |> PaymentMethod.set PaymentMethod.Paypal (pick sel.paypal PaypalField)
+            |> PaymentMethod.set PaymentMethod.Venmo (pick sel.venmo VenmoField)
+            |> PaymentMethod.set PaymentMethod.Btc (pick sel.btcAddress BtcField)
+            |> PaymentMethod.set PaymentMethod.Ada (pick sel.adaAddress AdaField)
     }
 
 
-{-| Merge a delta into a base profile: for each field, the delta's Just wins;
-otherwise the base's value is preserved. Payment is merged field-by-field.
+{-| Merge a delta into a base profile: for each field, the delta's value wins;
+otherwise the base's is preserved. Payment is merged handle by handle.
 -}
 mergeMetadata : Member.Metadata -> Member.Metadata -> Member.Metadata
 mergeMetadata delta base =
@@ -472,36 +465,11 @@ mergeMetadata delta base =
 
                 Nothing ->
                     b
-
-        basePayment : Member.PaymentInfo
-        basePayment =
-            Maybe.withDefault Member.emptyPaymentInfo base.payment
-
-        deltaPayment : Member.PaymentInfo
-        deltaPayment =
-            Maybe.withDefault Member.emptyPaymentInfo delta.payment
-
-        mergedPayment : Member.PaymentInfo
-        mergedPayment =
-            { iban = pickFirst deltaPayment.iban basePayment.iban
-            , wero = pickFirst deltaPayment.wero basePayment.wero
-            , lydia = pickFirst deltaPayment.lydia basePayment.lydia
-            , revolut = pickFirst deltaPayment.revolut basePayment.revolut
-            , paypal = pickFirst deltaPayment.paypal basePayment.paypal
-            , venmo = pickFirst deltaPayment.venmo basePayment.venmo
-            , btcAddress = pickFirst deltaPayment.btcAddress basePayment.btcAddress
-            , adaAddress = pickFirst deltaPayment.adaAddress basePayment.adaAddress
-            }
     in
     { phone = pickFirst delta.phone base.phone
     , email = pickFirst delta.email base.email
     , notes = pickFirst delta.notes base.notes
-    , payment =
-        if mergedPayment == Member.emptyPaymentInfo then
-            Nothing
-
-        else
-            Just mergedPayment
+    , payment = Dict.union delta.payment base.payment
     }
 
 
@@ -524,22 +492,22 @@ applyFillToForm sel profile form =
                 _ ->
                     f
 
-        payment : Member.PaymentInfo
-        payment =
-            Maybe.withDefault Member.emptyPaymentInfo profile.payment
+        handle : PaymentMethod.Method -> Maybe String
+        handle method =
+            PaymentMethod.get method profile.payment
     in
     form
         |> maybeFill sel.phone profile.phone .phone
         |> maybeFill sel.email profile.email .email
         |> maybeFill sel.notes profile.notes .notes
-        |> maybeFill sel.iban payment.iban .iban
-        |> maybeFill sel.wero payment.wero .wero
-        |> maybeFill sel.lydia payment.lydia .lydia
-        |> maybeFill sel.revolut payment.revolut .revolut
-        |> maybeFill sel.paypal payment.paypal .paypal
-        |> maybeFill sel.venmo payment.venmo .venmo
-        |> maybeFill sel.btcAddress payment.btcAddress .btcAddress
-        |> maybeFill sel.adaAddress payment.adaAddress .adaAddress
+        |> maybeFill sel.iban (handle PaymentMethod.Iban) .iban
+        |> maybeFill sel.wero (handle PaymentMethod.Wero) .wero
+        |> maybeFill sel.lydia (handle PaymentMethod.Lydia) .lydia
+        |> maybeFill sel.revolut (handle PaymentMethod.Revolut) .revolut
+        |> maybeFill sel.paypal (handle PaymentMethod.Paypal) .paypal
+        |> maybeFill sel.venmo (handle PaymentMethod.Venmo) .venmo
+        |> maybeFill sel.btcAddress (handle PaymentMethod.Btc) .btcAddress
+        |> maybeFill sel.adaAddress (handle PaymentMethod.Ada) .adaAddress
 
 
 
@@ -956,9 +924,9 @@ fieldLabel i18n field =
 profileValue : ProfileField -> Member.Metadata -> Maybe String
 profileValue field meta =
     let
-        payment : Member.PaymentInfo
-        payment =
-            Maybe.withDefault Member.emptyPaymentInfo meta.payment
+        handle : PaymentMethod.Method -> Maybe String
+        handle method =
+            PaymentMethod.get method meta.payment
     in
     case field of
         PhoneField ->
@@ -971,28 +939,28 @@ profileValue field meta =
             meta.notes
 
         IbanField ->
-            payment.iban
+            handle PaymentMethod.Iban
 
         WeroField ->
-            payment.wero
+            handle PaymentMethod.Wero
 
         LydiaField ->
-            payment.lydia
+            handle PaymentMethod.Lydia
 
         RevolutField ->
-            payment.revolut
+            handle PaymentMethod.Revolut
 
         PaypalField ->
-            payment.paypal
+            handle PaymentMethod.Paypal
 
         VenmoField ->
-            payment.venmo
+            handle PaymentMethod.Venmo
 
         BtcField ->
-            payment.btcAddress
+            handle PaymentMethod.Btc
 
         AdaField ->
-            payment.adaAddress
+            handle PaymentMethod.Ada
 
 
 formValue : ProfileField -> MetadataForm.Form -> String
