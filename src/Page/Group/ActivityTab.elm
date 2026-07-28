@@ -1192,11 +1192,11 @@ paymentDiffRows i18n oldPayment newPayment =
         let
             old : Member.PaymentInfo
             old =
-                Maybe.withDefault emptyPayment oldPayment
+                Maybe.withDefault Member.emptyPaymentInfo oldPayment
 
             new : Member.PaymentInfo
             new =
-                Maybe.withDefault emptyPayment newPayment
+                Maybe.withDefault Member.emptyPaymentInfo newPayment
 
             rows : List (Ui.Element msg)
             rows =
@@ -1217,19 +1217,6 @@ paymentDiffRows i18n oldPayment newPayment =
 
             _ ->
                 Just (Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ] rows)
-
-
-emptyPayment : Member.PaymentInfo
-emptyPayment =
-    { iban = Nothing
-    , wero = Nothing
-    , lydia = Nothing
-    , revolut = Nothing
-    , paypal = Nothing
-    , venmo = Nothing
-    , btcAddress = Nothing
-    , adaAddress = Nothing
-    }
 
 
 maybeDiffRow : String -> Maybe String -> Maybe String -> Maybe (Ui.Element msg)
