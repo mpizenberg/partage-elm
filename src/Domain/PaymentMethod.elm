@@ -21,6 +21,7 @@ type Method
     | Revolut
     | Paypal
     | Venmo
+    | Cashapp
     | Btc
     | Ada
 
@@ -100,6 +101,9 @@ toKey method =
 
         Venmo ->
             "vn"
+
+        Cashapp ->
+            "ca"
 
         Btc ->
             "btc"

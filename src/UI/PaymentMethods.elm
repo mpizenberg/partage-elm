@@ -77,6 +77,9 @@ next method =
             Just Venmo
 
         Venmo ->
+            Just Cashapp
+
+        Cashapp ->
             Just Btc
 
         Btc ->
@@ -149,6 +152,14 @@ presentation method =
             , url = Just (normalizeHandle "https://venmo.com/")
             }
 
+        Cashapp ->
+            { icon = FeatherIcons.dollarSign
+            , label = T.memberMetadataCashapp
+            , placeholder = "$cashtag"
+            , domId = "cashapp"
+            , url = Just (normalizeHandle "https://cash.app/$")
+            }
+
         Btc ->
             { icon = FeatherIcons.key
             , label = T.memberMetadataBtc
@@ -166,8 +177,9 @@ presentation method =
             }
 
 
-{-| Build a profile link from a handle typed either bare, with a leading `@`, or
-already as the full URL.
+{-| Build a profile link from a handle typed bare, with its sigil, or already as
+the full URL. The sigil belongs to the prefix, so a handle carrying one is not
+allowed to double it up.
 -}
 normalizeHandle : String -> String -> String
 normalizeHandle prefix value =
@@ -179,7 +191,7 @@ normalizeHandle prefix value =
     if String.startsWith prefix trimmed then
         trimmed
 
-    else if String.startsWith "@" trimmed then
+    else if String.startsWith "@" trimmed || String.startsWith "$" trimmed then
         prefix ++ String.dropLeft 1 trimmed
 
     else

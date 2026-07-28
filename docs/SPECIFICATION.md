@@ -207,12 +207,12 @@ Each member can have optional contact and payment information:
 | Category | Fields |
 |---|---|
 | **Contact** | Phone number, email address |
-| **Payment methods** | IBAN, Wero, Lydia, Revolut, PayPal, Venmo, Bitcoin (BTC address), Cardano (ADA address) |
+| **Payment methods** | IBAN, Wero, Lydia, Revolut, PayPal, Venmo, Cash App, Bitcoin (BTC address), Cardano (ADA address) |
 | **Notes** | Free-text information field |
 
 - All metadata is **encrypted** with the group key.
 - Payment details are displayed as copiable text.
-- Some payment methods generate clickable payment links (Lydia, Revolut, PayPal, Venmo, Bitcoin).
+- Some payment methods generate clickable payment links (Lydia, Revolut, PayPal, Venmo, Cash App, Bitcoin).
 - Phone numbers are displayed as clickable `tel:` links.
 - Metadata changes are tracked in the activity feed with field-by-field change detection.
 

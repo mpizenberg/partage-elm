@@ -14,6 +14,7 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import Test exposing (Test, describe, fuzz, test)
 import Time
+import UI.PaymentMethods as PaymentMethods
 
 
 suite : Test
@@ -74,19 +75,6 @@ memberTypeFuzzer =
         ]
 
 
-knownMethods : List PaymentMethod.Method
-knownMethods =
-    [ PaymentMethod.Iban
-    , PaymentMethod.Wero
-    , PaymentMethod.Lydia
-    , PaymentMethod.Revolut
-    , PaymentMethod.Paypal
-    , PaymentMethod.Venmo
-    , PaymentMethod.Btc
-    , PaymentMethod.Ada
-    ]
-
-
 paymentInfoFuzzer : Fuzzer PaymentMethod.PaymentInfo
 paymentInfoFuzzer =
     let
@@ -98,7 +86,7 @@ paymentInfoFuzzer =
     List.foldl
         (\method info -> Fuzz.map2 (PaymentMethod.set method) (Fuzz.maybe handleFuzzer) info)
         (Fuzz.constant PaymentMethod.empty)
-        knownMethods
+        PaymentMethods.all
 
 
 memberMetadataFuzzer : Fuzzer Member.Metadata
@@ -350,6 +338,16 @@ memberTypeTests =
         roundtrip Member.encodeType Member.typeDecoder
 
 
+paymentIn : String -> PaymentMethod.PaymentInfo
+paymentIn json =
+    case Decode.decodeString Event.payloadDecoder json of
+        Ok (MemberMetadataUpdated data) ->
+            data.metadata.payment
+
+        _ ->
+            PaymentMethod.empty
+
+
 paymentInfoTests : Test
 paymentInfoTests =
     let
@@ -357,7 +355,7 @@ paymentInfoTests =
         -- written into signed events, so changing one orphans existing data.
         wireJson : String
         wireJson =
-            """{"t":"mmu","r":"m1","md":{"pm":{"ada":"addr1","btc":"addr2","ib":"FR7630001","ly":"lyd","pp":"pal","rv":"rev","vn":"ven","we":"wer"}}}"""
+            """{"t":"mmu","r":"m1","md":{"pm":{"ada":"addr1","btc":"addr2","ca":"$cash","ib":"FR7630001","ly":"lyd","pp":"pal","rv":"rev","vn":"ven","we":"wer"}}}"""
     in
     describe "PaymentInfo"
         [ fuzz paymentInfoFuzzer "roundtrips" <|
@@ -367,6 +365,11 @@ paymentInfoTests =
                 Decode.decodeString Event.payloadDecoder wireJson
                     |> Result.map (Event.encodePayload >> Encode.encode 0)
                     |> Expect.equal (Ok wireJson)
+        , test "the wire fixture covers every known method" <|
+            \_ ->
+                PaymentMethods.all
+                    |> List.filter (\method -> PaymentMethod.get method (paymentIn wireJson) == Nothing)
+                    |> Expect.equalLists []
         , test "a handle this version has no method for survives the wire" <|
             \_ ->
                 let
