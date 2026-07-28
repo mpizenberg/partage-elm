@@ -19,6 +19,7 @@ import Set exposing (Set)
 import Time
 import Translations as T exposing (I18n)
 import UI.Components
+import UI.PaymentMethods as PaymentMethods
 import UI.Theme as Theme
 import Ui
 import Ui.Font
@@ -1191,22 +1192,15 @@ paymentDiffRows i18n old new =
 
     else
         let
-            methodDiffRow : String -> PaymentMethod.Method -> Maybe (Ui.Element msg)
-            methodDiffRow label method =
-                maybeDiffRow label (PaymentMethod.get method old) (PaymentMethod.get method new)
-
             rows : List (Ui.Element msg)
             rows =
-                List.filterMap identity
-                    [ methodDiffRow (T.memberMetadataIban i18n) PaymentMethod.Iban
-                    , methodDiffRow (T.memberMetadataWero i18n) PaymentMethod.Wero
-                    , methodDiffRow (T.memberMetadataLydia i18n) PaymentMethod.Lydia
-                    , methodDiffRow (T.memberMetadataRevolut i18n) PaymentMethod.Revolut
-                    , methodDiffRow (T.memberMetadataPaypal i18n) PaymentMethod.Paypal
-                    , methodDiffRow (T.memberMetadataVenmo i18n) PaymentMethod.Venmo
-                    , methodDiffRow (T.memberMetadataBtc i18n) PaymentMethod.Btc
-                    , methodDiffRow (T.memberMetadataAda i18n) PaymentMethod.Ada
-                    ]
+                List.filterMap
+                    (\method ->
+                        maybeDiffRow (PaymentMethods.label i18n method)
+                            (PaymentMethod.get method old)
+                            (PaymentMethod.get method new)
+                    )
+                    PaymentMethods.all
         in
         case rows of
             [] ->

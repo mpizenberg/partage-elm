@@ -18,6 +18,7 @@ import Html.Attributes
 import List.Extra
 import Translations as T exposing (I18n)
 import UI.Components
+import UI.PaymentMethods as PaymentMethods
 import UI.Theme as Theme
 import Ui
 import Ui.Font
@@ -433,27 +434,11 @@ settlementDetail i18n config isMember resolveName t state =
     let
         paymentMethodRows : List (Ui.Element msg)
         paymentMethodRows =
-            let
-                payment : PaymentMethod.PaymentInfo
-                payment =
-                    Dict.get t.to state.members
-                        |> Maybe.map (.metadata >> .payment)
-                        |> Maybe.withDefault PaymentMethod.empty
-
-                handle : PaymentMethod.Method -> Maybe String
-                handle method =
-                    PaymentMethod.get method payment
-            in
-            List.filterMap identity
-                [ Maybe.map (\v -> paymentRow FeatherIcons.creditCard (T.memberMetadataIban i18n) v Nothing) (handle PaymentMethod.Iban)
-                , Maybe.map (\v -> paymentRow FeatherIcons.smartphone (T.memberMetadataWero i18n) v Nothing) (handle PaymentMethod.Wero)
-                , Maybe.map (\v -> paymentRow FeatherIcons.dollarSign (T.memberMetadataLydia i18n) v (Just (normalizeHandle "https://pay.lydia.me/l?t=" v))) (handle PaymentMethod.Lydia)
-                , Maybe.map (\v -> paymentRow FeatherIcons.dollarSign (T.memberMetadataRevolut i18n) v (Just (normalizeHandle "https://revolut.me/" v))) (handle PaymentMethod.Revolut)
-                , Maybe.map (\v -> paymentRow FeatherIcons.dollarSign (T.memberMetadataPaypal i18n) v (Just (normalizeHandle "https://paypal.me/" v))) (handle PaymentMethod.Paypal)
-                , Maybe.map (\v -> paymentRow FeatherIcons.dollarSign (T.memberMetadataVenmo i18n) v (Just (normalizeHandle "https://venmo.com/" v))) (handle PaymentMethod.Venmo)
-                , Maybe.map (\v -> paymentRow FeatherIcons.key (T.memberMetadataBtc i18n) v (Just ("bitcoin:" ++ v))) (handle PaymentMethod.Btc)
-                , Maybe.map (\v -> paymentRow FeatherIcons.key (T.memberMetadataAda i18n) v Nothing) (handle PaymentMethod.Ada)
-                ]
+            Dict.get t.to state.members
+                |> Maybe.map (.metadata >> .payment)
+                |> Maybe.withDefault PaymentMethod.empty
+                |> PaymentMethods.handles i18n
+                |> List.map (\h -> paymentRow h.icon h.label h.value h.url)
     in
     Ui.column
         [ Ui.paddingXY Theme.spacing.lg Theme.spacing.md
@@ -535,29 +520,6 @@ copyButton value =
         , Ui.pointer
         ]
         (UI.Components.featherIcon 16 FeatherIcons.copy)
-
-
-normalizeHandle : String -> String -> String
-normalizeHandle prefix value =
-    let
-        trimmed : String
-        trimmed =
-            String.trim value
-    in
-    if String.startsWith prefix trimmed then
-        trimmed
-
-    else
-        let
-            withoutLeadingAt : String
-            withoutLeadingAt =
-                if String.startsWith "@" trimmed then
-                    String.dropLeft 1 trimmed
-
-                else
-                    trimmed
-        in
-        prefix ++ withoutLeadingAt
 
 
 

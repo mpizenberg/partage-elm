@@ -16,6 +16,7 @@ import Set exposing (Set)
 import Time
 import Translations as T exposing (I18n)
 import UI.Components
+import UI.PaymentMethods as PaymentMethods
 import UI.Theme as Theme
 import Ui
 import Ui.Font
@@ -521,17 +522,12 @@ memberCard i18n zone identityHash deviceLinks toMsg expandedMembers maybeUserRoo
 metadataIcons : Bool -> Member.Metadata -> Ui.Element msg
 metadataIcons isCurrentUser meta =
     let
+        -- IBAN gets its own icon below, so the generic one stands for the rest.
         hasPaymentMethod : Bool
         hasPaymentMethod =
-            List.any (\method -> PaymentMethod.get method meta.payment /= Nothing)
-                [ PaymentMethod.Lydia
-                , PaymentMethod.Revolut
-                , PaymentMethod.Paypal
-                , PaymentMethod.Venmo
-                , PaymentMethod.Btc
-                , PaymentMethod.Ada
-                , PaymentMethod.Wero
-                ]
+            PaymentMethods.all
+                |> List.filter ((/=) PaymentMethod.Iban)
+                |> List.any (\method -> PaymentMethod.get method meta.payment /= Nothing)
 
         icons : List (Ui.Element msg)
         icons =
@@ -698,21 +694,9 @@ memberDetail i18n zone identityHash deviceLinks toMsg isCurrentUser maybeUserRoo
 
                 paymentMethods : List (Ui.Element msg)
                 paymentMethods =
-                    let
-                        handle : PaymentMethod.Method -> Maybe String
-                        handle method =
-                            PaymentMethod.get method meta.payment
-                    in
-                    List.filterMap identity
-                        [ Maybe.map (\v -> infoRow subtleColor FeatherIcons.creditCard (T.memberMetadataIban i18n) v Nothing) (handle PaymentMethod.Iban)
-                        , Maybe.map (\v -> infoRow subtleColor FeatherIcons.smartphone (T.memberMetadataWero i18n) v Nothing) (handle PaymentMethod.Wero)
-                        , Maybe.map (\v -> infoRow subtleColor FeatherIcons.dollarSign (T.memberMetadataLydia i18n) v (Just (normalizeHandle "https://pay.lydia.me/l?t=" v))) (handle PaymentMethod.Lydia)
-                        , Maybe.map (\v -> infoRow subtleColor FeatherIcons.dollarSign (T.memberMetadataRevolut i18n) v (Just (normalizeHandle "https://revolut.me/" v))) (handle PaymentMethod.Revolut)
-                        , Maybe.map (\v -> infoRow subtleColor FeatherIcons.dollarSign (T.memberMetadataPaypal i18n) v (Just (normalizeHandle "https://paypal.me/" v))) (handle PaymentMethod.Paypal)
-                        , Maybe.map (\v -> infoRow subtleColor FeatherIcons.dollarSign (T.memberMetadataVenmo i18n) v (Just (normalizeHandle "https://venmo.com/" v))) (handle PaymentMethod.Venmo)
-                        , Maybe.map (\v -> infoRow subtleColor FeatherIcons.key (T.memberMetadataBtc i18n) v (Just ("bitcoin:" ++ v))) (handle PaymentMethod.Btc)
-                        , Maybe.map (\v -> infoRow subtleColor FeatherIcons.key (T.memberMetadataAda i18n) v Nothing) (handle PaymentMethod.Ada)
-                        ]
+                    List.map
+                        (\h -> infoRow subtleColor h.icon h.label h.value h.url)
+                        (PaymentMethods.handles i18n meta.payment)
 
                 paymentMethodsSection : Maybe (Ui.Element msg)
                 paymentMethodsSection =
@@ -900,29 +884,6 @@ copyButton value =
         , Ui.pointer
         ]
         (UI.Components.featherIcon 16 FeatherIcons.copy)
-
-
-normalizeHandle : String -> String -> String
-normalizeHandle prefix value =
-    let
-        trimmed : String
-        trimmed =
-            String.trim value
-    in
-    if String.startsWith prefix trimmed then
-        trimmed
-
-    else
-        let
-            withoutLeadingAt : String
-            withoutLeadingAt =
-                if String.startsWith "@" trimmed then
-                    String.dropLeft 1 trimmed
-
-                else
-                    trimmed
-        in
-        prefix ++ withoutLeadingAt
 
 
 stripSpaces : String -> String
