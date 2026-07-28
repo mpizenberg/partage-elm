@@ -87,6 +87,14 @@ presentation method =
             , url = Just (normalizeHandle "https://revolut.me/")
             }
 
+        Wise ->
+            { icon = FeatherIcons.dollarSign
+            , label = T.memberMetadataWise
+            , placeholder = "@username"
+            , domId = "wise"
+            , url = Just (normalizeHandle "https://wise.com/pay/me/")
+            }
+
         Paypal ->
             { icon = FeatherIcons.dollarSign
             , label = T.memberMetadataPaypal

@@ -354,7 +354,7 @@ paymentInfoTests =
         -- written into signed events, so changing one orphans existing data.
         wireJson : String
         wireJson =
-            """{"t":"mmu","r":"m1","md":{"pm":{"ada":"addr1","btc":"addr2","ca":"$cash","ib":"FR7630001","ly":"lyd","pp":"pal","rv":"rev","vn":"ven","we":"wer"}}}"""
+            """{"t":"mmu","r":"m1","md":{"pm":{"ada":"addr1","btc":"addr2","ca":"$cash","ib":"FR7630001","ly":"lyd","pp":"pal","rv":"rev","vn":"ven","we":"wer","wi":"wis"}}}"""
     in
     describe "PaymentInfo"
         [ fuzz paymentInfoFuzzer "roundtrips" <|

@@ -24,7 +24,7 @@ suite =
           test "every known method appears in canonical order" <|
             \_ ->
                 PaymentMethod.all
-                    |> Expect.equal [ Iban, Wero, Lydia, Revolut, Paypal, Venmo, Cashapp, Btc, Ada ]
+                    |> Expect.equal [ Iban, Wero, Lydia, Revolut, Wise, Paypal, Venmo, Cashapp, Btc, Ada ]
         , test "a handle typed with its sigil does not double it up" <|
             \_ ->
                 ( linkFor Cashapp "$alice", linkFor Revolut "@alice" )

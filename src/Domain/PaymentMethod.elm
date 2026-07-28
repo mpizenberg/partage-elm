@@ -19,6 +19,7 @@ type Method
     | Wero
     | Lydia
     | Revolut
+    | Wise
     | Paypal
     | Venmo
     | Cashapp
@@ -60,6 +61,9 @@ next method =
             Just Revolut
 
         Revolut ->
+            Just Wise
+
+        Wise ->
             Just Paypal
 
         Paypal ->
@@ -147,6 +151,9 @@ toKey method =
 
         Revolut ->
             "rv"
+
+        Wise ->
+            "wi"
 
         Paypal ->
             "pp"
