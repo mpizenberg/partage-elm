@@ -103,7 +103,7 @@ notifyAffectedMembers { pushServerUrl, groupId, groupName, actorRootId, actorNam
         affectedIds : List Member.Id
         affectedIds =
             events
-                |> List.concatMap (\e -> involvedMembers entryCurrentVersion e.payload)
+                |> List.concatMap (\e -> Event.involvedMembers entryCurrentVersion e.payload)
                 |> Set.fromList
                 |> Set.remove actorRootId
                 |> Set.toList
@@ -292,95 +292,6 @@ notificationKey payloads =
 
         _ ->
             "new_activity"
-
-
-{-| Extract involved member IDs from an event payload.
-Similar to Activity.involvedMembers but without full StateContext dependency.
--}
-involvedMembers : (Entry.Id -> Maybe Entry.Entry) -> Event.Payload -> List Member.Id
-involvedMembers entryCurrentVersion payload =
-    case payload of
-        Unknown ->
-            []
-
-        EntryAdded entry ->
-            entryInvolvedMembers entry
-
-        EntryModified entry ->
-            entryInvolvedMembers entry
-
-        EntryDeleted { rootId } ->
-            case entryCurrentVersion rootId of
-                Just entry ->
-                    entryInvolvedMembers entry
-
-                Nothing ->
-                    []
-
-        EntryUndeleted { rootId } ->
-            case entryCurrentVersion rootId of
-                Just entry ->
-                    entryInvolvedMembers entry
-
-                Nothing ->
-                    []
-
-        MemberCreated data ->
-            [ data.memberId ]
-
-        MemberLinked data ->
-            [ data.rootId ]
-
-        MemberRenamed data ->
-            [ data.rootId ]
-
-        MemberRetired data ->
-            [ data.rootId ]
-
-        MemberUnretired data ->
-            [ data.rootId ]
-
-        MemberMetadataUpdated data ->
-            [ data.rootId ]
-
-        GroupCreated _ ->
-            []
-
-        GroupMetadataUpdated _ ->
-            []
-
-        SettlementPreferencesUpdated data ->
-            [ data.memberRootId ]
-
-        CompactionProposed _ ->
-            []
-
-        CompactionApproved _ ->
-            []
-
-
-entryInvolvedMembers : Entry.Entry -> List Member.Id
-entryInvolvedMembers entry =
-    case entry.kind of
-        Expense data ->
-            List.map .memberId data.payers
-                ++ List.map beneficiaryMemberId data.beneficiaries
-
-        Transfer data ->
-            [ data.from, data.to ]
-
-        Income data ->
-            data.receivedBy :: List.map beneficiaryMemberId data.beneficiaries
-
-
-beneficiaryMemberId : Entry.Beneficiary -> Member.Id
-beneficiaryMemberId beneficiary =
-    case beneficiary of
-        Entry.ShareBeneficiary data ->
-            data.memberId
-
-        Entry.ExactBeneficiary data ->
-            data.memberId
 
 
 register : String -> { topic : String, subscription : Encode.Value } -> ConcurrentTask Error ()

@@ -1,4 +1,4 @@
-module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), canonicalize, compareEnvelopes, createGroup, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, payloadDecoder, sortEvents, withSignature, wrap)
+module Domain.Event exposing (Envelope, GroupMetadataChange, Id, Payload(..), canonicalize, compareEnvelopes, createGroup, encodeEnvelope, encodeGroupMetadataChange, encodePayload, envelopeDecoder, groupMetadataChangeDecoder, involvedMembers, payloadDecoder, sortEvents, withSignature, wrap)
 
 {-| Event types and ordering for the event-sourced state machine.
 -}
@@ -84,6 +84,60 @@ type Payload
     | SettlementPreferencesUpdated { memberRootId : Member.Id, preferredRecipients : List Member.Id }
     | CompactionProposed { uptoEventId : Id, eventCount : Int, manifestHash : String }
     | CompactionApproved { proposalId : Id }
+
+
+involvedMembers : (Entry.Id -> Maybe Entry) -> Payload -> List Member.Id
+involvedMembers entryCurrentVersion payload =
+    case payload of
+        Unknown ->
+            []
+
+        EntryAdded entry ->
+            Entry.involvedMembers entry
+
+        EntryModified entry ->
+            Entry.involvedMembers entry
+
+        EntryDeleted { rootId } ->
+            Maybe.map Entry.involvedMembers (entryCurrentVersion rootId)
+                |> Maybe.withDefault []
+
+        EntryUndeleted { rootId } ->
+            Maybe.map Entry.involvedMembers (entryCurrentVersion rootId)
+                |> Maybe.withDefault []
+
+        MemberCreated data ->
+            [ data.memberId ]
+
+        MemberLinked data ->
+            [ data.rootId ]
+
+        MemberRenamed data ->
+            [ data.rootId ]
+
+        MemberRetired data ->
+            [ data.rootId ]
+
+        MemberUnretired data ->
+            [ data.rootId ]
+
+        MemberMetadataUpdated data ->
+            [ data.rootId ]
+
+        SettlementPreferencesUpdated data ->
+            [ data.memberRootId ]
+
+        GroupCreated _ ->
+            []
+
+        GroupMetadataUpdated _ ->
+            []
+
+        CompactionProposed _ ->
+            []
+
+        CompactionApproved _ ->
+            []
 
 
 {-| A partial update to group metadata. Nothing fields are left unchanged,

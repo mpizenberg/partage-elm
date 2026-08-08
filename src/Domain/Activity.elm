@@ -80,95 +80,9 @@ fromEnvelope ctx envelope =
                 , timestamp = envelope.clientTimestamp
                 , actorId = envelope.triggeredBy
                 , detail = detail
-                , involvedMembers = involvedMembers ctx envelope.payload
+                , involvedMembers = Event.involvedMembers ctx.entryCurrentVersion envelope.payload
                 }
             )
-
-
-involvedMembers : StateContext -> Payload -> List Member.Id
-involvedMembers ctx payload =
-    case payload of
-        Unknown ->
-            []
-
-        EntryAdded entry ->
-            entryInvolvedMembers entry
-
-        EntryModified entry ->
-            entryInvolvedMembers entry
-
-        EntryDeleted { rootId } ->
-            case ctx.entryCurrentVersion rootId of
-                Just entry ->
-                    entryInvolvedMembers entry
-
-                Nothing ->
-                    []
-
-        EntryUndeleted { rootId } ->
-            case ctx.entryCurrentVersion rootId of
-                Just entry ->
-                    entryInvolvedMembers entry
-
-                Nothing ->
-                    []
-
-        MemberCreated data ->
-            [ data.memberId ]
-
-        MemberLinked data ->
-            [ data.rootId ]
-
-        MemberRenamed data ->
-            [ data.rootId ]
-
-        MemberRetired data ->
-            [ data.rootId ]
-
-        MemberUnretired data ->
-            [ data.rootId ]
-
-        MemberMetadataUpdated data ->
-            [ data.rootId ]
-
-        GroupCreated _ ->
-            []
-
-        GroupMetadataUpdated _ ->
-            []
-
-        SettlementPreferencesUpdated data ->
-            [ data.memberRootId ]
-
-        CompactionProposed _ ->
-            []
-
-        CompactionApproved _ ->
-            []
-
-
-entryInvolvedMembers : Entry.Entry -> List Member.Id
-entryInvolvedMembers entry =
-    case entry.kind of
-        Expense data ->
-            List.map .memberId data.payers
-                ++ List.map beneficiaryMemberId data.beneficiaries
-
-        Transfer data ->
-            [ data.from, data.to ]
-
-        Income data ->
-            data.receivedBy :: List.map beneficiaryMemberId data.beneficiaries
-
-
-beneficiaryMemberId : Entry.Beneficiary -> Member.Id
-beneficiaryMemberId beneficiary =
-    case beneficiary of
-        Entry.ShareBeneficiary data ->
-            data.memberId
-
-        Entry.ExactBeneficiary data ->
-            data.memberId
 
 
 payloadToDetail : StateContext -> Payload -> Maybe Detail

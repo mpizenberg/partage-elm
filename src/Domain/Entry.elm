@@ -23,6 +23,7 @@ module Domain.Entry exposing
     , entryDecoder
     , entryMetadataDecoder
     , expenseDataDecoder
+    , involvedMembers
     , kindDecoder
     , newMetadata
     , payerDecoder
@@ -166,6 +167,30 @@ ExactBeneficiary assigns a fixed amount.
 type Beneficiary
     = ShareBeneficiary { memberId : Member.Id, shares : Int }
     | ExactBeneficiary { memberId : Member.Id, amount : Int }
+
+
+involvedMembers : Entry -> List Member.Id
+involvedMembers entry =
+    case entry.kind of
+        Expense data ->
+            List.map .memberId data.payers
+                ++ List.map beneficiaryMemberId data.beneficiaries
+
+        Transfer data ->
+            [ data.from, data.to ]
+
+        Income data ->
+            data.receivedBy :: List.map beneficiaryMemberId data.beneficiaries
+
+
+beneficiaryMemberId : Beneficiary -> Member.Id
+beneficiaryMemberId beneficiary =
+    case beneficiary of
+        ShareBeneficiary data ->
+            data.memberId
+
+        ExactBeneficiary data ->
+            data.memberId
 
 
 {-| Expense category for filtering and reporting.

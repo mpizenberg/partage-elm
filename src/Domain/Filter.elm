@@ -126,41 +126,9 @@ matchesPersonFilter persons entry =
         let
             involved : Set Member.Id
             involved =
-                entryInvolvedMembers entry
+                Set.fromList (Entry.involvedMembers entry)
         in
         Set.foldl (\p acc -> acc && Set.member p involved) True persons
-
-
-entryInvolvedMembers : Entry.Entry -> Set Member.Id
-entryInvolvedMembers entry =
-    case entry.kind of
-        Entry.Expense data ->
-            let
-                payerIds : List Member.Id
-                payerIds =
-                    List.map .memberId data.payers
-
-                beneficiaryIds : List Member.Id
-                beneficiaryIds =
-                    List.map beneficiaryMemberId data.beneficiaries
-            in
-            Set.fromList (payerIds ++ beneficiaryIds)
-
-        Entry.Transfer data ->
-            Set.fromList [ data.from, data.to ]
-
-        Entry.Income data ->
-            Set.insert data.receivedBy (Set.fromList (List.map beneficiaryMemberId data.beneficiaries))
-
-
-beneficiaryMemberId : Entry.Beneficiary -> Member.Id
-beneficiaryMemberId b =
-    case b of
-        Entry.ShareBeneficiary r ->
-            r.memberId
-
-        Entry.ExactBeneficiary r ->
-            r.memberId
 
 
 matchesCategoryFilter : Set String -> Entry.Entry -> Bool
