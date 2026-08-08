@@ -72,7 +72,7 @@ real.
 - [ ] **Toast feedback.** A toast (e.g. "copied", or a sync error) is announced by
       the screen reader and does not block clicking the tab bar underneath it.
 
-## Metadata (self-host)
+## Metadata
 
 - [ ] **Canonical / social tags.** In the built `dist/index.html`, the canonical
       and Open Graph URLs point at `CANONICAL_ORIGIN` (the deploy's own host, or

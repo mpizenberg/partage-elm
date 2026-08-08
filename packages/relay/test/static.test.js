@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { startServer } from '../src/node-server.js';
-import { openStorage } from '../src/storage-sqlite.js';
+import { openStorage } from '../src/storage.js';
 import { TEST_SECRET } from './helpers.js';
 
 describe('static frontend serving', () => {

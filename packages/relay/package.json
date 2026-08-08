@@ -7,9 +7,7 @@
   "type": "module",
   "scripts": {
     "serve": "node src/server.js",
-    "test": "node --test",
-    "test:workers": "vitest run",
-    "deploy": "wrangler deploy"
+    "test": "node --test"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.7",
@@ -18,10 +16,5 @@
   },
   "engines": {
     "node": ">=22.5.0"
-  },
-  "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.18.4",
-    "vitest": "^4.1.10",
-    "wrangler": "^4.110.0"
   }
 }

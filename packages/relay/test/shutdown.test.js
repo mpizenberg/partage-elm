@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openStorage } from '../src/storage-sqlite.js';
+import { openStorage } from '../src/storage.js';
 
 const serverPath = fileURLToPath(new URL('../src/server.js', import.meta.url));
 

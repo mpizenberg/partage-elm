@@ -1,6 +1,6 @@
 /**
- * Self-host storage adapter: one SQLite file for all groups, via node:sqlite.
- * Reference implementation of the storage interface documented in app.js.
+ * Relay persistence in one SQLite file for all groups, via node:sqlite.
+ * Implements the storage contract documented in app.js.
  */
 
 import { DatabaseSync } from 'node:sqlite';

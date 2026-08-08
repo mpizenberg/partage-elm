@@ -1,7 +1,5 @@
 /**
- * Per-group storage accounting shared by both storage adapters, so the SQLite
- * file and the Durable Object enforce identical limits. The SQL (reading and
- * writing the counters) lives in each adapter; the policy math lives here.
+ * Pure per-group quota and rate-window accounting for SQLite mutations.
  *
  * `stats` is a raw group row: {record_count, total_bytes, bytes_this_window,
  * window_start}. `limits` is {maxRecords, maxTotalBytes, rateBytes, windowMs}.

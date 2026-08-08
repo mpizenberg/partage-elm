@@ -1,14 +1,13 @@
 /**
- * Portable relay core: a zero-knowledge, append-only encrypted event relay.
+ * Zero-knowledge, append-only encrypted event relay.
  *
  * The server never sees group content — only groupId, actorId (a public-key
  * hash), and opaque encrypted blobs. Auth is group-level: the bearer secret is
  * derived client-side from the group key; the server stores only its SHA-256
  * hash (set once at group creation) and compares in constant time.
  *
- * Platform-agnostic (web-standard APIs only): the same app runs on Node and
- * Cloudflare Workers, with all platform behavior behind the `storage`
- * interface (see storage-sqlite.js for the reference implementation).
+ * The Fetch-style HTTP application depends on the storage contract below;
+ * Node transport and SQLite lifecycle concerns stay outside it.
  */
 
 import { Hono } from 'hono';
@@ -28,7 +27,7 @@ const MAX_EVENT_DATA_BYTES = 1024 * 1024;
 const MAX_BODY_BYTES = MAX_EVENT_DATA_BYTES + 16 * 1024;
 // A compact request carries a whole consolidated history in one transaction.
 // Whole-log gzip compresses far better than per-record, so this bounds honest
-// groups comfortably while keeping the buffered body far below DO memory.
+// groups comfortably while keeping request memory bounded.
 const MAX_COMPACT_BODY_BYTES = 16 * 1024 * 1024;
 
 // A group idle (no authenticated request) longer than this is purged: the
@@ -67,9 +66,8 @@ const REJECTION_METRICS = ['quota_507', 'rate_429', 'body_413'];
 const ADMIN_MAX_AUTH_FAILURES = 5;
 const ADMIN_LOCKOUT_MS = 15 * 60 * 1000;
 
-// Hosting rates mirrored from docs/SPECIFICATION.md §18.2 (the source of truth,
-// also encoded in src/Infra/UsageStats.elm). Cents; compute is a fixed multiple
-// of storage; bandwidth bills egress only.
+// Hosting rates match the client-side estimate in src/Infra/UsageStats.elm.
+// Cents; compute is a fixed multiple of storage; bandwidth bills egress only.
 const BASE_CENTS_PER_MONTH = 10;
 const STORAGE_CENTS_PER_GB_MONTH = 10;
 const BANDWIDTH_CENTS_PER_GB = 10;
@@ -227,8 +225,7 @@ function computeCost({ levels, history, nowMs }) {
  *     incarnation of the group row (the creation PoW challenge), so a
  *     resurrection always yields a different epoch.
  *
- * Optional observability methods (self-host only; absent on the Durable Object
- * adapter until Cloudflare parity lands, so calls go through `storage.bumpMetric?.`):
+ * Observability methods:
  * - bumpMetric(name, day, amount = 1) — day-bucketed counter, UPSERT-add.
  * - recordDailyLevels(day, {name: value}) — day-bucketed level snapshot, UPSERT-replace.
  * - getDailySince(day) → [{day, name, value}] — the counter+level series from `day` on.
@@ -238,8 +235,8 @@ function computeCost({ levels, history, nowMs }) {
  *     → {largestByBytes, largestByRecords, oldestActive, mostActors}, each a
  *       top-`limit` list of {groupId, …} rows for the operator drill-down.
  *
- * `onAppend(groupId, seq)` is called after each successful event append
- * (used by adapters to notify live subscribers).
+ * `onAppend(groupId, seq)` is called after each successful event append so the
+ * HTTP transport can notify live subscribers.
  */
 export function createApp({
   storage,
@@ -251,7 +248,7 @@ export function createApp({
   adminStorageBudgetBytes = null,
 }) {
   const app = new Hono();
-  const bump = (name, amount = 1) => storage.bumpMetric?.(name, new Date().toISOString().slice(0, 10), amount);
+  const bump = (name, amount = 1) => storage.bumpMetric(name, new Date().toISOString().slice(0, 10), amount);
 
   app.use(
     cors({
@@ -318,7 +315,7 @@ export function createApp({
     return c.json({}, 201);
   });
 
-  // Not a '/api/groups/:id/*' wildcard: the Node adapter mounts its WebSocket
+  // Not a '/api/groups/:id/*' wildcard: the Node server mounts its WebSocket
   // route on the same app, and WS auth is query-parameter-based (browsers
   // cannot set headers there) and must never renew last_access.
   const groupAuth = async (c, next) => {

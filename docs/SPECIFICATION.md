@@ -284,4 +284,4 @@ An alternative relay implementation must preserve these boundaries:
 - compact transactionally without modifying encrypted records outside the submitted replacement set; and
 - never add a member-triggered whole-group deletion capability.
 
-The shipped relay supports a self-hosted SQLite process and Cloudflare Durable Objects. Endpoint shapes, database columns, operator observability, and deployment configuration are implementation concerns documented by source, conformance tests, and [DEPLOY.md](DEPLOY.md), not part of this feature specification.
+The shipped relay is a Node.js process backed by SQLite. Endpoint shapes, database columns, operator observability, and deployment configuration are implementation concerns documented by source, tests, and [DEPLOY.md](DEPLOY.md), not part of this feature specification.

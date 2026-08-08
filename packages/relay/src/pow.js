@@ -6,14 +6,11 @@
  * with an HMAC secret, and the signature is verified when the solution comes
  * back. Binding the challenge to one groupId makes replay useless: a solved
  * challenge only works for that group, and the group can only be created
- * once. This must hold without shared state, because on Cloudflare each
- * group's storage lives in its own Durable Object.
+ * once. Stateless challenges survive process restarts and require no cleanup.
  *
  * Wire format (challenge fields, solution field names, and the
  * SHA-256(challenge + solution) leading-zero-bits condition) must match the
  * client solver in vendor/elm-webcrypto (WebCrypto.ProofOfWork).
- *
- * WebCrypto only — runs identically on Node and Cloudflare Workers.
  */
 
 export const DIFFICULTY = 18;

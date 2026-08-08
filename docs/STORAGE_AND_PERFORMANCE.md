@@ -18,12 +18,10 @@ in place.
 
 ## The budget it has to fit
 
-Partage is meant to be hostable for near-zero cost: one Cloudflare Worker
-(one SQLite Durable Object per group, WebSockets hibernating while idle — this
-typically fits the free plan), or a single self-hosted container with one
-SQLite file. Both bill for stored bytes, requests, and compute. So the design
-must keep *aggregate* storage and request volume inside those limits
-indefinitely — not just today, but after years of accumulated groups.
+Partage is meant to be hostable for near-zero cost as a single Node.js
+container with one SQLite file. The design must keep aggregate storage,
+requests, and compute modest indefinitely — not just today, but after years of
+accumulated groups.
 
 ## What honest usage costs
 
@@ -40,7 +38,7 @@ The cost drivers are not organic usage; they are failure modes:
 
 | Driver | Why it grows | Lever |
 |---|---|---|
-| **Dead groups** | A group deleted on every client still occupies its rows (and its Durable Object) forever. The one driver that scales with *total groups ever created*, not activity. | **Inactivity TTL** ([contract](SPECIFICATION.md#relay-retention-recovery-and-compaction)): purge groups idle past the retention window (12 months). A purge needs *every* member absent, so no single member can starve a live group. |
+| **Dead groups** | A group deleted on every client still occupies its relay rows forever. The one driver that scales with *total groups ever created*, not activity. | **Inactivity TTL** ([contract](SPECIFICATION.md#relay-retention-recovery-and-compaction)): purge groups idle past the retention window (12 months). A purge needs *every* member absent, so no single member can starve a live group. |
 | **Duplicate records** | A push whose response is lost, or a group switched mid-sync, re-pushes an already-stored batch. Clients dedup on pull, so duplicates are invisible — and immortal — on the relay. | **Idempotent append** ([contract](SPECIFICATION.md#synchronization-contract)): each push carries a content-derived `recordId` (`UNIQUE(group_id, record_id)`); a replay returns the existing `seq` instead of inserting. |
 | **Abuse** | The bearer secret is derived from the group key and there is no natural per-group quota: any key holder can append 1 MB records in a loop. | **Absolute quota** (50 MB / 50 000 records) + **monthly rate cap** (~5 MB/group/month) ([contract](SPECIFICATION.md#relay-retention-recovery-and-compaction)). The quota bounds total damage; the rate cap bounds its *speed*, buying months of detection time. Honest groups sit orders of magnitude below both. |
 | **Record fragmentation** | In trickle usage every entry flushes as its own record, so record count ≈ event count and per-record gzip can't exploit cross-event redundancy (repeated ids, keys, JSON shape). A compression multiplier, not a driver. | **Compaction** (below). |
@@ -95,10 +93,11 @@ weakening it.
 
 **Relay.** Pull pages are capped by bytes (4 MiB) as well as by 200 records — a
 1 MB record cap alone would let a page reach 200 MB — always returning at least
-one record so a lone large record still drains. Indexes are already right (`events(group_id,
-seq)` on Node, per-group DB keyed by `seq` on Cloudflare); DO WebSockets
-hibernate; `VACUUM` (or `auto_vacuum=INCREMENTAL`) reclaims space after purges,
-since SQLite files never shrink on their own.
+one record so a lone large record still drains. The `events(group_id, seq)`
+index serves cursor pulls. WebSockets carry only live-update hints; correctness
+does not depend on keeping them open. Incremental
+vacuum reclaims space after purges, since SQLite files never shrink on their
+own.
 
 ## Measuring, not guessing
 
@@ -115,6 +114,6 @@ sees ciphertext.
 
 The [per-user cost estimate](SPECIFICATION.md#usage-and-cost-information) on the
 About screen and the operator dashboard's
-[run-rate](DEPLOY.md#operator-dashboard-self-host) turn the budget into a number
+[run-rate](DEPLOY.md#operator-dashboard) turn the budget into a number
 the user and the operator can watch. The levers
-above are what keep that number inside the free tier as groups accumulate.
+above are what keep that number inside a small hosting budget as groups accumulate.

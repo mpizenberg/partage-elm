@@ -1,5 +1,5 @@
 /**
- * Self-host entrypoint: serves the relay API and (optionally) the built
+ * Relay entrypoint: serves the API and (optionally) the built
  * frontend from one Node process.
  *
  * Configuration:
@@ -17,7 +17,7 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { startServer } from './node-server.js';
-import { openStorage } from './storage-sqlite.js';
+import { openStorage } from './storage.js';
 import { RETENTION_MS, fleetLevelParams } from './app.js';
 
 const dev = process.argv.includes('--dev');

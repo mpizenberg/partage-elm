@@ -6,7 +6,7 @@
  * attacker cannot lock the operator out. The caller keys it off the reverse
  * proxy's rightmost X-Forwarded-For entry — the value the proxy appends from the
  * real peer, which a client cannot spoof — so the operator's own address cannot
- * be framed into a lockout either. State is in-memory (self-host is one process)
+ * be framed into a lockout either. State is in-memory (the relay is one process)
  * and expendable across restarts.
  */
 export function createAdminThrottle({ maxFailures, durationMs, now = () => Date.now() }) {

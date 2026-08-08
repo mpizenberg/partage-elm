@@ -58,4 +58,3 @@ jobs:
         run: |
           pnpm -C packages/relay install --frozen-lockfile
           pnpm -C packages/relay test
-          pnpm -C packages/relay test:workers

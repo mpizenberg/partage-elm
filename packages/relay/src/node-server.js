@@ -1,6 +1,6 @@
 /**
- * Node self-host adapter: the portable app plus WebSocket live updates and
- * optional static frontend serving, in one process.
+ * Node HTTP server with WebSocket live updates and optional static frontend
+ * serving in one process.
  *
  * WebSocket auth uses an `?auth=<secret>` query parameter because the browser
  * WebSocket API cannot set an Authorization header. The secret only grants

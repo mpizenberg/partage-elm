@@ -34,7 +34,7 @@ See [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md) for the canonical feature s
 | Frontend | [Elm](https://elm-lang.org) 0.19.1, `elm-ui`, `elm-concurrent-task` |
 | Crypto | Web Crypto API (AES-256-GCM, ECDSA P-256, SHA-256) |
 | Local storage | IndexedDB |
-| Backend | Minimal zero-knowledge relay ([Hono](https://hono.dev) over SQLite; Cloudflare Workers or one self-hosted container) |
+| Backend | Minimal zero-knowledge Node.js relay ([Hono](https://hono.dev) over SQLite) |
 | Build | `elm-watch`, `esbuild`, `travelm-agency` (i18n) |
 
 The relay backend lives in [`packages/relay`](packages/relay). It stores only encrypted blobs and signed metadata — it cannot decrypt anything.
@@ -68,7 +68,7 @@ pnpm format:check  # elm-format --validate
 
 ## Deployment
 
-See [`docs/DEPLOY.md`](docs/DEPLOY.md) for deployment (Cloudflare Workers, or one self-hosted container).
+See [`docs/DEPLOY.md`](docs/DEPLOY.md) for container deployment.
 
 ## Repository layout
 

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { openStorage } from '../src/storage-sqlite.js';
+import { openStorage } from '../src/storage.js';
 import { makeApp, createGroup, pushEvent, pullEvents, compactGroup, record } from './helpers.js';
 
 const GENEROUS = { maxRecords: 50000, maxTotalBytes: 50 * 1024 * 1024, rateBytes: 10 * 1024 * 1024, windowMs: 1000 };
