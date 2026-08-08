@@ -119,10 +119,6 @@ empty =
     }
 
 
-
--- TODO: add argument of current id to extract user balance
-
-
 summarize : Member.Id -> Group.Id -> Time.Posix -> GroupState -> Group.Summary
 summarize memberId groupId lastSyncedAt state =
     { id = groupId
@@ -132,7 +128,6 @@ summarize memberId groupId lastSyncedAt state =
     , isArchived = False
     , createdAt = state.groupMeta.createdAt
     , memberCount =
-        -- TODO: maybe a more efficient way than recreate a dict would be better ^^
         Dict.filter (\_ m -> not m.isRetired) state.members
             |> Dict.size
     , myBalanceCents =

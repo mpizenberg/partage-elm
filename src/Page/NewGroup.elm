@@ -217,7 +217,6 @@ currencyField i18n form =
             (List.map
                 (\c ->
                     UI.Components.chip
-                        -- TODO later: add currency symbol if known
                         { label = Currency.currencyCode c
                         , selected = selected == Just c
                         , onPress = InputCurrency (currencyToString c)

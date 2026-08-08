@@ -66,7 +66,6 @@ idCharGenerator =
 -}
 v4 : Random.Seed -> ( String, Random.Seed )
 v4 seed =
-    -- TODO later: use UUID.step instead for better randomness
     Tuple.mapFirst UUID.toString (Random.step UUID.generator seed)
 
 
@@ -74,7 +73,6 @@ v4 seed =
 -}
 v4batch : Int -> Random.Seed -> ( List String, Random.Seed )
 v4batch n seed =
-    -- TODO later: use UUID.step instead for better randomness
     v4batchHelp n seed []
 
 
