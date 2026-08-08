@@ -3,6 +3,7 @@
 ## Progress
 
 - Exploration complete: the whole-view abstraction is not worthwhile; two small presentation policies can be centralized independently, while the audit exposed allocation-detail correctness gaps that should be handled as a focused Activity task.
+- Recommendation accepted: replaced the broad backlog item with category presentation ownership, named localized date labels in the existing small-utilities item, and started a separate Activity audit-fidelity task.
 
 ## Goal
 
@@ -50,3 +51,4 @@ Do not change the standing backlog until the user chooses among those follow-ups
 
 - Treat the two tabs as intentionally independent renderers. Alternative: investigate a common visual component. Reason: Entries presents final ledger state while Activity presents event history and diffs; shared layout would couple distinct density and information goals.
 - Recommend removing the broad sharing item. Alternative: retain it with narrower wording. Reason: the viable reductions are independent category/date policies, while the important cross-tab findings are correctness issues rather than evidence for a shared renderer.
+- On user approval, replace the broad backlog item rather than preserving it as historical context. Alternative: append caveats to the old item. Reason: the backlog should describe work still worth doing, not retain a rejected abstraction.
