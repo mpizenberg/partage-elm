@@ -37,7 +37,9 @@ See [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md) for the canonical feature s
 | Backend | Minimal zero-knowledge Node.js relay ([Hono](https://hono.dev) over SQLite) |
 | Build | `elm-watch`, `esbuild`, `travelm-agency` (i18n) |
 
-The relay backend lives in [`packages/relay`](packages/relay). It stores only encrypted blobs and signed metadata — it cannot decrypt anything.
+The relay backend lives in [`packages/relay`](packages/relay). It stores only encrypted blobs and signed metadata — it cannot decrypt anything. Its Hono application keeps Fetch-style HTTP and injected-storage boundaries, while the Node.js/WebSocket transport and SQLite lifecycle stay outside; a future platform port can therefore implement the [relay contract](docs/SPECIFICATION.md#relay-implementation-contract) without retaining dormant adapters today.
+
+`Page.Group.EntriesTab` and `Page.Group.ActivityTab` intentionally own separate entry renderers. Entries presents interactive current ledger state grouped by business date; Activity presents compact historical snapshots and diffs grouped by event time. Shared domain and presentation policies should remain narrower than those views.
 
 ## Getting started
 
@@ -45,8 +47,11 @@ Requirements: Node.js ≥ 22.5 and pnpm ≥ 10.
 
 ```sh
 pnpm install
+pnpm -C packages/relay install
 pnpm dev
 ```
+
+The root application and relay deliberately have independent lockfiles. The relay lockfile is the self-contained production dependency boundary copied into its Docker image. Each package's `pnpm-workspace.yaml` records the dependency install scripts it permits; add exceptions deliberately rather than allowing scripts globally.
 
 `pnpm dev` runs the relay, elm-watch, esbuild, the i18n watcher, and the service worker builder concurrently via `run-pty`. The app is served by elm-watch (Elm dev server) and the backend at <http://localhost:8090>.
 
