@@ -883,23 +883,23 @@ update msg model =
                                 summary : Group.Summary
                                 summary =
                                     GroupState.summarize memberId groupId model.currentTime preview.groupState
-
-                                updatedModel : Model
-                                updatedModel =
-                                    { model
-                                        | joinGroupModel = joinModel
-                                        , pendingJoinAction =
-                                            Just
-                                                { groupId = groupId
-                                                , action = joinData.selectedAction
-                                                , newMemberName = joinData.newMemberName
-                                                }
-                                    }
                             in
                             ( model.runner, Cmd.none )
                                 |> Runner.andRun (OnJoinGroupSaved groupId memberId)
                                     (Storage.saveGroup readyData.db summary (Just (Symmetric.exportKey groupKey)) Storage.Pushed preview.events preview.syncCursor)
-                                |> Tuple.mapFirst (\r -> { updatedModel | runner = r })
+                                |> Tuple.mapFirst
+                                    (\r ->
+                                        { model
+                                            | joinGroupModel = joinModel
+                                            , pendingJoinAction =
+                                                Just
+                                                    { groupId = groupId
+                                                    , action = joinData.selectedAction
+                                                    , newMemberName = joinData.newMemberName
+                                                    }
+                                            , runner = r
+                                        }
+                                    )
 
                         _ ->
                             ( { model | joinGroupModel = joinModel }, Cmd.none )
@@ -1314,22 +1314,24 @@ update msg model =
                         freshStats : UsageStats
                         freshStats =
                             UsageStats.defaultStats model.currentTime
-
-                        breakdown : UsageStats.CostBreakdown
-                        breakdown =
-                            UsageStats.calculateCosts model.currentTime freshStats
-
-                        trackingSince : String
-                        trackingSince =
-                            Date.toString (Date.posixToDate model.timeZone freshStats.trackingStartDate)
-
-                        ( aboutModel, _ ) =
-                            Page.About.update (Page.About.statsLoaded breakdown trackingSince persistStatus) model.aboutModel
                     in
                     ( model.runner, Cmd.none )
                         |> Runner.andRun (\_ -> NoOp)
                             (Storage.saveUsageStats readyData.db freshStats)
-                        |> Tuple.mapFirst (\r -> { model | aboutModel = aboutModel, runner = r })
+                        |> Tuple.mapFirst
+                            (\r ->
+                                let
+                                    ( aboutModel, _ ) =
+                                        Page.About.update
+                                            (Page.About.statsLoaded
+                                                (UsageStats.calculateCosts model.currentTime freshStats)
+                                                (Date.toString (Date.posixToDate model.timeZone freshStats.trackingStartDate))
+                                                persistStatus
+                                            )
+                                            model.aboutModel
+                                in
+                                { model | aboutModel = aboutModel, runner = r }
+                            )
 
                 _ ->
                     ( model, Cmd.none )

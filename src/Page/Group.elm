@@ -289,7 +289,7 @@ type
     | OnDiagnosticsLoaded (ConcurrentTask.Response Idb.Error Page.Group.Diagnostics.Stats)
     | OnServerEvent Json.Decode.Value
     | SyncTick
-    | ScrollToEntryResult (Result Browser.Dom.Error ())
+    | ScrollToEntryResult
     | OnRateFetched Currency (ConcurrentTask.Response Http.Error Float)
 
 
@@ -1424,7 +1424,7 @@ update config msg model =
                 Nothing ->
                     ( model, Cmd.none, [] )
 
-        ScrollToEntryResult _ ->
+        ScrollToEntryResult ->
             ( model, Cmd.none, [] )
 
 
@@ -2257,7 +2257,7 @@ scrollToEntryCmd entryId =
     Process.sleep 50
         |> Task.andThen (\_ -> Browser.Dom.getElement (entryDomId entryId))
         |> Task.andThen (\el -> Browser.Dom.setViewport 0 el.element.y)
-        |> Task.attempt ScrollToEntryResult
+        |> Task.attempt (\_ -> ScrollToEntryResult)
 
 
 {-| Build entry form config for a confirmed member.

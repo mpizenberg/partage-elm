@@ -1,23 +1,6 @@
-module Infra.ConcurrentTaskExtra exposing
-    ( AttemptBatch, initAttemptBatch, andAttempt, batchAttempt
-    , TaskRunner, TaskRunnerConfig, initTaskRunner, andRun, andCmd, subscription
-    )
+module Infra.ConcurrentTaskExtra exposing (TaskRunner, TaskRunnerConfig, initTaskRunner, andRun, andCmd, subscription)
 
 {-| Helpers for working with `ConcurrentTask`.
-
-
-## Batch Attempt
-
-Start multiple tasks with different response types in one go,
-threading the pool through each attempt automatically.
-
-    initAttemptBatch pool send
-        |> andAttempt OnTask1Complete task1
-        |> andAttempt OnTask2Complete task2
-        |> andAttempt OnTask3Complete task3
-        |> batchAttempt
-
-@docs AttemptBatch, initAttemptBatch, andAttempt, batchAttempt
 
 
 ## Task Runner
@@ -37,43 +20,6 @@ Thread a `( TaskRunner msg, Cmd msg )` tuple through multiple task attempts.
 import ConcurrentTask exposing (ConcurrentTask, Pool, Response)
 import Json.Decode as Decode
 import Json.Encode as Encode
-
-
-{-| An opaque builder that accumulates tasks to attempt on a shared pool.
--}
-type AttemptBatch msg
-    = AttemptBatch (Pool msg) (Decode.Value -> Cmd msg) (List (Cmd msg))
-
-
-{-| Start building a batch of attempts from a pool and a send function.
--}
-initAttemptBatch : Pool msg -> (Decode.Value -> Cmd msg) -> AttemptBatch msg
-initAttemptBatch p s =
-    AttemptBatch p s []
-
-
-{-| Add a task to the batch with its own completion handler.
-Each task can have different error and success types.
--}
-andAttempt : (Response x a -> msg) -> ConcurrentTask x a -> AttemptBatch msg -> AttemptBatch msg
-andAttempt onComplete task (AttemptBatch p s cmds) =
-    let
-        ( nextPool, cmd ) =
-            ConcurrentTask.attempt
-                { pool = p
-                , send = s
-                , onComplete = onComplete
-                }
-                task
-    in
-    AttemptBatch nextPool s (cmd :: cmds)
-
-
-{-| Finalize the batch, returning the updated pool and a single batched command.
--}
-batchAttempt : AttemptBatch msg -> ( Pool msg, Cmd msg )
-batchAttempt (AttemptBatch p _ cmds) =
-    ( p, Cmd.batch cmds )
 
 
 {-| Configuration to initialize a TaskRunner.
