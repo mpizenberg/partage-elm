@@ -1,4 +1,4 @@
-module Domain.Activity exposing (Activity, Detail(..), GroupMetadataSnapshot, StateContext, fromEnvelope)
+module Domain.Activity exposing (Activity, ChangedField(..), Detail(..), GroupMetadataSnapshot, StateContext, fromEnvelope)
 
 {-| Activity feed types and logic. Built incrementally by GroupState.applyEvents.
 -}
@@ -32,14 +32,35 @@ type alias GroupMetadataSnapshot =
     }
 
 
+type ChangedField
+    = DescriptionField
+    | AmountField
+    | DateField
+    | PayersField
+    | BeneficiariesField
+    | CategoryField
+    | LocationField
+    | NotesField
+    | AttachmentsField
+    | FromField
+    | ToField
+    | ReceivedByField
+    | PhoneField
+    | EmailField
+    | PaymentField
+    | NameField
+    | SubtitleField
+    | LinksField
+
+
 {-| What happened in this activity.
 -}
 type Detail
     = UnknownDetail
     | EntryAddedDetail { entry : Entry.Entry }
-    | EntryModifiedDetail { entry : Entry.Entry, previousEntry : Maybe Entry.Entry, changes : List String }
+    | EntryModifiedDetail { entry : Entry.Entry, previousEntry : Maybe Entry.Entry, changes : List ChangedField }
     | TransferAddedDetail { entry : Entry.Entry }
-    | TransferModifiedDetail { entry : Entry.Entry, previousEntry : Maybe Entry.Entry, changes : List String }
+    | TransferModifiedDetail { entry : Entry.Entry, previousEntry : Maybe Entry.Entry, changes : List ChangedField }
     | EntryDeletedDetail { entryDescription : String, entry : Maybe Entry.Entry }
     | EntryUndeletedDetail { entryDescription : String, entry : Maybe Entry.Entry }
     | MemberCreatedDetail { name : String, memberType : Member.Type }
@@ -47,9 +68,9 @@ type Detail
     | MemberRenamedDetail { oldName : String, newName : String, rootId : Member.Id }
     | MemberRetiredDetail { name : String, rootId : Member.Id }
     | MemberUnretiredDetail { name : String, rootId : Member.Id }
-    | MemberMetadataUpdatedDetail { name : String, rootId : Member.Id, oldMetadata : Member.Metadata, newMetadata : Member.Metadata, updatedFields : List String }
+    | MemberMetadataUpdatedDetail { name : String, rootId : Member.Id, oldMetadata : Member.Metadata, newMetadata : Member.Metadata, updatedFields : List ChangedField }
     | GroupCreatedDetail { name : String, defaultCurrency : Currency }
-    | GroupMetadataUpdatedDetail { oldMeta : GroupMetadataSnapshot, newMeta : GroupMetadataSnapshot, changedFields : List String }
+    | GroupMetadataUpdatedDetail { oldMeta : GroupMetadataSnapshot, newMeta : GroupMetadataSnapshot, changedFields : List ChangedField }
     | SettlementPreferencesUpdatedDetail { name : String, memberRootId : Member.Id, oldRecipients : List String, newRecipients : List String }
 
 
@@ -234,7 +255,7 @@ entryModifiedDetail ctx entry =
                 }
 
 
-expenseChanges : Maybe Entry.Entry -> Entry.ExpenseData -> List String
+expenseChanges : Maybe Entry.Entry -> Entry.ExpenseData -> List ChangedField
 expenseChanges maybePrev newData =
     case maybePrev of
         Nothing ->
@@ -245,42 +266,54 @@ expenseChanges maybePrev newData =
                 Expense oldData ->
                     List.filterMap identity
                         [ if oldData.description /= newData.description then
-                            Just "description"
+                            Just DescriptionField
 
                           else
                             Nothing
-                        , if oldData.amount /= newData.amount || oldData.currency /= newData.currency then
-                            Just "amount"
+                        , if
+                            oldData.amount
+                                /= newData.amount
+                                || oldData.currency
+                                /= newData.currency
+                                || oldData.defaultCurrencyAmount
+                                /= newData.defaultCurrencyAmount
+                          then
+                            Just AmountField
 
                           else
                             Nothing
                         , if oldData.date /= newData.date then
-                            Just "date"
+                            Just DateField
 
                           else
                             Nothing
                         , if oldData.payers /= newData.payers then
-                            Just "payers"
+                            Just PayersField
 
                           else
                             Nothing
                         , if oldData.beneficiaries /= newData.beneficiaries then
-                            Just "beneficiaries"
+                            Just BeneficiariesField
 
                           else
                             Nothing
                         , if oldData.category /= newData.category then
-                            Just "category"
+                            Just CategoryField
+
+                          else
+                            Nothing
+                        , if oldData.location /= newData.location then
+                            Just LocationField
 
                           else
                             Nothing
                         , if oldData.notes /= newData.notes then
-                            Just "notes"
+                            Just NotesField
 
                           else
                             Nothing
                         , if oldData.attachments /= newData.attachments then
-                            Just "attachments"
+                            Just AttachmentsField
 
                           else
                             Nothing
@@ -293,7 +326,7 @@ expenseChanges maybePrev newData =
                     []
 
 
-transferChanges : Maybe Entry.Entry -> Entry.TransferData -> List String
+transferChanges : Maybe Entry.Entry -> Entry.TransferData -> List ChangedField
 transferChanges maybePrev newData =
     case maybePrev of
         Nothing ->
@@ -304,37 +337,44 @@ transferChanges maybePrev newData =
                 Transfer oldData ->
                     List.filterMap identity
                         [ if oldData.description /= newData.description then
-                            Just "description"
+                            Just DescriptionField
 
                           else
                             Nothing
-                        , if oldData.amount /= newData.amount || oldData.currency /= newData.currency then
-                            Just "amount"
+                        , if
+                            oldData.amount
+                                /= newData.amount
+                                || oldData.currency
+                                /= newData.currency
+                                || oldData.defaultCurrencyAmount
+                                /= newData.defaultCurrencyAmount
+                          then
+                            Just AmountField
 
                           else
                             Nothing
                         , if oldData.date /= newData.date then
-                            Just "date"
+                            Just DateField
 
                           else
                             Nothing
                         , if oldData.from /= newData.from then
-                            Just "from"
+                            Just FromField
 
                           else
                             Nothing
                         , if oldData.to /= newData.to then
-                            Just "to"
+                            Just ToField
 
                           else
                             Nothing
                         , if oldData.notes /= newData.notes then
-                            Just "notes"
+                            Just NotesField
 
                           else
                             Nothing
                         , if oldData.attachments /= newData.attachments then
-                            Just "attachments"
+                            Just AttachmentsField
 
                           else
                             Nothing
@@ -347,7 +387,7 @@ transferChanges maybePrev newData =
                     []
 
 
-incomeChanges : Maybe Entry.Entry -> Entry.IncomeData -> List String
+incomeChanges : Maybe Entry.Entry -> Entry.IncomeData -> List ChangedField
 incomeChanges maybePrev newData =
     case maybePrev of
         Nothing ->
@@ -358,37 +398,44 @@ incomeChanges maybePrev newData =
                 Income oldData ->
                     List.filterMap identity
                         [ if oldData.description /= newData.description then
-                            Just "description"
+                            Just DescriptionField
 
                           else
                             Nothing
-                        , if oldData.amount /= newData.amount || oldData.currency /= newData.currency then
-                            Just "amount"
+                        , if
+                            oldData.amount
+                                /= newData.amount
+                                || oldData.currency
+                                /= newData.currency
+                                || oldData.defaultCurrencyAmount
+                                /= newData.defaultCurrencyAmount
+                          then
+                            Just AmountField
 
                           else
                             Nothing
                         , if oldData.date /= newData.date then
-                            Just "date"
+                            Just DateField
 
                           else
                             Nothing
                         , if oldData.receivedBy /= newData.receivedBy then
-                            Just "receivedBy"
+                            Just ReceivedByField
 
                           else
                             Nothing
                         , if oldData.beneficiaries /= newData.beneficiaries then
-                            Just "beneficiaries"
+                            Just BeneficiariesField
 
                           else
                             Nothing
                         , if oldData.notes /= newData.notes then
-                            Just "notes"
+                            Just NotesField
 
                           else
                             Nothing
                         , if oldData.attachments /= newData.attachments then
-                            Just "attachments"
+                            Just AttachmentsField
 
                           else
                             Nothing
@@ -398,26 +445,26 @@ incomeChanges maybePrev newData =
                     []
 
 
-memberMetadataChanges : Member.Metadata -> Member.Metadata -> List String
+memberMetadataChanges : Member.Metadata -> Member.Metadata -> List ChangedField
 memberMetadataChanges oldMeta newMeta =
     List.filterMap identity
         [ if oldMeta.phone /= newMeta.phone then
-            Just "phone"
+            Just PhoneField
 
           else
             Nothing
         , if oldMeta.email /= newMeta.email then
-            Just "email"
+            Just EmailField
 
           else
             Nothing
         , if oldMeta.payment /= newMeta.payment then
-            Just "payment"
+            Just PaymentField
 
           else
             Nothing
         , if oldMeta.notes /= newMeta.notes then
-            Just "notes"
+            Just NotesField
 
           else
             Nothing
@@ -427,13 +474,13 @@ memberMetadataChanges oldMeta newMeta =
 groupMetadataChangedFields :
     { a | name : String, subtitle : Maybe String, description : Maybe String, links : List Group.Link }
     -> Event.GroupMetadataChange
-    -> List String
+    -> List ChangedField
 groupMetadataChangedFields oldMeta change =
     List.filterMap identity
         [ case change.name of
             Just newName ->
                 if newName /= oldMeta.name then
-                    Just "name"
+                    Just NameField
 
                 else
                     Nothing
@@ -443,7 +490,7 @@ groupMetadataChangedFields oldMeta change =
         , case change.subtitle of
             Just newSubtitle ->
                 if newSubtitle /= oldMeta.subtitle then
-                    Just "subtitle"
+                    Just SubtitleField
 
                 else
                     Nothing
@@ -453,7 +500,7 @@ groupMetadataChangedFields oldMeta change =
         , case change.description of
             Just newDesc ->
                 if newDesc /= oldMeta.description then
-                    Just "description"
+                    Just DescriptionField
 
                 else
                     Nothing
@@ -463,7 +510,7 @@ groupMetadataChangedFields oldMeta change =
         , case change.links of
             Just newLinks ->
                 if newLinks /= oldMeta.links then
-                    Just "links"
+                    Just LinksField
 
                 else
                     Nothing

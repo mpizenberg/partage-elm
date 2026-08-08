@@ -4,7 +4,7 @@ module Page.Group.ActivityTab exposing (Config, Model, Msg, init, update, view)
 expandable detail views, and filtering.
 -}
 
-import Domain.Activity exposing (Activity, Detail(..), GroupMetadataSnapshot)
+import Domain.Activity exposing (Activity, ChangedField(..), Detail(..), GroupMetadataSnapshot)
 import Domain.Currency as Currency exposing (Currency)
 import Domain.Date as Date
 import Domain.Entry as Entry exposing (Kind(..))
@@ -582,7 +582,7 @@ detailSummaryText i18n detail =
             T.activitySettlementPreferencesUpdated data.name i18n
 
 
-changesText : I18n -> List String -> String
+changesText : I18n -> List ChangedField -> String
 changesText i18n fields =
     case fields of
         [] ->
@@ -592,59 +592,62 @@ changesText i18n fields =
             " — " ++ String.join ", " (List.map (translateField i18n) fields)
 
 
-translateField : I18n -> String -> String
+translateField : I18n -> ChangedField -> String
 translateField i18n field =
     case field of
-        "description" ->
+        DescriptionField ->
             T.changeFieldDescription i18n
 
-        "amount" ->
+        AmountField ->
             T.changeFieldAmount i18n
 
-        "date" ->
+        DateField ->
             T.changeFieldDate i18n
 
-        "payers" ->
+        PayersField ->
             T.changeFieldPayers i18n
 
-        "beneficiaries" ->
+        BeneficiariesField ->
             T.changeFieldBeneficiaries i18n
 
-        "category" ->
+        CategoryField ->
             T.changeFieldCategory i18n
 
-        "notes" ->
+        LocationField ->
+            T.changeFieldLocation i18n
+
+        NotesField ->
             T.changeFieldNotes i18n
 
-        "attachments" ->
+        AttachmentsField ->
             T.changeFieldAttachments i18n
 
-        "from" ->
+        FromField ->
             T.changeFieldFrom i18n
 
-        "to" ->
+        ToField ->
             T.changeFieldTo i18n
 
-        "phone" ->
+        ReceivedByField ->
+            T.changeFieldReceivedBy i18n
+
+        PhoneField ->
             T.changeFieldPhone i18n
 
-        "email" ->
+        EmailField ->
             T.changeFieldEmail i18n
 
-        "payment" ->
+        PaymentField ->
             T.changeFieldPayment i18n
 
-        "name" ->
+        NameField ->
             T.changeFieldName i18n
 
-        "subtitle" ->
+        SubtitleField ->
             T.changeFieldSubtitle i18n
 
-        "links" ->
+        LinksField ->
             T.changeFieldLinks i18n
-
-        _ ->
-            field
 
 
 
