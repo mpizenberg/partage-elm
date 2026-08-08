@@ -1,7 +1,7 @@
 module Domain.MigrationCuration exposing (AnchorReason(..), BalanceRow, Bound(..), Boundary, CutAnchor, Identity, Preview, anchorsFor, curateEvents, cutBeforeFinding, identities, preview)
 
 {-| Drop events authored by excluded identities when re-homing a group during
-migration (spec §11.7).
+migration.
 
 A group-key holder can inject validly-signed events — including as an existing
 member, by self-linking a device (`MemberLinked` is not gated on the root's

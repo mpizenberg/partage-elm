@@ -12,7 +12,7 @@ module Domain.TamperSignals exposing
     , recordResetWithLoss
     )
 
-{-| Per-group compromise-detection counters (spec §11.7).
+{-| Per-group compromise-detection counters.
 
 Four signals feed a per-group tamper indicator. Two are high-confidence and
 raise the user-facing warning banner: an envelope that fails signature

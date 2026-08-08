@@ -1,6 +1,6 @@
 module Domain.SuspicionAudit exposing (Finding, Kind(..), audit, dismissKey)
 
-{-| Flag attacker-shaped activity in a group's history (spec §11.7).
+{-| Flag attacker-shaped activity in a group's history.
 
 A group-key holder authors validly-signed events, so signature verification
 never drops them and the high-confidence tamper signals stay silent. Two shapes

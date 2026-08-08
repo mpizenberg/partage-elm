@@ -59,7 +59,7 @@ Put the container behind your TLS-terminating reverse proxy as usual. WebSocket 
 
 ### Operator dashboard (self-host)
 
-Setting `ADMIN_SECRET` turns on a read-only surface for monitoring the deployment — capacity, growth, relay-observable abuse, per-group hot-lists, a pseudonymous users estimate, and a cost run-rate (see [Appendix C.7](SPECIFICATION.md#c7-operator-observability-self-host)):
+Setting `ADMIN_SECRET` turns on a read-only surface for monitoring the deployment — capacity, growth, relay-observable abuse, per-group hot-lists, a pseudonymous users estimate, and a cost run-rate:
 
 - `GET /admin` — a self-contained page; enter the secret, which stays in the browser tab's session and is never persisted.
 - `GET /api/admin/summary` — the JSON behind it, authenticated with `Authorization: Bearer $ADMIN_SECRET`.
@@ -148,7 +148,7 @@ docker start <container>
 
 Clients re-push anything newer than the snapshot on their next sync.
 
-**Disk full.** When the volume fills, SQLite writes fail and appends are rejected with a server error; clients keep those events queued locally and retry on reconnect, so nothing is lost client-side. Relay growth is bounded — a per-group quota (50 MB / 50 000 records) plus purging of groups idle past the 12-month retention window ([§14.8](SPECIFICATION.md#148-relay-retention--storage-limits)) — and `ADMIN_STORAGE_BUDGET_BYTES` flags the [operator dashboard](#operator-dashboard-self-host) before you reach the limit. Recover by enlarging the volume or letting retention reclaim space; writes resume once there is room.
+**Disk full.** When the volume fills, SQLite writes fail and appends are rejected with a server error; clients keep those events queued locally and retry on reconnect, so nothing is lost client-side. Relay growth is bounded — a per-group quota (50 MB / 50 000 records) plus purging of groups idle past the [12-month retention window](SPECIFICATION.md#relay-retention-recovery-and-compaction) — and `ADMIN_STORAGE_BUDGET_BYTES` flags the [operator dashboard](#operator-dashboard-self-host) before you reach the limit. Recover by enlarging the volume or letting retention reclaim space; writes resume once there is room.
 
 **Rollback.** Redeploy the previous image by commit sha against the same volume (`dokku git:from-image partage ghcr.io/mpizenberg/partage-elm/relay:<sha>`). The relay's SQLite schema is stable across releases; when a release notes a schema change, back up first.
 

@@ -301,7 +301,7 @@ type alias MigrationResult =
     }
 
 
-{-| Migrate a compromised group to a fresh one (spec §11.7). Mint a new id and
+{-| Migrate a compromised group to a fresh one. Mint a new id and
 key, re-home the local verified history — dropping the events `selection` excises
 from each excluded identity, resolving any per-identity time boundary against the
 relay's `order` (`id → seq`) map — and queue what survives for push so the new
@@ -659,7 +659,7 @@ type CompactionStep
 
 {-| A compaction step plus the orthogonal tamper signal: `manifestMismatch` is
 True when a quorum-approved proposal reached this replica but its recomputed
-manifest hash disagrees with the claimed one (spec §11.7). The replica then
+manifest hash disagrees with the claimed one. The replica then
 declines to execute and falls back to `step` (propose/approve/nothing).
 -}
 type alias CompactionOutcome =
@@ -792,7 +792,7 @@ type alias SyncApplyResult =
 {-| Apply a sync result to a loaded group: deduplicate pulled events, update state, clear pushed IDs.
 Events are merged in sorted order. If any new events conflict with existing events in the overlap
 window (same entity, order-dependent resolution), the group state is rebuilt from scratch.
-`now` stamps any tamper signal this sync raised (spec §11.7).
+`now` stamps any tamper signal this sync raised.
 -}
 applySyncResult : Time.Posix -> Set String -> Server.SyncResult -> LoadedGroup -> SyncApplyResult
 applySyncResult now pushedIds syncResult loaded =

@@ -474,7 +474,7 @@ groupCard i18n ctx summary =
 
 
 {-| A group not synced for longer than this — just inside the relay's
-12-month inactivity window (docs/SPECIFICATION.md §14.8) — is shown as
+12-month inactivity window — is shown as
 dormant, nudging an archival export before a purge can plausibly reach it.
 -}
 dormantThresholdMillis : Int

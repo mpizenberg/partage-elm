@@ -327,7 +327,7 @@ loadSyncCursor db groupId =
         |> ConcurrentTask.map (Maybe.andThen identity)
 
 
-{-| Save a group's tamper-signal counters (spec §11.7).
+{-| Save a group's tamper-signal counters.
 -}
 saveTamperSignals : Idb.Db -> Group.Id -> TamperSignals -> ConcurrentTask Idb.Error ()
 saveTamperSignals db groupId signals =
@@ -342,7 +342,7 @@ loadTamperSignals db groupId =
         |> ConcurrentTask.map (Maybe.withDefault TamperSignals.empty)
 
 
-{-| Save the locally-dismissed suspicion-finding keys for a group (spec §11.7).
+{-| Save the locally-dismissed suspicion-finding keys for a group.
 Kept per-device and never synced, so acting on a flag leaks no signal.
 -}
 saveSuspicionDismissals : Idb.Db -> Group.Id -> Set String -> ConcurrentTask Idb.Error ()

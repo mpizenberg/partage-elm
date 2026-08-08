@@ -2,10 +2,9 @@
 
 How Partage keeps storage bounded and the two hot paths fast, and why that
 lets it run on a free or near-free budget. The normative rules live in
-[SPECIFICATION.md](SPECIFICATION.md) — retention and quotas in
-[§14.8](SPECIFICATION.md#148-relay-retention--storage-limits), compaction in
-[§14.9](SPECIFICATION.md#149-log-consolidation-compaction), the threat model
-they answer to in [§11.7](SPECIFICATION.md#117-compromised-member-threat-model).
+[SPECIFICATION.md](SPECIFICATION.md) — [retention, recovery, and
+compaction](SPECIFICATION.md#relay-retention-recovery-and-compaction), and the
+[threat model they answer to](SPECIFICATION.md#compromised-member-model-and-migration).
 This document is the rationale and the numbers behind them.
 
 ## Guiding principle
@@ -14,7 +13,8 @@ This document is the rationale and the numbers behind them.
 holds the full event log and the group key, so an honest member can restore a
 purged or truncated relay copy by re-pushing. Storage on the relay is therefore
 a *cost to bound*, never data to protect — which licenses an aggressive
-retention policy the moment clients are made durable ([§14.1](SPECIFICATION.md#141-local-first-architecture)).
+retention policy once [client durability](SPECIFICATION.md#local-durability) is
+in place.
 
 ## The budget it has to fit
 
@@ -40,15 +40,15 @@ The cost drivers are not organic usage; they are failure modes:
 
 | Driver | Why it grows | Lever |
 |---|---|---|
-| **Dead groups** | A group deleted on every client still occupies its rows (and its Durable Object) forever. The one driver that scales with *total groups ever created*, not activity. | **Inactivity TTL** ([§14.8](SPECIFICATION.md#148-relay-retention--storage-limits)): purge groups idle past the retention window (12 months). A purge needs *every* member absent, so no single member can starve a live group. |
-| **Duplicate records** | A push whose response is lost, or a group switched mid-sync, re-pushes an already-stored batch. Clients dedup on pull, so duplicates are invisible — and immortal — on the relay. | **Idempotent append** ([§14.3](SPECIFICATION.md#143-synchronization)): each push carries a content-derived `recordId` (`UNIQUE(group_id, record_id)`); a replay returns the existing `seq` instead of inserting. |
-| **Abuse** | The bearer secret is derived from the group key and there is no natural per-group quota: any key holder can append 1 MB records in a loop. | **Absolute quota** (50 MB / 50 000 records) + **monthly rate cap** (~5 MB/group/month) ([§14.8](SPECIFICATION.md#148-relay-retention--storage-limits)). The quota bounds total damage; the rate cap bounds its *speed*, buying months of detection time. Honest groups sit orders of magnitude below both. |
+| **Dead groups** | A group deleted on every client still occupies its rows (and its Durable Object) forever. The one driver that scales with *total groups ever created*, not activity. | **Inactivity TTL** ([contract](SPECIFICATION.md#relay-retention-recovery-and-compaction)): purge groups idle past the retention window (12 months). A purge needs *every* member absent, so no single member can starve a live group. |
+| **Duplicate records** | A push whose response is lost, or a group switched mid-sync, re-pushes an already-stored batch. Clients dedup on pull, so duplicates are invisible — and immortal — on the relay. | **Idempotent append** ([contract](SPECIFICATION.md#synchronization-contract)): each push carries a content-derived `recordId` (`UNIQUE(group_id, record_id)`); a replay returns the existing `seq` instead of inserting. |
+| **Abuse** | The bearer secret is derived from the group key and there is no natural per-group quota: any key holder can append 1 MB records in a loop. | **Absolute quota** (50 MB / 50 000 records) + **monthly rate cap** (~5 MB/group/month) ([contract](SPECIFICATION.md#relay-retention-recovery-and-compaction)). The quota bounds total damage; the rate cap bounds its *speed*, buying months of detection time. Honest groups sit orders of magnitude below both. |
 | **Record fragmentation** | In trickle usage every entry flushes as its own record, so record count ≈ event count and per-record gzip can't exploit cross-event redundancy (repeated ids, keys, JSON shape). A compression multiplier, not a driver. | **Compaction** (below). |
 
 ## Compaction: the only lever for long-lived active groups
 
 A busy group that never goes idle is the one case the TTL can't help. Compaction
-([§14.9](SPECIFICATION.md#149-log-consolidation-compaction)) **re-batches, never
+([contract](SPECIFICATION.md#relay-retention-recovery-and-compaction)) **re-batches, never
 summarizes**: a member holding the full verified log re-packs the same raw
 envelopes — verbatim — sorted, into large batches (each bounded to 512 KiB of
 plaintext, the same bound normal push flushes use, so the encrypted record stays
@@ -61,8 +61,8 @@ State snapshots were rejected for this: they would be signed by one member
 (forgeable history), erase the audit trail, and break the wire format. Because
 deleting relay records is destruction-shaped and the relay cannot tell members
 apart, compaction is **consensus-gated in the log** and verified by clients, not
-the server — the mechanism, quorum, and manifest form are specified in
-[§14.9](SPECIFICATION.md#149-log-consolidation-compaction).
+the server — the security requirements are part of the
+[compaction contract](SPECIFICATION.md#relay-retention-recovery-and-compaction).
 
 ## Durability: what makes aggressive retention safe
 
@@ -70,7 +70,7 @@ The retention policy only works because honest replicas survive. The browser may
 silently evict IndexedDB under storage pressure — combined with a TTL purge,
 that is real data loss. So the app calls `navigator.storage.persist()` once at
 first group creation/join and surfaces the result on the About screen
-([§14.1](SPECIFICATION.md#141-local-first-architecture)). Export is the offline
+([local durability contract](SPECIFICATION.md#local-durability)). Export is the offline
 backup; once retention is announced, long-idle groups get an archival-export
 nudge. Local log *pruning* is deliberately not done: the log is the audit trail,
 the activity feed, and the healing source, and local space is a non-issue.
@@ -80,8 +80,7 @@ the activity feed, and the healing source, and local space is a non-issue.
 **Group open (the everyday path).** Every open reads all event rows,
 JSON-decodes each envelope, and replays from scratch. On-device measurement at
 10k–50k events showed this stays within interactive budget, so a persisted
-materialized-state cache is **not** warranted
-([§14.6](SPECIFICATION.md#146-incremental-sync-optimization)) — it would remain a
+materialized-state cache is **not** warranted — it would remain a
 fallback-guarded optimization only if replay time ever regresses. The sync fast
 path (incremental apply, conflict-triggered rebuild) already avoids replay on
 the common case.
@@ -104,17 +103,18 @@ since SQLite files never shrink on their own.
 ## Measuring, not guessing
 
 Every timing figure here is an estimate until measured on real data. The
-per-group **diagnostics page** ([§19](SPECIFICATION.md#193-screen-descriptions),
-developer-mode only) is the instrument: event count and per-type histogram,
-plaintext vs. stored size, whole-log recompression (exactly what compaction
+per-group **diagnostics page**
+([developer-mode only](SPECIFICATION.md#local-preferences-and-diagnostics)) is
+the instrument: event count and per-type histogram, plaintext vs. stored size,
+whole-log recompression (exactly what compaction
 would reclaim), sync/quota state, storage-persistence status, and a live timed
 replay and full-log verify. Only the client can compute any of it — the relay
 sees ciphertext.
 
 ## Keeping the budget observable
 
-The per-user cost estimate on the About screen
-([§18.2](SPECIFICATION.md#182-cost-estimation)) and the operator dashboard's
-run-rate ([Appendix C.7](SPECIFICATION.md#c7-operator-observability-self-host))
-turn the budget into a number the user and the operator can watch. The levers
+The [per-user cost estimate](SPECIFICATION.md#usage-and-cost-information) on the
+About screen and the operator dashboard's
+[run-rate](DEPLOY.md#operator-dashboard-self-host) turn the budget into a number
+the user and the operator can watch. The levers
 above are what keep that number inside the free tier as groups accumulate.

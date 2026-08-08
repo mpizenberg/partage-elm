@@ -187,8 +187,8 @@ isUnauthorized =
     isStatus 401
 
 
-{-| True when the group is full: its append exceeded the relay's storage quota
-(§14.8). Surfaced so the user can compact or export instead of retrying.
+{-| True when the group is full: its append exceeded the relay's storage quota.
+Surfaced so the user can compact or export instead of retrying.
 -}
 isQuotaExceeded : Error -> Bool
 isQuotaExceeded =
@@ -196,7 +196,7 @@ isQuotaExceeded =
 
 
 {-| True when the group's recent append volume exceeded the relay's monthly
-rate limit (§14.8). Transient — syncing resumes once the window rolls.
+rate limit. Transient — syncing resumes once the window rolls.
 -}
 isRateLimited : Error -> Bool
 isRateLimited =
@@ -387,10 +387,10 @@ an epoch change (the relay's group row was purged and re-created, so the seq
 cursor belongs to a dead incarnation) — the relay lost events this client has
 seen, so the caller re-pushes the gap. `epoch` is the incarnation the pull was
 served under; the caller stores it beside the new cursor.
-`recordCount` is the relay's total record count for the group, the
-compaction-trigger signal (spec §14.9). `forgedAuthors` lists the claimed
-author id of every envelope the caller's signature verification later dropped
-(spec §11.7); the pull itself never fills it, so it starts empty.
+`recordCount` is the relay's total record count for the group and triggers
+compaction. `forgedAuthors` lists the claimed author id of every envelope the
+caller's signature verification later dropped; the pull itself never fills it,
+so it starts empty.
 -}
 type alias PullResult =
     { events : List Event.Envelope
@@ -581,8 +581,8 @@ maxChunkBytes =
     512 * 1024
 
 
-{-| Execute a quorumed compaction (spec §14.9): re-pull the full record
-list to learn `uptoSeq` and what rides beyond the manifest boundary, then
+{-| Execute a quorumed compaction: re-pull the full record list to learn
+`uptoSeq` and what rides beyond the manifest boundary, then
 atomically replace everything with the consolidated history — the sorted
 manifested prefix re-packed into large batches, plus every pulled event
 outside the manifest as riders, so no deleted record loses an event.

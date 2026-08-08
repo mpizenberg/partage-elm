@@ -67,9 +67,8 @@ type alias Summary =
     , myBalanceCents : Int
 
     -- When this client last synced/created/imported/joined the group. Drives
-    -- the home-list "dormant" hint, a proxy for the relay's inactivity purge
-    -- (docs/SPECIFICATION.md §14.8) that the home list can read without
-    -- loading events.
+    -- the home-list "dormant" hint: a proxy for the relay's inactivity purge
+    -- that does not require loading events.
     , lastSyncedAt : Time.Posix
     }
 

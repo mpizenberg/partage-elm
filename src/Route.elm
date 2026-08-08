@@ -72,7 +72,7 @@ fromAppUrl appUrl =
         [ "join", groupId ] ->
             -- The fragment grammar is `key[.tail]`: everything before the
             -- first `.` is the key; the tail carries the inviter's head
-            -- attestation (spec §12.1) and is kept verbatim for the join
+            -- attestation and is kept verbatim for the join
             -- flow to interpret (unknown formats are simply ignored).
             case String.split "." (Maybe.withDefault "" appUrl.fragment) of
                 key :: rest ->

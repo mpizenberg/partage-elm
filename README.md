@@ -20,8 +20,8 @@ Partage is a fully encrypted, local-first bill-splitting application for trusted
 - Member claiming, aliases, and merging
 - Virtual members for people who haven't joined
 - Activity feed and per-member audit log
-- Entry search, filtering, sorting, and CSV export
-- Read-only mode for archived members and rejoin flow
+- Entry search, filtering, sorting, CSV export, and Splitwise import
+- Read-only mode for archived or imported groups, with a rejoin flow
 - Push notifications and PWA install (Android, iOS, desktop)
 - Internationalization (English and French for now)
 

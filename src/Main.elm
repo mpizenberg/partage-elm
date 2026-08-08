@@ -1020,9 +1020,8 @@ update msg model =
                 verified =
                     fetched.syncResult.pullResult.events
 
-                -- The invite's attestation (spec §12.1): the fetched history
-                -- must reach the inviter's head. Old bare-key links (or an
-                -- unknown tail format) carry none and skip the check.
+                -- The fetched history must reach the head attested by the inviter.
+                -- Old bare-key links and unknown tail formats skip the check.
                 attestationOk : Bool
                 attestationOk =
                     case model.route of
@@ -1561,9 +1560,8 @@ applyRouteGuard identity route =
             ( route, Cmd.none )
 
 
-{-| Joiner-side compaction verification (spec §14.9): when the fetched
-history carries a quorumed compaction proposal, the received pre-boundary
-envelopes must count and hash exactly as the quorum signed. True means
+{-| When fetched history carries a quorumed compaction proposal, the received
+pre-boundary envelopes must count and hash exactly as the quorum signed. True means
 mismatch — the history is surfaced as not fully verifiable.
 -}
 verifyCompactedHistory : List Event.Envelope -> ConcurrentTask Server.Error Bool

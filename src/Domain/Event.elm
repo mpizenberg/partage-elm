@@ -60,7 +60,7 @@ trips via its raw JSON; state computation ignores it. Never authored
 locally.
 
 `CompactionProposed` and `CompactionApproved` are the consensus gate for
-log consolidation (spec §14.9): a proposal commits to the exact history up
+log consolidation: a proposal commits to the exact history up
 to `uptoEventId` via `manifestHash` (see Domain.Compaction), and each
 approval is a member's signed attestation that its own replica matches.
 They carry no user-visible meaning: state computation and the activity

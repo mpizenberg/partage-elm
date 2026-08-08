@@ -1,6 +1,6 @@
 module Page.Group.Migrate exposing (view)
 
-{-| The migration confirmation screen (spec §11.7). It explains what migrating a
+{-| The migration confirmation screen explains what migrating a
 compromised group does and does not do, lets the migrator exclude injected
 identities — wholly, or only what they authored after a server-order boundary —
 previews the resulting group, then confirms. The minting and re-homing happen in

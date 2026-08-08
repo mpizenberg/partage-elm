@@ -32,14 +32,13 @@ const MAX_BODY_BYTES = MAX_EVENT_DATA_BYTES + 16 * 1024;
 const MAX_COMPACT_BODY_BYTES = 16 * 1024 * 1024;
 
 // A group idle (no authenticated request) longer than this is purged: the
-// clients hold the full log and re-push on their next sync (see the retention
-// contract in docs/SPECIFICATION.md §14.8).
+// clients hold the full log and re-push on their next sync.
 export const RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
 // `last_access` is only rewritten when it is older than this, so a busy group
 // costs at most one access write per day rather than one per request.
 const ACCESS_TOUCH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
-// Per-group storage caps (docs/SPECIFICATION.md §14.8). The absolute quota
+// Per-group storage caps. The absolute quota
 // bounds total abuse; the monthly rate cap bounds its speed. Honest groups sit
 // orders of magnitude below both. Overridable so tests can trip them cheaply.
 export const DEFAULT_APPEND_LIMITS = {

@@ -1083,7 +1083,7 @@ unknownEventsBanner i18n =
 
 
 {-| Banner raised when a group's high-confidence tamper signals fired
-(forged signatures or rate-limit anomalies, spec §11.7). Dismissable — the
+(forged signatures or rate-limit anomalies). Dismissable — the
 counters reset, and re-fire if interference continues.
 -}
 tamperBanner : I18n -> { onMigrate : msg, onDismiss : msg } -> Ui.Element msg
@@ -1096,8 +1096,8 @@ tamperBanner i18n { onMigrate, onDismiss } =
         }
 
 
-{-| Banner shown when the suspicion audit found un-dismissed findings (spec
-§11.7). It routes to the migration review, where each finding is dismissed or
+{-| Banner shown when the suspicion audit found un-dismissed findings. It
+routes to the migration review, where each finding is dismissed or
 acted on individually — so, unlike the tamper banner, it carries no dismiss.
 -}
 suspicionBanner : I18n -> { onReview : msg } -> Ui.Element msg

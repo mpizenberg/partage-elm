@@ -14,7 +14,7 @@ module Domain.Compaction exposing
     , recordCountTrigger
     )
 
-{-| Consensus-gated log consolidation (spec §14.9).
+{-| Consensus-gated log consolidation.
 
 A compaction proposal commits to the exact history up to a boundary event
 via a manifest hash. This module holds the pure policy: the hash's
@@ -187,8 +187,8 @@ executableProposal resolvers events =
         )
 
 
-{-| The newest proposal with visible quorum, for a joiner verifying a
-fetched history (spec §14.9): the received pre-boundary envelopes must
+{-| The newest proposal with visible quorum, for a joiner verifying fetched
+history: the received pre-boundary envelopes must
 count and hash exactly as quorumed. Unlike `executableProposal` this
 reports a count mismatch instead of skipping it — for a joiner that
 divergence is the signal.
@@ -332,8 +332,8 @@ proposalDraft now events =
             Nothing
 
 
-{-| The inviter's head attestation for the invite-fragment tail (spec
-§12.1): `<eventCount>-<headEventId>` over the given events — pass only
+{-| The inviter's head attestation for the invite-fragment tail:
+`<eventCount>-<headEventId>` over the given events — pass only
 _pushed_ events, since the joiner checks against what the relay serves.
 Count plus head presence catches both tail-truncation (head missing) and
 any deletion (count short); unlike a manifest hash it stays valid when
