@@ -24,11 +24,6 @@
     "lint": "elm-review",
     "postinstall": "elm-tooling install"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
-  },
   "devDependencies": {
     "elm-review": "^2.13.5",
     "elm-test": "^0.19.1-revision17",
