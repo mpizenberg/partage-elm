@@ -3,6 +3,7 @@
 ## Progress
 
 - Exploration complete: the two editors contain roughly 173 identical lines and differ only in their localized hint plus an expense-only `Shares` column label added after Income shipped. Consolidation is worthwhile and should remain on the backlog.
+- Implementation complete: `Shared.beneficiariesField` now owns selection, split controls, amount rows, steppers, and validation; Expense and Income supply only their localized hints, and Income now displays the same `Shares` label. Production build, all 343 Elm tests, elm-review, elm-format, and diff checks pass. Net non-plan source reduction: 184 lines.
 
 ## Question
 
@@ -41,9 +42,13 @@ For strict behavior preservation, the function could also accept whether to show
 
 Keep the backlog item and implement option 3 as one increment. Do not generalize the editor over arbitrary models or messages. Resolve the `Shares` label drift first: preferably display it for both entry kinds, otherwise preserve it with one explicit configuration field.
 
+## Implementation increment
+
+1. Move the complete beneficiary field into `Page.Group.NewEntry.Shared`, parameterized only by its localized hint; use it from Expense and Income, show the `Shares` label for both, remove the completed backlog item, validate, and commit.
+
 ## Decisions
 
 - Keep and narrow the backlog item rather than dropping it. Alternative: tolerate the duplication. Reason: the common behavior is nearly exact, shares existing state/messages, and has already drifted once.
 - Prefer `Page.Group.NewEntry.Shared` over a new beneficiary component module. Alternative: introduce `BeneficiaryEditor.elm`. Reason: `Shared` already owns the form types, helpers, and dependencies, so a new boundary would not buy independence.
 - Do not extract only low-level row/stepper helpers. Alternative: leave two field wrappers. Reason: it preserves duplicated validation and structure while adding seams.
-- Recommend treating Income's missing `Shares` label as accidental drift, but leave that visible behavior change for explicit approval. Alternative: add a configuration field solely to preserve the mismatch. Reason: both editors have identical share semantics and history shows the label was added to only one copy later.
+- Show the `Shares` label for Income too, as explicitly approved by the user. Alternative: add a configuration field solely to preserve the mismatch. Reason: both editors have identical share semantics and history shows the label was added to only one copy later.

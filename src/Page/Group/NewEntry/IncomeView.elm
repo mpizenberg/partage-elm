@@ -3,19 +3,14 @@ module Page.Group.NewEntry.IncomeView exposing (incomeFields)
 {-| Income-specific view functions for the new entry form.
 -}
 
-import Dict
-import Domain.Currency as Currency
 import Domain.Member as Member
-import FeatherIcons
 import Field
 import Form
-import Format
-import Page.Group.NewEntry.Shared as Shared exposing (ModelData, Msg(..), SplitMode(..))
+import Page.Group.NewEntry.Shared as Shared exposing (ModelData, Msg(..))
 import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
 import Ui
-import Ui.Font
 import Ui.Input
 
 
@@ -26,7 +21,7 @@ incomeFields i18n activeMembers data =
     , Shared.defaultCurrencyAmountField i18n data
     , Shared.dateField i18n data
     , receiverField i18n activeMembers data
-    , beneficiariesField i18n activeMembers data
+    , Shared.beneficiariesField i18n (T.newEntryIncomeBeneficiariesHint i18n) activeMembers data
     , Shared.notesField i18n data
     , Shared.attachmentsField i18n data
     ]
@@ -68,179 +63,3 @@ receiverField i18n activeMembers data =
             )
         , Shared.errorWhen (data.submitted && data.receiverMemberId == Nothing) (T.newEntryNoReceiverError i18n)
         ]
-
-
-beneficiariesField : I18n -> List Member.State -> ModelData -> Ui.Element Msg
-beneficiariesField i18n activeMembers data =
-    let
-        exactMismatchError : Ui.Element Msg
-        exactMismatchError =
-            case data.splitMode of
-                ExactSplit ->
-                    let
-                        totalExact : Int
-                        totalExact =
-                            Dict.keys data.beneficiaries
-                                |> List.filterMap (\mid -> Dict.get mid data.exactAmounts |> Maybe.andThen (Shared.parseAmountCents data.currency))
-                                |> List.sum
-
-                        totalAmount : Int
-                        totalAmount =
-                            Form.get .amount data.form |> Field.toMaybe |> Maybe.withDefault 0
-                    in
-                    Shared.errorWhen (data.submitted && totalExact /= totalAmount) (T.newEntryExactMismatch i18n)
-
-                ShareSplit ->
-                    Ui.none
-
-        headerRow : Ui.Element Msg
-        headerRow =
-            Ui.row [ Ui.width Ui.fill, Ui.contentCenterY ]
-                [ Shared.fieldTitle (T.newEntryBeneficiariesLabel i18n) True
-                , Ui.row [ Ui.alignRight, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
-                    [ Ui.el
-                        [ Ui.Font.size Theme.font.sm
-                        , Ui.Font.color Theme.base.textSubtle
-                        ]
-                        (Ui.text (T.newEntrySplitExact i18n))
-                    , UI.Components.toggle
-                        { isOn = data.splitMode == ExactSplit
-                        , onPress = InputSplitMode (toggleSplitMode data.splitMode)
-                        }
-                    ]
-                ]
-    in
-    Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-        [ headerRow
-        , Shared.formHint (T.newEntryIncomeBeneficiariesHint i18n)
-        , Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-            (List.map (beneficiaryRow i18n data) activeMembers)
-        , Shared.errorWhen (data.submitted && Dict.isEmpty data.beneficiaries) (T.newEntryNoBeneficiaries i18n)
-        , exactMismatchError
-        ]
-
-
-toggleSplitMode : SplitMode -> SplitMode
-toggleSplitMode mode =
-    case mode of
-        ShareSplit ->
-            ExactSplit
-
-        ExactSplit ->
-            ShareSplit
-
-
-beneficiaryRow : I18n -> ModelData -> Member.State -> Ui.Element Msg
-beneficiaryRow i18n data member =
-    let
-        isSelected : Bool
-        isSelected =
-            Dict.member member.rootId data.beneficiaries
-
-        shares : Int
-        shares =
-            Dict.get member.rootId data.beneficiaries |> Maybe.withDefault 0
-
-        totalShares : Int
-        totalShares =
-            Dict.values data.beneficiaries |> List.sum
-
-        splitAmount : Ui.Element Msg
-        splitAmount =
-            if not isSelected || totalShares == 0 then
-                Ui.none
-
-            else
-                case data.splitMode of
-                    ShareSplit ->
-                        let
-                            totalAmountCents : Int
-                            totalAmountCents =
-                                Form.get .amount data.form |> Field.toMaybe |> Maybe.withDefault 0
-
-                            cents : Int
-                            cents =
-                                (totalAmountCents * shares) // totalShares
-                        in
-                        Ui.el
-                            [ Ui.Font.size Theme.font.sm
-                            , Ui.Font.color Theme.base.textSubtle
-                            ]
-                            (Ui.text (Format.formatCentsWithCurrency (T.currentLanguage i18n) cents data.currency))
-
-                    ExactSplit ->
-                        Ui.none
-
-        rightControl : Ui.Element Msg
-        rightControl =
-            case data.splitMode of
-                ShareSplit ->
-                    shareStepper member.rootId shares
-
-                ExactSplit ->
-                    if isSelected then
-                        Ui.row [ Ui.spacing Theme.spacing.xs, Ui.contentCenterY ]
-                            [ Ui.Input.text [ Ui.width (Ui.px 100), Shared.decimalInputAttr ]
-                                { onChange = InputExactAmount member.rootId
-                                , text = Maybe.withDefault "" (Dict.get member.rootId data.exactAmounts)
-                                , placeholder = Just (Shared.zeroAmountPlaceholder i18n data.currency)
-                                , label = Ui.Input.labelHidden member.name
-                                }
-                            , Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
-                                (Ui.text (Currency.currencySymbol data.currency))
-                            ]
-
-                    else
-                        Ui.none
-    in
-    Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
-        [ UI.Components.toggleMemberBtn
-            { name = member.name
-            , initials = String.left 2 (String.toUpper member.name)
-            , selected = isSelected
-            , onPress = ToggleBeneficiary member.rootId
-            }
-        , splitAmount
-        , Ui.el [ Ui.alignRight ] rightControl
-        ]
-
-
-shareStepper : Member.Id -> Int -> Ui.Element Msg
-shareStepper memberId shares =
-    Ui.row
-        [ Ui.spacing Theme.spacing.xs
-        , Ui.contentCenterY
-        , Ui.rounded Theme.radius.md
-        , Ui.border Theme.border
-        , Ui.borderColor Theme.base.accent
-        , Ui.paddingXY Theme.spacing.xs 0
-        ]
-        [ stepperBtn (DecrementShares memberId) FeatherIcons.minus (shares > 0)
-        , Ui.el
-            [ Ui.Font.center
-            , Ui.Font.weight Theme.fontWeight.semibold
-            , Ui.widthMin Theme.sizing.xs
-            ]
-            (Ui.text (String.fromInt shares))
-        , stepperBtn (IncrementShares memberId) FeatherIcons.plus True
-        ]
-
-
-stepperBtn : msg -> FeatherIcons.Icon -> Bool -> Ui.Element msg
-stepperBtn onPress icon enabled =
-    Ui.el
-        (Ui.width (Ui.px Theme.sizing.md)
-            :: Ui.height (Ui.px Theme.sizing.md)
-            :: Ui.contentCenterX
-            :: Ui.contentCenterY
-            :: (if enabled then
-                    [ Ui.Input.button onPress
-                    , Ui.pointer
-                    , Ui.Font.color Theme.base.text
-                    ]
-
-                else
-                    [ Ui.Font.color Theme.base.accent ]
-               )
-        )
-        (UI.Components.featherIcon (toFloat Theme.sizing.xs) icon)
