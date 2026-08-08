@@ -265,6 +265,7 @@ entryDetailDate = Date
 entryDetailPaidBy = Payé par
 entryDetailSplitAmong = Partagé entre
 entryDetailCategory = Catégorie
+entryDetailLocation = Lieu
 entryDetailNotes = Notes
 entryDetailReceivedBy = Reçu par
 entryDetailFrom = De

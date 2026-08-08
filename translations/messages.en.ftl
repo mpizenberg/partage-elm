@@ -265,6 +265,7 @@ entryDetailDate = Date
 entryDetailPaidBy = Paid by
 entryDetailSplitAmong = Split among
 entryDetailCategory = Category
+entryDetailLocation = Location
 entryDetailNotes = Notes
 entryDetailReceivedBy = Received by
 entryDetailFrom = From

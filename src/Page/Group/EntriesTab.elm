@@ -1087,6 +1087,7 @@ expenseContent i18n groupDefaultCurrency resolveName data =
               , beneficiariesSection i18n data.currency resolveName data.beneficiaries
               ]
             , detailCategoryRow i18n data.category
+            , optionalRow (T.entryDetailLocation i18n) data.location
             , optionalRow (T.entryDetailNotes i18n) data.notes
             , attachmentRows i18n data.attachments
             ]

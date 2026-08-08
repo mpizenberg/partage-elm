@@ -3,6 +3,7 @@
 ## Progress
 
 - Increment 1 complete: Activity changed fields are typed and exhaustive; converted amounts, locations, and income receivers are tracked and localized; 343 Elm tests and elm-review pass.
+- Increment 2 complete: dense Activity details now include payer amounts and beneficiary allocations in both snapshots and diffs; preserved locations appear in Entries and Activity; the production build, formatting, lint, and all 343 Elm tests pass.
 
 ## Goal
 

@@ -778,10 +778,11 @@ entryDetailRows i18n groupCurrency resolveName entry =
                   , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount data.currency)
                   ]
                 , defaultCurrencyAmountRow i18n groupCurrency data.defaultCurrencyAmount
-                , [ detailRow (T.entryDetailPaidBy i18n) (payerNames resolveName data.payers)
-                  , detailRow (T.entryDetailSplitAmong i18n) (beneficiaryNames resolveName data.beneficiaries)
+                , [ detailRow (T.entryDetailPaidBy i18n) (payerDescriptions i18n data.currency resolveName data.payers)
+                  , detailRow (T.entryDetailSplitAmong i18n) (beneficiaryDescriptions i18n data.currency resolveName data.beneficiaries)
                   ]
                 , categoryRow i18n data.category
+                , optionalRow (T.entryDetailLocation i18n) data.location
                 , optionalRow (T.entryDetailNotes i18n) data.notes
                 , attachmentRows i18n data.attachments
                 ]
@@ -808,7 +809,7 @@ entryDetailRows i18n groupCurrency resolveName entry =
                   ]
                 , defaultCurrencyAmountRow i18n groupCurrency data.defaultCurrencyAmount
                 , [ detailRow (T.entryDetailReceivedBy i18n) (resolveName data.receivedBy)
-                  , detailRow (T.entryDetailSplitAmong i18n) (beneficiaryNames resolveName data.beneficiaries)
+                  , detailRow (T.entryDetailSplitAmong i18n) (beneficiaryDescriptions i18n data.currency resolveName data.beneficiaries)
                   ]
                 , optionalRow (T.entryDetailNotes i18n) data.notes
                 , attachmentRows i18n data.attachments
@@ -860,9 +861,10 @@ expenseDiffRows i18n groupCurrency resolveName old new =
             groupCurrency
             { oldAmount = old.amount, oldCurrency = old.currency, oldDefaultCurrencyAmount = old.defaultCurrencyAmount }
             { newAmount = new.amount, newCurrency = new.currency, newDefaultCurrencyAmount = new.defaultCurrencyAmount }
-        , [ payerDiffOrDetailRow i18n resolveName old.payers new.payers ]
-        , [ beneficiaryDiffOrDetailRow i18n resolveName old.beneficiaries new.beneficiaries ]
+        , [ payerDiffOrDetailRow i18n resolveName old.currency old.payers new.currency new.payers ]
+        , [ beneficiaryDiffOrDetailRow i18n resolveName old.currency old.beneficiaries new.currency new.beneficiaries ]
         , categoryDiffRow i18n old.category new.category
+        , optionalDiffRow i18n (T.entryDetailLocation i18n) old.location new.location
         , optionalDiffRow i18n (T.entryDetailNotes i18n) old.notes new.notes
         , attachmentsDiffRow i18n old.attachments new.attachments
         ]
@@ -894,7 +896,7 @@ incomeDiffRows i18n groupCurrency resolveName old new =
             { oldAmount = old.amount, oldCurrency = old.currency, oldDefaultCurrencyAmount = old.defaultCurrencyAmount }
             { newAmount = new.amount, newCurrency = new.currency, newDefaultCurrencyAmount = new.defaultCurrencyAmount }
         , [ maybeDiffOrDetailRow (T.entryDetailReceivedBy i18n) (resolveName old.receivedBy) (resolveName new.receivedBy) ]
-        , [ beneficiaryDiffOrDetailRow i18n resolveName old.beneficiaries new.beneficiaries ]
+        , [ beneficiaryDiffOrDetailRow i18n resolveName old.currency old.beneficiaries new.currency new.beneficiaries ]
         , optionalDiffRow i18n (T.entryDetailNotes i18n) old.notes new.notes
         , attachmentsDiffRow i18n old.attachments new.attachments
         ]
@@ -995,48 +997,48 @@ amountCurrencyDiffRows i18n groupCurrency old new =
     currencyRow ++ amountRow ++ defaultAmountRow
 
 
-payerDiffOrDetailRow : I18n -> (Member.Id -> String) -> List Entry.Payer -> List Entry.Payer -> Ui.Element msg
-payerDiffOrDetailRow i18n resolveName oldPayers newPayers =
+payerDiffOrDetailRow : I18n -> (Member.Id -> String) -> Currency -> List Entry.Payer -> Currency -> List Entry.Payer -> Ui.Element msg
+payerDiffOrDetailRow i18n resolveName oldCurrency oldPayers newCurrency newPayers =
     let
         label : String
         label =
             T.entryDetailPaidBy i18n
 
-        formatPayer : Entry.Payer -> String
-        formatPayer p =
-            resolveName p.memberId
-    in
-    if oldPayers == newPayers then
-        detailRow label (payerNames resolveName newPayers)
+        oldText : String
+        oldText =
+            payerDescriptions i18n oldCurrency resolveName oldPayers
 
-    else if List.length oldPayers == 1 && List.length newPayers == 1 then
-        diffRow label (payerNames resolveName oldPayers) (payerNames resolveName newPayers)
+        newText : String
+        newText =
+            payerDescriptions i18n newCurrency resolveName newPayers
+    in
+    if oldText == newText then
+        detailRow label newText
 
     else
-        let
-            oldText : String
-            oldText =
-                oldPayers |> List.map formatPayer |> String.join ", "
-
-            newText : String
-            newText =
-                newPayers |> List.map formatPayer |> String.join ", "
-        in
         diffRow label oldText newText
 
 
-beneficiaryDiffOrDetailRow : I18n -> (Member.Id -> String) -> List Entry.Beneficiary -> List Entry.Beneficiary -> Ui.Element msg
-beneficiaryDiffOrDetailRow i18n resolveName oldBenefs newBenefs =
+beneficiaryDiffOrDetailRow : I18n -> (Member.Id -> String) -> Currency -> List Entry.Beneficiary -> Currency -> List Entry.Beneficiary -> Ui.Element msg
+beneficiaryDiffOrDetailRow i18n resolveName oldCurrency oldBeneficiaries newCurrency newBeneficiaries =
     let
         label : String
         label =
             T.entryDetailSplitAmong i18n
+
+        oldText : String
+        oldText =
+            beneficiaryDescriptions i18n oldCurrency resolveName oldBeneficiaries
+
+        newText : String
+        newText =
+            beneficiaryDescriptions i18n newCurrency resolveName newBeneficiaries
     in
-    if oldBenefs == newBenefs then
-        detailRow label (beneficiaryNames resolveName newBenefs)
+    if oldText == newText then
+        detailRow label newText
 
     else
-        diffRow label (beneficiaryNames resolveName oldBenefs) (beneficiaryNames resolveName newBenefs)
+        diffRow label oldText newText
 
 
 categoryDiffRow : I18n -> Maybe Entry.Category -> Maybe Entry.Category -> List (Ui.Element msg)
@@ -1075,24 +1077,33 @@ optionalDiffRow i18n label oldValue newValue =
         [ diffRow label oldText newText ]
 
 
-payerNames : (Member.Id -> String) -> List Entry.Payer -> String
-payerNames resolveName payers =
+payerDescriptions : I18n -> Currency -> (Member.Id -> String) -> List Entry.Payer -> String
+payerDescriptions i18n currency resolveName payers =
     payers
-        |> List.map (\p -> resolveName p.memberId)
+        |> List.map
+            (\payer ->
+                resolveName payer.memberId
+                    ++ " ("
+                    ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) payer.amount currency
+                    ++ ")"
+            )
         |> String.join ", "
 
 
-beneficiaryNames : (Member.Id -> String) -> List Entry.Beneficiary -> String
-beneficiaryNames resolveName beneficiaries =
+beneficiaryDescriptions : I18n -> Currency -> (Member.Id -> String) -> List Entry.Beneficiary -> String
+beneficiaryDescriptions i18n currency resolveName beneficiaries =
     beneficiaries
         |> List.map
-            (\b ->
-                case b of
+            (\beneficiary ->
+                case beneficiary of
                     Entry.ShareBeneficiary data ->
-                        resolveName data.memberId
+                        resolveName data.memberId ++ " ×" ++ String.fromInt data.shares
 
                     Entry.ExactBeneficiary data ->
                         resolveName data.memberId
+                            ++ " ("
+                            ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount currency
+                            ++ ")"
             )
         |> String.join ", "
 
