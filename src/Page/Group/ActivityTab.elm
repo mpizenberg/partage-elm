@@ -18,6 +18,7 @@ import List.Extra
 import Set exposing (Set)
 import Time
 import Translations as T exposing (I18n)
+import UI.Categories as Categories
 import UI.Components
 import UI.PaymentMethods as PaymentMethods
 import UI.Theme as Theme
@@ -1050,11 +1051,11 @@ categoryDiffRow i18n oldCat newCat =
         let
             oldLabel : String
             oldLabel =
-                oldCat |> Maybe.map (categoryLabel i18n) |> Maybe.withDefault (T.newEntryCategoryNone i18n)
+                oldCat |> Maybe.map (Categories.label i18n) |> Maybe.withDefault (T.newEntryCategoryNone i18n)
 
             newLabel : String
             newLabel =
-                newCat |> Maybe.map (categoryLabel i18n) |> Maybe.withDefault (T.newEntryCategoryNone i18n)
+                newCat |> Maybe.map (Categories.label i18n) |> Maybe.withDefault (T.newEntryCategoryNone i18n)
         in
         [ diffRow (T.entryDetailCategory i18n) oldLabel newLabel ]
 
@@ -1112,41 +1113,10 @@ categoryRow : I18n -> Maybe Entry.Category -> List (Ui.Element msg)
 categoryRow i18n maybeCategory =
     case maybeCategory of
         Just category ->
-            [ detailRow (T.entryDetailCategory i18n) (categoryLabel i18n category) ]
+            [ detailRow (T.entryDetailCategory i18n) (Categories.label i18n category) ]
 
         Nothing ->
             []
-
-
-categoryLabel : I18n -> Entry.Category -> String
-categoryLabel i18n category =
-    case category of
-        Entry.Food ->
-            T.categoryFood i18n
-
-        Entry.Transport ->
-            T.categoryTransport i18n
-
-        Entry.Accommodation ->
-            T.categoryAccommodation i18n
-
-        Entry.Entertainment ->
-            T.categoryEntertainment i18n
-
-        Entry.Shopping ->
-            T.categoryShopping i18n
-
-        Entry.Groceries ->
-            T.categoryGroceries i18n
-
-        Entry.Utilities ->
-            T.categoryUtilities i18n
-
-        Entry.Healthcare ->
-            T.categoryHealthcare i18n
-
-        Entry.Other ->
-            T.categoryOther i18n
 
 
 optionalRow : String -> Maybe String -> List (Ui.Element msg)

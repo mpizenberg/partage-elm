@@ -9,6 +9,7 @@ module Domain.Entry exposing
     , Metadata
     , Payer
     , TransferData
+    , allCategories
     , beneficiaryDecoder
     , categoryDecoder
     , categoryToString
@@ -205,6 +206,20 @@ type Category
     | Utilities
     | Healthcare
     | Other
+
+
+allCategories : List Category
+allCategories =
+    [ Food
+    , Transport
+    , Accommodation
+    , Entertainment
+    , Shopping
+    , Groceries
+    , Utilities
+    , Healthcare
+    , Other
+    ]
 
 
 {-| Applicative helper for decoders with more than 8 fields.

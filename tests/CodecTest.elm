@@ -2,7 +2,7 @@ module CodecTest exposing (suite)
 
 import Domain.Currency as Currency exposing (Currency)
 import Domain.Date as Date exposing (Date)
-import Domain.Entry as Entry exposing (Beneficiary(..), Category(..), Kind(..))
+import Domain.Entry as Entry exposing (Beneficiary(..), Kind(..))
 import Domain.Event as Event exposing (Payload(..))
 import Domain.Group as Group
 import Domain.Member as Member
@@ -97,19 +97,9 @@ memberMetadataFuzzer =
         (Fuzz.maybe Fuzz.string)
 
 
-categoryFuzzer : Fuzzer Category
+categoryFuzzer : Fuzzer Entry.Category
 categoryFuzzer =
-    Fuzz.oneOf
-        [ Fuzz.constant Food
-        , Fuzz.constant Transport
-        , Fuzz.constant Accommodation
-        , Fuzz.constant Entertainment
-        , Fuzz.constant Shopping
-        , Fuzz.constant Groceries
-        , Fuzz.constant Utilities
-        , Fuzz.constant Healthcare
-        , Fuzz.constant Other
-        ]
+    Fuzz.oneOf (List.map Fuzz.constant Entry.allCategories)
 
 
 payerFuzzer : Fuzzer Entry.Payer

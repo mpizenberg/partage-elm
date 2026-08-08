@@ -1,6 +1,5 @@
 # Simplification backlog
 
-- **Entry category presentation:** category-to-label cases and emoji/name pairs are repeated across entry cards, details, filters, and the entry form. Give them one domain-specific UI presentation owner, following `UI.PaymentMethods`, while keeping Entries and Activity renderers independent.
 - **Expense/income beneficiary editor:** `ExpenseView` and `IncomeView` duplicate beneficiary selection, split-mode toggles, rows, and share steppers. Investigate one beneficiary editor parameterized only by the genuinely different surrounding fields.
 - **Feature specification scope:** `docs/SPECIFICATION.md` mixes current product contract, implementation notes, protocol reference, rejected designs, and future ideas; several details have drifted (FTL described as JSON, Splitwise/CSV both shipped and out-of-scope, relay schema/API tables omit current fields). Run a dedicated subtraction pass that keeps current promises and security constraints while deleting duplicated implementation testimony and stale future lists.
 - **Relay storage adapters:** SQLite and Durable Object adapters repeat schema and quota/compaction flow. Investigate whether a shared storage kernel can delete more than the adapter boundary costs; do not abstract over genuinely different transaction APIs.

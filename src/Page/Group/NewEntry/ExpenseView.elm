@@ -13,6 +13,7 @@ import Form
 import Format
 import Page.Group.NewEntry.Shared as Shared exposing (ModelData, Msg(..), SplitMode(..))
 import Translations as T exposing (I18n)
+import UI.Categories as Categories
 import UI.Components
 import UI.Theme as Theme
 import Ui
@@ -328,16 +329,10 @@ categoryField i18n data =
                         , onPress = InputCategory cat
                         }
                 )
-                [ ( Nothing, T.newEntryCategoryNone i18n )
-                , ( Just Entry.Food, "🍽️ " ++ T.categoryFood i18n )
-                , ( Just Entry.Transport, "🚗 " ++ T.categoryTransport i18n )
-                , ( Just Entry.Accommodation, "🏠 " ++ T.categoryAccommodation i18n )
-                , ( Just Entry.Entertainment, "🎭 " ++ T.categoryEntertainment i18n )
-                , ( Just Entry.Shopping, "🛍️ " ++ T.categoryShopping i18n )
-                , ( Just Entry.Groceries, "🛒 " ++ T.categoryGroceries i18n )
-                , ( Just Entry.Utilities, "⚡ " ++ T.categoryUtilities i18n )
-                , ( Just Entry.Healthcare, "💊 " ++ T.categoryHealthcare i18n )
-                , ( Just Entry.Other, "📦 " ++ T.categoryOther i18n )
-                ]
+                (( Nothing, T.newEntryCategoryNone i18n )
+                    :: List.map
+                        (\category -> ( Just category, Categories.labelWithEmoji i18n category ))
+                        Entry.allCategories
+                )
             )
         ]

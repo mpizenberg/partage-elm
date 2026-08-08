@@ -19,6 +19,7 @@ import List.Extra
 import Set exposing (Set)
 import Time
 import Translations as T exposing (I18n)
+import UI.Categories as Categories
 import UI.Components
 import UI.Theme as Theme
 import Ui
@@ -235,7 +236,7 @@ matchesSearch i18n resolveName query entry =
             matchesCategory maybeCat =
                 case maybeCat of
                     Just cat ->
-                        contains (detailCategoryLabel i18n cat)
+                        contains (Categories.label i18n cat)
 
                     Nothing ->
                         False
@@ -611,16 +612,14 @@ categoryFilterSection i18n selected =
         allCategories =
             [ ( Filter.categoryFilterToString TransferCategory, "💸 " ++ T.filterCategoryTransfer i18n )
             , ( Filter.categoryFilterToString IncomeCategory, "📥 " ++ T.filterCategoryIncome i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Food), "🍽️ " ++ T.categoryFood i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Transport), "🚗 " ++ T.categoryTransport i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Accommodation), "🏠 " ++ T.categoryAccommodation i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Entertainment), "🎭 " ++ T.categoryEntertainment i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Shopping), "🛍️ " ++ T.categoryShopping i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Groceries), "🛒 " ++ T.categoryGroceries i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Utilities), "⚡ " ++ T.categoryUtilities i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Healthcare), "💊 " ++ T.categoryHealthcare i18n )
-            , ( Filter.categoryFilterToString (ExpenseCategory Entry.Other), "📦 " ++ T.categoryOther i18n )
             ]
+                ++ List.map
+                    (\category ->
+                        ( Filter.categoryFilterToString (ExpenseCategory category)
+                        , Categories.labelWithEmoji i18n category
+                        )
+                    )
+                    Entry.allCategories
     in
     UI.Components.filterSection (T.filterCategoryLabel i18n)
         (List.map
@@ -813,7 +812,7 @@ expenseCardHeader i18n resolveName data =
             [ Ui.el [ Ui.width Ui.shrink ] (Ui.text (formatShortDate i18n data.date))
             , case data.category of
                 Just cat ->
-                    entryTag (categoryLabel i18n cat)
+                    entryTag (Categories.labelWithEmoji i18n cat)
 
                 Nothing ->
                     Ui.none
@@ -934,37 +933,6 @@ entryTag label =
         , Ui.width Ui.shrink
         ]
         (Ui.text label)
-
-
-categoryLabel : I18n -> Entry.Category -> String
-categoryLabel i18n cat =
-    case cat of
-        Entry.Food ->
-            "🍽️ " ++ T.categoryFood i18n
-
-        Entry.Transport ->
-            "🚗 " ++ T.categoryTransport i18n
-
-        Entry.Accommodation ->
-            "🏠 " ++ T.categoryAccommodation i18n
-
-        Entry.Entertainment ->
-            "🎭 " ++ T.categoryEntertainment i18n
-
-        Entry.Shopping ->
-            "🛍️ " ++ T.categoryShopping i18n
-
-        Entry.Groceries ->
-            "🛒 " ++ T.categoryGroceries i18n
-
-        Entry.Utilities ->
-            "⚡ " ++ T.categoryUtilities i18n
-
-        Entry.Healthcare ->
-            "💊 " ++ T.categoryHealthcare i18n
-
-        Entry.Other ->
-            "📦 " ++ T.categoryOther i18n
 
 
 payerText : (Member.Id -> String) -> List Entry.Payer -> String
@@ -1243,41 +1211,10 @@ detailCategoryRow : I18n -> Maybe Entry.Category -> List (Ui.Element msg)
 detailCategoryRow i18n maybeCategory =
     case maybeCategory of
         Just category ->
-            [ detailRow (T.entryDetailCategory i18n) (detailCategoryLabel i18n category) ]
+            [ detailRow (T.entryDetailCategory i18n) (Categories.label i18n category) ]
 
         Nothing ->
             []
-
-
-detailCategoryLabel : I18n -> Entry.Category -> String
-detailCategoryLabel i18n category =
-    case category of
-        Entry.Food ->
-            T.categoryFood i18n
-
-        Entry.Transport ->
-            T.categoryTransport i18n
-
-        Entry.Accommodation ->
-            T.categoryAccommodation i18n
-
-        Entry.Entertainment ->
-            T.categoryEntertainment i18n
-
-        Entry.Shopping ->
-            T.categoryShopping i18n
-
-        Entry.Groceries ->
-            T.categoryGroceries i18n
-
-        Entry.Utilities ->
-            T.categoryUtilities i18n
-
-        Entry.Healthcare ->
-            T.categoryHealthcare i18n
-
-        Entry.Other ->
-            T.categoryOther i18n
 
 
 actionButtons : I18n -> Entry.Id -> Bool -> Maybe ConfirmAction -> Ui.Element Msg
