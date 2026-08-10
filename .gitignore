@@ -6,4 +6,4 @@ node_modules
 dist
 src/Translations.elm
 .claude
-plan
+plans
