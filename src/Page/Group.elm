@@ -9,10 +9,11 @@ module Page.Group exposing
     , UpdateConfig
     , ViewConfig
     , ViewResult
+    , Workspace
     , connectivityRestored
     , handleNavigation
     , init
-    , resetLoadedGroup
+    , resetWorkspace
     , serverEventMsg
     , setIdentity
     , subscription
@@ -111,7 +112,6 @@ type alias UpdateConfig =
     , timeZone : Time.Zone
     , route : Route
     , i18n : I18n
-    , groups : Dict Group.Id Group.Summary
     , selfProfile : Member.Metadata
     , devMode : Bool
     }
@@ -127,8 +127,6 @@ type alias ViewConfig msg =
     , onSwitchLanguage : T.Language -> msg
     , today : Date
     , timeZone : Time.Zone
-    , groupId : Group.Id
-    , isKnownGroup : Bool
     , origin : String
     , pushConfigured : Bool
     , pushActive : Bool
@@ -146,7 +144,7 @@ type alias Model =
     , idState : IdGen.State
     , identityHash : String
     , previousDeviceIds : List String
-    , loadedGroup : Maybe LoadedGroup
+    , workspace : Workspace
     , syncState : SyncState
 
     -- Tabs
@@ -188,6 +186,14 @@ type alias Model =
     }
 
 
+type Workspace
+    = WorkspaceEmpty
+    | WorkspaceMissing
+    | WorkspaceLoading Group.Summary
+    | WorkspaceLoadFailed Group.Summary
+    | WorkspaceLoaded LoadedGroup
+
+
 type SyncState
     = SyncIdle
     | SyncRunning
@@ -218,15 +224,15 @@ subscription model =
         [ Runner.subscription model.runner
         , -- Periodic flush/pull safety net: heals failed syncs and missed
           -- WebSocket notifications that no event-driven trigger can see.
-          case model.loadedGroup of
-            Just loaded ->
+          case model.workspace of
+            WorkspaceLoaded loaded ->
                 if loaded.summary.isArchived then
                     Sub.none
 
                 else
                     Time.every (100 * 1000) (\_ -> SyncTick)
 
-            Nothing ->
+            _ ->
                 Sub.none
         ]
 
@@ -242,6 +248,7 @@ type
     = OnTaskProgress ( TaskRunner Msg, Cmd Msg )
       -- Navigation
     | RequestNavigation GroupView
+    | RetryGroupLoad
     | RequestTransfer { toMemberId : Member.Id, amountCents : Int }
     | RelinkDevice Member.Id
       -- Tabs
@@ -327,7 +334,7 @@ init config =
     , idState = config.idState
     , identityHash = ""
     , previousDeviceIds = []
-    , loadedGroup = Nothing
+    , workspace = WorkspaceEmpty
     , syncState = SyncIdle
     , activeTab = BalanceTab
     , entriesTabModel = Page.Group.EntriesTab.init
@@ -354,13 +361,13 @@ init config =
 -- EXPOSED FUNCTIONS
 
 
-{-| Handle navigation to a group view. Combines ensureGroupLoaded + initPagesIfNeeded.
+{-| Open the selected local group and initialize its routed sub-page.
 -}
-handleNavigation : UpdateConfig -> Group.Id -> GroupView -> Model -> ( Model, Cmd Msg )
-handleNavigation config groupId groupView model =
+handleNavigation : UpdateConfig -> Maybe Group.Summary -> GroupView -> Model -> ( Model, Cmd Msg )
+handleNavigation config maybeSummary groupView model =
     let
         ( loadedModel, loadCmd ) =
-            ensureGroupLoaded config groupId model
+            ensureGroupLoaded config maybeSummary model
 
         ( initModel, initCmd ) =
             initPagesIfNeeded config groupView loadedModel
@@ -368,66 +375,82 @@ handleNavigation config groupId groupView model =
     ( initModel, Cmd.batch [ loadCmd, initCmd ] )
 
 
-ensureGroupLoaded : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
-ensureGroupLoaded config groupId model =
-    if not (Dict.member groupId config.groups) then
-        -- No local summary for this group: nothing to load. The view will render
-        -- the missing-group page based on the same membership check.
-        ( { model | loadedGroup = Nothing }, Cmd.none )
+ensureGroupLoaded : UpdateConfig -> Maybe Group.Summary -> Model -> ( Model, Cmd Msg )
+ensureGroupLoaded config maybeSummary model =
+    case maybeSummary of
+        Nothing ->
+            ( { model | workspace = WorkspaceMissing }, Cmd.none )
 
-    else
-        case model.loadedGroup of
-            Just loaded ->
-                if loaded.summary.id == groupId then
-                    ( model, Cmd.none )
+        Just summary ->
+            case model.workspace of
+                WorkspaceLoaded loaded ->
+                    if loaded.summary.id == summary.id then
+                        ( model, Cmd.none )
 
-                else
-                    loadGroup config groupId model
+                    else
+                        loadGroup config summary model
 
-            Nothing ->
-                loadGroup config groupId model
+                WorkspaceLoading loadingSummary ->
+                    if loadingSummary.id == summary.id then
+                        ( model, Cmd.none )
+
+                    else
+                        loadGroup config summary model
+
+                _ ->
+                    loadGroup config summary model
 
 
-loadGroup : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
-loadGroup config groupId model =
+loadGroup : UpdateConfig -> Group.Summary -> Model -> ( Model, Cmd Msg )
+loadGroup config summary model =
     ( model.runner, Cmd.none )
-        |> Runner.andRun (OnGroupEventsLoaded groupId) (Storage.loadGroup config.db groupId)
-        |> Tuple.mapFirst (\r -> { model | runner = r, loadedGroup = Nothing })
+        |> Runner.andRun (OnGroupEventsLoaded summary.id) (Storage.loadGroup config.db summary.id)
+        |> Tuple.mapFirst (\r -> { model | runner = r, workspace = WorkspaceLoading summary })
 
 
 {-| Retry connectivity work for the loaded group after the browser comes online.
 -}
 connectivityRestored : UpdateConfig -> Model -> ( Model, Cmd Msg )
 connectivityRestored config model =
-    case model.loadedGroup of
-        Just loaded ->
+    case model.workspace of
+        WorkspaceLoaded loaded ->
             triggerSyncInternal config loaded.summary.id model
 
-        Nothing ->
+        _ ->
             ( model, Cmd.none )
 
 
-{-| Reset the loaded group. Called by Main on OnGroupCreated / OnGroupImported.
+{-| Discard workspace data that invitation acceptance replaced in storage.
 -}
-resetLoadedGroup : Model -> Model
-resetLoadedGroup model =
-    { model | loadedGroup = Nothing }
+resetWorkspace : Model -> Model
+resetWorkspace model =
+    { model | workspace = WorkspaceEmpty }
 
 
 {-| Update the loaded group's summary if it matches the given group ID.
 -}
 updateLoadedSummary : Group.Summary -> Model -> Model
 updateLoadedSummary summary model =
-    case model.loadedGroup of
-        Just loaded ->
+    case model.workspace of
+        WorkspaceLoaded loaded ->
             if loaded.summary.id == summary.id then
-                { model | loadedGroup = Just { loaded | summary = summary } }
+                { model | workspace = WorkspaceLoaded { loaded | summary = summary } }
 
             else
                 model
 
-        Nothing ->
+        _ ->
             model
+
+
+getLoadedGroup : Model -> Maybe LoadedGroup
+getLoadedGroup model =
+    case model.workspace of
+        WorkspaceLoaded loaded ->
+            Just loaded
+
+        _ ->
+            Nothing
 
 
 {-| Set the current device id and the ids of keys it has replaced. Called by Main
@@ -460,8 +483,17 @@ update config msg model =
                 _ ->
                     ( model, Cmd.none, [] )
 
+        RetryGroupLoad ->
+            case model.workspace of
+                WorkspaceLoadFailed summary ->
+                    loadGroup config summary model
+                        |> (\( updatedModel, cmd ) -> ( updatedModel, cmd, [] ))
+
+                _ ->
+                    ( model, Cmd.none, [] )
+
         RequestTransfer payData ->
-            case ( config.route, model.loadedGroup ) of
+            case ( config.route, getLoadedGroup model ) of
                 ( GroupRoute groupId _, Just loaded ) ->
                     let
                         transferData : Entry.TransferData
@@ -483,7 +515,7 @@ update config msg model =
                     ( model, Cmd.none, [] )
 
         RelinkDevice rootId ->
-            case model.loadedGroup of
+            case getLoadedGroup model of
                 Just loaded ->
                     let
                         deviceId : Member.Id
@@ -551,7 +583,7 @@ update config msg model =
             let
                 existingNames : List String
                 existingNames =
-                    model.loadedGroup
+                    getLoadedGroup model
                         |> Maybe.map (\lg -> GroupState.activeMembers lg.groupState |> List.map .name)
                         |> Maybe.withDefault []
 
@@ -559,7 +591,7 @@ update config msg model =
                     Page.Group.AddMember.update existingNames subMsg model.addMemberModel
                         |> Tuple.mapFirst (\subModel -> { model | addMemberModel = subModel })
             in
-            case ( maybeOutput, model.loadedGroup ) of
+            case ( maybeOutput, getLoadedGroup model ) of
                 ( Just addOutput, Just loaded ) ->
                     runSubmit (OnMemberActionSaved loaded.summary.id) config modelWithPage (\ctx -> GroupOps.addMember ctx loaded addOutput)
 
@@ -571,7 +603,7 @@ update config msg model =
             let
                 existingNames : List String
                 existingNames =
-                    model.loadedGroup
+                    getLoadedGroup model
                         |> Maybe.map (\lg -> GroupState.activeMembers lg.groupState |> List.map .name)
                         |> Maybe.withDefault []
 
@@ -586,7 +618,7 @@ update config msg model =
             in
             case maybeOutput of
                 Just (Page.Group.EditMemberMetadata.Submitted submitted) ->
-                    case model.loadedGroup of
+                    case getLoadedGroup model of
                         Just loaded ->
                             submitMemberMetadata config modelWithPage loaded submitted
 
@@ -601,7 +633,7 @@ update config msg model =
 
         -- Merge member
         MergeMemberMsg subMsg ->
-            case model.loadedGroup of
+            case getLoadedGroup model of
                 Just loaded ->
                     let
                         ( modelWithPage, maybeOutput ) =
@@ -677,7 +709,7 @@ update config msg model =
                         ( modelWithPage, Cmd.none, [] )
 
             else if result.archiveRequested then
-                case model.loadedGroup of
+                case getLoadedGroup model of
                     Just loaded ->
                         toggleArchiveGroup config modelWithPage loaded
 
@@ -685,7 +717,7 @@ update config msg model =
                         ( modelWithPage, Cmd.none, [] )
 
             else
-                case ( result.metadataOutput, model.loadedGroup ) of
+                case ( result.metadataOutput, getLoadedGroup model ) of
                     ( Just change, Just loaded ) ->
                         runSubmit (OnGroupMetadataActionSaved loaded.summary.id)
                             config
@@ -704,7 +736,7 @@ update config msg model =
                 modelWithPage =
                     { model | rejoinModel = rejoinModel }
             in
-            case ( maybeOutput, model.loadedGroup ) of
+            case ( maybeOutput, getLoadedGroup model ) of
                 ( Just (Page.JoinGroup.JoinConfirmed joinData), Just loaded ) ->
                     case GroupOps.joinPayload config.identity.publicKeyHash joinData.selectedAction joinData.newMemberName loaded.groupState of
                         Just payload ->
@@ -721,7 +753,7 @@ update config msg model =
                     ( modelWithPage, Cmd.none, [] )
 
         SettleTransaction tx ->
-            case model.loadedGroup of
+            case getLoadedGroup model of
                 Just loaded ->
                     let
                         output : NewEntryShared.Output
@@ -744,7 +776,7 @@ update config msg model =
                     ( model, Cmd.none, [] )
 
         SaveSettlementPreferences prefData ->
-            case model.loadedGroup of
+            case getLoadedGroup model of
                 Just loaded ->
                     runSubmit (OnEntryActionSaved loaded.summary.id)
                         config
@@ -755,7 +787,7 @@ update config msg model =
                     ( model, Cmd.none, [] )
 
         UnarchiveGroup ->
-            case model.loadedGroup of
+            case getLoadedGroup model of
                 Just loaded ->
                     if loaded.summary.isArchived then
                         toggleArchiveGroup config model loaded
@@ -767,7 +799,7 @@ update config msg model =
                     ( model, Cmd.none, [] )
 
         ToggleNotification ->
-            case model.loadedGroup of
+            case getLoadedGroup model of
                 Just loaded ->
                     case currentUserRootId model loaded of
                         Just userRootId ->
@@ -889,11 +921,11 @@ update config msg model =
             let
                 memberRootId : Member.Id
                 memberRootId =
-                    model.loadedGroup
+                    getLoadedGroup model
                         |> Maybe.andThen (currentUserRootId model)
                         |> Maybe.withDefault ""
             in
-            ( { model | loadedGroup = Nothing }
+            ( { model | workspace = WorkspaceEmpty }
             , Cmd.none
             , [ RemoveGroup groupId memberRootId
               , ShowToast Toast.Success (T.toastGroupRemoved config.i18n)
@@ -911,38 +943,28 @@ update config msg model =
             ( model, Cmd.none, [] )
 
         OnGroupEventsLoaded groupId (ConcurrentTask.Success result) ->
-            let
-                ( modelAfterLoad, initCmd ) =
-                    case applyLoadedGroup config groupId result.events result.groupKey result.syncCursor result.unpushedIds result.tamperSignals result.suspicionDismissals model of
-                        Just m ->
-                            initPagesIfNeeded config (routeToGroupView config.route) m
+            case applyLoadedGroup groupId result.events result.groupKey result.syncCursor result.unpushedIds result.tamperSignals result.suspicionDismissals model of
+                Just loadedModel ->
+                    let
+                        ( initializedModel, initCmd ) =
+                            initPagesIfNeeded config (routeToGroupView config.route) loadedModel
 
-                        Nothing ->
-                            ( model, Cmd.none )
+                        ( syncModel, syncCmd ) =
+                            triggerSyncInternal config groupId initializedModel
+                    in
+                    ( syncModel, Cmd.batch [ syncCmd, initCmd ], [] )
 
-                ( syncModel, syncCmd ) =
-                    triggerSyncInternal config groupId modelAfterLoad
-            in
-            ( syncModel, Cmd.batch [ syncCmd, initCmd ], [] )
+                Nothing ->
+                    ( model, Cmd.none, [] )
 
-        OnGroupEventsLoaded _ (ConcurrentTask.Error err) ->
-            ( model
-            , Cmd.none
-            , [ ShowToast Toast.Error (T.toastGroupLoadError config.i18n)
-              , LogError ErrorLog.StorageSource ErrorLog.Err ("Load group: " ++ Storage.errorToString err)
-              ]
-            )
+        OnGroupEventsLoaded groupId (ConcurrentTask.Error err) ->
+            finishWorkspaceLoadFailure config groupId ("Load group: " ++ Storage.errorToString err) model
 
-        OnGroupEventsLoaded _ (ConcurrentTask.UnexpectedError _) ->
-            ( model
-            , Cmd.none
-            , [ ShowToast Toast.Error (T.toastGroupLoadError config.i18n)
-              , LogError ErrorLog.StorageSource ErrorLog.Err "Unexpected error loading group events"
-              ]
-            )
+        OnGroupEventsLoaded groupId (ConcurrentTask.UnexpectedError _) ->
+            finishWorkspaceLoadFailure config groupId "Unexpected error loading group events" model
 
         OnGroupSynced groupId pushedIds (ConcurrentTask.Success syncResult) ->
-            case model.loadedGroup of
+            case getLoadedGroup model of
                 Just loaded ->
                     if loaded.summary.id == groupId then
                         let
@@ -979,7 +1001,7 @@ update config msg model =
 
                             ( modelAfterSync, initCmd ) =
                                 { model
-                                    | loadedGroup = Just result.updatedGroup
+                                    | workspace = WorkspaceLoaded result.updatedGroup
                                     , runner = runner
                                     , syncState = SyncIdle
                                 }
@@ -1018,7 +1040,7 @@ update config msg model =
                     finishStaleConnectivity config model
 
         OnGroupSynced groupId _ (ConcurrentTask.Error err) ->
-            case model.loadedGroup of
+            case getLoadedGroup model of
                 Just loaded ->
                     if loaded.summary.id /= groupId then
                         finishStaleConnectivity config model
@@ -1111,7 +1133,7 @@ update config msg model =
                 finishStaleConnectivity config model
 
         OnCompactionStep groupId (ConcurrentTask.Success outcome) ->
-            case model.loadedGroup of
+            case getLoadedGroup model of
                 Just loaded ->
                     if loaded.summary.id == groupId then
                         let
@@ -1160,7 +1182,7 @@ update config msg model =
                                                                 (Storage.saveSyncCursor config.db groupId forwarded)
                                                 in
                                                 ( { model
-                                                    | loadedGroup = Just { loaded | syncCursor = Just forwarded }
+                                                    | workspace = WorkspaceLoaded { loaded | syncCursor = Just forwarded }
                                                     , runner = runner
                                                   }
                                                 , cursorCmd
@@ -1174,7 +1196,7 @@ update config msg model =
                                         ( model, Cmd.none, [] )
 
                             ( finalModel, mismatchCmd ) =
-                                case ( outcome.manifestMismatch, stepModel.loadedGroup ) of
+                                case ( outcome.manifestMismatch, getLoadedGroup stepModel ) of
                                     ( True, Just loadedAfter ) ->
                                         recordTamper config (TamperSignals.recordManifestMismatch config.currentTime) loadedAfter stepModel
 
@@ -1226,11 +1248,11 @@ update config msg model =
             )
 
         DismissTamperSignals ->
-            case model.loadedGroup of
+            case getLoadedGroup model of
                 Just loaded ->
                     ( model.runner, Cmd.none )
                         |> Runner.andRun OnTamperSignalsSaved (Storage.saveTamperSignals config.db loaded.summary.id TamperSignals.empty)
-                        |> Tuple.mapFirst (\r -> { model | runner = r, loadedGroup = Just { loaded | tamperSignals = TamperSignals.empty } })
+                        |> Tuple.mapFirst (\r -> { model | runner = r, workspace = WorkspaceLoaded { loaded | tamperSignals = TamperSignals.empty } })
                         |> (\( m, cmd ) -> ( m, cmd, [] ))
 
                 Nothing ->
@@ -1243,7 +1265,7 @@ update config msg model =
             ( model, Cmd.none, [ LogError ErrorLog.StorageSource ErrorLog.Err "Failed to save tamper signals" ] )
 
         DismissSuspicion key ->
-            case model.loadedGroup of
+            case getLoadedGroup model of
                 Just loaded ->
                     let
                         dismissed : Set String
@@ -1252,7 +1274,7 @@ update config msg model =
                     in
                     ( model.runner, Cmd.none )
                         |> Runner.andRun OnSuspicionDismissalsSaved (Storage.saveSuspicionDismissals config.db loaded.summary.id dismissed)
-                        |> Tuple.mapFirst (\r -> { model | runner = r, loadedGroup = Just { loaded | suspicionDismissals = dismissed } })
+                        |> Tuple.mapFirst (\r -> { model | runner = r, workspace = WorkspaceLoaded { loaded | suspicionDismissals = dismissed } })
                         |> (\( m, cmd ) -> ( m, cmd, [] ))
 
                 Nothing ->
@@ -1275,7 +1297,7 @@ update config msg model =
                         let
                             defaultBound : MigrationCuration.Bound
                             defaultBound =
-                                case model.loadedGroup of
+                                case getLoadedGroup model of
                                     Just loaded ->
                                         defaultMigrationBound model loaded memberId
 
@@ -1309,7 +1331,7 @@ update config msg model =
             )
 
         OnMigrationOrderFetched groupId (ConcurrentTask.Success order) ->
-            case model.loadedGroup of
+            case getLoadedGroup model of
                 Just loaded ->
                     if loaded.summary.id == groupId then
                         ( { model | migrationOrder = Just order }, Cmd.none, [] )
@@ -1326,7 +1348,7 @@ update config msg model =
             ( model, Cmd.none, [] )
 
         PreviewMigration ->
-            case model.loadedGroup of
+            case getLoadedGroup model of
                 Just loaded ->
                     ( { model | migrationPreview = Just (MigrationCuration.preview (curationOrder model) config.identity.publicKeyHash model.migrationSelection loaded.events) }
                     , Cmd.none
@@ -1337,7 +1359,7 @@ update config msg model =
                     ( model, Cmd.none, [] )
 
         ConfirmMigration ->
-            case model.loadedGroup of
+            case getLoadedGroup model of
                 Just loaded ->
                     let
                         ( state, cmd ) =
@@ -1373,7 +1395,7 @@ update config msg model =
             ( model, Cmd.none, [] )
 
         OnDiagnosticsLoaded (ConcurrentTask.Success stats) ->
-            case model.loadedGroup of
+            case getLoadedGroup model of
                 Just loaded ->
                     if loaded.summary.id == stats.groupId then
                         ( { model | diagnosticsModel = Just stats }, Cmd.none, [] )
@@ -1388,7 +1410,7 @@ update config msg model =
             ( model, Cmd.none, [ LogError ErrorLog.StorageSource ErrorLog.Err "Unexpected error measuring group diagnostics" ] )
 
         OnServerEvent value ->
-            case ( model.loadedGroup, Json.Decode.decodeValue Server.serverEventDecoder value ) of
+            case ( getLoadedGroup model, Json.Decode.decodeValue Server.serverEventDecoder value ) of
                 ( Just loaded, Ok serverEvt ) ->
                     if serverEvt.groupId == loaded.summary.id then
                         let
@@ -1404,7 +1426,7 @@ update config msg model =
                     ( model, Cmd.none, [] )
 
         SyncTick ->
-            case model.loadedGroup of
+            case getLoadedGroup model of
                 Just loaded ->
                     let
                         ( syncModel, syncCmd ) =
@@ -1466,7 +1488,7 @@ runSubmit onComplete config model submitFn =
 -}
 handleNewEntryOutput : UpdateConfig -> Model -> NewEntryShared.Output -> ( Model, Cmd Msg, List Output )
 handleNewEntryOutput config model entryOutput =
-    case model.loadedGroup of
+    case getLoadedGroup model of
         Just loaded ->
             case config.route of
                 GroupRoute _ (EditEntry entryId) ->
@@ -1501,11 +1523,11 @@ fetchExchangeRate config model pair =
     ( { model | runner = runner }, cmd, [] )
 
 
-{-| Submit an entry action (delete/restore), checking loadedGroup.
+{-| Submit an entry action (delete/restore) when its group is loaded.
 -}
 submitEntryAction : UpdateConfig -> Model -> (GroupOps.Context Msg -> LoadedGroup -> ( GroupOps.State Msg, Cmd Msg )) -> ( Model, Cmd Msg, List Output )
 submitEntryAction config model action =
-    case model.loadedGroup of
+    case getLoadedGroup model of
         Just loaded ->
             runSubmit (OnEntryActionSaved loaded.summary.id) config model (\ctx -> action ctx loaded)
 
@@ -1619,7 +1641,7 @@ mergeSuccessOutputs config model pm =
     let
         nameFor : Member.Id -> String
         nameFor mid =
-            case model.loadedGroup of
+            case getLoadedGroup model of
                 Just lg ->
                     GroupState.resolveMemberName lg.groupState mid
 
@@ -1743,7 +1765,7 @@ handleEntriesTabOutput config model output =
                     ( model, Cmd.none, [] )
 
         Page.Group.EntriesTab.DuplicateOutput entryId ->
-            case ( config.route, model.loadedGroup ) of
+            case ( config.route, getLoadedGroup model ) of
                 ( GroupRoute groupId _, Just loaded ) ->
                     case Dict.get entryId loaded.groupState.entries of
                         Just entryState ->
@@ -1774,7 +1796,7 @@ handleEntriesTabOutput config model output =
 
 handleMembersTabOutput : UpdateConfig -> Model -> Page.Group.MembersTab.Output -> ( Model, Cmd Msg, List Output )
 handleMembersTabOutput config model output =
-    case model.loadedGroup of
+    case getLoadedGroup model of
         Just loaded ->
             let
                 submit : Event.Payload -> ( Model, Cmd Msg, List Output )
@@ -1851,17 +1873,17 @@ appendEventAndRecompute model groupId envelope =
 
 hasLoadedGroup : Group.Id -> Model -> Bool
 hasLoadedGroup groupId model =
-    model.loadedGroup
+    getLoadedGroup model
         |> Maybe.map (\loaded -> loaded.summary.id == groupId)
         |> Maybe.withDefault False
 
 
 mapLoadedGroup : (LoadedGroup -> LoadedGroup) -> Group.Id -> Model -> Maybe Model
 mapLoadedGroup f groupId model =
-    case model.loadedGroup of
+    case getLoadedGroup model of
         Just loaded ->
             if loaded.summary.id == groupId then
-                Just { model | loadedGroup = Just (f loaded) }
+                Just { model | workspace = WorkspaceLoaded (f loaded) }
 
             else
                 Nothing
@@ -1874,9 +1896,9 @@ mapLoadedGroup f groupId model =
 -}
 addUnpushedIdToModel : String -> Model -> Model
 addUnpushedIdToModel eventId model =
-    case model.loadedGroup of
+    case getLoadedGroup model of
         Just loaded ->
-            { model | loadedGroup = Just (GroupOps.addUnpushedId eventId loaded) }
+            { model | workspace = WorkspaceLoaded (GroupOps.addUnpushedId eventId loaded) }
 
         Nothing ->
             model
@@ -1925,7 +1947,7 @@ finishStaleConnectivity config model =
 
 startSync : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
 startSync config groupId model =
-    case model.loadedGroup of
+    case getLoadedGroup model of
         Just loaded ->
             if loaded.summary.id == groupId && not loaded.summary.isArchived then
                 let
@@ -2028,14 +2050,14 @@ recordTamper config bump loaded model =
     in
     ( model.runner, Cmd.none )
         |> Runner.andRun OnTamperSignalsSaved (Storage.saveTamperSignals config.db loaded.summary.id bumped)
-        |> Tuple.mapFirst (\r -> { model | runner = r, loadedGroup = Just { loaded | tamperSignals = bumped } })
+        |> Tuple.mapFirst (\r -> { model | runner = r, workspace = WorkspaceLoaded { loaded | tamperSignals = bumped } })
 
 
 {-| After a group event is applied, sync the summary fields and persist to IndexedDB.
 -}
 syncGroupSummaryName : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg, List Output )
 syncGroupSummaryName config groupId model =
-    case model.loadedGroup of
+    case getLoadedGroup model of
         Just loaded ->
             let
                 updatedSummary : Group.Summary
@@ -2057,7 +2079,7 @@ syncGroupSummaryName config groupId model =
 
                 updatedModel : Model
                 updatedModel =
-                    { model | loadedGroup = Just { loaded | summary = updatedSummary } }
+                    { model | workspace = WorkspaceLoaded { loaded | summary = updatedSummary } }
             in
             ( model.runner, Cmd.none )
                 |> Runner.andRun OnGroupSummarySaved (Storage.saveGroupSummary config.db updatedSummary)
@@ -2099,7 +2121,7 @@ toggleArchiveGroup config model loaded =
                         let
                             updatedModel : Model
                             updatedModel =
-                                { model | loadedGroup = Just { loaded | summary = updatedSummary } }
+                                { model | workspace = WorkspaceLoaded { loaded | summary = updatedSummary } }
                         in
                         { updatedModel | runner = r }
                     )
@@ -2138,13 +2160,44 @@ deleteGroup config model groupId =
         |> (\( r, cmd ) -> ( { model | runner = r }, cmd, [] ))
 
 
-{-| Apply loaded group data from IndexedDB, constructing a LoadedGroup.
+{-| Apply a storage response only while its matching workspace is loading.
 -}
-applyLoadedGroup : UpdateConfig -> Group.Id -> List Event.Envelope -> Symmetric.Key -> Maybe Group.SyncCursor -> Set String -> TamperSignals -> Set String -> Model -> Maybe Model
-applyLoadedGroup config groupId events groupKey syncCursor unpushedIds tamperSignals suspicionDismissals model =
-    Dict.get groupId config.groups
-        |> Maybe.map (\summary -> GroupOps.initLoadedGroup events summary groupKey syncCursor unpushedIds tamperSignals suspicionDismissals)
-        |> Maybe.map (\loaded -> { model | loadedGroup = Just loaded })
+applyLoadedGroup : Group.Id -> List Event.Envelope -> Symmetric.Key -> Maybe Group.SyncCursor -> Set String -> TamperSignals -> Set String -> Model -> Maybe Model
+applyLoadedGroup groupId events groupKey syncCursor unpushedIds tamperSignals suspicionDismissals model =
+    case model.workspace of
+        WorkspaceLoading summary ->
+            if summary.id == groupId then
+                Just
+                    { model
+                        | workspace =
+                            WorkspaceLoaded
+                                (GroupOps.initLoadedGroup events summary groupKey syncCursor unpushedIds tamperSignals suspicionDismissals)
+                    }
+
+            else
+                Nothing
+
+        _ ->
+            Nothing
+
+
+finishWorkspaceLoadFailure : UpdateConfig -> Group.Id -> String -> Model -> ( Model, Cmd Msg, List Output )
+finishWorkspaceLoadFailure config groupId logMessage model =
+    case model.workspace of
+        WorkspaceLoading summary ->
+            if summary.id == groupId then
+                ( { model | workspace = WorkspaceLoadFailed summary }
+                , Cmd.none
+                , [ ShowToast Toast.Error (T.toastGroupLoadError config.i18n)
+                  , LogError ErrorLog.StorageSource ErrorLog.Err logMessage
+                  ]
+                )
+
+            else
+                ( model, Cmd.none, [] )
+
+        _ ->
+            ( model, Cmd.none, [] )
 
 
 {-| Initialize the sub-page model for a given group view, if the needed data is available.
@@ -2154,7 +2207,7 @@ archive/delete actions are local-only and open to non-members.
 -}
 initPagesIfNeeded : UpdateConfig -> GroupView -> Model -> ( Model, Cmd Msg )
 initPagesIfNeeded config groupView model =
-    case model.loadedGroup of
+    case getLoadedGroup model of
         Just loaded ->
             case
                 ( groupView
@@ -2282,7 +2335,7 @@ needs refreshing; every other view renders live from the loaded group state.
 -}
 refreshPagesAfterSync : UpdateConfig -> Model -> ( Model, Cmd Msg )
 refreshPagesAfterSync config model =
-    case ( routeToGroupView config.route, model.loadedGroup ) of
+    case ( routeToGroupView config.route, getLoadedGroup model ) of
         ( Diagnostics, Just loaded ) ->
             reloadDiagnosticsIfStale config loaded model
 
@@ -2416,20 +2469,21 @@ Handles loading state internally.
 -}
 view : ViewConfig msg -> GroupView -> Model -> ViewResult msg
 view config groupView model =
-    if not config.isKnownGroup then
-        { content = viewMissingGroupShell config, overlay = Nothing }
+    case model.workspace of
+        WorkspaceEmpty ->
+            { content = viewLoadingShell config, overlay = Nothing }
 
-    else
-        case model.loadedGroup of
-            Just loaded ->
-                if loaded.summary.id == config.groupId then
-                    viewGroupPage config groupView loaded model
+        WorkspaceMissing ->
+            { content = viewMissingGroupShell config, overlay = Nothing }
 
-                else
-                    { content = viewLoadingShell config, overlay = Nothing }
+        WorkspaceLoading _ ->
+            { content = viewLoadingShell config, overlay = Nothing }
 
-            Nothing ->
-                { content = viewLoadingShell config, overlay = Nothing }
+        WorkspaceLoadFailed _ ->
+            { content = viewLoadFailedShell config, overlay = Nothing }
+
+        WorkspaceLoaded loaded ->
+            viewGroupPage config groupView loaded model
 
 
 viewLoadingShell : ViewConfig msg -> Ui.Element msg
@@ -2437,6 +2491,17 @@ viewLoadingShell config =
     UI.Shell.pageShell { title = T.shellPartage config.i18n, onBack = config.onNavigateHome } <|
         Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
             (Ui.text (T.loadingGroup config.i18n))
+
+
+viewLoadFailedShell : ViewConfig msg -> Ui.Element msg
+viewLoadFailedShell config =
+    UI.Shell.pageShell { title = T.shellPartage config.i18n, onBack = config.onNavigateHome } <|
+        Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill ]
+            [ Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
+                (Ui.text (T.toastGroupLoadError config.i18n))
+            , UI.Components.btnPrimary [ Ui.centerX, Ui.width Ui.shrink ]
+                { label = T.groupLoadRetry config.i18n, onPress = config.toMsg RetryGroupLoad }
+            ]
 
 
 viewMissingGroupShell : ViewConfig msg -> Ui.Element msg
@@ -2680,7 +2745,7 @@ viewTabs config maybeUserRootId loaded model =
     let
         tabHref : GroupTab -> String
         tabHref tab =
-            Route.toPath (GroupRoute config.groupId (Tab tab))
+            Route.toPath (GroupRoute loaded.summary.id (Tab tab))
 
         fab : Ui.Element msg
         fab =
@@ -2688,7 +2753,7 @@ viewTabs config maybeUserRootId loaded model =
                 Just _ ->
                     UI.Components.fab
                         { label = T.groupAddEntryLabel config.i18n
-                        , href = Route.toPath (GroupRoute config.groupId NewEntry)
+                        , href = Route.toPath (GroupRoute loaded.summary.id NewEntry)
                         , onPress = config.toMsg (RequestNavigation NewEntry)
                         }
 
@@ -2779,7 +2844,7 @@ tabContent config maybeUserRootId loaded model =
                 { onRecordTransfer = \tx -> config.toMsg (SettleTransaction tx)
                 , onSavePreferences = \prefData -> config.toMsg (SaveSettlementPreferences prefData)
                 , onNewTransfer = \payData -> config.toMsg (RequestTransfer payData)
-                , newTransferHref = Route.toPath (GroupRoute config.groupId NewEntry)
+                , newTransferHref = Route.toPath (GroupRoute loaded.summary.id NewEntry)
                 , toMsg = config.toMsg << BalanceTabMsg
                 }
                 maybeUserRootId
@@ -2789,8 +2854,8 @@ tabContent config maybeUserRootId loaded model =
         EntriesTab ->
             Page.Group.EntriesTab.view config.i18n
                 { onNewEntry = config.toMsg (RequestNavigation NewEntry)
-                , newEntryHref = Route.toPath (GroupRoute config.groupId NewEntry)
-                , entryLinkHref = \entryId -> config.origin ++ Route.toPath (GroupRoute config.groupId (HighlightEntry entryId))
+                , newEntryHref = Route.toPath (GroupRoute loaded.summary.id NewEntry)
+                , entryLinkHref = \entryId -> config.origin ++ Route.toPath (GroupRoute loaded.summary.id (HighlightEntry entryId))
                 , toMsg = config.toMsg << EntriesTabMsg
                 }
                 maybeUserRootId
@@ -2801,13 +2866,13 @@ tabContent config maybeUserRootId loaded model =
         MembersTab ->
             Page.Group.MembersTab.view config.i18n
                 { onAddMember = config.toMsg (RequestNavigation AddVirtualMember)
-                , addMemberHref = Route.toPath (GroupRoute config.groupId AddVirtualMember)
+                , addMemberHref = Route.toPath (GroupRoute loaded.summary.id AddVirtualMember)
                 , onEditGroupMetadata = config.toMsg (RequestNavigation EditGroupMetadata)
-                , editGroupMetadataHref = Route.toPath (GroupRoute config.groupId EditGroupMetadata)
+                , editGroupMetadataHref = Route.toPath (GroupRoute loaded.summary.id EditGroupMetadata)
                 , inviteLink =
                     config.origin
                         ++ Route.toPath
-                            (GroupRoute config.groupId
+                            (GroupRoute loaded.summary.id
                                 (Join
                                     { key = Symmetric.exportKey loaded.groupKey
 
@@ -2848,7 +2913,7 @@ tabContent config maybeUserRootId loaded model =
                 { resolveName = GroupState.resolveMemberName loaded.groupState
                 , currentUserRootId = maybeUserRootId
                 , groupDefaultCurrency = loaded.summary.defaultCurrency
-                , entryLinkHref = \entryId -> Route.toPath (GroupRoute config.groupId (HighlightEntry entryId))
+                , entryLinkHref = \entryId -> Route.toPath (GroupRoute loaded.summary.id (HighlightEntry entryId))
                 , onNavigateToEntry = \entryId -> config.toMsg (RequestNavigation (HighlightEntry entryId))
                 , toMsg = config.toMsg << ActivityTabMsg
                 , allMembers = allMembers

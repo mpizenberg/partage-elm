@@ -252,6 +252,7 @@ newEntryReceivedByLabel = Received by
 newEntryNoReceiverError = Please select a receiver.
 newEntryIncomeBeneficiariesHint = Select the members who should receive a share of this income.
 loadingGroup = Loading group...
+groupLoadRetry = Try again
 missingGroupTitle = Group not on this device
 missingGroupMessage = You don't have this group locally. Open an invitation link (with its key after the #) to join it.
 entryNotFound = This entry no longer exists.

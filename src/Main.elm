@@ -349,11 +349,20 @@ buildGroupConfig model =
                         , timeZone = model.timeZone
                         , route = model.route
                         , i18n = model.i18n
-                        , groups = readyData.groups
                         , selfProfile = readyData.selfProfile
                         , devMode = readyData.devMode
                         }
                     )
+
+        _ ->
+            Nothing
+
+
+selectedGroupSummary : Group.Id -> Model -> Maybe Group.Summary
+selectedGroupSummary groupId model =
+    case model.appState of
+        Ready readyData ->
+            Dict.get groupId readyData.groups
 
         _ ->
             Nothing
@@ -523,7 +532,7 @@ update msg model =
                     in
                     case buildGroupConfig routedModel of
                         Just config ->
-                            Page.Group.handleNavigation config groupId groupView model.groupModel
+                            Page.Group.handleNavigation config (selectedGroupSummary groupId routedModel) groupView model.groupModel
                                 |> Update.wrap GroupMsg (\gm -> { routedModel | groupModel = gm })
                                 |> Update.addCmd guardCmd
                                 |> Update.addCmd (navScrollCmd route)
@@ -635,7 +644,7 @@ update msg model =
                         GroupRoute groupId groupView ->
                             case buildGroupConfig modelWithReadyData of
                                 Just config ->
-                                    Page.Group.handleNavigation config groupId groupView modelWithReadyData.groupModel
+                                    Page.Group.handleNavigation config (selectedGroupSummary groupId modelWithReadyData) groupView modelWithReadyData.groupModel
                                         |> Update.wrap GroupMsg (\gm -> { modelWithReadyData | groupModel = gm })
 
                                 Nothing ->
@@ -723,7 +732,6 @@ update msg model =
                         modelWithGroup =
                             { model
                                 | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
-                                , groupModel = Page.Group.resetLoadedGroup model.groupModel
                             }
 
                         newRoute : Route
@@ -903,7 +911,7 @@ update msg model =
                                 ( loadedModel, loadCmd ) =
                                     case buildGroupConfig toastedModel of
                                         Just config ->
-                                            Page.Group.handleNavigation config groupId balanceTab toastedModel.groupModel
+                                            Page.Group.handleNavigation config (selectedGroupSummary groupId toastedModel) balanceTab toastedModel.groupModel
                                                 |> Update.wrap GroupMsg (\gm -> { toastedModel | groupModel = gm })
 
                                         Nothing ->
@@ -1044,7 +1052,7 @@ update msg model =
                         (T.toastJoinedGroup model.i18n)
                         { model
                             | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
-                            , groupModel = Page.Group.resetLoadedGroup model.groupModel
+                            , groupModel = Page.Group.resetWorkspace model.groupModel
                         }
                         |> Update.addCmd (Navigation.pushUrl navCmd (Route.toAppUrl balanceTabRoute))
                         |> requestPersistOnFirstGroup readyData.groups
@@ -1676,7 +1684,6 @@ processImportExportOutMsg model ieCmd maybeOutMsg =
                         importedModel =
                             { model
                                 | appState = Ready { readyData | groups = Dict.insert summary.id summary readyData.groups }
-                                , groupModel = Page.Group.resetLoadedGroup model.groupModel
                                 , homeModel = Page.Home.init
                             }
                     in
@@ -1951,7 +1958,7 @@ viewReady model readyData =
                         model.joinGroupModel
                     )
 
-        GroupRoute groupId groupView ->
+        GroupRoute _ groupView ->
             Page.Group.view
                 { i18n = i18n
                 , toMsg = GroupMsg
@@ -1960,8 +1967,6 @@ viewReady model readyData =
                 , onSwitchLanguage = SwitchLanguage
                 , today = Date.posixToDate model.timeZone model.currentTime
                 , timeZone = model.timeZone
-                , groupId = groupId
-                , isKnownGroup = Dict.member groupId readyData.groups
                 , origin = model.origin
                 , pushConfigured = model.pushServerUrl /= Nothing
                 , pushActive = PwaState.pushIsActive model.pwaState
