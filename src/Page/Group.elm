@@ -432,6 +432,20 @@ resetWorkspace model =
 updateLoadedSummary : Group.Summary -> Model -> Model
 updateLoadedSummary summary model =
     case model.workspace of
+        WorkspaceLoading loadingSummary ->
+            if loadingSummary.id == summary.id then
+                { model | workspace = WorkspaceLoading summary }
+
+            else
+                model
+
+        WorkspaceLoadFailed failedSummary ->
+            if failedSummary.id == summary.id then
+                { model | workspace = WorkspaceLoadFailed summary }
+
+            else
+                model
+
         WorkspaceLoaded loaded ->
             if loaded.summary.id == summary.id then
                 { model | workspace = WorkspaceLoaded { loaded | summary = summary } }
