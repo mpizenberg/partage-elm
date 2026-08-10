@@ -1,4 +1,4 @@
-module Page.JoinGroup exposing (JoinAction(..), Model, Msg, Output(..), PreviewData, defaultAction, error, getPreview, init, showPreview, update, view, viewPreview)
+module Page.JoinGroup exposing (Model, Msg, Output(..), PreviewData, acceptanceFailed, defaultAction, error, getPreview, init, showPreview, update, view, viewPreview)
 
 {-| Join group page shown when opening an invite link.
 Displays a group preview with options to claim a virtual member or join as new.
@@ -9,34 +9,35 @@ import Domain.Event as Event
 import Domain.Group as Group
 import Domain.GroupState exposing (GroupState)
 import Domain.Member as Member
+import Set exposing (Set)
 import Translations as T exposing (I18n, Language)
 import UI.Components
 import UI.Theme as Theme
 import Ui
 import Ui.Font
 import Ui.Input
+import WebCrypto.Symmetric as Symmetric
 
 
 type Model
     = FetchingGroup
     | ShowingPreview PreviewData
+    | Accepting PreviewData
     | Error String
 
 
 type alias PreviewData =
-    { groupName : String
+    { groupId : Group.Id
+    , groupName : String
     , groupState : GroupState
+    , groupKey : Symmetric.Key
     , events : List Event.Envelope
+    , unpushedIds : Set Event.Id
     , syncCursor : Maybe Group.SyncCursor
-    , selectedAction : JoinAction
+    , selectedAction : Member.JoinAction
     , newMemberName : String
     , historyWarning : Bool
     }
-
-
-type JoinAction
-    = ClaimMember Member.Id
-    | JoinAsNewMember
 
 
 type Msg
@@ -47,7 +48,7 @@ type Msg
 
 
 type Output
-    = JoinConfirmed { selectedAction : JoinAction, newMemberName : String }
+    = JoinConfirmed PreviewData
 
 
 init : Model
@@ -65,10 +66,23 @@ error =
     Error
 
 
+acceptanceFailed : Model -> Model
+acceptanceFailed model =
+    case model of
+        Accepting preview ->
+            ShowingPreview preview
+
+        _ ->
+            model
+
+
 getPreview : Model -> Maybe PreviewData
 getPreview model =
     case model of
         ShowingPreview preview ->
+            Just preview
+
+        Accepting preview ->
             Just preview
 
         _ ->
@@ -77,26 +91,26 @@ getPreview model =
 
 {-| Pick the default join action: select the first virtual member if any, otherwise join as new.
 -}
-defaultAction : GroupState -> JoinAction
+defaultAction : GroupState -> Member.JoinAction
 defaultAction groupState =
     Dict.values groupState.members
         |> List.filter (\m -> m.memberType == Member.Virtual && not m.isRetired)
         |> List.sortBy (\m -> String.toLower m.name)
         |> List.head
-        |> Maybe.map (\m -> ClaimMember m.rootId)
-        |> Maybe.withDefault JoinAsNewMember
+        |> Maybe.map (\m -> Member.ClaimMember m.rootId)
+        |> Maybe.withDefault Member.JoinAsNewMember
 
 
 update : Msg -> Model -> ( Model, Maybe Output )
 update msg model =
     case ( msg, model ) of
         ( SelectMember memberId, ShowingPreview preview ) ->
-            ( ShowingPreview { preview | selectedAction = ClaimMember memberId }
+            ( ShowingPreview { preview | selectedAction = Member.ClaimMember memberId }
             , Nothing
             )
 
         ( SelectJoinAsNew, ShowingPreview preview ) ->
-            ( ShowingPreview { preview | selectedAction = JoinAsNewMember }
+            ( ShowingPreview { preview | selectedAction = Member.JoinAsNewMember }
             , Nothing
             )
 
@@ -107,7 +121,7 @@ update msg model =
 
         ( ConfirmJoin, ShowingPreview preview ) ->
             case preview.selectedAction of
-                JoinAsNewMember ->
+                Member.JoinAsNewMember ->
                     let
                         trimmed : String
                         trimmed =
@@ -123,23 +137,13 @@ update msg model =
                         ( model, Nothing )
 
                     else
-                        ( model
-                        , Just
-                            (JoinConfirmed
-                                { selectedAction = preview.selectedAction
-                                , newMemberName = trimmed
-                                }
-                            )
+                        ( Accepting preview
+                        , Just (JoinConfirmed { preview | newMemberName = trimmed })
                         )
 
-                ClaimMember _ ->
-                    ( model
-                    , Just
-                        (JoinConfirmed
-                            { selectedAction = preview.selectedAction
-                            , newMemberName = preview.newMemberName
-                            }
-                        )
+                Member.ClaimMember _ ->
+                    ( Accepting preview
+                    , Just (JoinConfirmed preview)
                     )
 
         _ ->
@@ -182,6 +186,9 @@ view i18n config model =
                     ]
 
                 ShowingPreview preview ->
+                    viewPreview i18n preview
+
+                Accepting preview ->
                     viewPreview i18n preview
 
         errorActions : List (Ui.Element msg)
@@ -229,7 +236,7 @@ viewPreview i18n preview =
         isJoinAsNew : Bool
         isJoinAsNew =
             case preview.selectedAction of
-                JoinAsNewMember ->
+                Member.JoinAsNewMember ->
                     True
 
                 _ ->
@@ -252,10 +259,10 @@ viewPreview i18n preview =
         canConfirm : Bool
         canConfirm =
             case preview.selectedAction of
-                ClaimMember _ ->
+                Member.ClaimMember _ ->
                     True
 
-                JoinAsNewMember ->
+                Member.JoinAsNewMember ->
                     not (String.isEmpty trimmedName) && not isDuplicateName
     in
     [ Ui.el
@@ -332,7 +339,7 @@ viewPreview i18n preview =
             confirmLabel : String
             confirmLabel =
                 case preview.selectedAction of
-                    ClaimMember memberId ->
+                    Member.ClaimMember memberId ->
                         let
                             member : Maybe Member.State
                             member =
@@ -348,7 +355,7 @@ viewPreview i18n preview =
                             Nothing ->
                                 T.joinGroupConfirm i18n
 
-                    JoinAsNewMember ->
+                    Member.JoinAsNewMember ->
                         T.joinGroupConfirmNew trimmedName i18n
         in
         UI.Components.btnPrimary []
@@ -361,13 +368,13 @@ viewPreview i18n preview =
     ]
 
 
-viewMemberToggle : JoinAction -> Member.State -> Ui.Element Msg
+viewMemberToggle : Member.JoinAction -> Member.State -> Ui.Element Msg
 viewMemberToggle selectedAction member =
     let
         isSelected : Bool
         isSelected =
             case selectedAction of
-                ClaimMember id ->
+                Member.ClaimMember id ->
                     id == member.rootId
 
                 _ ->

@@ -6,6 +6,7 @@ module GroupOps exposing
     , MigrationResult
     , State
     , SyncApplyResult
+    , acceptInvitation
     , addMember
     , addUnpushedId
     , appendEvent
@@ -18,6 +19,7 @@ module GroupOps exposing
     , eventWithId
     , importSplitwiseGroup
     , initLoadedGroup
+    , joinPayload
     , migrateGroup
     , newEntry
     , newGroup
@@ -188,6 +190,119 @@ author ctx =
     { id = ctx.identity.publicKeyHash
     , publicKey = ctx.identity.signingKeyPair.publicKey
     }
+
+
+{-| Derive the membership event for claiming an existing member or joining as a
+new one. A claim is valid only while its target still exists in the accepted
+history.
+-}
+joinPayload : Member.Id -> Member.JoinAction -> String -> GroupState.GroupState -> Maybe Event.Payload
+joinPayload selfId action newMemberName groupState =
+    case action of
+        Member.ClaimMember rootId ->
+            if Dict.member rootId groupState.members then
+                Just
+                    (Event.MemberLinked
+                        { rootId = rootId
+                        , deviceId = selfId
+                        , seq = GroupState.nextLinkSeq groupState selfId
+                        }
+                    )
+
+            else
+                Nothing
+
+        Member.JoinAsNewMember ->
+            Just
+                (Event.MemberCreated
+                    { memberId = selfId
+                    , name = newMemberName
+                    , memberType = Member.Real
+                    , addedBy = selfId
+                    }
+                )
+
+
+{-| Turn verified invitation history into a usable local group. The signed local
+membership event and imported history are persisted before success is reported.
+-}
+acceptInvitation :
+    Context msg
+    -> (ConcurrentTask.Response Idb.Error Group.Summary -> msg)
+    -> { groupId : Group.Id, groupKey : Symmetric.Key, events : List Event.Envelope, unpushedIds : Set Event.Id, syncCursor : Maybe Group.SyncCursor, action : Member.JoinAction, newMemberName : String }
+    -> ( State msg, Cmd msg )
+acceptInvitation ctx onComplete input =
+    let
+        groupState : GroupState.GroupState
+        groupState =
+            GroupState.applyEvents input.events GroupState.empty
+
+        taskFor : Event.Payload -> Event.Id -> ConcurrentTask Idb.Error Group.Summary
+        taskFor payload eventId =
+            let
+                signingKeyPair : Signature.SigningKeyPair
+                signingKeyPair =
+                    Signature.importSigningKeyPair ctx.identity.signingKeyPair
+
+                newestFirst : List Event.Envelope
+                newestFirst =
+                    List.reverse (Event.sortEvents input.events)
+            in
+            ConcurrentTask.Time.now
+                |> ConcurrentTask.map
+                    (\now ->
+                        Event.wrap eventId
+                            (clampAfterLatest newestFirst now)
+                            (author ctx)
+                            payload
+                            ""
+                    )
+                |> ConcurrentTask.andThen (signEnvelope signingKeyPair)
+                |> ConcurrentTask.andThen
+                    (\membershipEvent ->
+                        let
+                            finalState : GroupState.GroupState
+                            finalState =
+                                GroupState.applyEvents [ membershipEvent ] groupState
+
+                            summary : Group.Summary
+                            summary =
+                                GroupState.summarize ctx.identity.publicKeyHash input.groupId ctx.currentTime finalState
+                        in
+                        Storage.saveJoinedGroup ctx.db
+                            summary
+                            (Symmetric.exportKey input.groupKey)
+                            input.events
+                            input.unpushedIds
+                            membershipEvent
+                            input.syncCursor
+                            |> ConcurrentTask.map (\_ -> summary)
+                    )
+    in
+    case joinPayload ctx.identity.publicKeyHash input.action input.newMemberName groupState of
+        Just payload ->
+            let
+                ( eventId, idStateAfter ) =
+                    IdGen.v7 ctx.currentTime ctx.idState
+            in
+            ( ctx.runner, Cmd.none )
+                |> Runner.andRun onComplete (taskFor payload eventId)
+                |> Tuple.mapFirst
+                    (\runner ->
+                        { runner = runner
+                        , idState = idStateAfter
+                        }
+                    )
+
+        Nothing ->
+            ( ctx.runner, Cmd.none )
+                |> Runner.andRun onComplete (ConcurrentTask.fail (Idb.DatabaseError "Invalid member claim"))
+                |> Tuple.mapFirst
+                    (\runner ->
+                        { runner = runner
+                        , idState = ctx.idState
+                        }
+                    )
 
 
 

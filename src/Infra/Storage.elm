@@ -20,6 +20,7 @@ module Infra.Storage exposing
     , saveGroup
     , saveGroupSummary
     , saveIdentity
+    , saveJoinedGroup
     , saveLanguage
     , saveNotificationTranslations
     , saveSelfProfile
@@ -278,7 +279,14 @@ Also the way to change that state: `putMany` overwrites.
 -}
 saveEvents : Idb.Db -> Group.Id -> PushState -> List Event.Envelope -> ConcurrentTask Idb.Error ()
 saveEvents db groupId pushState envelopes =
-    Idb.putMany db eventsStore (List.map (encodeEventForStorage groupId pushState) envelopes)
+    saveEventRecords db groupId (List.map (Tuple.pair pushState) envelopes)
+
+
+saveEventRecords : Idb.Db -> Group.Id -> List ( PushState, Event.Envelope ) -> ConcurrentTask Idb.Error ()
+saveEventRecords db groupId records =
+    Idb.putMany db
+        eventsStore
+        (List.map (\( pushState, envelope ) -> encodeEventForStorage groupId pushState envelope) records)
 
 
 {-| Load all event envelopes for a group.
@@ -443,6 +451,45 @@ saveGroup db summary maybeKey pushState events maybeCursor =
     ConcurrentTask.batch
         [ saveEvents db summary.id pushState events
         , saveKeyTask
+        , saveCursorTask
+        ]
+        |> ConcurrentTask.andThen (\_ -> saveGroupSummary db summary)
+        |> ConcurrentTask.map (\_ -> ())
+
+
+{-| Save accepted history and its local membership event in one events-store
+transaction. The final summary lands only after the group key and cursor, while
+existing local events retain whether they still owe the relay a push.
+-}
+saveJoinedGroup : Idb.Db -> Group.Summary -> String -> List Event.Envelope -> Set Event.Id -> Event.Envelope -> Maybe Group.SyncCursor -> ConcurrentTask Idb.Error ()
+saveJoinedGroup db summary groupKey events unpushedIds membershipEvent maybeCursor =
+    let
+        importedRecords : List ( PushState, Event.Envelope )
+        importedRecords =
+            List.map
+                (\envelope ->
+                    ( if Set.member envelope.id unpushedIds then
+                        Unpushed
+
+                      else
+                        Pushed
+                    , envelope
+                    )
+                )
+                events
+
+        saveCursorTask : ConcurrentTask Idb.Error ()
+        saveCursorTask =
+            case maybeCursor of
+                Just cursor ->
+                    saveSyncCursor db summary.id cursor
+
+                Nothing ->
+                    ConcurrentTask.succeed ()
+    in
+    ConcurrentTask.batch
+        [ saveEventRecords db summary.id (importedRecords ++ [ ( Unpushed, membershipEvent ) ])
+        , saveGroupKey db summary.id groupKey
         , saveCursorTask
         ]
         |> ConcurrentTask.andThen (\_ -> saveGroupSummary db summary)

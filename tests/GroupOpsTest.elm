@@ -21,6 +21,7 @@ suite : Test
 suite =
     describe "GroupOps"
         [ describe "clampAfterLatest" clampTests
+        , describe "joinPayload" joinPayloadTests
         , describe "applySyncResult with late arrivals" lateArrivalTests
         , describe "applySyncResult after a cursor reset" cursorResetTests
         , describe "applySyncResult heal re-push" healRepushTests
@@ -179,6 +180,45 @@ tamperSignalTests =
             (syncWithForged []).updatedGroup.tamperSignals
                 |> TamperSignals.isClean
                 |> Expect.equal True
+    ]
+
+
+joinPayloadTests : List Test
+joinPayloadTests =
+    let
+        groupState : GroupState.GroupState
+        groupState =
+            GroupState.applyEvents bootstrapMembers GroupState.empty
+    in
+    [ test "claiming an existing member links the accepting device" <|
+        \_ ->
+            GroupOps.joinPayload "new-device" (Member.ClaimMember "alice") "" groupState
+                |> Expect.equal
+                    (Just
+                        (MemberLinked
+                            { rootId = "alice"
+                            , deviceId = "new-device"
+                            , seq = 0
+                            }
+                        )
+                    )
+    , test "claiming a member absent from accepted history is rejected" <|
+        \_ ->
+            GroupOps.joinPayload "new-device" (Member.ClaimMember "missing") "" groupState
+                |> Expect.equal Nothing
+    , test "joining as new creates a real member owned by the accepting device" <|
+        \_ ->
+            GroupOps.joinPayload "new-device" Member.JoinAsNewMember "Dana" groupState
+                |> Expect.equal
+                    (Just
+                        (MemberCreated
+                            { memberId = "new-device"
+                            , name = "Dana"
+                            , memberType = Member.Real
+                            , addedBy = "new-device"
+                            }
+                        )
+                    )
     ]
 
 

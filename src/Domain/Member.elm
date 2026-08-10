@@ -1,4 +1,4 @@
-module Domain.Member exposing (DeviceLink, Id, Metadata, State, Type(..), emptyMetadata, encodeMetadata, encodeType, metadataDecoder, pickLink, shortId, typeDecoder)
+module Domain.Member exposing (DeviceLink, Id, JoinAction(..), Metadata, State, Type(..), emptyMetadata, encodeMetadata, encodeType, metadataDecoder, pickLink, shortId, typeDecoder)
 
 {-| Group members, their lifecycle, and contact metadata.
 -}
@@ -22,6 +22,13 @@ type alias Id =
 type Type
     = Real
     | Virtual
+
+
+{-| How a device becomes a member of an existing group.
+-}
+type JoinAction
+    = ClaimMember Id
+    | JoinAsNewMember
 
 
 {-| A member's computed state. The rootId identifies the person; the devices

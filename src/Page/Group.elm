@@ -15,7 +15,6 @@ module Page.Group exposing
     , resetLoadedGroup
     , serverEventMsg
     , setIdentity
-    , submitJoinEvent
     , subscription
     , update
     , updateLoadedSummary
@@ -440,55 +439,6 @@ setIdentity hash previousDeviceIds model =
     { model | identityHash = hash, previousDeviceIds = previousDeviceIds }
 
 
-{-| Submit a member event for joining a group (claim member or join as new).
-Called by Main after the group has been loaded following a join.
--}
-submitJoinEvent : UpdateConfig -> { action : Page.JoinGroup.JoinAction, newMemberName : String } -> Model -> ( Model, Cmd Msg )
-submitJoinEvent config joinData model =
-    case model.loadedGroup of
-        Just loaded ->
-            case joinPayload config.identity.publicKeyHash joinData loaded of
-                Just payload ->
-                    let
-                        ( newModel, cmd, _ ) =
-                            runSubmit (OnMemberActionSaved loaded.summary.id) config model (\ctx -> GroupOps.event ctx loaded payload)
-                    in
-                    ( newModel, cmd )
-
-                Nothing ->
-                    ( model, Cmd.none )
-
-        Nothing ->
-            ( model, Cmd.none )
-
-
-joinPayload : Member.Id -> { action : Page.JoinGroup.JoinAction, newMemberName : String } -> LoadedGroup -> Maybe Event.Payload
-joinPayload selfId joinData loaded =
-    case joinData.action of
-        Page.JoinGroup.ClaimMember rootId ->
-            if Dict.member rootId loaded.groupState.members then
-                Just
-                    (Event.MemberLinked
-                        { rootId = rootId
-                        , deviceId = selfId
-                        , seq = GroupState.nextLinkSeq loaded.groupState selfId
-                        }
-                    )
-
-            else
-                Nothing
-
-        Page.JoinGroup.JoinAsNewMember ->
-            Just
-                (Event.MemberCreated
-                    { memberId = selfId
-                    , name = joinData.newMemberName
-                    , memberType = Member.Real
-                    , addedBy = selfId
-                    }
-                )
-
-
 
 -- UPDATE
 
@@ -756,7 +706,7 @@ update config msg model =
             in
             case ( maybeOutput, model.loadedGroup ) of
                 ( Just (Page.JoinGroup.JoinConfirmed joinData), Just loaded ) ->
-                    case joinPayload config.identity.publicKeyHash { action = joinData.selectedAction, newMemberName = joinData.newMemberName } loaded of
+                    case GroupOps.joinPayload config.identity.publicKeyHash joinData.selectedAction joinData.newMemberName loaded.groupState of
                         Just payload ->
                             let
                                 ( submittedModel, cmd, outputs ) =
@@ -902,7 +852,10 @@ update config msg model =
             -- to an in-flight merge, so clear pendingMerge defensively. This
             -- means a partially-failed merge will not fire the success toast
             -- even if the remaining events succeed.
-            ( { model | pendingMerge = Nothing }
+            ( { model
+                | pendingMerge = Nothing
+                , rejoinModel = Page.JoinGroup.acceptanceFailed model.rejoinModel
+              }
             , Cmd.none
             , [ ShowToast Toast.Error (T.toastMemberActionError config.i18n), LogError ErrorLog.StorageSource ErrorLog.Err "Failed to update member" ]
             )
@@ -2272,9 +2225,12 @@ initPagesIfNeeded config groupView model =
                     ( { model
                         | rejoinModel =
                             Page.JoinGroup.showPreview
-                                { groupName = loaded.groupState.groupMeta.name
+                                { groupId = loaded.summary.id
+                                , groupName = loaded.groupState.groupMeta.name
                                 , groupState = loaded.groupState
+                                , groupKey = loaded.groupKey
                                 , events = loaded.events
+                                , unpushedIds = loaded.unpushedIds
                                 , syncCursor = loaded.syncCursor
                                 , selectedAction = Page.JoinGroup.defaultAction loaded.groupState
                                 , newMemberName = ""
