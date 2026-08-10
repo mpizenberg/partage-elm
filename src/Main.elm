@@ -405,8 +405,8 @@ processGroupOutputs model groupCmd outputs =
                                         removedModel =
                                             { m | appState = Ready { readyData | groups = Dict.remove groupId readyData.groups } }
                                     in
-                                    case ( m.pushServerUrl, m.pwaState.pushSubscription ) of
-                                        ( Just pushServerUrl, Just subscription ) ->
+                                    case ( m.pushServerUrl, m.pwaState.pushSubscription, memberRootId ) of
+                                        ( Just pushServerUrl, Just subscription, Just rootId ) ->
                                             let
                                                 ( runner, unsubCmd ) =
                                                     ( m.runner, Cmd.none )
@@ -415,7 +415,7 @@ processGroupOutputs model groupCmd outputs =
                                                                 { pushServerUrl = pushServerUrl
                                                                 , subscription = subscription
                                                                 , groupId = groupId
-                                                                , memberRootId = memberRootId
+                                                                , memberRootId = rootId
                                                                 }
                                                             )
                                             in

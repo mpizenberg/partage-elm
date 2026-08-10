@@ -274,7 +274,7 @@ type
     | OnEntryActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnMemberActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnGroupMetadataActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
-    | OnGroupRemoved Group.Id (ConcurrentTask.Response Idb.Error ())
+    | OnGroupRemoved Group.Id (Maybe Member.Id) (ConcurrentTask.Response Idb.Error ())
     | OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)
     | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Group.SyncCursor, unpushedIds : Set String, tamperSignals : TamperSignals, suspicionDismissals : Set String })
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
@@ -311,7 +311,7 @@ type Output
     = NavigateTo Route
     | ShowToast Toast.ToastLevel String
     | UpdateGroupSummary Group.Summary
-    | RemoveGroup Group.Id Member.Id
+    | RemoveGroup Group.Id (Maybe Member.Id)
     | ToggleGroupNotification Group.Id Member.Id
     | UnsubscribeGroupNotification Group.Id Member.Id
     | LogError ErrorLog.Source ErrorLog.Severity String
@@ -701,9 +701,13 @@ update config msg model =
                     { model | editGroupMetadataModel = result.model }
             in
             if result.deleteRequested then
-                case config.route of
-                    GroupRoute groupId _ ->
-                        deleteGroup config modelWithPage groupId
+                case ( config.route, model.workspace ) of
+                    ( GroupRoute groupId _, WorkspaceLoaded loaded ) ->
+                        if loaded.summary.id == groupId then
+                            deleteGroup config modelWithPage loaded
+
+                        else
+                            ( modelWithPage, Cmd.none, [] )
 
                     _ ->
                         ( modelWithPage, Cmd.none, [] )
@@ -917,26 +921,25 @@ update config msg model =
         OnGroupMetadataActionSaved _ _ ->
             ( model, Cmd.none, [ ShowToast Toast.Error (T.toastGroupSettingsError config.i18n), LogError ErrorLog.StorageSource ErrorLog.Err "Failed to save group settings" ] )
 
-        OnGroupRemoved groupId (ConcurrentTask.Success _) ->
+        OnGroupRemoved groupId memberRootId (ConcurrentTask.Success _) ->
             let
-                memberRootId : Member.Id
-                memberRootId =
-                    case model.workspace of
-                        WorkspaceLoaded loaded ->
-                            currentUserRootId model loaded |> Maybe.withDefault ""
+                navigationOutputs : List Output
+                navigationOutputs =
+                    if routeTargetsGroup groupId config.route then
+                        [ NavigateTo Home ]
 
-                        _ ->
-                            ""
+                    else
+                        []
             in
-            ( { model | workspace = WorkspaceEmpty }
+            ( removeDeletedWorkspace groupId config.route model
             , Cmd.none
             , [ RemoveGroup groupId memberRootId
               , ShowToast Toast.Success (T.toastGroupRemoved config.i18n)
-              , NavigateTo Home
               ]
+                ++ navigationOutputs
             )
 
-        OnGroupRemoved _ _ ->
+        OnGroupRemoved _ _ _ ->
             ( model, Cmd.none, [ ShowToast Toast.Error (T.toastGroupRemoveError config.i18n) ] )
 
         OnGroupSummarySaved (ConcurrentTask.Success _) ->
@@ -2168,12 +2171,59 @@ toggleArchiveGroup config model loaded =
         ( syncModel, Cmd.batch [ saveCmd, syncCmd ], [ UpdateGroupSummary updatedSummary ] )
 
 
-deleteGroup : UpdateConfig -> Model -> Group.Id -> ( Model, Cmd Msg, List Output )
-deleteGroup config model groupId =
+deleteGroup : UpdateConfig -> Model -> LoadedGroup -> ( Model, Cmd Msg, List Output )
+deleteGroup config model loaded =
+    let
+        groupId : Group.Id
+        groupId =
+            loaded.summary.id
+
+        memberRootId : Maybe Member.Id
+        memberRootId =
+            currentUserRootId model loaded
+    in
     ( model.runner, Cmd.none )
-        |> Runner.andRun (OnGroupRemoved groupId) (Storage.deleteGroup config.db groupId)
+        |> Runner.andRun (OnGroupRemoved groupId memberRootId) (Storage.deleteGroup config.db groupId)
         |> Runner.andRun (\_ -> NoOp) (Server.unsubscribeFromGroup groupId)
         |> (\( r, cmd ) -> ( { model | runner = r }, cmd, [] ))
+
+
+removeDeletedWorkspace : Group.Id -> Route -> Model -> Model
+removeDeletedWorkspace groupId route model =
+    let
+        isDeletedWorkspace : Bool
+        isDeletedWorkspace =
+            case model.workspace of
+                WorkspaceMissing ->
+                    routeTargetsGroup groupId route
+
+                WorkspaceLoading summary ->
+                    summary.id == groupId
+
+                WorkspaceLoadFailed summary ->
+                    summary.id == groupId
+
+                WorkspaceLoaded loaded ->
+                    loaded.summary.id == groupId
+
+                WorkspaceEmpty ->
+                    False
+    in
+    if isDeletedWorkspace then
+        { model | workspace = WorkspaceEmpty }
+
+    else
+        model
+
+
+routeTargetsGroup : Group.Id -> Route -> Bool
+routeTargetsGroup groupId route =
+    case route of
+        GroupRoute routeGroupId _ ->
+            routeGroupId == groupId
+
+        _ ->
+            False
 
 
 {-| Apply a storage response only while its matching workspace is loading.
