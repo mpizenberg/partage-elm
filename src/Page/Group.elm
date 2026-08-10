@@ -5,6 +5,7 @@ module Page.Group exposing
     , Output(..)
     , PendingEntry
     , PendingMerge
+    , SyncState
     , UpdateConfig
     , ViewConfig
     , ViewResult
@@ -148,8 +149,7 @@ type alias Model =
     , identityHash : String
     , previousDeviceIds : List String
     , loadedGroup : Maybe LoadedGroup
-    , syncInProgress : Bool
-    , resyncRequested : Bool
+    , syncState : SyncState
 
     -- Tabs
     , activeTab : GroupTab
@@ -188,6 +188,12 @@ type alias Model =
     , migrationOrder : Maybe (Dict Event.Id Int)
     , migrationManualExpanded : Set Member.Id
     }
+
+
+type SyncState
+    = SyncIdle
+    | SyncRunning
+    | SyncFollowUpRequested
 
 
 type PendingEntry
@@ -323,8 +329,7 @@ init config =
     , identityHash = ""
     , previousDeviceIds = []
     , loadedGroup = Nothing
-    , syncInProgress = False
-    , resyncRequested = False
+    , syncState = SyncIdle
     , activeTab = BalanceTab
     , entriesTabModel = Page.Group.EntriesTab.init
     , balanceTabModel = Page.Group.BalanceTab.init
@@ -1016,11 +1021,15 @@ update config msg model =
                                                 ConcurrentTask.succeed { step = GroupOps.NoCompactionStep, manifestMismatch = False }
                                         )
 
+                            followUpRequested : Bool
+                            followUpRequested =
+                                model.syncState == SyncFollowUpRequested
+
                             ( modelAfterSync, initCmd ) =
                                 { model
                                     | loadedGroup = Just result.updatedGroup
                                     , runner = runner
-                                    , syncInProgress = False
+                                    , syncState = SyncIdle
                                 }
                                     |> refreshPagesAfterSync config
 
@@ -1040,7 +1049,7 @@ update config msg model =
                         in
                         -- Follow up once if events were added during the sync, or
                         -- if another sync was requested while this one ran.
-                        if Set.isEmpty result.updatedGroup.unpushedIds && not summaryModel.resyncRequested then
+                        if Set.isEmpty result.updatedGroup.unpushedIds && not followUpRequested then
                             ( summaryModel, Cmd.batch [ taskCmds, summaryCmd, initCmd ], outputs )
 
                         else
@@ -1051,10 +1060,10 @@ update config msg model =
                             ( followUpModel, Cmd.batch [ taskCmds, summaryCmd, followUpCmd, initCmd ], outputs )
 
                     else
-                        ( { model | syncInProgress = False }, Cmd.none, [] )
+                        ( { model | syncState = SyncIdle }, Cmd.none, [] )
 
                 Nothing ->
-                    ( { model | syncInProgress = False }, Cmd.none, [] )
+                    ( { model | syncState = SyncIdle }, Cmd.none, [] )
 
         OnGroupSynced _ _ (ConcurrentTask.Error err) ->
             -- Sync failed — check if group needs to be created on server first
@@ -1092,7 +1101,7 @@ update config msg model =
             case model.loadedGroup of
                 Just loaded ->
                     if needsServerCreation loaded then
-                        ( { model | syncInProgress = False }
+                        ( { model | syncState = SyncIdle }
                         , Cmd.none
                         , [ RequestServerGroupCreation loaded.summary.id loaded.groupKey ]
                         )
@@ -1102,16 +1111,16 @@ update config msg model =
                             ( bumpedModel, saveCmd ) =
                                 recordTamper config (TamperSignals.recordRateLimitHit config.currentTime) loaded model
                         in
-                        ( { bumpedModel | syncInProgress = False }, saveCmd, failureOutputs )
+                        ( { bumpedModel | syncState = SyncIdle }, saveCmd, failureOutputs )
 
                     else
-                        ( { model | syncInProgress = False }, Cmd.none, failureOutputs )
+                        ( { model | syncState = SyncIdle }, Cmd.none, failureOutputs )
 
                 Nothing ->
-                    ( { model | syncInProgress = False }, Cmd.none, failureOutputs )
+                    ( { model | syncState = SyncIdle }, Cmd.none, failureOutputs )
 
         OnGroupSynced _ _ (ConcurrentTask.UnexpectedError _) ->
-            ( { model | syncInProgress = False }, Cmd.none, [ LogError ErrorLog.SyncSource ErrorLog.Err "Unexpected error during group sync" ] )
+            ( { model | syncState = SyncIdle }, Cmd.none, [ LogError ErrorLog.SyncSource ErrorLog.Err "Unexpected error during group sync" ] )
 
         OnCompactionStep groupId (ConcurrentTask.Success outcome) ->
             case model.loadedGroup of
@@ -1883,8 +1892,8 @@ addUnpushedIdToModel eventId model =
 -}
 triggerSyncInternal : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
 triggerSyncInternal config groupId model =
-    if model.syncInProgress then
-        ( { model | resyncRequested = True }, Cmd.none )
+    if model.syncState /= SyncIdle then
+        ( { model | syncState = SyncFollowUpRequested }, Cmd.none )
 
     else
         case model.loadedGroup of
@@ -1954,7 +1963,7 @@ triggerSyncInternal config groupId model =
                                 }
                                 |> ConcurrentTask.andThen verifySignatures
                             )
-                        |> Tuple.mapFirst (\r -> { model | runner = r, syncInProgress = True, resyncRequested = False })
+                        |> Tuple.mapFirst (\r -> { model | runner = r, syncState = SyncRunning })
 
                 else
                     ( model, Cmd.none )
