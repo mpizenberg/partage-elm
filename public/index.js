@@ -96,12 +96,19 @@ function initialUrlWithoutStartParam(paramName) {
   }
 }
 
+var idEntropy = crypto.getRandomValues(new Uint32Array(4));
+
 var app = Elm.Main.init({
   node: document.getElementById("app"),
   flags: {
     initialUrl: initialUrlWithoutStartParam(installHintOptions.requireStartUrlParam),
     language: navigator.language || "en",
-    randomSeed: Array.from(crypto.getRandomValues(new Uint32Array(4))),
+    idEntropy: {
+      seed1: idEntropy[0],
+      seed2: idEntropy[1],
+      seed3: idEntropy[2],
+      seed4: idEntropy[3],
+    },
     currentTime: Date.now(),
     serverUrl: __SERVER_URL__ || location.origin,
     pushServerUrl: __PUSH_SERVER_URL__ || "",

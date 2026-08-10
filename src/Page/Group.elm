@@ -72,7 +72,6 @@ import Page.Group.NewEntry
 import Page.Group.NewEntry.Shared as NewEntryShared
 import Page.JoinGroup
 import Process
-import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import Set exposing (Set)
 import Task
@@ -82,7 +81,6 @@ import UI.Components
 import UI.Shell
 import UI.Theme as Theme
 import UI.Toast as Toast
-import UUID
 import Ui
 import Ui.Font
 import WebCrypto.Symmetric as Symmetric
@@ -98,8 +96,7 @@ type alias InitConfig =
     { pool : ConcurrentTask.Pool Msg
     , send : Json.Encode.Value -> Cmd Msg
     , receive : (Json.Decode.Value -> Msg) -> Sub Msg
-    , randomSeed : Random.Seed
-    , uuidState : UUID.V7State
+    , idState : IdGen.State
     }
 
 
@@ -146,10 +143,8 @@ type alias ViewConfig msg =
 
 
 type alias Model =
-    -- ConcurrentTask runner and RNG state
     { runner : TaskRunner Msg
-    , randomSeed : Random.Seed
-    , uuidState : UUID.V7State
+    , idState : IdGen.State
     , identityHash : String
     , previousDeviceIds : List String
     , loadedGroup : Maybe LoadedGroup
@@ -324,8 +319,7 @@ init config =
             , receive = config.receive
             , onProgress = OnTaskProgress
             }
-    , randomSeed = config.randomSeed
-    , uuidState = config.uuidState
+    , idState = config.idState
     , identityHash = ""
     , previousDeviceIds = []
     , loadedGroup = Nothing
@@ -1352,7 +1346,7 @@ update config msg model =
                         ( state, cmd ) =
                             GroupOps.migrateGroup (submitContext (\_ -> NoOp) config model) OnGroupMigrated (curationOrder model) model.migrationSelection loaded
                     in
-                    ( { model | runner = state.runner, randomSeed = state.randomSeed, uuidState = state.uuidState }
+                    ( { model | runner = state.runner, idState = state.idState }
                     , cmd
                     , []
                     )
@@ -1450,8 +1444,7 @@ submitContext : (ConcurrentTask.Response Idb.Error Event.Envelope -> Msg) -> Upd
 submitContext onComplete config model =
     { runner = model.runner
     , onComplete = onComplete
-    , randomSeed = model.randomSeed
-    , uuidState = model.uuidState
+    , idState = model.idState
     , currentTime = config.currentTime
     , db = config.db
     , identity = config.identity
@@ -1466,7 +1459,7 @@ runSubmit onComplete config model submitFn =
         ( state, cmd ) =
             submitFn (submitContext onComplete config model)
     in
-    ( { model | runner = state.runner, randomSeed = state.randomSeed, uuidState = state.uuidState }
+    ( { model | runner = state.runner, idState = state.idState }
     , cmd
     , []
     )
@@ -1482,7 +1475,7 @@ handleNewEntryOutput config model entryOutput =
                 GroupRoute _ (EditEntry entryId) ->
                     case GroupOps.editEntry (submitContext (OnEntrySaved loaded.summary.id) config model) loaded entryId entryOutput of
                         Just ( state, cmd ) ->
-                            ( { model | runner = state.runner, randomSeed = state.randomSeed, uuidState = state.uuidState }, cmd, [] )
+                            ( { model | runner = state.runner, idState = state.idState }, cmd, [] )
 
                         Nothing ->
                             ( model, Cmd.none, [] )
@@ -1685,8 +1678,7 @@ submitMerge config model loaded mergeData =
             in
             ( { mdl
                 | runner = state.runner
-                , randomSeed = state.randomSeed
-                , uuidState = state.uuidState
+                , idState = state.idState
               }
             , cmd :: accCmds
             , Set.insert eventId accIds
@@ -1726,14 +1718,14 @@ submitMerge config model loaded mergeData =
 submitModifyEntry : GroupOps.Context Msg -> LoadedGroup -> Entry.Entry -> Entry.Entry -> ( GroupOps.State Msg, Cmd Msg, Event.Id )
 submitModifyEntry ctx loaded original rewritten =
     let
-        ( newEntryId, seedAfter ) =
-            IdGen.v4 ctx.randomSeed
+        ( newEntryId, idStateAfter ) =
+            IdGen.v4 ctx.idState
 
         modifiedEntry : Entry.Entry
         modifiedEntry =
             Entry.replace original.meta newEntryId rewritten.kind
     in
-    GroupOps.eventWithId { ctx | randomSeed = seedAfter } loaded (Event.EntryModified modifiedEntry)
+    GroupOps.eventWithId { ctx | idState = idStateAfter } loaded (Event.EntryModified modifiedEntry)
 
 
 handleEntriesTabOutput : UpdateConfig -> Model -> Page.Group.EntriesTab.Output -> ( Model, Cmd Msg, List Output )

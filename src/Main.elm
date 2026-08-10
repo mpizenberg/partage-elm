@@ -26,6 +26,7 @@ import IndexedDb as Idb
 import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
 import Infra.EventVerification as EventVerification
 import Infra.ExchangeRate as ExchangeRate
+import Infra.IdGen as IdGen
 import Infra.Identity as Identity exposing (Identity)
 import Infra.PushServer as PushServer
 import Infra.Server as Server
@@ -48,7 +49,6 @@ import Page.NotFound
 import Page.Welcome
 import Process
 import PwaState
-import Random
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
 import Set exposing (Set)
 import SplitwiseImport
@@ -59,7 +59,6 @@ import UI.Components
 import UI.Shell
 import UI.Theme as Theme
 import UI.Toast as Toast
-import UUID
 import Ui
 import Ui.Accessibility
 import Ui.Font
@@ -114,7 +113,7 @@ port setDocumentLang : String -> Cmd msg
 type alias Flags =
     { initialUrl : String
     , language : String
-    , randomSeed : List Int
+    , idEntropy : IdGen.Entropy
     , currentTime : Int
     , serverUrl : String
     , pushServerUrl : String
@@ -130,8 +129,7 @@ type alias Model =
     , generatingIdentity : Bool
     , i18n : I18n
     , runner : TaskRunner Msg
-    , uuidState : UUID.V7State
-    , randomSeed : Random.Seed
+    , idState : IdGen.State
     , currentTime : Time.Posix
     , timeZone : Time.Zone
     , newGroupModel : Page.NewGroup.Model
@@ -257,22 +255,8 @@ init flags =
                 |> T.languageFromString
                 |> Maybe.withDefault En
 
-        initialSeed : Random.Seed
-        initialSeed =
-            List.foldl
-                (\_ acc -> Random.step (Random.int Random.minInt Random.maxInt) acc |> Tuple.second)
-                (Random.initialSeed (List.sum flags.randomSeed))
-                flags.randomSeed
-
-        -- Split seeds: Main keeps uuidState + mainSeed, Page.Group gets groupUuidState + groupSeedAfterV7
-        ( uuidState, seedAfterV7 ) =
-            Random.step UUID.initialV7State initialSeed
-
-        ( groupSeed, mainSeed ) =
-            Random.step Random.independentSeed seedAfterV7
-
-        ( groupUuidState, groupSeedAfterV7 ) =
-            Random.step UUID.initialV7State groupSeed
+        ( mainIdState, groupIdState ) =
+            IdGen.init flags.idEntropy
 
         initStorage : ConcurrentTask Idb.Error Storage.InitData
         initStorage =
@@ -310,8 +294,7 @@ init flags =
       , generatingIdentity = False
       , i18n = T.init language
       , runner = runner
-      , uuidState = uuidState
-      , randomSeed = mainSeed
+      , idState = mainIdState
       , currentTime = Time.millisToPosix flags.currentTime
       , timeZone = Time.utc
       , newGroupModel = Page.NewGroup.init
@@ -321,8 +304,7 @@ init flags =
                 { pool = ConcurrentTask.pool
                 , send = groupSendTask
                 , receive = groupReceiveTask
-                , randomSeed = groupSeedAfterV7
-                , uuidState = groupUuidState
+                , idState = groupIdState
                 }
       , homeModel = Page.Home.init
       , aboutModel = Page.About.init
@@ -1435,8 +1417,6 @@ rescheduleStorageCheckTomorrow =
         |> Task.perform (\_ -> ScheduleStorageCheck)
 
 
-{-| Submit a new group using Main's own pool/seed/uuid.
--}
 submitNewGroup : Model -> Storage.InitData -> Form.NewGroup.Output -> ( Model, Cmd Msg )
 submitNewGroup model readyData output =
     case readyData.identity of
@@ -1446,8 +1426,7 @@ submitNewGroup model readyData output =
                 ctx =
                     { runner = model.runner
                     , onComplete = \_ -> OnGroupCreated (ConcurrentTask.UnexpectedError (ConcurrentTask.InternalError "unused"))
-                    , randomSeed = model.randomSeed
-                    , uuidState = model.uuidState
+                    , idState = model.idState
                     , currentTime = model.currentTime
                     , db = readyData.db
                     , identity = identity
@@ -1458,8 +1437,7 @@ submitNewGroup model readyData output =
             in
             ( { model
                 | runner = state.runner
-                , randomSeed = state.randomSeed
-                , uuidState = state.uuidState
+                , idState = state.idState
               }
             , cmd
             )
@@ -1477,8 +1455,7 @@ submitSplitwiseImport model readyData output =
                 ctx =
                     { runner = model.runner
                     , onComplete = \_ -> OnGroupCreated (ConcurrentTask.UnexpectedError (ConcurrentTask.InternalError "unused"))
-                    , randomSeed = model.randomSeed
-                    , uuidState = model.uuidState
+                    , idState = model.idState
                     , currentTime = model.currentTime
                     , db = readyData.db
                     , identity = identity
@@ -1497,8 +1474,7 @@ submitSplitwiseImport model readyData output =
             in
             ( { model
                 | runner = state.runner
-                , randomSeed = state.randomSeed
-                , uuidState = state.uuidState
+                , idState = state.idState
               }
             , cmd
             )

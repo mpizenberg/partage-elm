@@ -48,11 +48,9 @@ import Infra.Server as Server
 import Infra.Storage as Storage
 import Page.Group.NewEntry
 import Page.Group.NewEntry.Shared as NewEntryShared
-import Random
 import Set exposing (Set)
 import SplitwiseImport
 import Time
-import UUID
 import WebCrypto
 import WebCrypto.Signature as Signature
 import WebCrypto.Symmetric as Symmetric
@@ -63,20 +61,18 @@ import WebCrypto.Symmetric as Symmetric
 type alias Context msg =
     { runner : TaskRunner msg
     , onComplete : ConcurrentTask.Response Idb.Error Event.Envelope -> msg
-    , randomSeed : Random.Seed
-    , uuidState : UUID.V7State
+    , idState : IdGen.State
     , currentTime : Time.Posix
     , db : Idb.Db
     , identity : Identity
     }
 
 
-{-| Returned state after a submission, with updated runner and RNG state.
+{-| Returned state after a submission, with the updated runner and ID state.
 -}
 type alias State msg =
     { runner : TaskRunner msg
-    , randomSeed : Random.Seed
-    , uuidState : UUID.V7State
+    , idState : IdGen.State
     }
 
 
@@ -153,8 +149,7 @@ attempt ctx makeUnsignedEnvelope loaded =
         |> Tuple.mapFirst
             (\r ->
                 { runner = r
-                , randomSeed = ctx.randomSeed
-                , uuidState = ctx.uuidState
+                , idState = ctx.idState
                 }
             )
 
@@ -204,14 +199,14 @@ author ctx =
 newGroup : Context msg -> (ConcurrentTask.Response Idb.Error Group.Summary -> msg) -> Form.NewGroup.Output -> ( State msg, Cmd msg )
 newGroup ctx onComplete output =
     let
-        ( groupId, seed1 ) =
-            IdGen.groupId ctx.randomSeed
+        ( groupId, idState1 ) =
+            IdGen.groupId ctx.idState
 
-        ( virtualMemberIds, seedAfter ) =
-            IdGen.v4batch (List.length output.virtualMembers) seed1
+        ( virtualMemberIds, idState2 ) =
+            IdGen.v4batch (List.length output.virtualMembers) idState1
 
-        ( eventIds, uuidStateAfter ) =
-            IdGen.v7batch (2 + List.length output.virtualMembers) ctx.currentTime ctx.uuidState
+        ( eventIds, idStateAfter ) =
+            IdGen.v7batch (2 + List.length output.virtualMembers) ctx.currentTime idState2
 
         payloads : List Event.Payload
         payloads =
@@ -268,8 +263,7 @@ newGroup ctx onComplete output =
         |> Tuple.mapFirst
             (\r ->
                 { runner = r
-                , randomSeed = seedAfter
-                , uuidState = uuidStateAfter
+                , idState = idStateAfter
                 }
             )
 
@@ -314,8 +308,8 @@ must reach only trusted members, out of band.
 migrateGroup : Context msg -> (ConcurrentTask.Response Idb.Error MigrationResult -> msg) -> Dict.Dict Event.Id Int -> Dict.Dict Member.Id MigrationCuration.Bound -> LoadedGroup -> ( State msg, Cmd msg )
 migrateGroup ctx onComplete order selection loaded =
     let
-        ( newId, seedAfter ) =
-            IdGen.groupId ctx.randomSeed
+        ( newId, idStateAfter ) =
+            IdGen.groupId ctx.idState
 
         oldSummary : Group.Summary
         oldSummary =
@@ -351,8 +345,7 @@ migrateGroup ctx onComplete order selection loaded =
         |> Tuple.mapFirst
             (\r ->
                 { runner = r
-                , randomSeed = seedAfter
-                , uuidState = ctx.uuidState
+                , idState = idStateAfter
                 }
             )
 
@@ -370,11 +363,11 @@ importSplitwiseGroup ctx onComplete cfg =
         memberNames =
             cfg.parsed.memberNames
 
-        ( groupId, seed1 ) =
-            IdGen.groupId ctx.randomSeed
+        ( groupId, idState1 ) =
+            IdGen.groupId ctx.idState
 
-        ( virtualMemberIds, seed2 ) =
-            IdGen.v4batch (List.length memberNames) seed1
+        ( virtualMemberIds, idState2 ) =
+            IdGen.v4batch (List.length memberNames) idState1
 
         isClaimed : Int -> Bool
         isClaimed index =
@@ -418,11 +411,11 @@ importSplitwiseGroup ctx onComplete cfg =
                 )
                 cfg.parsed.rows
 
-        ( entryIds, seedAfter ) =
-            IdGen.v4batch (List.length kinds) seed2
+        ( entryIds, idState3 ) =
+            IdGen.v4batch (List.length kinds) idState2
 
-        ( eventIds, uuidStateAfter ) =
-            IdGen.v7batch (2 + List.length virtualMembers + List.length kinds) ctx.currentTime ctx.uuidState
+        ( eventIds, idStateAfter ) =
+            IdGen.v7batch (2 + List.length virtualMembers + List.length kinds) ctx.currentTime idState3
 
         payloads : List Event.Payload
         payloads =
@@ -488,8 +481,7 @@ importSplitwiseGroup ctx onComplete cfg =
         |> Tuple.mapFirst
             (\r ->
                 { runner = r
-                , randomSeed = seedAfter
-                , uuidState = uuidStateAfter
+                , idState = idStateAfter
                 }
             )
 
@@ -503,11 +495,11 @@ importSplitwiseGroup ctx onComplete cfg =
 newEntry : Context msg -> LoadedGroup -> NewEntryShared.Output -> ( State msg, Cmd msg )
 newEntry ctx loaded output =
     let
-        ( entryId, seedAfter ) =
-            IdGen.v4 ctx.randomSeed
+        ( entryId, idState1 ) =
+            IdGen.v4 ctx.idState
 
-        ( eventId, uuidStateAfter ) =
-            IdGen.v7 ctx.currentTime ctx.uuidState
+        ( eventId, idStateAfter ) =
+            IdGen.v7 ctx.currentTime idState1
 
         payload : Time.Posix -> Event.Payload
         payload now =
@@ -516,7 +508,7 @@ newEntry ctx loaded output =
                 , kind = Page.Group.NewEntry.outputToKind output
                 }
     in
-    attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter }
+    attempt { ctx | idState = idStateAfter }
         (\now -> Event.wrap eventId now (author ctx) (payload now) "")
         loaded
 
@@ -535,11 +527,11 @@ editEntry ctx loaded originalEntryId output =
 
         Just entryState ->
             let
-                ( newEntryId, seedAfter ) =
-                    IdGen.v4 ctx.randomSeed
+                ( newEntryId, idState1 ) =
+                    IdGen.v4 ctx.idState
 
-                ( eventId, uuidStateAfter ) =
-                    IdGen.v7 ctx.currentTime ctx.uuidState
+                ( eventId, idStateAfter ) =
+                    IdGen.v7 ctx.currentTime idState1
 
                 entry : Entry.Entry
                 entry =
@@ -547,7 +539,7 @@ editEntry ctx loaded originalEntryId output =
                         |> Entry.replace entryState.currentVersion.meta newEntryId
             in
             Just
-                (attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter }
+                (attempt { ctx | idState = idStateAfter }
                     (\now -> Event.wrap eventId now (author ctx) (Event.EntryModified entry) "")
                     loaded
                 )
@@ -574,10 +566,10 @@ restoreEntry ctx loaded rootId =
 simpleEvent : Context msg -> LoadedGroup -> Event.Payload -> ( State msg, Cmd msg )
 simpleEvent ctx loaded payload =
     let
-        ( eventId, uuidStateAfter ) =
-            IdGen.v7 ctx.currentTime ctx.uuidState
+        ( eventId, idStateAfter ) =
+            IdGen.v7 ctx.currentTime ctx.idState
     in
-    attempt { ctx | uuidState = uuidStateAfter }
+    attempt { ctx | idState = idStateAfter }
         (\now -> Event.wrap eventId now (author ctx) payload "")
         loaded
 
@@ -599,12 +591,12 @@ multi-event submissions (merge), which track completion of every id.
 eventWithId : Context msg -> LoadedGroup -> Event.Payload -> ( State msg, Cmd msg, Event.Id )
 eventWithId ctx loaded payload =
     let
-        ( eventId, uuidStateAfter ) =
-            IdGen.v7 ctx.currentTime ctx.uuidState
+        ( eventId, idStateAfter ) =
+            IdGen.v7 ctx.currentTime ctx.idState
 
         ( state, cmd ) =
             attempt
-                { ctx | uuidState = uuidStateAfter }
+                { ctx | idState = idStateAfter }
                 (\now -> Event.wrap eventId now (author ctx) payload "")
                 loaded
     in
@@ -620,11 +612,11 @@ eventWithId ctx loaded payload =
 addMember : Context msg -> LoadedGroup -> { name : String } -> ( State msg, Cmd msg )
 addMember ctx loaded output =
     let
-        ( newMemberId, seedAfter ) =
-            IdGen.v4 ctx.randomSeed
+        ( newMemberId, idState1 ) =
+            IdGen.v4 ctx.idState
 
-        ( eventId, uuidStateAfter ) =
-            IdGen.v7 ctx.currentTime ctx.uuidState
+        ( eventId, idStateAfter ) =
+            IdGen.v7 ctx.currentTime idState1
 
         payload : Event.Payload
         payload =
@@ -635,7 +627,7 @@ addMember ctx loaded output =
                 , addedBy = ctx.identity.publicKeyHash
                 }
     in
-    attempt { ctx | randomSeed = seedAfter, uuidState = uuidStateAfter }
+    attempt { ctx | idState = idStateAfter }
         (\now -> Event.wrap eventId now (author ctx) payload "")
         loaded
 
