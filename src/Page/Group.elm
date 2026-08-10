@@ -2,6 +2,8 @@ module Page.Group exposing
     ( InitConfig
     , Model
     , Msg
+    , NotificationIntent
+    , NotificationMutation
     , Output(..)
     , PendingEntry
     , PendingMerge
@@ -20,7 +22,6 @@ module Page.Group exposing
     , setIdentity
     , subscription
     , update
-    , updateLoadedSummary
     , view
     )
 
@@ -110,6 +111,7 @@ type alias UpdateConfig =
     , identity : Identity
     , serverUrl : String
     , pushServerUrl : Maybe String
+    , pushSubscription : Maybe Json.Encode.Value
     , currentTime : Time.Posix
     , timeZone : Time.Zone
     , route : Route
@@ -149,6 +151,7 @@ type alias Model =
     , workspace : Workspace
     , syncState : SyncState
     , summaryMutations : Dict Group.Id SummaryMutation
+    , notificationMutations : Dict Group.Id NotificationMutation
 
     -- Tabs
     , activeTab : GroupTab
@@ -212,7 +215,19 @@ type alias SummaryMutation =
 
 type SummaryOperation
     = SaveSummary Group.Summary
+    | SaveNotificationSummary Bool Group.Summary
     | DeleteGroup Group.Id (Maybe Member.Id)
+
+
+type alias NotificationMutation =
+    { memberRootId : Member.Id
+    , inFlight : Bool
+    , desired : NotificationIntent
+    }
+
+
+type NotificationIntent
+    = PersistNotification Bool Group.Summary
 
 
 type PendingEntry
@@ -289,6 +304,7 @@ type
     | OnMemberActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnGroupMetadataActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnSummaryMutationCompleted Group.Id (ConcurrentTask.Response Idb.Error ())
+    | OnNotificationChanged Group.Id Bool (ConcurrentTask.Response PushServer.Error ())
     | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Group.SyncCursor, unpushedIds : Set String, tamperSignals : TamperSignals, suspicionDismissals : Set String })
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
     | OnServerGroupCreated Group.Id (ConcurrentTask.Response Server.Error ())
@@ -325,7 +341,6 @@ type Output
     | ShowToast Toast.ToastLevel String
     | UpdateGroupSummary Group.Summary
     | RemoveGroup Group.Id (Maybe Member.Id)
-    | ToggleGroupNotification Group.Id Member.Id
     | UnsubscribeGroupNotification Group.Id Member.Id
     | LogError ErrorLog.Source ErrorLog.Severity String
     | SaveSelfProfile Member.Metadata
@@ -350,6 +365,7 @@ init config =
     , workspace = WorkspaceEmpty
     , syncState = SyncIdle
     , summaryMutations = Dict.empty
+    , notificationMutations = Dict.empty
     , activeTab = BalanceTab
     , entriesTabModel = Page.Group.EntriesTab.init
     , balanceTabModel = Page.Group.BalanceTab.init
@@ -821,7 +837,7 @@ update config msg model =
                 WorkspaceLoaded loaded ->
                     case currentUserRootId model loaded of
                         Just userRootId ->
-                            ( model, Cmd.none, [ ToggleGroupNotification loaded.summary.id userRootId ] )
+                            toggleGroupNotification config model loaded userRootId
 
                         Nothing ->
                             ( model, Cmd.none, [] )
@@ -937,6 +953,9 @@ update config msg model =
 
         OnSummaryMutationCompleted groupId response ->
             finishSummaryMutation config groupId response model
+
+        OnNotificationChanged groupId attempted response ->
+            finishNotificationMutation config groupId attempted response model
 
         OnGroupEventsLoaded groupId (ConcurrentTask.Success result) ->
             case applyLoadedGroup groupId result.events result.groupKey result.syncCursor result.unpushedIds result.tamperSignals result.suspicionDismissals model of
@@ -2175,6 +2194,169 @@ deleteGroup config model loaded =
         |> (\( r, cmd ) -> ( { deletingModel | runner = r }, cmd, [] ))
 
 
+toggleGroupNotification : UpdateConfig -> Model -> LoadedGroup -> Member.Id -> ( Model, Cmd Msg, List Output )
+toggleGroupNotification config model loaded memberRootId =
+    let
+        currentDesired : Bool
+        currentDesired =
+            Dict.get loaded.summary.id model.notificationMutations
+                |> Maybe.map (.desired >> notificationTarget)
+                |> Maybe.withDefault loaded.summary.isSubscribed
+
+        intent : NotificationIntent
+        intent =
+            PersistNotification (not currentDesired) loaded.summary
+    in
+    requestNotification config loaded.summary.id memberRootId intent model
+        |> (\( nextModel, cmd ) -> ( nextModel, cmd, [] ))
+
+
+requestNotification : UpdateConfig -> Group.Id -> Member.Id -> NotificationIntent -> Model -> ( Model, Cmd Msg )
+requestNotification config groupId memberRootId intent model =
+    case ( config.pushServerUrl, config.pushSubscription ) of
+        ( Just pushServerUrl, Just pushSubscription ) ->
+            case Dict.get groupId model.notificationMutations of
+                Nothing ->
+                    runNotificationRequest pushServerUrl
+                        pushSubscription
+                        groupId
+                        { memberRootId = memberRootId
+                        , inFlight = notificationTarget intent
+                        , desired = intent
+                        }
+                        model
+
+                Just mutation ->
+                    ( { model
+                        | notificationMutations =
+                            Dict.insert groupId
+                                { mutation | memberRootId = memberRootId, desired = intent }
+                                model.notificationMutations
+                      }
+                    , Cmd.none
+                    )
+
+        _ ->
+            ( model, Cmd.none )
+
+
+runNotificationRequest : String -> Json.Encode.Value -> Group.Id -> NotificationMutation -> Model -> ( Model, Cmd Msg )
+runNotificationRequest pushServerUrl pushSubscription groupId mutation model =
+    ( model.runner, Cmd.none )
+        |> Runner.andRun (OnNotificationChanged groupId mutation.inFlight)
+            (PushServer.setGroupNotification
+                { pushServerUrl = pushServerUrl
+                , groupId = groupId
+                , subscription = pushSubscription
+                , memberRootId = mutation.memberRootId
+                , isSubscribed = mutation.inFlight
+                }
+            )
+        |> Tuple.mapFirst
+            (\runner ->
+                { model
+                    | runner = runner
+                    , notificationMutations = Dict.insert groupId mutation model.notificationMutations
+                }
+            )
+
+
+finishNotificationMutation : UpdateConfig -> Group.Id -> Bool -> ConcurrentTask.Response PushServer.Error () -> Model -> ( Model, Cmd Msg, List Output )
+finishNotificationMutation config groupId attempted response model =
+    case Dict.get groupId model.notificationMutations of
+        Nothing ->
+            ( model, Cmd.none, [] )
+
+        Just mutation ->
+            if mutation.inFlight /= attempted then
+                ( model, Cmd.none, [] )
+
+            else if notificationTarget mutation.desired /= attempted then
+                case ( config.pushServerUrl, config.pushSubscription ) of
+                    ( Just pushServerUrl, Just pushSubscription ) ->
+                        runNotificationRequest pushServerUrl
+                            pushSubscription
+                            groupId
+                            { mutation | inFlight = notificationTarget mutation.desired }
+                            model
+                            |> (\( nextModel, cmd ) -> ( nextModel, cmd, [] ))
+
+                    _ ->
+                        ( { model | notificationMutations = Dict.remove groupId model.notificationMutations }, Cmd.none, [] )
+
+            else
+                case response of
+                    ConcurrentTask.Success _ ->
+                        completeNotificationMutation config groupId mutation.desired model
+
+                    _ ->
+                        ( { model | notificationMutations = Dict.remove groupId model.notificationMutations }
+                        , Cmd.none
+                        , case mutation.desired of
+                            PersistNotification _ _ ->
+                                [ ShowToast Toast.Error (T.toastPushError config.i18n) ]
+                        )
+
+
+completeNotificationMutation : UpdateConfig -> Group.Id -> NotificationIntent -> Model -> ( Model, Cmd Msg, List Output )
+completeNotificationMutation config groupId intent model =
+    case intent of
+        PersistNotification isSubscribed fallbackSummary ->
+            let
+                completedModel : Model
+                completedModel =
+                    { model | notificationMutations = Dict.remove groupId model.notificationMutations }
+
+                currentSummary : Group.Summary
+                currentSummary =
+                    workspaceSummaryFor groupId completedModel
+                        |> Maybe.withDefault fallbackSummary
+
+                updatedSummary : Group.Summary
+                updatedSummary =
+                    { currentSummary | isSubscribed = isSubscribed }
+            in
+            queueSummaryOperation config
+                (SaveNotificationSummary currentSummary.isSubscribed updatedSummary)
+                (updateLoadedSummary updatedSummary completedModel)
+                |> (\( savedModel, cmd ) -> ( savedModel, cmd, [] ))
+
+
+notificationTarget : NotificationIntent -> Bool
+notificationTarget intent =
+    case intent of
+        PersistNotification isSubscribed _ ->
+            isSubscribed
+
+
+workspaceSummaryFor : Group.Id -> Model -> Maybe Group.Summary
+workspaceSummaryFor groupId model =
+    case model.workspace of
+        WorkspaceLoading summary ->
+            if summary.id == groupId then
+                Just summary
+
+            else
+                Nothing
+
+        WorkspaceLoadFailed summary ->
+            if summary.id == groupId then
+                Just summary
+
+            else
+                Nothing
+
+        WorkspaceLoaded loaded ->
+            if loaded.summary.id == groupId then
+                Just loaded.summary
+
+            else
+                Nothing
+
+        _ ->
+            Nothing
+
+
 queueSummaryOperation : UpdateConfig -> SummaryOperation -> Model -> ( Model, Cmd Msg )
 queueSummaryOperation config operation model =
     let
@@ -2191,7 +2373,7 @@ queueSummaryOperation config operation model =
                 DeleteGroup _ _ ->
                     ( model, Cmd.none )
 
-                SaveSummary _ ->
+                _ ->
                     ( { model | summaryMutations = Dict.insert groupId { mutation | desired = operation } model.summaryMutations }
                     , Cmd.none
                     )
@@ -2216,6 +2398,9 @@ summaryOperationTask db operation =
         SaveSummary summary ->
             Storage.saveGroupSummary db summary |> ConcurrentTask.map (\_ -> ())
 
+        SaveNotificationSummary _ summary ->
+            Storage.saveGroupSummary db summary |> ConcurrentTask.map (\_ -> ())
+
         DeleteGroup groupId _ ->
             Storage.deleteGroup db groupId
 
@@ -2224,6 +2409,9 @@ summaryOperationGroupId : SummaryOperation -> Group.Id
 summaryOperationGroupId operation =
     case operation of
         SaveSummary summary ->
+            summary.id
+
+        SaveNotificationSummary _ summary ->
             summary.id
 
         DeleteGroup groupId _ ->
@@ -2239,12 +2427,10 @@ finishSummaryMutation config groupId response model =
         Just mutation ->
             case mutation.inFlight of
                 SaveSummary _ ->
-                    if sameSummaryOperation mutation.inFlight mutation.desired then
-                        ( { model | summaryMutations = Dict.remove groupId model.summaryMutations }, Cmd.none, [] )
+                    finishSummarySave config groupId mutation model
 
-                    else
-                        runSummaryOperation config groupId { mutation | inFlight = mutation.desired } model
-                            |> (\( nextModel, cmd ) -> ( nextModel, cmd, [] ))
+                SaveNotificationSummary previousSubscription summary ->
+                    finishNotificationSummarySave config groupId previousSubscription summary response mutation model
 
                 DeleteGroup _ memberRootId ->
                     case response of
@@ -2258,11 +2444,57 @@ finishSummaryMutation config groupId response model =
                             )
 
 
+finishSummarySave : UpdateConfig -> Group.Id -> SummaryMutation -> Model -> ( Model, Cmd Msg, List Output )
+finishSummarySave config groupId mutation model =
+    if sameSummaryOperation mutation.inFlight mutation.desired then
+        ( { model | summaryMutations = Dict.remove groupId model.summaryMutations }, Cmd.none, [] )
+
+    else
+        runSummaryOperation config groupId { mutation | inFlight = mutation.desired } model
+            |> (\( nextModel, cmd ) -> ( nextModel, cmd, [] ))
+
+
+finishNotificationSummarySave : UpdateConfig -> Group.Id -> Bool -> Group.Summary -> ConcurrentTask.Response Idb.Error () -> SummaryMutation -> Model -> ( Model, Cmd Msg, List Output )
+finishNotificationSummarySave config groupId previousSubscription summary response mutation model =
+    if sameSummaryOperation mutation.inFlight mutation.desired then
+        let
+            completedModel : Model
+            completedModel =
+                { model | summaryMutations = Dict.remove groupId model.summaryMutations }
+        in
+        case response of
+            ConcurrentTask.Success _ ->
+                ( completedModel, Cmd.none, [ UpdateGroupSummary summary ] )
+
+            _ ->
+                ( setWorkspaceSubscription groupId previousSubscription completedModel
+                , Cmd.none
+                , [ ShowToast Toast.Error (T.toastPushError config.i18n) ]
+                )
+
+    else
+        runSummaryOperation config groupId { mutation | inFlight = mutation.desired } model
+            |> (\( nextModel, cmd ) -> ( nextModel, cmd, [] ))
+
+
+setWorkspaceSubscription : Group.Id -> Bool -> Model -> Model
+setWorkspaceSubscription groupId isSubscribed model =
+    case workspaceSummaryFor groupId model of
+        Just summary ->
+            updateLoadedSummary { summary | isSubscribed = isSubscribed } model
+
+        Nothing ->
+            model
+
+
 sameSummaryOperation : SummaryOperation -> SummaryOperation -> Bool
 sameSummaryOperation left right =
     case ( left, right ) of
         ( SaveSummary leftSummary, SaveSummary rightSummary ) ->
             leftSummary == rightSummary
+
+        ( SaveNotificationSummary leftPrevious leftSummary, SaveNotificationSummary rightPrevious rightSummary ) ->
+            leftPrevious == rightPrevious && leftSummary == rightSummary
 
         ( DeleteGroup leftId _, DeleteGroup rightId _ ) ->
             leftId == rightId

@@ -195,7 +195,6 @@ type Msg
     | DismissToast Toast.ToastId
       -- PWA
     | PwaStateMsg PwaState.Msg
-    | OnToggleNotifResult Group.Id (ConcurrentTask.Response PushServer.Error Bool)
 
 
 subscriptions : Model -> Sub Msg
@@ -345,6 +344,7 @@ buildGroupConfig model =
                         , identity = identity
                         , serverUrl = model.serverUrl
                         , pushServerUrl = model.pushServerUrl
+                        , pushSubscription = model.pwaState.pushSubscription
                         , currentTime = model.currentTime
                         , timeZone = model.timeZone
                         , route = model.route
@@ -426,13 +426,6 @@ processGroupOutputs model groupCmd outputs =
 
                                 _ ->
                                     ( m, cmds )
-
-                        Page.Group.ToggleGroupNotification groupId memberRootId ->
-                            let
-                                ( toggledModel, toggleCmd ) =
-                                    handleToggleGroupNotification groupId memberRootId m
-                            in
-                            ( toggledModel, toggleCmd :: cmds )
 
                         Page.Group.UnsubscribeGroupNotification groupId memberRootId ->
                             case ( m.pushServerUrl, m.pwaState.pushSubscription ) of
@@ -1307,32 +1300,6 @@ update msg model =
             in
             processPwaOutMsgs { model | pwaState = pwaState } pwaCmd outMsgs
 
-        OnToggleNotifResult groupId (ConcurrentTask.Success isSubscribed) ->
-            case model.appState of
-                Ready readyData ->
-                    case Dict.get groupId readyData.groups of
-                        Just summary ->
-                            let
-                                updatedSummary : Group.Summary
-                                updatedSummary =
-                                    { summary | isSubscribed = isSubscribed }
-                            in
-                            ( { model
-                                | appState = Ready { readyData | groups = Dict.insert groupId updatedSummary readyData.groups }
-                                , groupModel = Page.Group.updateLoadedSummary updatedSummary model.groupModel
-                              }
-                            , Cmd.none
-                            )
-
-                        Nothing ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
-
-        OnToggleNotifResult _ _ ->
-            addToast Toast.Error (T.toastPushError model.i18n) model
-
 
 {-| On the first group (create, import, or join), ask the browser to protect
 the origin's storage from eviction. Later groups skip the request: once
@@ -1703,31 +1670,6 @@ processImportExportOutMsg model ieCmd maybeOutMsg =
 
                 _ ->
                     ( model, ieCmd )
-
-
-handleToggleGroupNotification : Group.Id -> String -> Model -> ( Model, Cmd Msg )
-handleToggleGroupNotification groupId memberRootId model =
-    case model.appState of
-        Ready readyData ->
-            case ( model.pushServerUrl, Dict.get groupId readyData.groups, model.pwaState.pushSubscription ) of
-                ( Just pushServerUrl, Just summary, Just subscription ) ->
-                    ( model.runner, Cmd.none )
-                        |> Runner.andRun (OnToggleNotifResult groupId)
-                            (PushServer.toggleGroupNotification
-                                { pushServerUrl = pushServerUrl
-                                , db = readyData.db
-                                , summary = summary
-                                , subscription = subscription
-                                , memberRootId = memberRootId
-                                }
-                            )
-                        |> Tuple.mapFirst (\r -> { model | runner = r })
-
-                _ ->
-                    ( model, Cmd.none )
-
-        _ ->
-            ( model, Cmd.none )
 
 
 

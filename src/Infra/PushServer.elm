@@ -1,4 +1,4 @@
-module Infra.PushServer exposing (Error, NotifyContext, fetchVapidKey, notificationKey, notificationTranslations, notifyAffectedMembers, templates, toggleGroupNotification, unsubscribeFromGroup)
+module Infra.PushServer exposing (Error, NotifyContext, fetchVapidKey, notificationKey, notificationTranslations, notifyAffectedMembers, setGroupNotification, templates, unsubscribeFromGroup)
 
 {-| HTTP wrappers for push notification server communication.
 
@@ -16,8 +16,6 @@ import Domain.Event as Event exposing (Payload(..))
 import Domain.Group as Group
 import Domain.GroupState exposing (EntryState)
 import Domain.Member as Member
-import IndexedDb as Idb
-import Infra.Storage as Storage
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Set
@@ -40,32 +38,28 @@ fetchVapidKey pushServerUrl =
         }
 
 
-{-| Toggle push notification subscription for a group.
-Returns the new isSubscribed value (True if subscribed, False if unsubscribed).
+{-| Set a group's remote push notification subscription to an absolute state.
+Local summary persistence is owned by the caller so stale requests cannot write.
 -}
-toggleGroupNotification :
+setGroupNotification :
     { pushServerUrl : String
-    , db : Idb.Db
-    , summary : Group.Summary
+    , groupId : Group.Id
     , subscription : Encode.Value
     , memberRootId : Member.Id
+    , isSubscribed : Bool
     }
-    -> ConcurrentTask Error Bool
-toggleGroupNotification { pushServerUrl, db, summary, subscription, memberRootId } =
+    -> ConcurrentTask Error ()
+setGroupNotification { pushServerUrl, groupId, subscription, memberRootId, isSubscribed } =
     let
         topic : String
         topic =
-            summary.id ++ "-" ++ memberRootId
+            groupId ++ "-" ++ memberRootId
     in
-    if summary.isSubscribed then
-        unregister pushServerUrl { topic = topic, subscription = subscription }
-            |> ConcurrentTask.andThenDo (saveSummary db { summary | isSubscribed = False })
-            |> ConcurrentTask.map (\_ -> False)
+    if isSubscribed then
+        register pushServerUrl { topic = topic, subscription = subscription }
 
     else
-        register pushServerUrl { topic = topic, subscription = subscription }
-            |> ConcurrentTask.andThenDo (saveSummary db { summary | isSubscribed = True })
-            |> ConcurrentTask.map (\_ -> True)
+        unregister pushServerUrl { topic = topic, subscription = subscription }
 
 
 {-| Unsubscribe from a group's push notification topic.
@@ -334,10 +328,3 @@ unregisterEndpoint subscription =
     subscription
         |> Decode.decodeValue (Decode.field "endpoint" Decode.string)
         |> Result.withDefault ""
-
-
-saveSummary : Idb.Db -> Group.Summary -> ConcurrentTask Error ()
-saveSummary db summary =
-    Storage.saveGroupSummary db summary
-        |> ConcurrentTask.map (\_ -> ())
-        |> ConcurrentTask.mapError (\_ -> Http.NetworkError)
