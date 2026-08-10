@@ -50,7 +50,7 @@ import Page.Welcome
 import Process
 import PwaState
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
-import Set exposing (Set)
+import Set
 import SplitwiseImport
 import Task
 import Time
@@ -143,7 +143,6 @@ type alias Model =
     , serverUrl : String
     , pushServerUrl : Maybe String
     , origin : String
-    , pendingServerCreations : Set Group.Id
     , pwaState : PwaState.Model
     , errorLog : ErrorLog.Model
     }
@@ -185,8 +184,6 @@ type Msg
       -- Import / Export
     | HomeMsg Page.Home.Msg
     | ImportExportMsg ImportExport.Msg
-      -- Server sync
-    | OnServerGroupCreated Group.Id (ConcurrentTask.Response Server.Error ())
       -- About / Usage stats
     | AboutMsg Page.About.Msg
     | OnStorageCheckComplete (ConcurrentTask.Response Never ( Maybe UsageStats, UsageStats.StorageEstimate, UsageStats.PersistedStatus ))
@@ -314,7 +311,6 @@ init flags =
       , serverUrl = flags.serverUrl
       , pushServerUrl = pushServerUrl
       , origin = flags.origin
-      , pendingServerCreations = Set.empty
       , pwaState = PwaState.init { pushServerUrl = pushServerUrl, isOnline = flags.isOnline, installHint = flags.installHint }
       , errorLog = ErrorLog.empty
       }
@@ -356,7 +352,6 @@ buildGroupConfig model =
                         , route = model.route
                         , i18n = model.i18n
                         , groups = readyData.groups
-                        , pendingServerCreations = model.pendingServerCreations
                         , selfProfile = readyData.selfProfile
                         , devMode = readyData.devMode
                         }
@@ -451,10 +446,6 @@ processGroupOutputs model groupCmd outputs =
 
                                 _ ->
                                     ( m, cmds )
-
-                        Page.Group.RequestServerGroupCreation groupId groupKey ->
-                            attemptServerGroupCreation groupId (Just groupKey) m
-                                |> Tuple.mapSecond (\attemptCmd -> attemptCmd :: cmds)
 
                         Page.Group.LogError source severity message ->
                             ( logError source severity message m, cmds )
@@ -737,15 +728,12 @@ update msg model =
                                 , groupModel = Page.Group.resetLoadedGroup model.groupModel
                             }
 
-                        ( modelAfterAttempt, serverCmd ) =
-                            attemptServerGroupCreation summary.id Nothing modelWithGroup
-
                         newRoute : Route
                         newRoute =
                             GroupRoute summary.id (Tab EntriesTab)
                     in
-                    ( modelAfterAttempt
-                    , Cmd.batch [ Navigation.pushUrl navCmd (Route.toAppUrl newRoute), serverCmd ]
+                    ( modelWithGroup
+                    , Navigation.pushUrl navCmd (Route.toAppUrl newRoute)
                     )
                         |> requestPersistOnFirstGroup readyData.groups
 
@@ -1169,39 +1157,6 @@ update msg model =
 
                 _ ->
                     ( model, Cmd.none )
-
-        -- Server sync
-        OnServerGroupCreated groupId (ConcurrentTask.Success _) ->
-            -- Server group created; now sync (push initial events + pull + subscribe)
-            let
-                cleanModel : Model
-                cleanModel =
-                    { model | pendingServerCreations = Set.remove groupId model.pendingServerCreations }
-            in
-            case buildGroupConfig cleanModel of
-                Just config ->
-                    Page.Group.triggerSync config groupId cleanModel.groupModel
-                        |> Update.wrap GroupMsg (\gm -> { cleanModel | groupModel = gm })
-
-                Nothing ->
-                    ( cleanModel, Cmd.none )
-
-        OnServerGroupCreated groupId (ConcurrentTask.Error err) ->
-            -- Server group creation failed — local group still works
-            let
-                cleanModel : Model
-                cleanModel =
-                    { model | pendingServerCreations = Set.remove groupId model.pendingServerCreations }
-            in
-            addToast Toast.Error (T.toastSyncError (Server.errorToText cleanModel.i18n err) cleanModel.i18n) cleanModel
-
-        OnServerGroupCreated groupId (ConcurrentTask.UnexpectedError _) ->
-            ( logError ErrorLog.ServerSource
-                ErrorLog.Err
-                "Unexpected error creating server group"
-                { model | pendingServerCreations = Set.remove groupId model.pendingServerCreations }
-            , Cmd.none
-            )
 
         ClipboardCopied ->
             addToast Toast.Success (T.toastCopied model.i18n) model
@@ -1675,21 +1630,11 @@ processPwaOutMsgs model pwaCmd outMsgs =
                             ( logError source severity message m, cmds )
 
                         PwaState.CameOnline ->
-                            case m.groupModel.loadedGroup of
-                                Just loaded ->
-                                    if loaded.syncCursor == Nothing then
-                                        attemptServerGroupCreation loaded.summary.id (Just loaded.groupKey) m
-                                            |> Tuple.mapSecond (\cmd -> cmd :: cmds)
-
-                                    else
-                                        case buildGroupConfig m of
-                                            Just config ->
-                                                Page.Group.triggerSync config loaded.summary.id m.groupModel
-                                                    |> Update.wrap GroupMsg (\gm -> { m | groupModel = gm })
-                                                    |> Tuple.mapSecond (\cmd -> cmd :: cmds)
-
-                                            Nothing ->
-                                                ( m, cmds )
+                            case buildGroupConfig m of
+                                Just config ->
+                                    Page.Group.connectivityRestored config m.groupModel
+                                        |> Update.wrap GroupMsg (\gm -> { m | groupModel = gm })
+                                        |> Tuple.mapSecond (\cmd -> cmd :: cmds)
 
                                 Nothing ->
                                     ( m, cmds )
@@ -2045,50 +1990,3 @@ viewReady model readyData =
             noOverlay <|
                 UI.Shell.pageShell { title = T.shellPartage i18n, onBack = NavigateTo Home }
                     (Page.NotFound.view i18n)
-
-
-{-| Create a group on the server. Called after sync has already failed,
-indicating the group doesn't exist on the server yet.
-No-op if creation is already in progress.
--}
-attemptServerGroupCreation : Group.Id -> Maybe Symmetric.Key -> Model -> ( Model, Cmd Msg )
-attemptServerGroupCreation groupId maybeGroupKey model =
-    case model.appState of
-        Ready readyData ->
-            if Set.member groupId model.pendingServerCreations then
-                ( model, Cmd.none )
-
-            else
-                let
-                    loadKey : ConcurrentTask Server.Error Symmetric.Key
-                    loadKey =
-                        case maybeGroupKey of
-                            Just key ->
-                                ConcurrentTask.succeed key
-
-                            Nothing ->
-                                Storage.loadGroupKeyRequired readyData.db groupId
-                                    |> ConcurrentTask.mapError (\_ -> Server.InternalError "Failed to load group key in IndexedDB")
-
-                    createGroup : Symmetric.Key -> ConcurrentTask Server.Error ()
-                    createGroup key =
-                        Server.createGroupOnServer
-                            { serverUrl = model.serverUrl
-                            , groupId = groupId
-                            , groupKey = key
-                            , createdBy = actorId
-                            }
-
-                    actorId : String
-                    actorId =
-                        readyData.identity
-                            |> Maybe.map .publicKeyHash
-                            |> Maybe.withDefault ""
-                in
-                ( model.runner, Cmd.none )
-                    |> Runner.andRun (OnServerGroupCreated groupId)
-                        (loadKey |> ConcurrentTask.andThen createGroup)
-                    |> Tuple.mapFirst (\r -> { model | runner = r, pendingServerCreations = Set.insert groupId model.pendingServerCreations })
-
-        _ ->
-            ( model, Cmd.none )

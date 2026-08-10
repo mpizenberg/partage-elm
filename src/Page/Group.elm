@@ -9,6 +9,7 @@ module Page.Group exposing
     , UpdateConfig
     , ViewConfig
     , ViewResult
+    , connectivityRestored
     , handleNavigation
     , init
     , resetLoadedGroup
@@ -16,7 +17,6 @@ module Page.Group exposing
     , setIdentity
     , submitJoinEvent
     , subscription
-    , triggerSync
     , update
     , updateLoadedSummary
     , view
@@ -113,7 +113,6 @@ type alias UpdateConfig =
     , route : Route
     , i18n : I18n
     , groups : Dict Group.Id Group.Summary
-    , pendingServerCreations : Set Group.Id
     , selfProfile : Member.Metadata
     , devMode : Bool
     }
@@ -194,6 +193,7 @@ type SyncState
     = SyncIdle
     | SyncRunning
     | SyncFollowUpRequested
+    | SyncCreatingRelay Group.Id
 
 
 type PendingEntry
@@ -272,6 +272,7 @@ type
     | OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)
     | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Group.SyncCursor, unpushedIds : Set String, tamperSignals : TamperSignals, suspicionDismissals : Set String })
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
+    | OnServerGroupCreated Group.Id (ConcurrentTask.Response Server.Error ())
     | OnCompactionStep Group.Id (ConcurrentTask.Response Server.Error GroupOps.CompactionOutcome)
     | OnCompactionEventSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | PostSyncTasksDone (ConcurrentTask.Response Idb.Error ())
@@ -307,7 +308,6 @@ type Output
     | RemoveGroup Group.Id Member.Id
     | ToggleGroupNotification Group.Id Member.Id
     | UnsubscribeGroupNotification Group.Id Member.Id
-    | RequestServerGroupCreation Group.Id Symmetric.Key
     | LogError ErrorLog.Source ErrorLog.Severity String
     | SaveSelfProfile Member.Metadata
 
@@ -396,11 +396,16 @@ loadGroup config groupId model =
         |> Tuple.mapFirst (\r -> { model | runner = r, loadedGroup = Nothing })
 
 
-{-| Trigger a server sync for the given group. Called by Main on OnServerGroupCreated.
+{-| Retry connectivity work for the loaded group after the browser comes online.
 -}
-triggerSync : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
-triggerSync config groupId model =
-    triggerSyncInternal config groupId model
+connectivityRestored : UpdateConfig -> Model -> ( Model, Cmd Msg )
+connectivityRestored config model =
+    case model.loadedGroup of
+        Just loaded ->
+            triggerSyncInternal config loaded.summary.id model
+
+        Nothing ->
+            ( model, Cmd.none )
 
 
 {-| Reset the loaded group. Called by Main on OnGroupCreated / OnGroupImported.
@@ -962,14 +967,8 @@ update config msg model =
                         Nothing ->
                             ( model, Cmd.none )
 
-                -- Sync unless server creation is still in progress (avoids race condition).
-                -- Works for both previously synced and imported groups.
                 ( syncModel, syncCmd ) =
-                    if Set.member groupId config.pendingServerCreations then
-                        ( modelAfterLoad, Cmd.none )
-
-                    else
-                        triggerSyncInternal config groupId modelAfterLoad
+                    triggerSyncInternal config groupId modelAfterLoad
             in
             ( syncModel, Cmd.batch [ syncCmd, initCmd ], [] )
 
@@ -1060,67 +1059,103 @@ update config msg model =
                             ( followUpModel, Cmd.batch [ taskCmds, summaryCmd, followUpCmd, initCmd ], outputs )
 
                     else
-                        ( { model | syncState = SyncIdle }, Cmd.none, [] )
+                        finishStaleConnectivity config model
 
                 Nothing ->
-                    ( { model | syncState = SyncIdle }, Cmd.none, [] )
+                    finishStaleConnectivity config model
 
-        OnGroupSynced _ _ (ConcurrentTask.Error err) ->
-            -- Sync failed — check if group needs to be created on server first
-            let
-                needsServerCreation : GroupOps.LoadedGroup -> Bool
-                needsServerCreation loaded =
-                    Server.isNotFound err
-                        -- Never synced + auth failed → group likely doesn't exist on server
-                        || (Server.isUnauthorized err && loaded.syncCursor == Nothing)
-
-                -- Connectivity failures are expected offline and retried
-                -- automatically — stay silent instead of toasting per attempt.
-                failureOutputs : List Output
-                failureOutputs =
-                    if Server.isNetworkError err then
-                        []
-
-                    else
-                        let
-                            toastMessage : String
-                            toastMessage =
-                                if Server.isQuotaExceeded err then
-                                    T.toastGroupFull config.i18n
-
-                                else if Server.isRateLimited err then
-                                    T.toastRateLimited config.i18n
-
-                                else
-                                    T.toastSyncError (Server.errorToText config.i18n err) config.i18n
-                        in
-                        [ ShowToast Toast.Error toastMessage
-                        , LogError ErrorLog.SyncSource ErrorLog.Err ("Sync: " ++ Server.errorToString err)
-                        ]
-            in
+        OnGroupSynced groupId _ (ConcurrentTask.Error err) ->
             case model.loadedGroup of
                 Just loaded ->
-                    if needsServerCreation loaded then
-                        ( { model | syncState = SyncIdle }
-                        , Cmd.none
-                        , [ RequestServerGroupCreation loaded.summary.id loaded.groupKey ]
-                        )
+                    if loaded.summary.id /= groupId then
+                        finishStaleConnectivity config model
 
-                    else if Server.isRateLimited err then
+                    else if Server.isNotFound err || (Server.isUnauthorized err && loaded.syncCursor == Nothing) then
                         let
-                            ( bumpedModel, saveCmd ) =
-                                recordTamper config (TamperSignals.recordRateLimitHit config.currentTime) loaded model
+                            ( creationModel, creationCmd ) =
+                                startServerGroupCreation config loaded model
                         in
-                        ( { bumpedModel | syncState = SyncIdle }, saveCmd, failureOutputs )
+                        ( creationModel, creationCmd, [] )
 
                     else
-                        ( { model | syncState = SyncIdle }, Cmd.none, failureOutputs )
+                        let
+                            failureOutputs : List Output
+                            failureOutputs =
+                                if Server.isNetworkError err then
+                                    []
+
+                                else
+                                    let
+                                        toastMessage : String
+                                        toastMessage =
+                                            if Server.isQuotaExceeded err then
+                                                T.toastGroupFull config.i18n
+
+                                            else if Server.isRateLimited err then
+                                                T.toastRateLimited config.i18n
+
+                                            else
+                                                T.toastSyncError (Server.errorToText config.i18n err) config.i18n
+                                    in
+                                    [ ShowToast Toast.Error toastMessage
+                                    , LogError ErrorLog.SyncSource ErrorLog.Err ("Sync: " ++ Server.errorToString err)
+                                    ]
+                        in
+                        if Server.isRateLimited err then
+                            let
+                                ( bumpedModel, saveCmd ) =
+                                    recordTamper config (TamperSignals.recordRateLimitHit config.currentTime) loaded model
+                            in
+                            ( { bumpedModel | syncState = SyncIdle }, saveCmd, failureOutputs )
+
+                        else
+                            ( { model | syncState = SyncIdle }, Cmd.none, failureOutputs )
 
                 Nothing ->
-                    ( { model | syncState = SyncIdle }, Cmd.none, failureOutputs )
+                    finishStaleConnectivity config model
 
-        OnGroupSynced _ _ (ConcurrentTask.UnexpectedError _) ->
-            ( { model | syncState = SyncIdle }, Cmd.none, [ LogError ErrorLog.SyncSource ErrorLog.Err "Unexpected error during group sync" ] )
+        OnGroupSynced groupId _ (ConcurrentTask.UnexpectedError _) ->
+            if hasLoadedGroup groupId model then
+                ( { model | syncState = SyncIdle }, Cmd.none, [ LogError ErrorLog.SyncSource ErrorLog.Err "Unexpected error during group sync" ] )
+
+            else
+                finishStaleConnectivity config model
+
+        OnServerGroupCreated groupId (ConcurrentTask.Success _) ->
+            let
+                idleModel : Model
+                idleModel =
+                    { model | syncState = SyncIdle }
+            in
+            if hasLoadedGroup groupId idleModel then
+                let
+                    ( syncModel, syncCmd ) =
+                        triggerSyncInternal config groupId idleModel
+                in
+                ( syncModel, syncCmd, [] )
+
+            else
+                finishStaleConnectivity config model
+
+        OnServerGroupCreated groupId (ConcurrentTask.Error err) ->
+            if hasLoadedGroup groupId model then
+                ( { model | syncState = SyncIdle }
+                , Cmd.none
+                , [ ShowToast Toast.Error (T.toastSyncError (Server.errorToText config.i18n err) config.i18n) ]
+                )
+
+            else
+                finishStaleConnectivity config model
+
+        OnServerGroupCreated groupId (ConcurrentTask.UnexpectedError _) ->
+            if hasLoadedGroup groupId model then
+                ( { model | syncState = SyncIdle }
+                , Cmd.none
+                , [ LogError ErrorLog.ServerSource ErrorLog.Err "Unexpected error creating server group" ]
+                )
+
+            else
+                finishStaleConnectivity config model
 
         OnCompactionStep groupId (ConcurrentTask.Success outcome) ->
             case model.loadedGroup of
@@ -1861,6 +1896,13 @@ appendEventAndRecompute model groupId envelope =
     mapLoadedGroup (GroupOps.appendEvent envelope) groupId model
 
 
+hasLoadedGroup : Group.Id -> Model -> Bool
+hasLoadedGroup groupId model =
+    model.loadedGroup
+        |> Maybe.map (\loaded -> loaded.summary.id == groupId)
+        |> Maybe.withDefault False
+
+
 mapLoadedGroup : (LoadedGroup -> LoadedGroup) -> Group.Id -> Model -> Maybe Model
 mapLoadedGroup f groupId model =
     case model.loadedGroup of
@@ -1887,89 +1929,137 @@ addUnpushedIdToModel eventId model =
             model
 
 
-{-| Internal sync trigger. If a sync is already running, records the request so
-`OnGroupSynced` fires one follow-up on completion instead of dropping it.
+{-| Serialize sync and relay creation. Repeated triggers coalesce, while a trigger
+for a newly loaded group resumes after the older group's task completes.
 -}
 triggerSyncInternal : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
 triggerSyncInternal config groupId model =
-    if model.syncState /= SyncIdle then
-        ( { model | syncState = SyncFollowUpRequested }, Cmd.none )
+    case model.syncState of
+        SyncIdle ->
+            startSync config groupId model
+
+        SyncRunning ->
+            ( { model | syncState = SyncFollowUpRequested }, Cmd.none )
+
+        SyncFollowUpRequested ->
+            ( model, Cmd.none )
+
+        SyncCreatingRelay creatingGroupId ->
+            if creatingGroupId == groupId then
+                ( model, Cmd.none )
+
+            else
+                ( { model | syncState = SyncFollowUpRequested }, Cmd.none )
+
+
+finishStaleConnectivity : UpdateConfig -> Model -> ( Model, Cmd Msg, List Output )
+finishStaleConnectivity config model =
+    let
+        idleModel : Model
+        idleModel =
+            { model | syncState = SyncIdle }
+    in
+    if model.syncState == SyncFollowUpRequested then
+        let
+            ( syncModel, syncCmd ) =
+                connectivityRestored config idleModel
+        in
+        ( syncModel, syncCmd, [] )
 
     else
-        case model.loadedGroup of
-            Just loaded ->
-                if loaded.summary.id == groupId && not loaded.summary.isArchived then
-                    let
-                        unpushedEvents : List Event.Envelope
-                        unpushedEvents =
-                            List.filter (\e -> Set.member e.id loaded.unpushedIds) loaded.events
-                                |> List.reverse
+        ( idleModel, Cmd.none, [] )
 
-                        notifyContext : Maybe PushServer.NotifyContext
-                        notifyContext =
-                            case ( config.pushServerUrl, List.isEmpty unpushedEvents, currentUserRootId model loaded ) of
-                                ( Just pushServerUrl, False, Just actorId ) ->
-                                    Just
-                                        { pushServerUrl = pushServerUrl
-                                        , groupId = groupId
-                                        , groupName = loaded.groupState.groupMeta.name
-                                        , actorRootId = actorId
-                                        , actorName = GroupState.resolveMemberName loaded.groupState actorId
-                                        , entries = loaded.groupState.entries
-                                        , url = Route.toPath (GroupRoute groupId (Tab ActivityTab))
-                                        }
 
-                                _ ->
-                                    Nothing
+startSync : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
+startSync config groupId model =
+    case model.loadedGroup of
+        Just loaded ->
+            if loaded.summary.id == groupId && not loaded.summary.isArchived then
+                let
+                    unpushedEvents : List Event.Envelope
+                    unpushedEvents =
+                        List.filter (\e -> Set.member e.id loaded.unpushedIds) loaded.events
+                            |> List.reverse
 
-                        verifySignatures : Server.SyncResult -> ConcurrentTask x Server.SyncResult
-                        verifySignatures syncResult =
-                            EventVerification.filterVerifiedEvents loaded.groupState syncResult.pullResult.events
-                                |> ConcurrentTask.mapError never
-                                |> ConcurrentTask.map
-                                    (\verifiedEvents ->
-                                        let
-                                            pull : Server.PullResult
-                                            pull =
-                                                syncResult.pullResult
+                    notifyContext : Maybe PushServer.NotifyContext
+                    notifyContext =
+                        case ( config.pushServerUrl, List.isEmpty unpushedEvents, currentUserRootId model loaded ) of
+                            ( Just pushServerUrl, False, Just actorId ) ->
+                                Just
+                                    { pushServerUrl = pushServerUrl
+                                    , groupId = groupId
+                                    , groupName = loaded.groupState.groupMeta.name
+                                    , actorRootId = actorId
+                                    , actorName = GroupState.resolveMemberName loaded.groupState actorId
+                                    , entries = loaded.groupState.entries
+                                    , url = Route.toPath (GroupRoute groupId (Tab ActivityTab))
+                                    }
 
-                                            verifiedIds : Set String
-                                            verifiedIds =
-                                                Set.fromList (List.map .id verifiedEvents)
+                            _ ->
+                                Nothing
 
-                                            forgedAuthors : List String
-                                            forgedAuthors =
-                                                pull.events
-                                                    |> List.filter (\e -> not (Set.member e.id verifiedIds))
-                                                    |> List.map .triggeredBy
-                                        in
-                                        { syncResult
-                                            | pullResult =
-                                                { pull
-                                                    | events = verifiedEvents
-                                                    , forgedAuthors = forgedAuthors
-                                                }
-                                        }
-                                    )
-                    in
-                    ( model.runner, Cmd.none )
-                        |> Runner.andRun (OnGroupSynced groupId loaded.unpushedIds)
-                            (Server.sync
-                                { serverUrl = config.serverUrl, groupId = groupId, groupKey = loaded.groupKey }
-                                config.identity.publicKeyHash
-                                { unpushedEvents = unpushedEvents
-                                , syncCursor = loaded.syncCursor
-                                , notifyContext = notifyContext
-                                }
-                                |> ConcurrentTask.andThen verifySignatures
-                            )
-                        |> Tuple.mapFirst (\r -> { model | runner = r, syncState = SyncRunning })
+                    verifySignatures : Server.SyncResult -> ConcurrentTask x Server.SyncResult
+                    verifySignatures syncResult =
+                        EventVerification.filterVerifiedEvents loaded.groupState syncResult.pullResult.events
+                            |> ConcurrentTask.mapError never
+                            |> ConcurrentTask.map
+                                (\verifiedEvents ->
+                                    let
+                                        pull : Server.PullResult
+                                        pull =
+                                            syncResult.pullResult
 
-                else
-                    ( model, Cmd.none )
+                                        verifiedIds : Set String
+                                        verifiedIds =
+                                            Set.fromList (List.map .id verifiedEvents)
 
-            _ ->
+                                        forgedAuthors : List String
+                                        forgedAuthors =
+                                            pull.events
+                                                |> List.filter (\e -> not (Set.member e.id verifiedIds))
+                                                |> List.map .triggeredBy
+                                    in
+                                    { syncResult
+                                        | pullResult =
+                                            { pull
+                                                | events = verifiedEvents
+                                                , forgedAuthors = forgedAuthors
+                                            }
+                                    }
+                                )
+                in
+                ( model.runner, Cmd.none )
+                    |> Runner.andRun (OnGroupSynced groupId loaded.unpushedIds)
+                        (Server.sync
+                            { serverUrl = config.serverUrl, groupId = groupId, groupKey = loaded.groupKey }
+                            config.identity.publicKeyHash
+                            { unpushedEvents = unpushedEvents
+                            , syncCursor = loaded.syncCursor
+                            , notifyContext = notifyContext
+                            }
+                            |> ConcurrentTask.andThen verifySignatures
+                        )
+                    |> Tuple.mapFirst (\r -> { model | runner = r, syncState = SyncRunning })
+
+            else
                 ( model, Cmd.none )
+
+        _ ->
+            ( model, Cmd.none )
+
+
+startServerGroupCreation : UpdateConfig -> LoadedGroup -> Model -> ( Model, Cmd Msg )
+startServerGroupCreation config loaded model =
+    ( model.runner, Cmd.none )
+        |> Runner.andRun (OnServerGroupCreated loaded.summary.id)
+            (Server.createGroupOnServer
+                { serverUrl = config.serverUrl
+                , groupId = loaded.summary.id
+                , groupKey = loaded.groupKey
+                , createdBy = config.identity.publicKeyHash
+                }
+            )
+        |> Tuple.mapFirst (\runner -> { model | runner = runner, syncState = SyncCreatingRelay loaded.summary.id })
 
 
 {-| Bump a tamper signal on the loaded group: update in-memory state and
