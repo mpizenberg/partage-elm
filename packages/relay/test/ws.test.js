@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startServer } from '../src/node-server.js';
 import { openStorage } from '../src/storage.js';
-import { TEST_SECRET, createGroup, pushEvent } from './helpers.js';
+import { TEST_SECRET, createGroup, pushEvent } from '../test-support/helpers.js';
 
 function fetchApp(url) {
   return {

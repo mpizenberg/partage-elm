@@ -9,7 +9,7 @@ import {
   record,
   solvedPow,
   sha256Base64Url,
-} from './helpers.js';
+} from '../test-support/helpers.js';
 
 const GENEROUS = { maxRecords: 50000, maxTotalBytes: 50 * 1024 * 1024, rateBytes: 10 * 1024 * 1024, windowMs: 1000 };
 

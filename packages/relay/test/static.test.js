@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { startServer } from '../src/node-server.js';
 import { openStorage } from '../src/storage.js';
-import { TEST_SECRET } from './helpers.js';
+import { TEST_SECRET } from '../test-support/helpers.js';
 
 describe('static frontend serving', () => {
   let relay;

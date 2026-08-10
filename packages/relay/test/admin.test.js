@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeApp } from './helpers.js';
+import { makeApp } from '../test-support/helpers.js';
 
 const ADMIN = 'operator-secret';
 const GENEROUS = { maxRecords: 50000, maxTotalBytes: 50 * 1024 * 1024, rateBytes: 10 * 1024 * 1024, windowMs: 1000 };

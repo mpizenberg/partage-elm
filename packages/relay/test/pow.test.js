@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { issueChallenge, verifySolution, DIFFICULTY } from '../src/pow.js';
-import { TEST_SECRET, solve, signChallenge } from './helpers.js';
+import { TEST_SECRET, solve, signChallenge } from '../test-support/helpers.js';
 
 const GROUP = 'g1';
 

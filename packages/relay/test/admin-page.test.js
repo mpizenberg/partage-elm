@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeApp } from './helpers.js';
+import { makeApp } from '../test-support/helpers.js';
 
 const ADMIN = 'operator-secret';
 
