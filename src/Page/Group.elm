@@ -5,6 +5,8 @@ module Page.Group exposing
     , Output(..)
     , PendingEntry
     , PendingMerge
+    , SummaryMutation
+    , SummaryOperation
     , SyncState
     , UpdateConfig
     , ViewConfig
@@ -146,6 +148,7 @@ type alias Model =
     , previousDeviceIds : List String
     , workspace : Workspace
     , syncState : SyncState
+    , summaryMutations : Dict Group.Id SummaryMutation
 
     -- Tabs
     , activeTab : GroupTab
@@ -199,6 +202,17 @@ type SyncState
     | SyncRunning
     | SyncFollowUpRequested
     | SyncCreatingRelay Group.Id
+
+
+type alias SummaryMutation =
+    { inFlight : SummaryOperation
+    , desired : SummaryOperation
+    }
+
+
+type SummaryOperation
+    = SaveSummary Group.Summary
+    | DeleteGroup Group.Id (Maybe Member.Id)
 
 
 type PendingEntry
@@ -274,8 +288,7 @@ type
     | OnEntryActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnMemberActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnGroupMetadataActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
-    | OnGroupRemoved Group.Id (Maybe Member.Id) (ConcurrentTask.Response Idb.Error ())
-    | OnGroupSummarySaved (ConcurrentTask.Response Idb.Error Idb.Key)
+    | OnSummaryMutationCompleted Group.Id (ConcurrentTask.Response Idb.Error ())
     | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Group.SyncCursor, unpushedIds : Set String, tamperSignals : TamperSignals, suspicionDismissals : Set String })
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
     | OnServerGroupCreated Group.Id (ConcurrentTask.Response Server.Error ())
@@ -336,6 +349,7 @@ init config =
     , previousDeviceIds = []
     , workspace = WorkspaceEmpty
     , syncState = SyncIdle
+    , summaryMutations = Dict.empty
     , activeTab = BalanceTab
     , entriesTabModel = Page.Group.EntriesTab.init
     , balanceTabModel = Page.Group.BalanceTab.init
@@ -921,32 +935,8 @@ update config msg model =
         OnGroupMetadataActionSaved _ _ ->
             ( model, Cmd.none, [ ShowToast Toast.Error (T.toastGroupSettingsError config.i18n), LogError ErrorLog.StorageSource ErrorLog.Err "Failed to save group settings" ] )
 
-        OnGroupRemoved groupId memberRootId (ConcurrentTask.Success _) ->
-            let
-                navigationOutputs : List Output
-                navigationOutputs =
-                    if routeTargetsGroup groupId config.route then
-                        [ NavigateTo Home ]
-
-                    else
-                        []
-            in
-            ( removeDeletedWorkspace groupId config.route model
-            , Cmd.none
-            , [ RemoveGroup groupId memberRootId
-              , ShowToast Toast.Success (T.toastGroupRemoved config.i18n)
-              ]
-                ++ navigationOutputs
-            )
-
-        OnGroupRemoved _ _ _ ->
-            ( model, Cmd.none, [ ShowToast Toast.Error (T.toastGroupRemoveError config.i18n) ] )
-
-        OnGroupSummarySaved (ConcurrentTask.Success _) ->
-            ( model, Cmd.none, [] )
-
-        OnGroupSummarySaved _ ->
-            ( model, Cmd.none, [] )
+        OnSummaryMutationCompleted groupId response ->
+            finishSummaryMutation config groupId response model
 
         OnGroupEventsLoaded groupId (ConcurrentTask.Success result) ->
             case applyLoadedGroup groupId result.events result.groupKey result.syncCursor result.unpushedIds result.tamperSignals result.suspicionDismissals model of
@@ -1380,8 +1370,16 @@ update config msg model =
                     ( model, Cmd.none, [] )
 
         OnGroupMigrated (ConcurrentTask.Success result) ->
-            ( { model | migrationSelection = Dict.empty, migrationPreview = Nothing, migrationOrder = Nothing, migrationManualExpanded = Set.empty }
-            , Cmd.none
+            let
+                clearedModel : Model
+                clearedModel =
+                    { model | migrationSelection = Dict.empty, migrationPreview = Nothing, migrationOrder = Nothing, migrationManualExpanded = Set.empty }
+
+                ( savedModel, saveCmd ) =
+                    queueSummaryOperation config (SaveSummary result.oldSummary) clearedModel
+            in
+            ( savedModel
+            , saveCmd
             , [ UpdateGroupSummary result.oldSummary
               , UpdateGroupSummary result.newSummary
               , ShowToast Toast.Success (T.toastMigrated config.i18n)
@@ -2100,9 +2098,8 @@ syncGroupSummaryName config groupId model =
                 updatedModel =
                     { model | workspace = WorkspaceLoaded { loaded | summary = updatedSummary } }
             in
-            ( model.runner, Cmd.none )
-                |> Runner.andRun OnGroupSummarySaved (Storage.saveGroupSummary config.db updatedSummary)
-                |> (\( r, cmd ) -> ( { updatedModel | runner = r }, cmd, [ UpdateGroupSummary updatedSummary ] ))
+            queueSummaryOperation config (SaveSummary updatedSummary) updatedModel
+                |> (\( queuedModel, cmd ) -> ( queuedModel, cmd, [ UpdateGroupSummary updatedSummary ] ))
 
         _ ->
             ( model, Cmd.none, [] )
@@ -2133,17 +2130,9 @@ toggleArchiveGroup config model loaded =
             }
 
         ( savedModel, saveCmd ) =
-            ( model.runner, Cmd.none )
-                |> Runner.andRun OnGroupSummarySaved (Storage.saveGroupSummary config.db updatedSummary)
-                |> Tuple.mapFirst
-                    (\r ->
-                        let
-                            updatedModel : Model
-                            updatedModel =
-                                { model | workspace = WorkspaceLoaded { loaded | summary = updatedSummary } }
-                        in
-                        { updatedModel | runner = r }
-                    )
+            queueSummaryOperation config
+                (SaveSummary updatedSummary)
+                { model | workspace = WorkspaceLoaded { loaded | summary = updatedSummary } }
     in
     if archiving then
         ( savedModel.runner, saveCmd )
@@ -2178,14 +2167,128 @@ deleteGroup config model loaded =
         groupId =
             loaded.summary.id
 
-        memberRootId : Maybe Member.Id
-        memberRootId =
-            currentUserRootId model loaded
+        ( deletingModel, deleteCmd ) =
+            queueSummaryOperation config (DeleteGroup groupId (currentUserRootId model loaded)) model
     in
-    ( model.runner, Cmd.none )
-        |> Runner.andRun (OnGroupRemoved groupId memberRootId) (Storage.deleteGroup config.db groupId)
+    ( deletingModel.runner, deleteCmd )
         |> Runner.andRun (\_ -> NoOp) (Server.unsubscribeFromGroup groupId)
-        |> (\( r, cmd ) -> ( { model | runner = r }, cmd, [] ))
+        |> (\( r, cmd ) -> ( { deletingModel | runner = r }, cmd, [] ))
+
+
+queueSummaryOperation : UpdateConfig -> SummaryOperation -> Model -> ( Model, Cmd Msg )
+queueSummaryOperation config operation model =
+    let
+        groupId : Group.Id
+        groupId =
+            summaryOperationGroupId operation
+    in
+    case Dict.get groupId model.summaryMutations of
+        Nothing ->
+            runSummaryOperation config groupId { inFlight = operation, desired = operation } model
+
+        Just mutation ->
+            case mutation.desired of
+                DeleteGroup _ _ ->
+                    ( model, Cmd.none )
+
+                SaveSummary _ ->
+                    ( { model | summaryMutations = Dict.insert groupId { mutation | desired = operation } model.summaryMutations }
+                    , Cmd.none
+                    )
+
+
+runSummaryOperation : UpdateConfig -> Group.Id -> SummaryMutation -> Model -> ( Model, Cmd Msg )
+runSummaryOperation config groupId mutation model =
+    ( model.runner, Cmd.none )
+        |> Runner.andRun (OnSummaryMutationCompleted groupId) (summaryOperationTask config.db mutation.inFlight)
+        |> Tuple.mapFirst
+            (\runner ->
+                { model
+                    | runner = runner
+                    , summaryMutations = Dict.insert groupId mutation model.summaryMutations
+                }
+            )
+
+
+summaryOperationTask : Idb.Db -> SummaryOperation -> ConcurrentTask Idb.Error ()
+summaryOperationTask db operation =
+    case operation of
+        SaveSummary summary ->
+            Storage.saveGroupSummary db summary |> ConcurrentTask.map (\_ -> ())
+
+        DeleteGroup groupId _ ->
+            Storage.deleteGroup db groupId
+
+
+summaryOperationGroupId : SummaryOperation -> Group.Id
+summaryOperationGroupId operation =
+    case operation of
+        SaveSummary summary ->
+            summary.id
+
+        DeleteGroup groupId _ ->
+            groupId
+
+
+finishSummaryMutation : UpdateConfig -> Group.Id -> ConcurrentTask.Response Idb.Error () -> Model -> ( Model, Cmd Msg, List Output )
+finishSummaryMutation config groupId response model =
+    case Dict.get groupId model.summaryMutations of
+        Nothing ->
+            ( model, Cmd.none, [] )
+
+        Just mutation ->
+            case mutation.inFlight of
+                SaveSummary _ ->
+                    if sameSummaryOperation mutation.inFlight mutation.desired then
+                        ( { model | summaryMutations = Dict.remove groupId model.summaryMutations }, Cmd.none, [] )
+
+                    else
+                        runSummaryOperation config groupId { mutation | inFlight = mutation.desired } model
+                            |> (\( nextModel, cmd ) -> ( nextModel, cmd, [] ))
+
+                DeleteGroup _ memberRootId ->
+                    case response of
+                        ConcurrentTask.Success _ ->
+                            finishGroupDeletion config groupId memberRootId { model | summaryMutations = Dict.remove groupId model.summaryMutations }
+
+                        _ ->
+                            ( { model | summaryMutations = Dict.remove groupId model.summaryMutations }
+                            , Cmd.none
+                            , [ ShowToast Toast.Error (T.toastGroupRemoveError config.i18n) ]
+                            )
+
+
+sameSummaryOperation : SummaryOperation -> SummaryOperation -> Bool
+sameSummaryOperation left right =
+    case ( left, right ) of
+        ( SaveSummary leftSummary, SaveSummary rightSummary ) ->
+            leftSummary == rightSummary
+
+        ( DeleteGroup leftId _, DeleteGroup rightId _ ) ->
+            leftId == rightId
+
+        _ ->
+            False
+
+
+finishGroupDeletion : UpdateConfig -> Group.Id -> Maybe Member.Id -> Model -> ( Model, Cmd Msg, List Output )
+finishGroupDeletion config groupId memberRootId model =
+    let
+        navigationOutputs : List Output
+        navigationOutputs =
+            if routeTargetsGroup groupId config.route then
+                [ NavigateTo Home ]
+
+            else
+                []
+    in
+    ( removeDeletedWorkspace groupId config.route model
+    , Cmd.none
+    , [ RemoveGroup groupId memberRootId
+      , ShowToast Toast.Success (T.toastGroupRemoved config.i18n)
+      ]
+        ++ navigationOutputs
+    )
 
 
 removeDeletedWorkspace : Group.Id -> Route -> Model -> Model

@@ -448,10 +448,7 @@ migrateGroup ctx onComplete order selection loaded =
                             newSummary =
                                 GroupState.summarize ctx.identity.publicKeyHash newId ctx.currentTime (GroupState.applyEvents verified GroupState.empty)
                         in
-                        ConcurrentTask.batch
-                            [ Storage.saveGroup ctx.db newSummary (Just (Symmetric.exportKey key)) Storage.Unpushed verified Nothing
-                            , Storage.saveGroupSummary ctx.db oldSummary |> ConcurrentTask.map (\_ -> ())
-                            ]
+                        Storage.saveGroup ctx.db newSummary (Just (Symmetric.exportKey key)) Storage.Unpushed verified Nothing
                             |> ConcurrentTask.map (\_ -> { newSummary = newSummary, oldSummary = oldSummary })
                     )
     in
