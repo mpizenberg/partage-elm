@@ -228,6 +228,7 @@ type alias NotificationMutation =
 
 type NotificationIntent
     = PersistNotification Bool Group.Summary
+    | UnsubscribeBestEffort
 
 
 type PendingEntry
@@ -340,8 +341,7 @@ type Output
     = NavigateTo Route
     | ShowToast Toast.ToastLevel String
     | UpdateGroupSummary Group.Summary
-    | RemoveGroup Group.Id (Maybe Member.Id)
-    | UnsubscribeGroupNotification Group.Id Member.Id
+    | RemoveGroup Group.Id
     | LogError ErrorLog.Source ErrorLog.Severity String
     | SaveSelfProfile Member.Metadata
 
@@ -2154,20 +2154,25 @@ toggleArchiveGroup config model loaded =
                 { model | workspace = WorkspaceLoaded { loaded | summary = updatedSummary } }
     in
     if archiving then
-        ( savedModel.runner, saveCmd )
+        let
+            shouldUnsubscribe : Bool
+            shouldUnsubscribe =
+                loaded.summary.isSubscribed || Dict.member loaded.summary.id model.notificationMutations
+
+            ( notificationModel, notificationCmd ) =
+                case ( shouldUnsubscribe, currentUserRootId model loaded ) of
+                    ( True, Just rootId ) ->
+                        requestNotification config updatedSummary.id rootId UnsubscribeBestEffort savedModel
+
+                    _ ->
+                        ( savedModel, Cmd.none )
+        in
+        ( notificationModel.runner, Cmd.batch [ saveCmd, notificationCmd ] )
             |> Runner.andRun (\_ -> NoOp) (Server.unsubscribeFromGroup updatedSummary.id)
             |> (\( r, cmd ) ->
-                    ( { savedModel | runner = r }
+                    ( { notificationModel | runner = r }
                     , cmd
-                    , UpdateGroupSummary updatedSummary
-                        :: NavigateTo Home
-                        :: (case ( loaded.summary.isSubscribed, currentUserRootId model loaded ) of
-                                ( True, Just rootId ) ->
-                                    [ UnsubscribeGroupNotification updatedSummary.id rootId ]
-
-                                _ ->
-                                    []
-                           )
+                    , [ UpdateGroupSummary updatedSummary, NavigateTo Home ]
                     )
                )
 
@@ -2213,10 +2218,20 @@ toggleGroupNotification config model loaded memberRootId =
 
 requestNotification : UpdateConfig -> Group.Id -> Member.Id -> NotificationIntent -> Model -> ( Model, Cmd Msg )
 requestNotification config groupId memberRootId intent model =
-    case ( config.pushServerUrl, config.pushSubscription ) of
-        ( Just pushServerUrl, Just pushSubscription ) ->
-            case Dict.get groupId model.notificationMutations of
-                Nothing ->
+    case Dict.get groupId model.notificationMutations of
+        Just mutation ->
+            ( { model
+                | notificationMutations =
+                    Dict.insert groupId
+                        { mutation | memberRootId = memberRootId, desired = intent }
+                        model.notificationMutations
+              }
+            , Cmd.none
+            )
+
+        Nothing ->
+            case ( config.pushServerUrl, config.pushSubscription ) of
+                ( Just pushServerUrl, Just pushSubscription ) ->
                     runNotificationRequest pushServerUrl
                         pushSubscription
                         groupId
@@ -2226,18 +2241,8 @@ requestNotification config groupId memberRootId intent model =
                         }
                         model
 
-                Just mutation ->
-                    ( { model
-                        | notificationMutations =
-                            Dict.insert groupId
-                                { mutation | memberRootId = memberRootId, desired = intent }
-                                model.notificationMutations
-                      }
-                    , Cmd.none
-                    )
-
-        _ ->
-            ( model, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
 
 
 runNotificationRequest : String -> Json.Encode.Value -> Group.Id -> NotificationMutation -> Model -> ( Model, Cmd Msg )
@@ -2295,6 +2300,9 @@ finishNotificationMutation config groupId attempted response model =
                         , case mutation.desired of
                             PersistNotification _ _ ->
                                 [ ShowToast Toast.Error (T.toastPushError config.i18n) ]
+
+                            UnsubscribeBestEffort ->
+                                []
                         )
 
 
@@ -2321,12 +2329,21 @@ completeNotificationMutation config groupId intent model =
                 (updateLoadedSummary updatedSummary completedModel)
                 |> (\( savedModel, cmd ) -> ( savedModel, cmd, [] ))
 
+        UnsubscribeBestEffort ->
+            ( { model | notificationMutations = Dict.remove groupId model.notificationMutations }
+            , Cmd.none
+            , []
+            )
+
 
 notificationTarget : NotificationIntent -> Bool
 notificationTarget intent =
     case intent of
         PersistNotification isSubscribed _ ->
             isSubscribed
+
+        UnsubscribeBestEffort ->
+            False
 
 
 workspaceSummaryFor : Group.Id -> Model -> Maybe Group.Summary
@@ -2506,6 +2523,14 @@ sameSummaryOperation left right =
 finishGroupDeletion : UpdateConfig -> Group.Id -> Maybe Member.Id -> Model -> ( Model, Cmd Msg, List Output )
 finishGroupDeletion config groupId memberRootId model =
     let
+        ( notificationModel, notificationCmd ) =
+            case memberRootId of
+                Just rootId ->
+                    requestNotification config groupId rootId UnsubscribeBestEffort model
+
+                Nothing ->
+                    ( model, Cmd.none )
+
         navigationOutputs : List Output
         navigationOutputs =
             if routeTargetsGroup groupId config.route then
@@ -2514,9 +2539,9 @@ finishGroupDeletion config groupId memberRootId model =
             else
                 []
     in
-    ( removeDeletedWorkspace groupId config.route model
-    , Cmd.none
-    , [ RemoveGroup groupId memberRootId
+    ( removeDeletedWorkspace groupId config.route notificationModel
+    , notificationCmd
+    , [ RemoveGroup groupId
       , ShowToast Toast.Success (T.toastGroupRemoved config.i18n)
       ]
         ++ navigationOutputs

@@ -397,52 +397,12 @@ processGroupOutputs model groupCmd outputs =
                                 _ ->
                                     ( m, cmds )
 
-                        Page.Group.RemoveGroup groupId memberRootId ->
+                        Page.Group.RemoveGroup groupId ->
                             case m.appState of
                                 Ready readyData ->
-                                    let
-                                        removedModel : Model
-                                        removedModel =
-                                            { m | appState = Ready { readyData | groups = Dict.remove groupId readyData.groups } }
-                                    in
-                                    case ( m.pushServerUrl, m.pwaState.pushSubscription, memberRootId ) of
-                                        ( Just pushServerUrl, Just subscription, Just rootId ) ->
-                                            let
-                                                ( runner, unsubCmd ) =
-                                                    ( m.runner, Cmd.none )
-                                                        |> Runner.andRun (always NoOp)
-                                                            (PushServer.unsubscribeFromGroup
-                                                                { pushServerUrl = pushServerUrl
-                                                                , subscription = subscription
-                                                                , groupId = groupId
-                                                                , memberRootId = rootId
-                                                                }
-                                                            )
-                                            in
-                                            ( { removedModel | runner = runner }, unsubCmd :: cmds )
-
-                                        _ ->
-                                            ( removedModel, cmds )
-
-                                _ ->
-                                    ( m, cmds )
-
-                        Page.Group.UnsubscribeGroupNotification groupId memberRootId ->
-                            case ( m.pushServerUrl, m.pwaState.pushSubscription ) of
-                                ( Just pushServerUrl, Just subscription ) ->
-                                    let
-                                        ( runner, unsubCmd ) =
-                                            ( m.runner, Cmd.none )
-                                                |> Runner.andRun (always NoOp)
-                                                    (PushServer.unsubscribeFromGroup
-                                                        { pushServerUrl = pushServerUrl
-                                                        , subscription = subscription
-                                                        , groupId = groupId
-                                                        , memberRootId = memberRootId
-                                                        }
-                                                    )
-                                    in
-                                    ( { m | runner = runner }, unsubCmd :: cmds )
+                                    ( { m | appState = Ready { readyData | groups = Dict.remove groupId readyData.groups } }
+                                    , cmds
+                                    )
 
                                 _ ->
                                     ( m, cmds )

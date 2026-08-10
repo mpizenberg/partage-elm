@@ -1,4 +1,4 @@
-module Infra.PushServer exposing (Error, NotifyContext, fetchVapidKey, notificationKey, notificationTranslations, notifyAffectedMembers, setGroupNotification, templates, unsubscribeFromGroup)
+module Infra.PushServer exposing (Error, NotifyContext, fetchVapidKey, notificationKey, notificationTranslations, notifyAffectedMembers, setGroupNotification, templates)
 
 {-| HTTP wrappers for push notification server communication.
 
@@ -60,13 +60,6 @@ setGroupNotification { pushServerUrl, groupId, subscription, memberRootId, isSub
 
     else
         unregister pushServerUrl { topic = topic, subscription = subscription }
-
-
-{-| Unsubscribe from a group's push notification topic.
--}
-unsubscribeFromGroup : { pushServerUrl : String, subscription : Encode.Value, groupId : String, memberRootId : Member.Id } -> ConcurrentTask Error ()
-unsubscribeFromGroup { pushServerUrl, subscription, groupId, memberRootId } =
-    unregister pushServerUrl { topic = groupId ++ "-" ++ memberRootId, subscription = subscription }
 
 
 {-| Context for sending push notifications after sync.
