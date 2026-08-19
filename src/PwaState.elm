@@ -332,8 +332,16 @@ handleEvent pwaOut event model =
             in
             ( newModel, Cmd.none, registerTopics newModel )
 
-        Pwa.PushSubscriptionError _ ->
-            ( model, Cmd.none, [ ShowToastError, LogError ErrorLog.PushSource ErrorLog.Err "Push subscription error" ] )
+        Pwa.PushSubscriptionError error ->
+            -- The browser's reason is the only thing that distinguishes a denied
+            -- permission from an unreachable push service, and the log is where
+            -- it can still be read after the toast is gone.
+            ( model
+            , Cmd.none
+            , [ ShowToastError
+              , LogError ErrorLog.PushSource ErrorLog.Err ("Push subscription error: " ++ error)
+              ]
+            )
 
         Pwa.PushUnsubscribed ->
             ( { model | pushSubscription = Nothing }, Cmd.none, [] )
