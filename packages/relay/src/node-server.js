@@ -13,7 +13,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { createNodeWebSocket } from '@hono/node-ws';
 import { createApp, verifyGroupSecret } from './app.js';
 
-export function startServer({ storage, powSecret, port = 8090, staticDir, adminSecret, adminStorageBudgetBytes }) {
+export function startServer({ storage, powSecret, port = 8090, staticDir, adminSecret, adminStorageBudgetBytes, pushServerUrl }) {
   const topics = new Map();
 
   const app = createApp({
@@ -21,6 +21,7 @@ export function startServer({ storage, powSecret, port = 8090, staticDir, adminS
     powSecret,
     adminSecret,
     adminStorageBudgetBytes,
+    pushServerUrl,
     onAppend(groupId, seq) {
       const sockets = topics.get(groupId);
       if (sockets) {

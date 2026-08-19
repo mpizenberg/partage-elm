@@ -408,6 +408,20 @@ describe('health probe', () => {
   });
 });
 
+describe('deployment config', () => {
+  it('serves the configured push server url', async () => {
+    const { app } = makeApp({ pushServerUrl: 'https://push.example.com' });
+    const res = await app.request('/api/config');
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { pushServerUrl: 'https://push.example.com' });
+  });
+
+  it('serves an empty push server url when the deployment ships without push', async () => {
+    const { app } = makeApp();
+    assert.deepEqual(await (await app.request('/api/config')).json(), { pushServerUrl: '' });
+  });
+});
+
 describe('inactivity retention', () => {
   it('stamps last_access at group creation', async () => {
     const { app, storage } = makeApp();

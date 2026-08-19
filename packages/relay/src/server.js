@@ -11,6 +11,8 @@
  *                the endpoint is absent unless set).
  * - ADMIN_STORAGE_BUDGET_BYTES  Flags the storage-over-budget alert when total
  *                bytes exceed it (optional).
+ * - PUSH_SERVER_URL  Push service the frontend addresses, served to it at
+ *                runtime via /api/config (optional; unset ships without push).
  * - --dev        Development mode: allows a default POW_SECRET.
  */
 
@@ -61,6 +63,7 @@ const { url, close } = await startServer({
   adminStorageBudgetBytes: process.env.ADMIN_STORAGE_BUDGET_BYTES
     ? Number(process.env.ADMIN_STORAGE_BUDGET_BYTES)
     : null,
+  pushServerUrl: process.env.PUSH_SERVER_URL ?? '',
 });
 
 dailyMaintenance();

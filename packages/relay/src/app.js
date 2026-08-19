@@ -246,6 +246,7 @@ export function createApp({
   pullPageBytes = PULL_PAGE_BYTES,
   adminSecret = null,
   adminStorageBudgetBytes = null,
+  pushServerUrl = '',
 }) {
   const app = new Hono();
   const bump = (name, amount = 1) => storage.bumpMetric(name, new Date().toISOString().slice(0, 10), amount);
@@ -265,6 +266,12 @@ export function createApp({
   // single process over embedded SQLite opened at startup, so a process that
   // accepts requests is also ready to serve them.
   app.get('/health', (c) => c.json({ status: 'ok' }));
+
+  // Deployment configuration the frontend cannot know at build time. Serving it
+  // from the running process is what lets an operator repoint a container at
+  // another push server without rebuilding the image. An empty URL means the
+  // deployment ships without push.
+  app.get('/api/config', (c) => c.json({ pushServerUrl }));
 
   app.get('/api/pow/challenge', async (c) => {
     const groupId = c.req.query('groupId') ?? '';
