@@ -64,6 +64,9 @@ real.
       locally (or a payload the service worker cannot decrypt) shows the
       constant "Partage / New activity · Nouvelle activité" fallback, never the
       raw payload and never nothing.
+- [ ] **Legacy topic migration.** Opening a group that was subscribed before
+      the blinded-topic release re-registers it silently; a subsequent action by
+      another member still delivers a notification.
 - [ ] **Unavailable state.** With the push server unreachable, enabling shows the
       unavailable message instead of doing nothing (RR-006).
 - [ ] **Push disabled build.** With `PUSH_SERVER_URL` unset, the home control and

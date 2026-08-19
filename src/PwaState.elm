@@ -93,6 +93,7 @@ type OutMsg
     = ShowToastError
     | NavigateToUrl String
     | CameOnline
+    | PushSubscriptionChanged Json.Encode.Value
     | LogError ErrorLog.Source ErrorLog.Severity String
 
 
@@ -236,7 +237,7 @@ handleEvent pwaOut event model =
                     ( newModel, Cmd.none, [] )
 
         Pwa.PushSubscription sub ->
-            ( { model | pushSubscription = Just sub }, Cmd.none, [] )
+            ( { model | pushSubscription = Just sub }, Cmd.none, [ PushSubscriptionChanged sub ] )
 
         Pwa.PushSubscriptionError _ ->
             ( model, Cmd.none, [ ShowToastError, LogError ErrorLog.PushSource ErrorLog.Err "Push subscription error" ] )

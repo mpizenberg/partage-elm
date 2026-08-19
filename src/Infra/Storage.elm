@@ -3,14 +3,17 @@ module Infra.Storage exposing
     , PushState(..)
     , deleteExchangeRates
     , deleteGroup
+    , deleteNotifyTopic
     , errorToString
     , errorToText
     , exchangeRateKeys
     , init
+    , loadAllNotifyTopics
     , loadExchangeRate
     , loadGroup
     , loadGroupEvents
     , loadGroupKey
+    , loadNotifyTopic
     , loadUsageStats
     , open
     , resetUsageStats
@@ -23,6 +26,7 @@ module Infra.Storage exposing
     , saveJoinedGroup
     , saveLanguage
     , saveNotificationTranslations
+    , saveNotifyTopic
     , saveSelfProfile
     , saveSuspicionDismissals
     , saveSyncCursor
@@ -64,7 +68,7 @@ type alias InitData =
 
 dbSchema : Idb.Schema
 dbSchema =
-    Idb.schema "partage" 9
+    Idb.schema "partage" 10
         |> Idb.withStore identityStore
         |> Idb.withStore groupsStore
         |> Idb.withStore groupKeysStore
@@ -74,6 +78,7 @@ dbSchema =
         |> Idb.withStore exchangeRatesStore
         |> Idb.withStore tamperSignalsStore
         |> Idb.withStore suspicionDismissalsStore
+        |> Idb.withStore notifyTopicsStore
 
 
 identityStore : Idb.Store Idb.ExplicitKey
@@ -127,6 +132,16 @@ tamperSignalsStore =
 suspicionDismissalsStore : Idb.Store Idb.ExplicitKey
 suspicionDismissalsStore =
     Idb.defineStore "suspicionDismissals"
+
+
+{-| Blinded push topics, keyed by group id. A record exists exactly while the
+group's notifications are subscribed; the value is the topic registered on the
+push server, kept so a fresh push subscription can re-register every
+subscribed group without loading any group's events.
+-}
+notifyTopicsStore : Idb.Store Idb.ExplicitKey
+notifyTopicsStore =
+    Idb.defineStore "notifyTopics"
 
 
 
@@ -187,6 +202,29 @@ Stored in the identity store under the "notificationTranslations" key.
 saveNotificationTranslations : Idb.Db -> Encode.Value -> ConcurrentTask Idb.Error ()
 saveNotificationTranslations db translations =
     Idb.putAt db identityStore (Idb.StringKey "notificationTranslations") translations
+
+
+saveNotifyTopic : Idb.Db -> Group.Id -> String -> ConcurrentTask Idb.Error ()
+saveNotifyTopic db groupId topic =
+    Idb.putAt db notifyTopicsStore (Idb.StringKey groupId) (Encode.string topic)
+
+
+loadNotifyTopic : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error (Maybe String)
+loadNotifyTopic db groupId =
+    Idb.get db notifyTopicsStore (Idb.StringKey groupId) Decode.string
+
+
+deleteNotifyTopic : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error ()
+deleteNotifyTopic db groupId =
+    Idb.delete db notifyTopicsStore (Idb.StringKey groupId)
+
+
+{-| Every subscribed group's registered push topic.
+-}
+loadAllNotifyTopics : Idb.Db -> ConcurrentTask Idb.Error (List String)
+loadAllNotifyTopics db =
+    Idb.getAll db notifyTopicsStore Decode.string
+        |> ConcurrentTask.map (List.map Tuple.second)
 
 
 {-| Save the user's local self profile (contact info and payment handles
@@ -412,6 +450,7 @@ deleteGroup db groupId =
                     , Idb.delete db syncCursorsStore (Idb.StringKey groupId)
                     , Idb.delete db tamperSignalsStore (Idb.StringKey groupId)
                     , Idb.delete db suspicionDismissalsStore (Idb.StringKey groupId)
+                    , Idb.delete db notifyTopicsStore (Idb.StringKey groupId)
                     , Idb.getKeysByIndex db eventsStore byGroupIdIndex (Idb.only (Idb.StringKey groupId))
                         |> ConcurrentTask.andThen (\keys -> Idb.deleteMany db eventsStore keys)
                     ]

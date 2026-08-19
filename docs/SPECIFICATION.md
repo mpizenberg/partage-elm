@@ -256,7 +256,9 @@ The response to confirmed compromise is migration to a new group and key. Migrat
 
 Push notifications are optional and use a separately configured external push service. The sending client determines affected members after a successful sync and excludes the actor.
 
-Notification content is end-to-end encrypted. Every cleartext field is constant across all notifications of all groups except the per-topic tag; the group name, actor display name, event description, amount, and target route travel only inside a blob encrypted with the group key and padded to fixed-size buckets. The recipient's service worker decrypts and localizes it; when it cannot, the device shows a constant generic fallback. Subscription topics still include opaque group and member identifiers, and the external notify endpoint is not authenticated by the Partage group bearer — but forging descriptive content requires the group key. Deployments without a configured push service hide notification controls.
+Notification content is end-to-end encrypted. Every cleartext field is constant across all notifications of all groups except the per-topic tag; the group name, actor display name, event description, amount, and target route travel only inside a blob encrypted with the group key and padded to fixed-size buckets. The recipient's service worker decrypts and localizes it; when it cannot, the device shows a constant generic fallback.
+
+Subscription topics are blinded: each is a domain-separated hash of the group key and one member root, so the push service sees only unlinkable identifiers — joinable neither to relay group ids nor to each other — carrying constant-size opaque payloads. Its residual knowledge is the subscription-to-endpoint mapping, the sender's address, and timing. The notify endpoint remains unauthenticated, but posting to a topic requires knowing it, and forging descriptive content requires the group key. Registered topics are re-registered whenever a fresh push subscription arrives, so a rotated push endpoint keeps delivering. Deployments without a configured push service hide notification controls.
 
 ## Progressive Web App, language, and accessibility
 

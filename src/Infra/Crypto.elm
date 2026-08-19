@@ -1,4 +1,4 @@
-module Infra.Crypto exposing (deriveAuthVerifier, deriveRelaySecret, generateGroupKey)
+module Infra.Crypto exposing (deriveAuthVerifier, deriveNotifyTopic, deriveRelaySecret, generateGroupKey)
 
 {-| Cryptographic helpers for group key management.
 -}
@@ -24,6 +24,19 @@ the relay, but never reveals the group key itself.
 deriveRelaySecret : Symmetric.Key -> ConcurrentTask WebCrypto.Error String
 deriveRelaySecret key =
     WebCrypto.sha256 (Symmetric.exportKey key)
+        |> ConcurrentTask.map hexToBase64Url
+
+
+{-| Derive the push topic for one member of a group:
+Base64URL(SHA-256("partage-notify-topic-v1" ++ Base64(groupKey) ++ memberRootId)).
+Sender and subscriber both hold the group key and the member root, so both
+compute the same opaque topic with no server round trip — and the push server
+sees only unlinkable 256-bit identifiers, joinable neither to the relay's
+group ids nor to each other.
+-}
+deriveNotifyTopic : Symmetric.Key -> String -> ConcurrentTask WebCrypto.Error String
+deriveNotifyTopic key memberRootId =
+    WebCrypto.sha256 ("partage-notify-topic-v1" ++ Symmetric.exportKey key ++ memberRootId)
         |> ConcurrentTask.map hexToBase64Url
 
 

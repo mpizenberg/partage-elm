@@ -53,6 +53,7 @@ import ErrorLog
 import GroupOps exposing (LoadedGroup)
 import IndexedDb as Idb
 import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
+import Infra.Crypto as Crypto
 import Infra.EventVerification as EventVerification
 import Infra.ExchangeRate as ExchangeRate
 import Infra.IdGen as IdGen
@@ -216,11 +217,12 @@ type alias SummaryMutation =
 type SummaryOperation
     = SaveSummary Group.Summary
     | SaveNotificationSummary Bool Group.Summary
-    | DeleteGroup Group.Id (Maybe Member.Id)
+    | DeleteGroup Group.Id (Maybe ( Symmetric.Key, Member.Id ))
 
 
 type alias NotificationMutation =
-    { memberRootId : Member.Id
+    { groupKey : Symmetric.Key
+    , memberRootId : Member.Id
     , inFlight : Bool
     , desired : NotificationIntent
     }
@@ -305,7 +307,7 @@ type
     | OnMemberActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnGroupMetadataActionSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | OnSummaryMutationCompleted Group.Id (ConcurrentTask.Response Idb.Error ())
-    | OnNotificationChanged Group.Id Bool (ConcurrentTask.Response PushServer.Error ())
+    | OnNotificationChanged Group.Id Bool (ConcurrentTask.Response () String)
     | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Group.SyncCursor, unpushedIds : Set String, tamperSignals : TamperSignals, suspicionDismissals : Set String })
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
     | OnServerGroupCreated Group.Id (ConcurrentTask.Response Server.Error ())
@@ -964,10 +966,13 @@ update config msg model =
                         ( initializedModel, initCmd ) =
                             initPagesIfNeeded config (routeToGroupView config.route) loadedModel
 
+                        ( migratedModel, migrateCmd ) =
+                            migrateLegacyNotifyTopic config initializedModel
+
                         ( syncModel, syncCmd ) =
-                            triggerSyncInternal config groupId initializedModel
+                            triggerSyncInternal config groupId migratedModel
                     in
-                    ( syncModel, Cmd.batch [ syncCmd, initCmd ], [] )
+                    ( syncModel, Cmd.batch [ syncCmd, initCmd, migrateCmd ], [] )
 
                 Nothing ->
                     ( model, Cmd.none, [] )
@@ -1998,7 +2003,6 @@ startSync config groupId model =
                             ( Just pushServerUrl, False, Just actorId ) ->
                                 Just
                                     { pushServerUrl = pushServerUrl
-                                    , groupId = groupId
                                     , groupName = loaded.groupState.groupMeta.name
                                     , actorRootId = actorId
                                     , actorName = GroupState.resolveMemberName loaded.groupState actorId
@@ -2163,7 +2167,7 @@ toggleArchiveGroup config model loaded =
             ( notificationModel, notificationCmd ) =
                 case ( shouldUnsubscribe, currentUserRootId model loaded ) of
                     ( True, Just rootId ) ->
-                        requestNotification config updatedSummary.id rootId UnsubscribeBestEffort savedModel
+                        requestNotification config updatedSummary.id ( loaded.groupKey, rootId ) UnsubscribeBestEffort savedModel
 
                     _ ->
                         ( savedModel, Cmd.none )
@@ -2193,7 +2197,7 @@ deleteGroup config model loaded =
             loaded.summary.id
 
         ( deletingModel, deleteCmd ) =
-            queueSummaryOperation config (DeleteGroup groupId (currentUserRootId model loaded)) model
+            queueSummaryOperation config (DeleteGroup groupId (currentUserRootId model loaded |> Maybe.map (Tuple.pair loaded.groupKey))) model
     in
     ( deletingModel.runner, deleteCmd )
         |> Runner.andRun (\_ -> NoOp) (Server.unsubscribeFromGroup groupId)
@@ -2213,18 +2217,18 @@ toggleGroupNotification config model loaded memberRootId =
         intent =
             PersistNotification (not currentDesired) loaded.summary
     in
-    requestNotification config loaded.summary.id memberRootId intent model
+    requestNotification config loaded.summary.id ( loaded.groupKey, memberRootId ) intent model
         |> (\( nextModel, cmd ) -> ( nextModel, cmd, [] ))
 
 
-requestNotification : UpdateConfig -> Group.Id -> Member.Id -> NotificationIntent -> Model -> ( Model, Cmd Msg )
-requestNotification config groupId memberRootId intent model =
+requestNotification : UpdateConfig -> Group.Id -> ( Symmetric.Key, Member.Id ) -> NotificationIntent -> Model -> ( Model, Cmd Msg )
+requestNotification config groupId ( groupKey, memberRootId ) intent model =
     case Dict.get groupId model.notificationMutations of
         Just mutation ->
             ( { model
                 | notificationMutations =
                     Dict.insert groupId
-                        { mutation | memberRootId = memberRootId, desired = intent }
+                        { mutation | groupKey = groupKey, memberRootId = memberRootId, desired = intent }
                         model.notificationMutations
               }
             , Cmd.none
@@ -2236,7 +2240,8 @@ requestNotification config groupId memberRootId intent model =
                     runNotificationRequest pushServerUrl
                         pushSubscription
                         groupId
-                        { memberRootId = memberRootId
+                        { groupKey = groupKey
+                        , memberRootId = memberRootId
                         , inFlight = notificationTarget intent
                         , desired = intent
                         }
@@ -2250,13 +2255,19 @@ runNotificationRequest : String -> Json.Encode.Value -> Group.Id -> Notification
 runNotificationRequest pushServerUrl pushSubscription groupId mutation model =
     ( model.runner, Cmd.none )
         |> Runner.andRun (OnNotificationChanged groupId mutation.inFlight)
-            (PushServer.setGroupNotification
-                { pushServerUrl = pushServerUrl
-                , groupId = groupId
-                , subscription = pushSubscription
-                , memberRootId = mutation.memberRootId
-                , isSubscribed = mutation.inFlight
-                }
+            (Crypto.deriveNotifyTopic mutation.groupKey mutation.memberRootId
+                |> ConcurrentTask.mapError (\_ -> ())
+                |> ConcurrentTask.andThen
+                    (\topic ->
+                        PushServer.setGroupNotification
+                            { pushServerUrl = pushServerUrl
+                            , topic = topic
+                            , subscription = pushSubscription
+                            , isSubscribed = mutation.inFlight
+                            }
+                            |> ConcurrentTask.mapError (\_ -> ())
+                            |> ConcurrentTask.map (\() -> topic)
+                    )
             )
         |> Tuple.mapFirst
             (\runner ->
@@ -2267,7 +2278,7 @@ runNotificationRequest pushServerUrl pushSubscription groupId mutation model =
             )
 
 
-finishNotificationMutation : UpdateConfig -> Group.Id -> Bool -> ConcurrentTask.Response PushServer.Error () -> Model -> ( Model, Cmd Msg, List Output )
+finishNotificationMutation : UpdateConfig -> Group.Id -> Bool -> ConcurrentTask.Response () String -> Model -> ( Model, Cmd Msg, List Output )
 finishNotificationMutation config groupId attempted response model =
     case Dict.get groupId model.notificationMutations of
         Nothing ->
@@ -2292,8 +2303,8 @@ finishNotificationMutation config groupId attempted response model =
 
             else
                 case response of
-                    ConcurrentTask.Success _ ->
-                        completeNotificationMutation config groupId mutation.desired model
+                    ConcurrentTask.Success topic ->
+                        completeNotificationMutation config groupId topic mutation.desired model
 
                     _ ->
                         ( { model | notificationMutations = Dict.remove groupId model.notificationMutations }
@@ -2307,8 +2318,8 @@ finishNotificationMutation config groupId attempted response model =
                         )
 
 
-completeNotificationMutation : UpdateConfig -> Group.Id -> NotificationIntent -> Model -> ( Model, Cmd Msg, List Output )
-completeNotificationMutation config groupId intent model =
+completeNotificationMutation : UpdateConfig -> Group.Id -> String -> NotificationIntent -> Model -> ( Model, Cmd Msg, List Output )
+completeNotificationMutation config groupId topic intent model =
     case intent of
         PersistNotification isSubscribed fallbackSummary ->
             let
@@ -2324,17 +2335,33 @@ completeNotificationMutation config groupId intent model =
                 updatedSummary : Group.Summary
                 updatedSummary =
                     { currentSummary | isSubscribed = isSubscribed }
+
+                topicRecordTask : ConcurrentTask Idb.Error ()
+                topicRecordTask =
+                    if isSubscribed then
+                        Storage.saveNotifyTopic config.db groupId topic
+
+                    else
+                        Storage.deleteNotifyTopic config.db groupId
             in
             queueSummaryOperation config
                 (SaveNotificationSummary currentSummary.isSubscribed updatedSummary)
                 (updateLoadedSummary updatedSummary completedModel)
-                |> (\( savedModel, cmd ) -> ( savedModel, cmd, [] ))
+                |> (\( savedModel, cmd ) ->
+                        ( savedModel.runner, cmd )
+                            |> Runner.andRun (\_ -> NoOp) topicRecordTask
+                            |> (\( runner, cmds ) -> ( { savedModel | runner = runner }, cmds, [] ))
+                   )
 
         UnsubscribeBestEffort ->
-            ( { model | notificationMutations = Dict.remove groupId model.notificationMutations }
-            , Cmd.none
-            , []
-            )
+            ( model.runner, Cmd.none )
+                |> Runner.andRun (\_ -> NoOp) (Storage.deleteNotifyTopic config.db groupId)
+                |> (\( runner, cmd ) ->
+                        ( { model | notificationMutations = Dict.remove groupId model.notificationMutations, runner = runner }
+                        , cmd
+                        , []
+                        )
+                   )
 
 
 notificationTarget : NotificationIntent -> Bool
@@ -2450,10 +2477,10 @@ finishSummaryMutation config groupId response model =
                 SaveNotificationSummary previousSubscription summary ->
                     finishNotificationSummarySave config groupId previousSubscription summary response mutation model
 
-                DeleteGroup _ memberRootId ->
+                DeleteGroup _ keyAndRoot ->
                     case response of
                         ConcurrentTask.Success _ ->
-                            finishGroupDeletion config groupId memberRootId { model | summaryMutations = Dict.remove groupId model.summaryMutations }
+                            finishGroupDeletion config groupId keyAndRoot { model | summaryMutations = Dict.remove groupId model.summaryMutations }
 
                         _ ->
                             ( { model | summaryMutations = Dict.remove groupId model.summaryMutations }
@@ -2521,13 +2548,13 @@ sameSummaryOperation left right =
             False
 
 
-finishGroupDeletion : UpdateConfig -> Group.Id -> Maybe Member.Id -> Model -> ( Model, Cmd Msg, List Output )
-finishGroupDeletion config groupId memberRootId model =
+finishGroupDeletion : UpdateConfig -> Group.Id -> Maybe ( Symmetric.Key, Member.Id ) -> Model -> ( Model, Cmd Msg, List Output )
+finishGroupDeletion config groupId keyAndRoot model =
     let
         ( notificationModel, notificationCmd ) =
-            case memberRootId of
-                Just rootId ->
-                    requestNotification config groupId rootId UnsubscribeBestEffort model
+            case keyAndRoot of
+                Just keyRoot ->
+                    requestNotification config groupId keyRoot UnsubscribeBestEffort model
 
                 Nothing ->
                     ( model, Cmd.none )
@@ -2547,6 +2574,73 @@ finishGroupDeletion config groupId memberRootId model =
       ]
         ++ navigationOutputs
     )
+
+
+{-| One-shot migration to blinded topics: a subscribed group with no stored
+topic still holds a legacy `groupId-memberRootId` subscription on the push
+server. Derive and register the blinded topic, drop the legacy one, and record
+the topic so a fresh push subscription can re-register it. Best-effort and
+retried on every group load until it lands. Delete this in the release after
+blinded topics ship.
+-}
+migrateLegacyNotifyTopic : UpdateConfig -> Model -> ( Model, Cmd Msg )
+migrateLegacyNotifyTopic config model =
+    case ( model.workspace, config.pushServerUrl, config.pushSubscription ) of
+        ( WorkspaceLoaded loaded, Just pushServerUrl, Just pushSubscription ) ->
+            case ( loaded.summary.isSubscribed, currentUserRootId model loaded ) of
+                ( True, Just rootId ) ->
+                    let
+                        registerBlinded : ConcurrentTask () ()
+                        registerBlinded =
+                            Crypto.deriveNotifyTopic loaded.groupKey rootId
+                                |> ConcurrentTask.mapError (\_ -> ())
+                                |> ConcurrentTask.andThen
+                                    (\topic ->
+                                        PushServer.setGroupNotification
+                                            { pushServerUrl = pushServerUrl
+                                            , topic = topic
+                                            , subscription = pushSubscription
+                                            , isSubscribed = True
+                                            }
+                                            |> ConcurrentTask.andThenDo
+                                                (PushServer.setGroupNotification
+                                                    { pushServerUrl = pushServerUrl
+                                                    , topic = loaded.summary.id ++ "-" ++ rootId
+                                                    , subscription = pushSubscription
+                                                    , isSubscribed = False
+                                                    }
+                                                )
+                                            |> ConcurrentTask.mapError (\_ -> ())
+                                            |> ConcurrentTask.andThenDo
+                                                (Storage.saveNotifyTopic config.db loaded.summary.id topic
+                                                    |> ConcurrentTask.mapError (\_ -> ())
+                                                )
+                                    )
+
+                        migrationTask : ConcurrentTask x ()
+                        migrationTask =
+                            Storage.loadNotifyTopic config.db loaded.summary.id
+                                |> ConcurrentTask.mapError (\_ -> ())
+                                |> ConcurrentTask.andThen
+                                    (\existing ->
+                                        case existing of
+                                            Just _ ->
+                                                ConcurrentTask.succeed ()
+
+                                            Nothing ->
+                                                registerBlinded
+                                    )
+                                |> ConcurrentTask.onError (\() -> ConcurrentTask.succeed ())
+                    in
+                    ( model.runner, Cmd.none )
+                        |> Runner.andRun (\_ -> NoOp) migrationTask
+                        |> Tuple.mapFirst (\runner -> { model | runner = runner })
+
+                _ ->
+                    ( model, Cmd.none )
+
+        _ ->
+            ( model, Cmd.none )
 
 
 removeDeletedWorkspace : Group.Id -> Route -> Model -> Model

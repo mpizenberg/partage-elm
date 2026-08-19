@@ -1566,6 +1566,38 @@ processPwaOutMsgs model pwaCmd outMsgs =
                         PwaState.LogError source severity message ->
                             ( logError source severity message m, cmds )
 
+                        PwaState.PushSubscriptionChanged subscription ->
+                            case ( m.appState, m.pushServerUrl ) of
+                                ( Ready readyData, Just pushServerUrl ) ->
+                                    -- A fresh subscription may carry a rotated endpoint,
+                                    -- so re-register every subscribed group's topic.
+                                    ( m.runner, Cmd.none )
+                                        |> Runner.andRun (\_ -> NoOp)
+                                            (Storage.loadAllNotifyTopics readyData.db
+                                                |> ConcurrentTask.mapError (\_ -> ())
+                                                |> ConcurrentTask.andThen
+                                                    (\topics ->
+                                                        topics
+                                                            |> List.map
+                                                                (\topic ->
+                                                                    PushServer.setGroupNotification
+                                                                        { pushServerUrl = pushServerUrl
+                                                                        , topic = topic
+                                                                        , subscription = subscription
+                                                                        , isSubscribed = True
+                                                                        }
+                                                                        |> ConcurrentTask.mapError (\_ -> ())
+                                                                )
+                                                            |> ConcurrentTask.batch
+                                                            |> ConcurrentTask.map (\_ -> ())
+                                                    )
+                                                |> ConcurrentTask.onError (\() -> ConcurrentTask.succeed ())
+                                            )
+                                        |> (\( runner, cmd ) -> ( { m | runner = runner }, cmd :: cmds ))
+
+                                _ ->
+                                    ( m, cmds )
+
                         PwaState.CameOnline ->
                             case buildGroupConfig m of
                                 Just config ->

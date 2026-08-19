@@ -26,9 +26,9 @@ import ConcurrentTask.Http as Http
 import Domain.Activity as Activity
 import Domain.Currency as Currency
 import Domain.Event as Event
-import Domain.Group as Group
 import Domain.Member as Member
 import Format
+import Infra.Crypto as Crypto
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Set
@@ -52,23 +52,19 @@ fetchVapidKey pushServerUrl =
         }
 
 
-{-| Set a group's remote push notification subscription to an absolute state.
-Local summary persistence is owned by the caller so stale requests cannot write.
+{-| Set a topic's remote push notification subscription to an absolute state.
+The topic is opaque here: callers derive it with `Infra.Crypto.deriveNotifyTopic`,
+so this module never sees group or member identifiers. Local persistence is
+owned by the caller so stale requests cannot write.
 -}
 setGroupNotification :
     { pushServerUrl : String
-    , groupId : Group.Id
+    , topic : String
     , subscription : Encode.Value
-    , memberRootId : Member.Id
     , isSubscribed : Bool
     }
     -> ConcurrentTask Error ()
-setGroupNotification { pushServerUrl, groupId, subscription, memberRootId, isSubscribed } =
-    let
-        topic : String
-        topic =
-            groupId ++ "-" ++ memberRootId
-    in
+setGroupNotification { pushServerUrl, topic, subscription, isSubscribed } =
     if isSubscribed then
         register pushServerUrl { topic = topic, subscription = subscription }
 
@@ -81,7 +77,6 @@ Only provided when there are events to push.
 -}
 type alias NotifyContext =
     { pushServerUrl : String
-    , groupId : String
     , groupName : String
     , actorRootId : Member.Id
     , actorName : String
@@ -119,11 +114,16 @@ notifyAffectedMembers ctx events =
                     affectedIds
                         |> List.map
                             (\memberId ->
-                                notifyTopic ctx.pushServerUrl (ctx.groupId ++ "-" ++ memberId) encrypted
+                                Crypto.deriveNotifyTopic ctx.groupKey memberId
+                                    |> ConcurrentTask.mapError (\_ -> ())
+                                    |> ConcurrentTask.andThen
+                                        (\topic ->
+                                            notifyTopic ctx.pushServerUrl topic encrypted
+                                                |> ConcurrentTask.mapError (\_ -> ())
+                                        )
                             )
                         |> ConcurrentTask.batch
                         |> ConcurrentTask.map (\_ -> ())
-                        |> ConcurrentTask.mapError (\_ -> ())
                 )
             |> ConcurrentTask.onError (\() -> ConcurrentTask.succeed ())
 
