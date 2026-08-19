@@ -991,6 +991,7 @@ update config msg model =
                             result : GroupOps.SyncApplyResult
                             result =
                                 GroupOps.applySyncResult config.currentTime pushedIds syncResult loaded
+                                    |> markUnseenEvents model
 
                             ( runner, taskCmds ) =
                                 ( model.runner, Cmd.none )
@@ -2893,6 +2894,82 @@ memberEntryFormConfig config userRootId loaded =
     }
 
 
+{-| Record which pulled events the viewer's member root did not author, for
+the visit's new-activity marks. Root-level comparison, so the viewer's other
+devices do not mark; a viewer with no member (read-only) marks everything.
+-}
+markUnseenEvents : Model -> GroupOps.SyncApplyResult -> GroupOps.SyncApplyResult
+markUnseenEvents model result =
+    let
+        group : LoadedGroup
+        group =
+            result.updatedGroup
+
+        viewerRoot : Maybe Member.Id
+        viewerRoot =
+            currentUserRootId model group
+
+        foreignIds : List String
+        foreignIds =
+            result.newEvents
+                |> List.filter
+                    (\e ->
+                        viewerRoot
+                            == Nothing
+                            || GroupState.resolveMemberRootId group.groupState e.triggeredBy
+                            /= viewerRoot
+                    )
+                |> List.map .id
+    in
+    if List.isEmpty foreignIds then
+        result
+
+    else
+        { result
+            | updatedGroup =
+                { group | unseenEventIds = Set.union group.unseenEventIds (Set.fromList foreignIds) }
+        }
+
+
+{-| Per-entry freshness for the entries tab, derived from the visit's unseen
+events. An entry both added and edited since entry counts as added.
+-}
+entryFreshness : LoadedGroup -> Entry.Id -> Maybe Page.Group.EntriesTab.Freshness
+entryFreshness loaded =
+    let
+        freshnessDict : Dict Entry.Id Page.Group.EntriesTab.Freshness
+        freshnessDict =
+            List.foldl
+                (\envelope acc ->
+                    if Set.member envelope.id loaded.unseenEventIds then
+                        case envelope.payload of
+                            Event.EntryAdded entry ->
+                                Dict.insert entry.meta.rootId Page.Group.EntriesTab.FreshlyAdded acc
+
+                            Event.EntryModified entry ->
+                                Dict.update entry.meta.rootId
+                                    (\existing ->
+                                        case existing of
+                                            Just Page.Group.EntriesTab.FreshlyAdded ->
+                                                existing
+
+                                            _ ->
+                                                Just Page.Group.EntriesTab.FreshlyEdited
+                                    )
+                                    acc
+
+                            _ ->
+                                acc
+
+                    else
+                        acc
+                )
+                Dict.empty
+                loaded.events
+    in
+    \entryId -> Dict.get entryId freshnessDict
+
+
 {-| Resolve the current user's member root ID within a loaded group.
 Returns Nothing if the user is not a member of this group.
 -}
@@ -3378,6 +3455,7 @@ tabContent config maybeUserRootId loaded model =
                 , newEntryHref = Route.toPath (GroupRoute loaded.summary.id NewEntry)
                 , entryLinkHref = \entryId -> config.origin ++ Route.toPath (GroupRoute loaded.summary.id (HighlightEntry entryId))
                 , toMsg = config.toMsg << EntriesTabMsg
+                , freshness = entryFreshness loaded
                 }
                 maybeUserRootId
                 config.today
@@ -3439,6 +3517,7 @@ tabContent config maybeUserRootId loaded model =
                 , toMsg = config.toMsg << ActivityTabMsg
                 , allMembers = allMembers
                 , timeZone = config.timeZone
+                , unseenEventIds = loaded.unseenEventIds
                 }
                 model.activityTabModel
                 loaded.groupState.activities

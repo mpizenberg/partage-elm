@@ -1,4 +1,4 @@
-module Page.Group.EntriesTab exposing (Config, Model, Msg, Output(..), init, initWithHighlight, update, view)
+module Page.Group.EntriesTab exposing (Config, Freshness(..), Model, Msg, Output(..), init, initWithHighlight, update, view)
 
 {-| Entries tab showing expense and transfer cards with filtering
 and inline expandable entry details.
@@ -75,7 +75,15 @@ type alias Config msg =
     , newEntryHref : String
     , entryLinkHref : Entry.Id -> String
     , toMsg : Msg -> msg
+    , freshness : Entry.Id -> Maybe Freshness
     }
+
+
+{-| Whether an entry was added or edited by someone else during this visit.
+-}
+type Freshness
+    = FreshlyAdded
+    | FreshlyEdited
 
 
 init : Model
@@ -366,7 +374,7 @@ view i18n config maybeUserRootId today (Model data) state =
 
           else
             Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
-                (groupedByDate i18n groupDefaultCurrency (maybeUserRootId /= Nothing) resolveName config.entryLinkHref data.expandedEntries data.confirmingAction visibleEntries)
+                (groupedByDate i18n groupDefaultCurrency (maybeUserRootId /= Nothing) resolveName config.entryLinkHref data.expandedEntries data.confirmingAction config.freshness visibleEntries)
                 |> Ui.map toMsg
         ]
 
@@ -686,8 +694,8 @@ dateFilterSection i18n activeRanges =
 -- DATE GROUPING
 
 
-groupedByDate : I18n -> Currency.Currency -> Bool -> (Member.Id -> String) -> (Entry.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> List { entry : Entry.Entry, isDeleted : Bool } -> List (Ui.Element Msg)
-groupedByDate i18n groupDefaultCurrency isMember resolveName entryLinkHref expandedEntries confirmingAction entries =
+groupedByDate : I18n -> Currency.Currency -> Bool -> (Member.Id -> String) -> (Entry.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> (Entry.Id -> Maybe Freshness) -> List { entry : Entry.Entry, isDeleted : Bool } -> List (Ui.Element Msg)
+groupedByDate i18n groupDefaultCurrency isMember resolveName entryLinkHref expandedEntries confirmingAction freshnessOf entries =
     let
         getDate : Entry.Entry -> Date
         getDate entry =
@@ -710,7 +718,7 @@ groupedByDate i18n groupDefaultCurrency isMember resolveName entryLinkHref expan
         |> List.concatMap
             (\( date, group ) ->
                 dateSeparator i18n date
-                    :: List.map (entryCardView i18n groupDefaultCurrency isMember resolveName entryLinkHref expandedEntries confirmingAction) group
+                    :: List.map (entryCardView i18n groupDefaultCurrency isMember resolveName entryLinkHref expandedEntries confirmingAction freshnessOf) group
             )
 
 
@@ -730,8 +738,8 @@ dateSeparator i18n date =
 -- ENTRY CARD
 
 
-entryCardView : I18n -> Currency.Currency -> Bool -> (Member.Id -> String) -> (Entry.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> { entry : Entry.Entry, isDeleted : Bool } -> Ui.Element Msg
-entryCardView i18n groupDefaultCurrency isMember resolveName entryLinkHref expandedEntries confirmingAction { entry, isDeleted } =
+entryCardView : I18n -> Currency.Currency -> Bool -> (Member.Id -> String) -> (Entry.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> (Entry.Id -> Maybe Freshness) -> { entry : Entry.Entry, isDeleted : Bool } -> Ui.Element Msg
+entryCardView i18n groupDefaultCurrency isMember resolveName entryLinkHref expandedEntries confirmingAction freshnessOf { entry, isDeleted } =
     let
         entryId : Entry.Id
         entryId =
@@ -740,6 +748,22 @@ entryCardView i18n groupDefaultCurrency isMember resolveName entryLinkHref expan
         isExpanded : Bool
         isExpanded =
             Set.member entryId expandedEntries
+
+        freshnessAttrs : List (Ui.Attribute Msg)
+        freshnessAttrs =
+            case freshnessOf entryId of
+                Just FreshlyAdded ->
+                    [ Ui.borderWith { left = 4, top = Theme.border, right = Theme.border, bottom = Theme.border }
+                    , Ui.borderColor Theme.primary.solid
+                    ]
+
+                Just FreshlyEdited ->
+                    [ Ui.borderWith { left = 4, top = Theme.border, right = Theme.border, bottom = Theme.border }
+                    , Ui.borderColor Theme.warning.solid
+                    ]
+
+                Nothing ->
+                    []
 
         headerEl : Ui.Element Msg
         headerEl =
@@ -756,9 +780,10 @@ entryCardView i18n groupDefaultCurrency isMember resolveName entryLinkHref expan
         cardEl : Ui.Element Msg
         cardEl =
             UI.Components.card
-                [ Ui.paddingXY Theme.spacing.lg Theme.spacing.md
-                , Ui.id (entryDomId entryId)
-                ]
+                (Ui.paddingXY Theme.spacing.lg Theme.spacing.md
+                    :: Ui.id (entryDomId entryId)
+                    :: freshnessAttrs
+                )
                 [ Ui.el [ Ui.Input.button (ToggleEntry entryId), Ui.pointer ]
                     headerEl
                 , if isExpanded then

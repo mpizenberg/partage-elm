@@ -1,6 +1,7 @@
 module Infra.Storage exposing
     ( InitData
     , PushState(..)
+    , clearActivityMarker
     , deleteExchangeRates
     , deleteGroup
     , deleteNotifyTopic
@@ -8,6 +9,7 @@ module Infra.Storage exposing
     , errorToText
     , exchangeRateKeys
     , init
+    , loadActivityMarkers
     , loadAllNotifyTopics
     , loadExchangeRate
     , loadGroup
@@ -59,6 +61,7 @@ type alias InitData =
     , savedLanguage : Maybe String
     , selfProfile : Member.Metadata
     , devMode : Bool
+    , activityMarkers : Set Group.Id
     }
 
 
@@ -68,7 +71,7 @@ type alias InitData =
 
 dbSchema : Idb.Schema
 dbSchema =
-    Idb.schema "partage" 10
+    Idb.schema "partage" 11
         |> Idb.withStore identityStore
         |> Idb.withStore groupsStore
         |> Idb.withStore groupKeysStore
@@ -79,6 +82,7 @@ dbSchema =
         |> Idb.withStore tamperSignalsStore
         |> Idb.withStore suspicionDismissalsStore
         |> Idb.withStore notifyTopicsStore
+        |> Idb.withStore activityMarkersStore
 
 
 identityStore : Idb.Store Idb.ExplicitKey
@@ -144,6 +148,16 @@ notifyTopicsStore =
     Idb.defineStore "notifyTopics"
 
 
+{-| Unseen push activity, written by the service worker while the app is
+closed: one record per notified group, keyed by group id when the worker
+could decrypt the payload and by the raw topic otherwise. Never exported and
+never synced; read at startup and cleared when the group is opened.
+-}
+activityMarkersStore : Idb.Store Idb.ExplicitKey
+activityMarkersStore =
+    Idb.defineStore "activityMarkers"
+
+
 
 -- Operations
 
@@ -159,12 +173,13 @@ open =
 -}
 init : Idb.Db -> ConcurrentTask Idb.Error InitData
 init db =
-    ConcurrentTask.map5 (InitData db)
-        (loadIdentity db)
-        (loadAllGroups db)
-        (loadLanguage db)
-        (loadSelfProfile db |> ConcurrentTask.map (Maybe.withDefault Member.emptyMetadata))
-        (loadDevMode db)
+    ConcurrentTask.succeed (InitData db)
+        |> ConcurrentTask.andMap (loadIdentity db)
+        |> ConcurrentTask.andMap (loadAllGroups db)
+        |> ConcurrentTask.andMap (loadLanguage db)
+        |> ConcurrentTask.andMap (loadSelfProfile db |> ConcurrentTask.map (Maybe.withDefault Member.emptyMetadata))
+        |> ConcurrentTask.andMap (loadDevMode db)
+        |> ConcurrentTask.andMap (loadActivityMarkers db)
 
 
 {-| Save the user's identity to the database.
@@ -219,12 +234,67 @@ deleteNotifyTopic db groupId =
     Idb.delete db notifyTopicsStore (Idb.StringKey groupId)
 
 
-{-| Every subscribed group's registered push topic.
+{-| Every subscribed group's registered push topic, as (group id, topic).
 -}
-loadAllNotifyTopics : Idb.Db -> ConcurrentTask Idb.Error (List String)
+loadAllNotifyTopics : Idb.Db -> ConcurrentTask Idb.Error (List ( Group.Id, String ))
 loadAllNotifyTopics db =
     Idb.getAll db notifyTopicsStore Decode.string
-        |> ConcurrentTask.map (List.map Tuple.second)
+        |> ConcurrentTask.map (List.filterMap (\( key, topic ) -> Maybe.map (\gid -> ( gid, topic )) (stringKey key)))
+
+
+stringKey : Idb.Key -> Maybe String
+stringKey key =
+    case key of
+        Idb.StringKey str ->
+            Just str
+
+        _ ->
+            Nothing
+
+
+{-| Group ids with unseen push activity. A marker written under a raw topic
+(the service worker could not decrypt that payload) is resolved through the
+notifyTopics store; an unresolvable key is assumed to be a group id.
+-}
+loadActivityMarkers : Idb.Db -> ConcurrentTask Idb.Error (Set Group.Id)
+loadActivityMarkers db =
+    ConcurrentTask.map2
+        (\markerKeys topics ->
+            let
+                topicToGroup : Dict String Group.Id
+                topicToGroup =
+                    topics |> List.map (\( gid, topic ) -> ( topic, gid )) |> Dict.fromList
+            in
+            markerKeys
+                |> List.filterMap stringKey
+                |> List.map (\key -> Dict.get key topicToGroup |> Maybe.withDefault key)
+                |> Set.fromList
+        )
+        (Idb.getAllKeys db activityMarkersStore)
+        (loadAllNotifyTopics db)
+
+
+{-| Clear a group's activity marker, under both keys the service worker may
+have used. Succeeds with the group's registered topic so outstanding OS
+notifications (tagged with it) can be closed too.
+-}
+clearActivityMarker : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error (Maybe String)
+clearActivityMarker db groupId =
+    loadNotifyTopic db groupId
+        |> ConcurrentTask.andThen
+            (\maybeTopic ->
+                (Idb.delete db activityMarkersStore (Idb.StringKey groupId)
+                    :: (case maybeTopic of
+                            Just topic ->
+                                [ Idb.delete db activityMarkersStore (Idb.StringKey topic) ]
+
+                            Nothing ->
+                                []
+                       )
+                )
+                    |> ConcurrentTask.batch
+                    |> ConcurrentTask.map (\_ -> maybeTopic)
+            )
 
 
 {-| Save the user's local self profile (contact info and payment handles
@@ -451,6 +521,7 @@ deleteGroup db groupId =
                     , Idb.delete db tamperSignalsStore (Idb.StringKey groupId)
                     , Idb.delete db suspicionDismissalsStore (Idb.StringKey groupId)
                     , Idb.delete db notifyTopicsStore (Idb.StringKey groupId)
+                    , Idb.delete db activityMarkersStore (Idb.StringKey groupId)
                     , Idb.getKeysByIndex db eventsStore byGroupIdIndex (Idb.only (Idb.StringKey groupId))
                         |> ConcurrentTask.andThen (\keys -> Idb.deleteMany db eventsStore keys)
                     ]

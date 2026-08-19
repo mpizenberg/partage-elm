@@ -64,6 +64,13 @@ real.
       locally (or a payload the service worker cannot decrypt) shows the
       constant "Partage / New activity · Nouvelle activité" fallback, never the
       raw payload and never nothing.
+- [ ] **Home activity marker.** With the app closed, a notification for a
+      group marks that group's card on the home list; the marked card opens the
+      Activity tab, the marker clears, and the group's OS notifications close
+      (confirm `getNotifications` works on an iOS device).
+- [ ] **In-visit markers.** While a group is open, another member's new entry
+      arrives with a left-border mark in the entries tab and a marked feed item
+      under a "new activity" delimiter; the viewer's own events never mark.
 - [ ] **Legacy topic migration.** Opening a group that was subscribed before
       the blinded-topic release re-registers it silently; a subsequent action by
       another member still delivers a notification.

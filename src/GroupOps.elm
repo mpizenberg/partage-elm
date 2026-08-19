@@ -89,6 +89,11 @@ type alias LoadedGroup =
     , unpushedIds : Set String
     , tamperSignals : TamperSignals
     , suspicionDismissals : Set String
+
+    -- Events pulled during this visit that the viewer's member root did not
+    -- author. In-memory only: a group syncs only while open, so foreign
+    -- events always arrive within the visit that displays them.
+    , unseenEventIds : Set String
     }
 
 
@@ -122,6 +127,7 @@ initLoadedGroup events summary key cursor unpushed tamperSignals suspicionDismis
     , unpushedIds = unpushed
     , tamperSignals = tamperSignals
     , suspicionDismissals = suspicionDismissals
+    , unseenEventIds = Set.empty
     }
 
 

@@ -54,6 +54,7 @@ type alias Config msg =
     , toMsg : Msg -> msg
     , allMembers : List ( Member.Id, String )
     , timeZone : Time.Zone
+    , unseenEventIds : Set Event.Id
     }
 
 
@@ -138,8 +139,16 @@ view i18n config (Model data) activities =
                 (Ui.text (T.activityComingSoon i18n))
 
           else
+            let
+                lastUnseenId : Maybe Event.Id
+                lastUnseenId =
+                    filteredActivities
+                        |> List.filter (\a -> Set.member a.eventId config.unseenEventIds)
+                        |> List.Extra.last
+                        |> Maybe.map .eventId
+            in
             Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
-                (groupedByDate i18n config data.expandedActivities filteredActivities)
+                (groupedByDate i18n config data.expandedActivities lastUnseenId filteredActivities)
         ]
 
 
@@ -267,8 +276,8 @@ involvedFilterSection i18n config selected =
         )
 
 
-groupedByDate : I18n -> Config msg -> Set Event.Id -> List Activity -> List (Ui.Element msg)
-groupedByDate i18n config expandedActivities activities =
+groupedByDate : I18n -> Config msg -> Set Event.Id -> Maybe Event.Id -> List Activity -> List (Ui.Element msg)
+groupedByDate i18n config expandedActivities lastUnseenId activities =
     let
         dateKey : Activity -> ( Int, Int, Int )
         dateKey activity =
@@ -281,8 +290,49 @@ groupedByDate i18n config expandedActivities activities =
         |> List.concatMap
             (\( first, rest ) ->
                 dateSeparator i18n config.timeZone first.timestamp
-                    :: List.map (activityItem i18n config expandedActivities) (first :: rest)
+                    :: List.concatMap
+                        (\activity ->
+                            activityItem i18n config expandedActivities activity
+                                :: (if Just activity.eventId == lastUnseenId then
+                                        [ newActivityDelimiter i18n ]
+
+                                    else
+                                        []
+                                   )
+                        )
+                        (first :: rest)
             )
+
+
+{-| Sits under the oldest unseen item: everything above arrived during this
+visit without the viewer's authorship. Client timestamps can interleave
+already-seen items above it, which is why unseen items also carry their own
+mark.
+-}
+newActivityDelimiter : I18n -> Ui.Element msg
+newActivityDelimiter i18n =
+    let
+        line : Ui.Element msg
+        line =
+            Ui.el
+                [ Ui.width Ui.fill
+                , Ui.height (Ui.px 1)
+                , Ui.background Theme.primary.solid
+                ]
+                Ui.none
+    in
+    Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill, Ui.contentCenterY, Ui.paddingXY 0 Theme.spacing.xs ]
+        [ line
+        , Ui.el
+            [ Ui.width Ui.shrink
+            , Ui.Font.size Theme.font.xs
+            , Ui.Font.weight Theme.fontWeight.semibold
+            , Ui.Font.letterSpacing Theme.letterSpacing.wide
+            , Ui.Font.color Theme.primary.accentStrong
+            ]
+            (Ui.text (String.toUpper (T.notificationGeneric i18n)))
+        , line
+        ]
 
 
 dateSeparator : I18n -> Time.Zone -> Time.Posix -> Ui.Element msg
@@ -360,17 +410,17 @@ activityItem i18n config expandedActivities activity =
         isExpanded =
             Set.member activity.eventId expandedActivities
 
-        isInvolved : Bool
-        isInvolved =
-            case config.currentUserRootId of
-                Just uid ->
-                    List.member uid activity.involvedMembers
-
-                Nothing ->
-                    False
-
         ( borderWidth, borderColor ) =
-            if isInvolved then
+            if Set.member activity.eventId config.unseenEventIds then
+                ( Ui.borderWith { left = 4, top = Theme.border, right = Theme.border, bottom = Theme.border }
+                , Ui.borderColor Theme.primary.solid
+                )
+
+            else if
+                config.currentUserRootId
+                    |> Maybe.map (\uid -> List.member uid activity.involvedMembers)
+                    |> Maybe.withDefault False
+            then
                 ( Ui.borderWith { left = 4, top = Theme.border, right = Theme.border, bottom = Theme.border }
                 , Ui.borderColor Theme.base.text
                 )

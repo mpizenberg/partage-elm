@@ -37,30 +37,58 @@ var SW_TRANSFORM_NOTIFICATION = (function () {
     var db = await request(indexedDB.open("partage"));
     try {
       var tx = db.transaction(["identity", "groupKeys"], "readonly");
+      var keyStore = tx.objectStore("groupKeys");
       var bundleReq = request(tx.objectStore("identity").get("notificationTranslations"));
-      var keysReq = request(tx.objectStore("groupKeys").getAll());
+      var idsReq = request(keyStore.getAllKeys());
+      var keysReq = request(keyStore.getAll());
       var bundle = await bundleReq;
+      var groupIds = await idsReq;
       var groupKeys = await keysReq;
-      return { bundle: bundle, groupKeys: groupKeys };
+      return { bundle: bundle, groupIds: groupIds, groupKeys: groupKeys };
     } finally {
       db.close();
     }
   }
 
-  async function decryptPayload(groupKeys, data) {
+  // Record that a group has unseen activity, for the home screen's markers:
+  // keyed by group id when the payload decrypted, by the raw topic otherwise.
+  // Best-effort — the store only exists once the app has opened on a schema
+  // that defines it, and a failed write costs a marker, not the notification.
+  async function writeMarker(key) {
+    if (!key) return;
+    var db = await request(indexedDB.open("partage"));
+    try {
+      if (!db.objectStoreNames.contains("activityMarkers")) return;
+      var tx = db.transaction("activityMarkers", "readwrite");
+      tx.objectStore("activityMarkers").put(true, key);
+      await new Promise(function (resolve, reject) {
+        tx.oncomplete = resolve;
+        tx.onerror = function () {
+          reject(tx.error);
+        };
+      });
+    } finally {
+      db.close();
+    }
+  }
+
+  async function decryptPayload(stores, data) {
     var iv = fromBase64(data.iv);
     var ct = fromBase64(data.ct);
-    for (var i = 0; i < groupKeys.length; i++) {
+    for (var i = 0; i < stores.groupKeys.length; i++) {
       try {
         var key = await crypto.subtle.importKey(
           "raw",
-          fromBase64(groupKeys[i]),
+          fromBase64(stores.groupKeys[i]),
           { name: "AES-GCM" },
           false,
           ["decrypt"],
         );
         var buf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, key, ct);
-        return JSON.parse(new TextDecoder().decode(buf));
+        return {
+          plain: JSON.parse(new TextDecoder().decode(buf)),
+          groupId: stores.groupIds[i],
+        };
       } catch (e) {
         // Wrong key or corrupted blob: try the next group.
       }
@@ -121,8 +149,14 @@ var SW_TRANSFORM_NOTIFICATION = (function () {
 
   async function transform(n) {
     var stores = await readStores();
-    var plain = await decryptPayload(stores.groupKeys || [], n.data);
-    if (!plain) return null;
+    var decrypted = await decryptPayload(stores, n.data);
+    try {
+      await writeMarker(decrypted ? decrypted.groupId : n.tag);
+    } catch (e) {
+      // Marker write failed; the notification itself still shows.
+    }
+    if (!decrypted) return null;
+    var plain = decrypted.plain;
     n.title = plain.t || n.title;
     var body = stores.bundle ? composeBody(plain, stores.bundle) : null;
     if (body) n.body = body;

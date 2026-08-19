@@ -260,6 +260,8 @@ Notification content is end-to-end encrypted. Every cleartext field is constant 
 
 Subscription topics are blinded: each is a domain-separated hash of the group key and one member root, so the push service sees only unlinkable identifiers — joinable neither to relay group ids nor to each other — carrying constant-size opaque payloads. Its residual knowledge is the subscription-to-endpoint mapping, the sender's address, and timing. The notify endpoint remains unauthenticated, but posting to a topic requires knowing it, and forging descriptive content requires the group key. Registered topics are re-registered whenever a fresh push subscription arrives, so a rotated push endpoint keeps delivering. Deployments without a configured push service hide notification controls.
 
+A delivered notification also raises a local activity marker for its group: the home list marks the group until it is opened, opening it lands on the activity feed and closes the group's outstanding system notifications, and inside the group, events pulled during the visit that the member did not author carry their own marks. Marker state is local-only — never exported and never synced.
+
 ## Progressive Web App, language, and accessibility
 
 Partage can be installed on Android, iOS, macOS, and desktop browsers. It caches the application shell for offline use, reconnects and synchronizes after network recovery, and surfaces available application updates.

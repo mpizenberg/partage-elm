@@ -48,9 +48,10 @@ import Page.NewGroup
 import Page.NotFound
 import Page.Welcome
 import Process
+import Pwa
 import PwaState
 import Route exposing (GroupTab(..), GroupView(..), Route(..))
-import Set
+import Set exposing (Set)
 import SplitwiseImport
 import Task
 import Time
@@ -195,6 +196,8 @@ type Msg
     | DismissToast Toast.ToastId
       -- PWA
     | PwaStateMsg PwaState.Msg
+    | OnActivityMarkerCleared (ConcurrentTask.Response Idb.Error (Maybe String))
+    | OnActivityMarkersLoaded (ConcurrentTask.Response Idb.Error (Set Group.Id))
 
 
 subscriptions : Model -> Sub Msg
@@ -460,6 +463,23 @@ update msg model =
                 Browser.Events.Hidden ->
                     ( model, Cmd.none )
 
+        OnActivityMarkerCleared (ConcurrentTask.Success (Just topic)) ->
+            ( model, Pwa.closeNotifications pwaOut topic )
+
+        OnActivityMarkerCleared _ ->
+            ( model, Cmd.none )
+
+        OnActivityMarkersLoaded (ConcurrentTask.Success markers) ->
+            case model.appState of
+                Ready readyData ->
+                    ( { model | appState = Ready { readyData | activityMarkers = markers } }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        OnActivityMarkersLoaded _ ->
+            ( model, Cmd.none )
+
         OnNavEvent event ->
             let
                 maybeIdentity : Maybe Identity
@@ -479,22 +499,38 @@ update msg model =
 
                 ( (GroupRoute groupId groupView) as route, guardCmd ) ->
                     let
+                        ( markerModel, markerCmd ) =
+                            if activeGroupRoute model.route == Just groupId then
+                                ( model, Cmd.none )
+
+                            else
+                                clearGroupActivity groupId model
+
                         routedModel : Model
                         routedModel =
-                            { model | route = route }
+                            { markerModel | route = route }
                     in
                     case buildGroupConfig routedModel of
                         Just config ->
-                            Page.Group.handleNavigation config (selectedGroupSummary groupId routedModel) groupView model.groupModel
+                            Page.Group.handleNavigation config (selectedGroupSummary groupId routedModel) groupView routedModel.groupModel
                                 |> Update.wrap GroupMsg (\gm -> { routedModel | groupModel = gm })
                                 |> Update.addCmd guardCmd
                                 |> Update.addCmd (navScrollCmd route)
+                                |> Update.addCmd markerCmd
 
                         Nothing ->
-                            ( routedModel, Cmd.batch [ guardCmd, navScrollCmd route ] )
+                            ( routedModel, Cmd.batch [ guardCmd, navScrollCmd route, markerCmd ] )
 
                 ( route, guardCmd ) ->
-                    ( { model | route = route }, Cmd.batch [ guardCmd, navScrollCmd route ] )
+                    let
+                        ( refreshedModel, refreshCmd ) =
+                            if route == Home then
+                                reloadActivityMarkers model
+
+                            else
+                                ( model, Cmd.none )
+                    in
+                    ( { refreshedModel | route = route }, Cmd.batch [ guardCmd, navScrollCmd route, refreshCmd ] )
 
         NavigateTo route ->
             ( model, Navigation.pushUrl navCmd (Route.toAppUrl route) )
@@ -595,13 +631,18 @@ update msg model =
                             handleJoinRoute modelWithReadyData guardedRoute readyData.identity
 
                         GroupRoute groupId groupView ->
-                            case buildGroupConfig modelWithReadyData of
+                            let
+                                ( markerModel, markerCmd ) =
+                                    clearGroupActivity groupId modelWithReadyData
+                            in
+                            case buildGroupConfig markerModel of
                                 Just config ->
-                                    Page.Group.handleNavigation config (selectedGroupSummary groupId modelWithReadyData) groupView modelWithReadyData.groupModel
-                                        |> Update.wrap GroupMsg (\gm -> { modelWithReadyData | groupModel = gm })
+                                    Page.Group.handleNavigation config (selectedGroupSummary groupId markerModel) groupView markerModel.groupModel
+                                        |> Update.wrap GroupMsg (\gm -> { markerModel | groupModel = gm })
+                                        |> Update.addCmd markerCmd
 
                                 Nothing ->
-                                    ( modelWithReadyData, Cmd.none )
+                                    ( markerModel, markerCmd )
 
                         _ ->
                             ( modelWithReadyData, Cmd.none )
@@ -1536,6 +1577,54 @@ handleJoinRoute model route maybeIdentity =
 -- PWA
 
 
+activeGroupRoute : Route -> Maybe Group.Id
+activeGroupRoute route =
+    case route of
+        GroupRoute groupId _ ->
+            Just groupId
+
+        _ ->
+            Nothing
+
+
+{-| Entering a group consumes its activity marker: drop it from the home
+list, delete the stored records, and close the group's outstanding OS
+notifications (tagged with its topic) once the clear task reports it.
+-}
+clearGroupActivity : Group.Id -> Model -> ( Model, Cmd Msg )
+clearGroupActivity groupId model =
+    case model.appState of
+        Ready readyData ->
+            ( model.runner, Cmd.none )
+                |> Runner.andRun OnActivityMarkerCleared (Storage.clearActivityMarker readyData.db groupId)
+                |> (\( runner, cmd ) ->
+                        ( { model
+                            | runner = runner
+                            , appState = Ready { readyData | activityMarkers = Set.remove groupId readyData.activityMarkers }
+                          }
+                        , cmd
+                        )
+                   )
+
+        _ ->
+            ( model, Cmd.none )
+
+
+{-| The service worker raises markers while the app is running too, so the
+home list re-reads them on every navigation to it.
+-}
+reloadActivityMarkers : Model -> ( Model, Cmd Msg )
+reloadActivityMarkers model =
+    case model.appState of
+        Ready readyData ->
+            ( model.runner, Cmd.none )
+                |> Runner.andRun OnActivityMarkersLoaded (Storage.loadActivityMarkers readyData.db)
+                |> Tuple.mapFirst (\runner -> { model | runner = runner })
+
+        _ ->
+            ( model, Cmd.none )
+
+
 processPwaOutMsgs : Model -> Cmd Msg -> List PwaState.OutMsg -> ( Model, Cmd Msg )
 processPwaOutMsgs model pwaCmd outMsgs =
     let
@@ -1579,7 +1668,7 @@ processPwaOutMsgs model pwaCmd outMsgs =
                                                     (\topics ->
                                                         topics
                                                             |> List.map
-                                                                (\topic ->
+                                                                (\( _, topic ) ->
                                                                     PushServer.setGroupNotification
                                                                         { pushServerUrl = pushServerUrl
                                                                         , topic = topic
@@ -1859,6 +1948,7 @@ viewReady model readyData =
                     , pushActive = PwaState.pushIsActive model.pwaState
                     , onEnableNotifications = PwaStateMsg PwaState.enableNotificationsMsg
                     , currentTime = model.currentTime
+                    , activityMarkers = readyData.activityMarkers
                     }
                     HomeMsg
                     model.homeModel

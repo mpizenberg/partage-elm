@@ -9,6 +9,7 @@ import Format
 import Json.Decode
 import Pwa
 import Route exposing (Route)
+import Set exposing (Set)
 import Task
 import Time
 import Translations as T exposing (I18n)
@@ -30,6 +31,7 @@ type alias Context msg =
     , pushActive : Bool
     , onEnableNotifications : msg
     , currentTime : Time.Posix
+    , activityMarkers : Set Group.Id
     }
 
 
@@ -366,9 +368,19 @@ notifEnableSection i18n ctx =
 groupCard : I18n -> Context msg -> Group.Summary -> Ui.Element msg
 groupCard i18n ctx summary =
     let
+        hasActivity : Bool
+        hasActivity =
+            Set.member summary.id ctx.activityMarkers
+
         groupRoute : Route
         groupRoute =
-            Route.GroupRoute summary.id (Route.Tab Route.BalanceTab)
+            if hasActivity then
+                -- Clear-on-open is only honest if opening lands where the
+                -- new items are.
+                Route.GroupRoute summary.id (Route.Tab Route.ActivityTab)
+
+            else
+                Route.GroupRoute summary.id (Route.Tab Route.BalanceTab)
 
         metaLine : String
         metaLine =
@@ -430,12 +442,26 @@ groupCard i18n ctx summary =
             :: Ui.pointer
             :: UI.Components.spaLinkAttrs (Route.toPath groupRoute) (ctx.onNavigate groupRoute)
         )
-        [ Ui.el
-            [ Ui.Font.size Theme.font.lg
-            , Ui.Font.weight Theme.fontWeight.semibold
-            , Ui.Font.letterSpacing Theme.letterSpacing.tight
+        [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
+            [ Ui.el
+                [ Ui.width Ui.shrink
+                , Ui.Font.size Theme.font.lg
+                , Ui.Font.weight Theme.fontWeight.semibold
+                , Ui.Font.letterSpacing Theme.letterSpacing.tight
+                ]
+                (Ui.text summary.name)
+            , if hasActivity then
+                Ui.el
+                    [ Ui.width (Ui.px 10)
+                    , Ui.height (Ui.px 10)
+                    , Ui.rounded 5
+                    , Ui.background Theme.primary.solid
+                    ]
+                    Ui.none
+
+              else
+                Ui.none
             ]
-            (Ui.text summary.name)
         , Ui.row
             [ Ui.spacing Theme.spacing.lg
             , Ui.paddingTop Theme.spacing.xs
