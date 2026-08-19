@@ -1,4 +1,4 @@
-module PwaState exposing (Model, Msg, OutMsg(..), enableNotificationsMsg, init, initTask, pushIsActive, subscription, update, viewBanners)
+module PwaState exposing (Model, Msg, OutMsg(..), PushSetup, configureTask, enableNotificationsMsg, init, notificationUnavailable, pushIsActive, pushServerUrl, subscription, update, viewBanners, withCachedPushServer)
 
 {-| PWA state management, extracted from Main.elm.
 
@@ -29,44 +29,112 @@ type alias Model =
     , installHint : Pwa.InstallHint
     , installHintDismissed : Bool
     , justInstalled : Bool
-    , pushServerUrl : Maybe String
     , notificationPermission : Maybe Pwa.NotificationPermission
     , pushSubscription : Maybe Json.Encode.Value
-    , vapidKey : Maybe String
-    , notificationUnavailable : Bool
+    , pushSetup : PushSetup
     }
 
 
-init : { pushServerUrl : Maybe String, isOnline : Bool, installHint : String } -> Model
+{-| How far the deployment's push configuration has been resolved. The push
+server is not known at build time: it is fetched from the relay, so every state
+between "nothing known yet" and "ready to subscribe" is reachable and the UI
+distinguishes them — `Pending` still offers to enable, `Unreachable` says so.
+-}
+type PushSetup
+    = PushUnconfigured
+    | PushPending String
+    | PushUnreachable String
+    | PushReady String String
+
+
+init : { isOnline : Bool, installHint : String } -> Model
 init flags =
     { isOnline = flags.isOnline
     , updateAvailable = False
     , installHint = Pwa.installHintFromString flags.installHint
     , installHintDismissed = False
     , justInstalled = False
-    , pushServerUrl = flags.pushServerUrl
     , notificationPermission = Nothing
     , pushSubscription = Nothing
-    , vapidKey = Nothing
-    , notificationUnavailable = False
+    , pushSetup = PushUnconfigured
     }
 
 
-{-| Start the VAPID key fetch task, when a push server is configured. Call during
-app init; a deployment without push (`Nothing`) skips it.
-
-    ( runner, initCmds )
-        |> PwaState.initTask pushServerUrl PwaStateMsg
-
+{-| The push server this deployment addresses, once known.
 -}
-initTask : Maybe String -> (Msg -> msg) -> ( TaskRunner msg, Cmd msg ) -> ( TaskRunner msg, Cmd msg )
-initTask pushServerUrl toMsg =
-    case pushServerUrl of
+pushServerUrl : Model -> Maybe String
+pushServerUrl model =
+    case model.pushSetup of
+        PushUnconfigured ->
+            Nothing
+
+        PushPending url ->
+            Just url
+
+        PushUnreachable url ->
+            Just url
+
+        PushReady url _ ->
+            Just url
+
+
+{-| A push server is configured but did not answer, so enabling cannot work.
+-}
+notificationUnavailable : Model -> Bool
+notificationUnavailable model =
+    case model.pushSetup of
+        PushUnreachable _ ->
+            True
+
+        _ ->
+            False
+
+
+{-| Start from the push server the relay last reported, so the notification
+surfaces are present from the first paint and survive an offline launch.
+-}
+withCachedPushServer : Maybe String -> Model -> Model
+withCachedPushServer cached model =
+    case cached of
         Just url ->
-            Runner.andRun (toMsg << OnVapidKeyFetched) (PushServer.fetchVapidKey url)
+            { model | pushSetup = PushPending url }
 
         Nothing ->
-            identity
+            model
+
+
+{-| Resolve the deployment's push configuration: ask the relay which push server
+to use, then ask that server for its VAPID key. Call once storage is open, so
+the cached URL can carry the app until the answer arrives — and stand in for it
+when the relay cannot be reached.
+
+    ( runner, initCmds )
+        |> PwaState.configureTask
+            { serverUrl = serverUrl, cachedPushServerUrl = cached }
+            PwaStateMsg
+
+-}
+configureTask :
+    { serverUrl : String, cachedPushServerUrl : Maybe String }
+    -> (Msg -> msg)
+    -> ( TaskRunner msg, Cmd msg )
+    -> ( TaskRunner msg, Cmd msg )
+configureTask { serverUrl, cachedPushServerUrl } toMsg =
+    Runner.andRun (toMsg << OnPushSetup)
+        (PushServer.fetchPushConfig serverUrl
+            |> ConcurrentTask.onError (\_ -> ConcurrentTask.succeed cachedPushServerUrl)
+            |> ConcurrentTask.andThen
+                (\configured ->
+                    case configured of
+                        Just url ->
+                            PushServer.fetchVapidKey url
+                                |> ConcurrentTask.map (PushReady url)
+                                |> ConcurrentTask.onError (\_ -> ConcurrentTask.succeed (PushUnreachable url))
+
+                        Nothing ->
+                            ConcurrentTask.succeed PushUnconfigured
+                )
+        )
 
 
 {-| Subscribe to PWA events from the JS runtime.
@@ -86,15 +154,30 @@ type Msg
     | DismissInstallHint
     | DismissJustInstalled
     | EnableNotifications
-    | OnVapidKeyFetched (ConcurrentTask.Response PushServer.Error String)
+    | OnPushSetup (ConcurrentTask.Response PushServer.Error PushSetup)
 
 
 type OutMsg
     = ShowToastError
     | NavigateToUrl String
     | CameOnline
-    | PushSubscriptionChanged Json.Encode.Value
+    | RegisterPushTopics { pushServerUrl : String, subscription : Json.Encode.Value }
+    | PushServerUrlResolved (Maybe String)
     | LogError ErrorLog.Source ErrorLog.Severity String
+
+
+{-| Registering this device's topics needs both halves, and either can arrive
+first: the push server is resolved over the network while the browser reports an
+existing subscription on its own schedule.
+-}
+registerTopics : Model -> List OutMsg
+registerTopics model =
+    case ( pushServerUrl model, model.pushSubscription ) of
+        ( Just url, Just sub ) ->
+            [ RegisterPushTopics { pushServerUrl = url, subscription = sub } ]
+
+        _ ->
+            []
 
 
 pushIsActive : Model -> Bool
@@ -153,42 +236,47 @@ update pwaOut msg model =
             ( { model | justInstalled = False }, Cmd.none, [] )
 
         EnableNotifications ->
-            case model.pushServerUrl of
-                Nothing ->
+            case ( model.pushSetup, model.notificationPermission ) of
+                ( PushUnconfigured, _ ) ->
                     ( model, Cmd.none, [] )
 
-                Just _ ->
-                    case model.notificationPermission of
-                        Just Pwa.Granted ->
-                            case model.vapidKey of
-                                Just key ->
-                                    ( { model | notificationUnavailable = False }, Pwa.subscribePush pwaOut key, [] )
+                ( PushUnreachable _, _ ) ->
+                    ( model, Cmd.none, [] )
 
-                                Nothing ->
-                                    -- Permission is granted but the key never arrived; the
-                                    -- push server is unreachable, so say so rather than no-op.
-                                    ( { model | notificationUnavailable = True }, Cmd.none, [] )
+                ( PushReady _ key, Just Pwa.Granted ) ->
+                    ( model, Pwa.subscribePush pwaOut key, [] )
 
-                        _ ->
-                            ( model, Pwa.requestNotificationPermission pwaOut, [] )
+                _ ->
+                    ( model, Pwa.requestNotificationPermission pwaOut, [] )
 
-        OnVapidKeyFetched (ConcurrentTask.Success key) ->
+        OnPushSetup (ConcurrentTask.Success setup) ->
             let
                 newModel : Model
                 newModel =
-                    { model | vapidKey = Just key, notificationUnavailable = False }
+                    { model | pushSetup = setup }
             in
-            case model.notificationPermission of
-                Just Pwa.Granted ->
-                    ( newModel, Pwa.subscribePush pwaOut key, [] )
+            ( newModel
+            , case ( setup, model.notificationPermission ) of
+                ( PushReady _ key, Just Pwa.Granted ) ->
+                    Pwa.subscribePush pwaOut key
 
                 _ ->
-                    ( newModel, Cmd.none, [] )
+                    Cmd.none
+            , PushServerUrlResolved (pushServerUrl newModel) :: registerTopics newModel
+            )
 
-        OnVapidKeyFetched _ ->
-            ( { model | notificationUnavailable = True }
+        OnPushSetup _ ->
+            ( { model
+                | pushSetup =
+                    case pushServerUrl model of
+                        Just url ->
+                            PushUnreachable url
+
+                        Nothing ->
+                            PushUnconfigured
+              }
             , Cmd.none
-            , [ LogError ErrorLog.PwaSource ErrorLog.Err "Failed to fetch VAPID key" ]
+            , [ LogError ErrorLog.PwaSource ErrorLog.Err "Failed to resolve push configuration" ]
             )
 
 
@@ -229,15 +317,20 @@ handleEvent pwaOut event model =
                 newModel =
                     { model | notificationPermission = Just permission }
             in
-            case ( permission, model.vapidKey ) of
-                ( Pwa.Granted, Just key ) ->
+            case ( permission, model.pushSetup ) of
+                ( Pwa.Granted, PushReady _ key ) ->
                     ( newModel, Pwa.subscribePush pwaOut key, [] )
 
                 _ ->
                     ( newModel, Cmd.none, [] )
 
         Pwa.PushSubscription sub ->
-            ( { model | pushSubscription = Just sub }, Cmd.none, [ PushSubscriptionChanged sub ] )
+            let
+                newModel : Model
+                newModel =
+                    { model | pushSubscription = Just sub }
+            in
+            ( newModel, Cmd.none, registerTopics newModel )
 
         Pwa.PushSubscriptionError _ ->
             ( model, Cmd.none, [ ShowToastError, LogError ErrorLog.PushSource ErrorLog.Err "Push subscription error" ] )

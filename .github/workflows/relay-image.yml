@@ -48,7 +48,6 @@ jobs:
         run: pnpm build:optimize
         env:
           SERVER_URL: ""
-          PUSH_SERVER_URL: "https://push.dokploy.zidev.ovh"
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3

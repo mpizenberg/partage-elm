@@ -50,7 +50,7 @@ real.
       offline; the shell loads and shows the offline state rather than a browser
       error.
 
-## Notifications (only if `PUSH_SERVER_URL` is set at build)
+## Notifications (only if the relay is run with `PUSH_SERVER_URL` set)
 
 - [ ] **Enable.** The home notification control appears; enabling prompts for
       permission and, once granted, subscribes.
@@ -76,8 +76,11 @@ real.
       another member still delivers a notification.
 - [ ] **Unavailable state.** With the push server unreachable, enabling shows the
       unavailable message instead of doing nothing (RR-006).
-- [ ] **Push disabled build.** With `PUSH_SERVER_URL` unset, the home control and
-      the per-group toggles are absent everywhere.
+- [ ] **Push disabled deployment.** With `PUSH_SERVER_URL` unset on the relay, the
+      home control and the per-group toggles are absent everywhere.
+- [ ] **Repointed push server.** Change `PUSH_SERVER_URL` and restart the relay:
+      a client that had notifications enabled re-subscribes on its next start and
+      still receives another member's action, without clearing site data.
 
 ## Accessibility and i18n
 

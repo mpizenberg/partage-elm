@@ -29,6 +29,7 @@ module Infra.Storage exposing
     , saveLanguage
     , saveNotificationTranslations
     , saveNotifyTopic
+    , savePushServerUrl
     , saveSelfProfile
     , saveSuspicionDismissals
     , saveSyncCursor
@@ -62,6 +63,7 @@ type alias InitData =
     , selfProfile : Member.Metadata
     , devMode : Bool
     , activityMarkers : Set Group.Id
+    , pushServerUrl : Maybe String
     }
 
 
@@ -180,6 +182,7 @@ init db =
         |> ConcurrentTask.andMap (loadSelfProfile db |> ConcurrentTask.map (Maybe.withDefault Member.emptyMetadata))
         |> ConcurrentTask.andMap (loadDevMode db)
         |> ConcurrentTask.andMap (loadActivityMarkers db)
+        |> ConcurrentTask.andMap (loadPushServerUrl db)
 
 
 {-| Save the user's identity to the database.
@@ -208,6 +211,33 @@ loadLanguage db =
 saveLanguage : Idb.Db -> String -> ConcurrentTask Idb.Error ()
 saveLanguage db lang =
     Idb.putAt db identityStore (Idb.StringKey "language") (Encode.string lang)
+
+
+{-| Remember the push server the relay last reported. The app starts from it so
+the notification surfaces do not appear a round-trip late on every launch, and
+stay put when the app starts offline; the next successful fetch overwrites it.
+-}
+savePushServerUrl : Idb.Db -> Maybe String -> ConcurrentTask Idb.Error ()
+savePushServerUrl db url =
+    Idb.putAt db
+        identityStore
+        (Idb.StringKey "pushServerUrl")
+        (Encode.string (Maybe.withDefault "" url))
+
+
+loadPushServerUrl : Idb.Db -> ConcurrentTask Idb.Error (Maybe String)
+loadPushServerUrl db =
+    Idb.get db identityStore (Idb.StringKey "pushServerUrl") Decode.string
+        |> ConcurrentTask.map (Maybe.andThen nonEmpty)
+
+
+nonEmpty : String -> Maybe String
+nonEmpty text =
+    if String.isEmpty text then
+        Nothing
+
+    else
+        Just text
 
 
 {-| Save the notification bundle (phrase templates and locale number

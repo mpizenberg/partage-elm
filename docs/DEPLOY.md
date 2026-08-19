@@ -10,12 +10,10 @@ SERVER_URL= pnpm build:optimize
 
 **Push notifications are opt-in and separate.** They rely on an external web-push
 service (the [elm-pwa](https://github.com/mpizenberg/elm-pwa) push server), not the
-relay. Point the build at one with `PUSH_SERVER_URL`; leave it unset and the app
-ships without push — the enable control and the per-group toggles are hidden.
-
-```sh
-SERVER_URL= PUSH_SERVER_URL=https://push.example.com pnpm build:optimize
-```
+relay. Point the *container* at one with `PUSH_SERVER_URL` (below); leave it unset
+and the app ships without push — the enable control and the per-group toggles are
+hidden. The frontend asks the relay for that URL at runtime, so repointing a
+deployment is an env-var change and a restart, not a rebuild.
 
 > **Before a release:** CI covers Elm and relay logic but not browser/PWA behaviour. Run through [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) (a manual two-browser + one-installed-PWA pass) before tagging or deploying.
 
@@ -41,6 +39,7 @@ Configuration (all optional except `POW_SECRET`):
 | `STATIC_DIR` | `./static` | Frontend directory to serve; unset to serve the API only. |
 | `ADMIN_SECRET` | — (unset) | Bearer secret for the operator dashboard ([below](#operator-dashboard)). Unset ⇒ the dashboard and its endpoint are absent (`404`). Generate like `POW_SECRET`. |
 | `ADMIN_STORAGE_BUDGET_BYTES` | — (unset) | Optional. When set, the dashboard's storage-over-budget flag fires once total stored bytes exceed it. |
+| `PUSH_SERVER_URL` | — (unset) | Web-push service the frontend addresses, served to it over `GET /api/config`. Unset ⇒ the app ships without push. Clients pick up a change on their next start. |
 
 Put the container behind your TLS-terminating reverse proxy as usual. WebSocket upgrades on `/api/groups/*/ws` must be allowed.
 

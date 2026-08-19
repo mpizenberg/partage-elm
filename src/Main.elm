@@ -117,7 +117,6 @@ type alias Flags =
     , idEntropy : IdGen.Entropy
     , currentTime : Int
     , serverUrl : String
-    , pushServerUrl : String
     , origin : String
     , isOnline : Bool
     , installHint : String
@@ -141,7 +140,6 @@ type alias Model =
     , toastModel : Toast.Model
     , joinGroupModel : Page.JoinGroup.Model
     , serverUrl : String
-    , pushServerUrl : Maybe String
     , origin : String
     , pwaState : PwaState.Model
     , errorLog : ErrorLog.Model
@@ -267,14 +265,6 @@ init flags =
                 (PushServer.notificationBundle language)
                 |> ConcurrentTask.map (\_ -> initData)
 
-        pushServerUrl : Maybe String
-        pushServerUrl =
-            if String.isEmpty flags.pushServerUrl then
-                Nothing
-
-            else
-                Just flags.pushServerUrl
-
         ( runner, initCmds ) =
             ( Runner.initTaskRunner
                 { pool = ConcurrentTask.pool
@@ -286,7 +276,6 @@ init flags =
             )
                 |> Runner.andRun OnInitComplete
                     (initStorage |> ConcurrentTask.andThen storeNotificationTranslations)
-                |> PwaState.initTask pushServerUrl PwaStateMsg
     in
     ( { route = route
       , appState = Loading
@@ -310,9 +299,8 @@ init flags =
       , joinGroupModel = Page.JoinGroup.init
       , toastModel = Toast.init
       , serverUrl = flags.serverUrl
-      , pushServerUrl = pushServerUrl
       , origin = flags.origin
-      , pwaState = PwaState.init { pushServerUrl = pushServerUrl, isOnline = flags.isOnline, installHint = flags.installHint }
+      , pwaState = PwaState.init { isOnline = flags.isOnline, installHint = flags.installHint }
       , errorLog = ErrorLog.empty
       }
     , Cmd.batch
@@ -347,7 +335,7 @@ buildGroupConfig model =
                         { db = readyData.db
                         , identity = identity
                         , serverUrl = model.serverUrl
-                        , pushServerUrl = model.pushServerUrl
+                        , pushServerUrl = PwaState.pushServerUrl model.pwaState
                         , pushSubscription = model.pwaState.pushSubscription
                         , currentTime = model.currentTime
                         , timeZone = model.timeZone
@@ -608,15 +596,19 @@ update msg model =
 
         OnInitComplete (ConcurrentTask.Success readyData) ->
             let
+                modelWithPushServer : Model
+                modelWithPushServer =
+                    { model | pwaState = PwaState.withCachedPushServer readyData.pushServerUrl model.pwaState }
+
                 -- Override language if a saved preference exists
                 modelWithLanguage : Model
                 modelWithLanguage =
                     case readyData.savedLanguage |> Maybe.andThen T.languageFromString of
                         Just savedLang ->
-                            { model | i18n = T.load savedLang model.i18n }
+                            { modelWithPushServer | i18n = T.load savedLang modelWithPushServer.i18n }
 
                         Nothing ->
-                            model
+                            modelWithPushServer
 
                 ( guardedRoute, guardCmd ) =
                     applyRouteGuard readyData.identity modelWithLanguage.route
@@ -664,6 +656,11 @@ update msg model =
             ( modelAfterNav.runner, Cmd.batch [ guardCmd, navCmd_, rescheduleStorageCheckTomorrow ] )
                 |> Runner.andRun OnStorageCheckComplete
                     (storageCheckTask readyData.db)
+                |> PwaState.configureTask
+                    { serverUrl = modelAfterNav.serverUrl
+                    , cachedPushServerUrl = readyData.pushServerUrl
+                    }
+                    PwaStateMsg
                 |> Tuple.mapFirst (\r -> { modelAfterNav | runner = r })
 
         OnInitComplete (ConcurrentTask.Error err) ->
@@ -1694,10 +1691,11 @@ processPwaOutMsgs model pwaCmd outMsgs =
                         PwaState.LogError source severity message ->
                             ( logError source severity message m, cmds )
 
-                        PwaState.PushSubscriptionChanged subscription ->
-                            case ( m.appState, m.pushServerUrl ) of
-                                ( Ready readyData, Just pushServerUrl ) ->
-                                    -- A fresh subscription may carry a rotated endpoint,
+                        PwaState.RegisterPushTopics { pushServerUrl, subscription } ->
+                            case m.appState of
+                                Ready readyData ->
+                                    -- A fresh subscription may carry a rotated endpoint, and
+                                    -- the deployment can be repointed at another push server,
                                     -- so re-register every subscribed group's topic.
                                     ( m.runner, Cmd.none )
                                         |> Runner.andRun (\_ -> NoOp)
@@ -1721,6 +1719,16 @@ processPwaOutMsgs model pwaCmd outMsgs =
                                                     )
                                                 |> ConcurrentTask.onError (\() -> ConcurrentTask.succeed ())
                                             )
+                                        |> (\( runner, cmd ) -> ( { m | runner = runner }, cmd :: cmds ))
+
+                                _ ->
+                                    ( m, cmds )
+
+                        PwaState.PushServerUrlResolved url ->
+                            case m.appState of
+                                Ready readyData ->
+                                    ( m.runner, Cmd.none )
+                                        |> Runner.andRun (\_ -> NoOp) (Storage.savePushServerUrl readyData.db url)
                                         |> (\( runner, cmd ) -> ( { m | runner = runner }, cmd :: cmds ))
 
                                 _ ->
@@ -1985,8 +1993,8 @@ viewReady model readyData =
                     , onExport = ImportExportMsg << ImportExport.exportMsg
                     , onExportCsv = ImportExportMsg << ImportExport.exportCsvMsg
                     , notificationPermission = model.pwaState.notificationPermission
-                    , pushConfigured = model.pushServerUrl /= Nothing
-                    , notificationUnavailable = model.pwaState.notificationUnavailable
+                    , pushConfigured = PwaState.pushServerUrl model.pwaState /= Nothing
+                    , notificationUnavailable = PwaState.notificationUnavailable model.pwaState
                     , pushActive = PwaState.pushIsActive model.pwaState
                     , onEnableNotifications = PwaStateMsg PwaState.enableNotificationsMsg
                     , currentTime = model.currentTime
@@ -2034,7 +2042,7 @@ viewReady model readyData =
                 , today = Date.posixToDate model.timeZone model.currentTime
                 , timeZone = model.timeZone
                 , origin = model.origin
-                , pushConfigured = model.pushServerUrl /= Nothing
+                , pushConfigured = PwaState.pushServerUrl model.pwaState /= Nothing
                 , pushActive = PwaState.pushIsActive model.pwaState
                 , selfProfile = readyData.selfProfile
                 , devMode = readyData.devMode

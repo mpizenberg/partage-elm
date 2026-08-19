@@ -111,7 +111,6 @@ var app = Elm.Main.init({
     },
     currentTime: Date.now(),
     serverUrl: __SERVER_URL__ || location.origin,
-    pushServerUrl: __PUSH_SERVER_URL__ || "",
     origin: location.origin,
     isOnline: navigator.onLine,
     installHint: evaluateInstallHint(installHintOptions),
