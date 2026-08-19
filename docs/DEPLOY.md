@@ -39,7 +39,7 @@ Configuration (all optional except `POW_SECRET`):
 | `STATIC_DIR` | `./static` | Frontend directory to serve; unset to serve the API only. |
 | `ADMIN_SECRET` | — (unset) | Bearer secret for the operator dashboard ([below](#operator-dashboard)). Unset ⇒ the dashboard and its endpoint are absent (`404`). Generate like `POW_SECRET`. |
 | `ADMIN_STORAGE_BUDGET_BYTES` | — (unset) | Optional. When set, the dashboard's storage-over-budget flag fires once total stored bytes exceed it. |
-| `PUSH_SERVER_URL` | — (unset) | Web-push service the frontend addresses, served to it over `GET /api/config`. Unset ⇒ the app ships without push. Clients pick up a change on their next start. |
+| `PUSH_SERVER_URL` | — (unset) | Web-push service the frontend addresses, served to it over `GET /api/config`. Must be **absolute** (`https://push.example.com`) — a scheme-less value is refused with a log line and the deployment starts without push. Unset ⇒ the app ships without push. Clients pick up a change on their next start. |
 
 Put the container behind your TLS-terminating reverse proxy as usual. WebSocket upgrades on `/api/groups/*/ws` must be allowed.
 

@@ -420,6 +420,18 @@ describe('deployment config', () => {
     const { app } = makeApp();
     assert.deepEqual(await (await app.request('/api/config')).json(), { pushServerUrl: '' });
   });
+
+  it('refuses a scheme-less push server url, which the frontend would read as relative', async () => {
+    const { app } = makeApp({ pushServerUrl: 'push.example.com' });
+    assert.deepEqual(await (await app.request('/api/config')).json(), { pushServerUrl: '' });
+  });
+
+  it('drops a trailing slash so appended paths stay well formed', async () => {
+    const { app } = makeApp({ pushServerUrl: 'https://push.example.com/' });
+    assert.deepEqual(await (await app.request('/api/config')).json(), {
+      pushServerUrl: 'https://push.example.com',
+    });
+  });
 });
 
 describe('inactivity retention', () => {

@@ -238,6 +238,28 @@ function computeCost({ levels, history, nowMs }) {
  * `onAppend(groupId, seq)` is called after each successful event append so the
  * HTTP transport can notify live subscribers.
  */
+/**
+ * The frontend appends paths to this URL and hands the result to fetch, so a
+ * value without a scheme is a *relative* URL: the browser would request it from
+ * its own origin, get nothing back, and report push as unavailable. Refuse it
+ * here, where the operator can still see why, rather than let a typo surface as
+ * a mystery in the UI. Push is optional, so an unusable value degrades to no
+ * push instead of taking the relay down with it.
+ */
+function usablePushServerUrl(configured) {
+  if (configured === '') {
+    return '';
+  }
+  const parsed = URL.parse(configured);
+  if (parsed === null || (parsed.protocol !== 'https:' && parsed.protocol !== 'http:')) {
+    console.error(
+      `PUSH_SERVER_URL must be an absolute http(s) URL, got "${configured}" - starting without push`,
+    );
+    return '';
+  }
+  return configured.replace(/\/+$/, '');
+}
+
 export function createApp({
   storage,
   powSecret,
@@ -271,7 +293,8 @@ export function createApp({
   // from the running process is what lets an operator repoint a container at
   // another push server without rebuilding the image. An empty URL means the
   // deployment ships without push.
-  app.get('/api/config', (c) => c.json({ pushServerUrl }));
+  const pushServer = usablePushServerUrl(pushServerUrl);
+  app.get('/api/config', (c) => c.json({ pushServerUrl: pushServer }));
 
   app.get('/api/pow/challenge', async (c) => {
     const groupId = c.req.query('groupId') ?? '';
