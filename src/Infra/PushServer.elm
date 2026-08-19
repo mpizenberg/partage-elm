@@ -129,11 +129,14 @@ notifyAffectedMembers ctx events =
 
 
 {-| Send an encrypted push notification to all subscribers of a topic. Every
-cleartext field is constant across all notifications of all groups, except the
-tag, which repeats the topic from the request's own URL so notifications from
-one group replace each other without naming the group. Legacy mode keeps
-delivery on the service-worker path so the transform can decrypt (declarative
-rendering could only ever show the cleartext).
+cleartext field is constant across all notifications of all groups, except
+the tag and the fallback click URL, which both repeat the topic from the
+request's own URL: the tag restores per-group stacking without naming the
+group, and the URL carries the topic in its fragment — never sent to the
+origin — so a click on an undecrypted fallback can still resolve to the right
+group locally. Legacy mode keeps delivery on the service-worker path so the
+transform can decrypt (declarative rendering could only ever show the
+cleartext).
 -}
 notifyTopic : String -> String -> Symmetric.EncryptedData -> ConcurrentTask Http.Error ()
 notifyTopic pushServerUrl topic encrypted =
@@ -153,6 +156,7 @@ notifyTopic pushServerUrl topic encrypted =
                             [ ( "v", Encode.int 1 )
                             , ( "iv", Encode.string encrypted.iv )
                             , ( "ct", Encode.string encrypted.ciphertext )
+                            , ( "url", Encode.string ("/groups#n=" ++ topic) )
                             ]
                       )
                     ]

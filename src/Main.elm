@@ -198,6 +198,7 @@ type Msg
     | PwaStateMsg PwaState.Msg
     | OnActivityMarkerCleared (ConcurrentTask.Response Idb.Error (Maybe String))
     | OnActivityMarkersLoaded (ConcurrentTask.Response Idb.Error (Set Group.Id))
+    | OnNotificationTopicResolved (ConcurrentTask.Response Idb.Error (Maybe Group.Id))
 
 
 subscriptions : Model -> Sub Msg
@@ -480,6 +481,12 @@ update msg model =
         OnActivityMarkersLoaded _ ->
             ( model, Cmd.none )
 
+        OnNotificationTopicResolved (ConcurrentTask.Success (Just groupId)) ->
+            ( model, Navigation.replaceUrl navCmd (Route.toAppUrl (GroupRoute groupId (Tab ActivityTab))) )
+
+        OnNotificationTopicResolved _ ->
+            ( model, Navigation.replaceUrl navCmd (Route.toAppUrl Home) )
+
         OnNavEvent event ->
             let
                 maybeIdentity : Maybe Identity
@@ -524,11 +531,15 @@ update msg model =
                 ( route, guardCmd ) ->
                     let
                         ( refreshedModel, refreshCmd ) =
-                            if route == Home then
-                                reloadActivityMarkers model
+                            case route of
+                                Home ->
+                                    reloadActivityMarkers model
 
-                            else
-                                ( model, Cmd.none )
+                                NotificationLanding topic ->
+                                    resolveNotificationTopic topic model
+
+                                _ ->
+                                    ( model, Cmd.none )
                     in
                     ( { refreshedModel | route = route }, Cmd.batch [ guardCmd, navScrollCmd route, refreshCmd ] )
 
@@ -643,6 +654,9 @@ update msg model =
 
                                 Nothing ->
                                     ( markerModel, markerCmd )
+
+                        NotificationLanding topic ->
+                            resolveNotificationTopic topic modelWithReadyData
 
                         _ ->
                             ( modelWithReadyData, Cmd.none )
@@ -1625,6 +1639,31 @@ reloadActivityMarkers model =
             ( model, Cmd.none )
 
 
+{-| Resolve a fallback notification's blinded topic to the group it belongs
+to: the notification was posted to this member's own registered topic, so the
+notifyTopics store holds the mapping.
+-}
+resolveNotificationTopic : String -> Model -> ( Model, Cmd Msg )
+resolveNotificationTopic topic model =
+    case model.appState of
+        Ready readyData ->
+            ( model.runner, Cmd.none )
+                |> Runner.andRun OnNotificationTopicResolved
+                    (Storage.loadAllNotifyTopics readyData.db
+                        |> ConcurrentTask.map
+                            (\topics ->
+                                topics
+                                    |> List.filter (\( _, registered ) -> registered == topic)
+                                    |> List.head
+                                    |> Maybe.map Tuple.first
+                            )
+                    )
+                |> Tuple.mapFirst (\runner -> { model | runner = runner })
+
+        _ ->
+            ( model, Cmd.none )
+
+
 processPwaOutMsgs : Model -> Cmd Msg -> List PwaState.OutMsg -> ( Model, Cmd Msg )
 processPwaOutMsgs model pwaCmd outMsgs =
     let
@@ -1926,6 +1965,9 @@ viewReady model readyData =
             { content = content, overlay = Nothing }
     in
     case model.route of
+        NotificationLanding _ ->
+            noOverlay (Page.Loading.view model.i18n)
+
         Welcome ->
             noOverlay <|
                 Page.Welcome.view i18n

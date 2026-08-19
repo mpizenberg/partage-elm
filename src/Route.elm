@@ -15,6 +15,10 @@ import Domain.Member as Member
 type Route
     = Welcome
     | Home
+      -- A fallback notification click: the blinded topic travels in the URL
+      -- fragment (never sent to the origin) and is resolved locally to the
+      -- group it belongs to, or falls back to the home list.
+    | NotificationLanding String
     | NewGroup
     | ImportSplitwise
     | GroupRoute Group.Id GroupView
@@ -61,7 +65,16 @@ fromAppUrl appUrl =
             Welcome
 
         [ "groups" ] ->
-            Home
+            case Maybe.withDefault "" appUrl.fragment of
+                "" ->
+                    Home
+
+                fragment ->
+                    if String.startsWith "n=" fragment then
+                        NotificationLanding (String.dropLeft 2 fragment)
+
+                    else
+                        Home
 
         [ "groups", "new" ] ->
             NewGroup
@@ -165,6 +178,12 @@ toAppUrl route =
             , fragment = Nothing
             }
 
+        NotificationLanding topic ->
+            { path = [ "groups" ]
+            , queryParameters = Dict.empty
+            , fragment = Just ("n=" ++ topic)
+            }
+
         _ ->
             AppUrl.fromPath (toPathSegments route)
 
@@ -178,6 +197,9 @@ toPathSegments route =
             []
 
         Home ->
+            [ "groups" ]
+
+        NotificationLanding _ ->
             [ "groups" ]
 
         NewGroup ->
@@ -258,6 +280,9 @@ toPath route =
 
         Home ->
             "/groups"
+
+        NotificationLanding topic ->
+            "/groups#n=" ++ topic
 
         NewGroup ->
             "/groups/new"
