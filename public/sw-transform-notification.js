@@ -3,8 +3,9 @@
 // The wire payload is constant apart from an AES-256-GCM blob in
 // n.data.{iv,ct}, encrypted with a group key. The plaintext carries the group
 // name (t), a phrase key (k), its parameters (p, actor included), an optional
-// amount (a: {v, sym, prec}), an optional count of further events in the
-// batch (n) and the target url (u). The Elm app stores a bundle in IndexedDB
+// amount (a: {v, sym, prec}), the recipient's own share of it (s, same
+// shape), an optional count of further events in the batch (n) and the
+// target url (u). The Elm app stores a bundle in IndexedDB
 // (identity/notificationTranslations) holding phrase templates (t) and the
 // locale's number formatting (n: {decimal, group, pos}), so all wording, word
 // order and locale knowledge stays in Elm and the Fluent files; this code
@@ -144,6 +145,9 @@ var SW_TRANSFORM_NOTIFICATION = (function () {
     if (!body) return null;
     if (plain.n > 0) body = body + " +" + plain.n;
     if (body.length > 120) body = body.slice(0, 119) + "…";
+    if (plain.s && bundle.n && t.notificationYourShare) {
+      body += "\n" + fill(t.notificationYourShare, { amount: formatAmount(plain.s, bundle.n) });
+    }
     return body;
   }
 

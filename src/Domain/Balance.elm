@@ -1,4 +1,4 @@
-module Domain.Balance exposing (MemberBalance, Status(..), computeBalances, computeExpenseShares, status)
+module Domain.Balance exposing (MemberBalance, Status(..), computeBalances, computeEntryOwed, computeEntryPaid, computeExpenseShares, status)
 
 {-| Balance computation from ledger entries with integer arithmetic.
 -}
