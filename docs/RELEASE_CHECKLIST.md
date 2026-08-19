@@ -60,9 +60,6 @@ real.
 - [ ] **Localized notification body.** With the app in French, a notification
       renders the French sentence with French number formatting; an amount in a
       zero-decimal currency (JPY) renders without decimals.
-- [ ] **Personal share line.** A notification for an expense that splits to the
-      recipient shows a second body line with their own share; a transfer, or an
-      expense they are not part of, shows none.
 - [ ] **Decryption fallback.** A notification for a group whose key is absent
       locally (or a payload the service worker cannot decrypt) shows the
       constant "Partage / New activity · Nouvelle activité" fallback, never the

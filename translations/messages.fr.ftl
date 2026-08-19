@@ -559,7 +559,6 @@ notificationsEnabled = Activées
 notificationsDisabled = Désactivées
 notificationLine = { $actor } { $phrase }
 notificationGeneric = Nouvelle activité
-notificationYourShare = ta part : { $amount }
 groupConfigButton = Configuration du groupe
 initErrorTitle = Erreur
 entriesSearchLabel = Rechercher

@@ -2009,7 +2009,6 @@ startSync config groupId model =
                                     , actorName = GroupState.resolveMemberName loaded.groupState actorId
                                     , stateContext = GroupState.activityContext loaded.groupState
                                     , groupKey = loaded.groupKey
-                                    , defaultCurrency = loaded.summary.defaultCurrency
                                     , url = Route.toPath (GroupRoute groupId (Tab ActivityTab))
                                     }
 

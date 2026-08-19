@@ -23,10 +23,8 @@ plaintext is padded to fixed-size buckets so its length reveals nothing.
 import ActivityPhrase
 import ConcurrentTask exposing (ConcurrentTask)
 import ConcurrentTask.Http as Http
-import Domain.Activity as Activity exposing (Detail(..))
-import Domain.Balance as Balance
-import Domain.Currency as Currency exposing (Currency)
-import Domain.Entry as Entry exposing (Kind(..))
+import Domain.Activity as Activity
+import Domain.Currency as Currency
 import Domain.Event as Event
 import Domain.Member as Member
 import Format
@@ -84,7 +82,6 @@ type alias NotifyContext =
     , actorName : String
     , stateContext : Activity.StateContext
     , groupKey : Symmetric.Key
-    , defaultCurrency : Currency
     , url : String
     }
 
@@ -110,22 +107,13 @@ notifyAffectedMembers ctx events =
         ConcurrentTask.succeed ()
 
     else
-        let
-            ( lastActivity, extraCount ) =
-                case events |> List.filterMap (Activity.fromEnvelope ctx.stateContext) |> List.reverse of
-                    activity :: rest ->
-                        ( Just activity, List.length rest )
-
-                    [] ->
-                        ( Nothing, 0 )
-        in
-        affectedIds
-            |> List.map
-                (\memberId ->
-                    Symmetric.encryptString ctx.groupKey (paddedPlaintext ctx lastActivity extraCount memberId)
-                        |> ConcurrentTask.mapError (\_ -> ())
-                        |> ConcurrentTask.andThen
-                            (\encrypted ->
+        Symmetric.encryptString ctx.groupKey (paddedPlaintext ctx events)
+            |> ConcurrentTask.mapError (\_ -> ())
+            |> ConcurrentTask.andThen
+                (\encrypted ->
+                    affectedIds
+                        |> List.map
+                            (\memberId ->
                                 Crypto.deriveNotifyTopic ctx.groupKey memberId
                                     |> ConcurrentTask.mapError (\_ -> ())
                                     |> ConcurrentTask.andThen
@@ -134,9 +122,9 @@ notifyAffectedMembers ctx events =
                                                 |> ConcurrentTask.mapError (\_ -> ())
                                         )
                             )
+                        |> ConcurrentTask.batch
+                        |> ConcurrentTask.map (\_ -> ())
                 )
-            |> ConcurrentTask.batch
-            |> ConcurrentTask.map (\_ -> ())
             |> ConcurrentTask.onError (\() -> ConcurrentTask.succeed ())
 
 
@@ -210,7 +198,6 @@ notificationBundle lang =
             [ ( "activityAmountSuffix", T.activityAmountSuffix { text = "{text}", amount = "{amount}" } i18n )
             , ( "notificationLine", T.notificationLine { actor = "{actor}", phrase = "{phrase}" } i18n )
             , ( "notificationGeneric", T.notificationGeneric i18n )
-            , ( "notificationYourShare", T.notificationYourShare "{amount}" i18n )
             ]
     in
     Encode.object
@@ -245,53 +232,33 @@ notificationBundle lang =
 {-| The encrypted notification content, serialized and padded to a fixed-size
 bucket so the ciphertext length reveals nothing about the description or group
 name. Carries the group name (`t`), the last visible event's phrase key (`k`)
-and parameters (`p`, actor included), its amount (`a`), the recipient's own
-share of it (`s`), the count of further events in the batch (`n`) and the
-target route (`u`).
+and parameters (`p`, actor included), its amount (`a`), the count of further
+events in the batch (`n`) and the target route (`u`).
 -}
-paddedPlaintext : NotifyContext -> Maybe Activity.Activity -> Int -> Member.Id -> String
-paddedPlaintext ctx lastActivity extraCount recipientId =
+paddedPlaintext : NotifyContext -> List Event.Envelope -> String
+paddedPlaintext ctx events =
     let
-        ( keyAndParams, amount ) =
-            case lastActivity of
-                Just activity ->
-                    let
-                        ( p, a ) =
-                            ActivityPhrase.phrase activity.detail
-                    in
-                    ( ( ActivityPhrase.key p, ActivityPhrase.params p ), a )
+        phrases : List ( ActivityPhrase.Phrase, Maybe ActivityPhrase.Amount )
+        phrases =
+            events
+                |> List.filterMap (Activity.fromEnvelope ctx.stateContext)
+                |> List.map (\a -> ActivityPhrase.phrase a.detail)
 
-                Nothing ->
-                    ( ( "notificationGeneric", [] ), Nothing )
+        ( keyAndParams, amount, extraCount ) =
+            case List.reverse phrases of
+                ( p, a ) :: rest ->
+                    ( ( ActivityPhrase.key p, ActivityPhrase.params p ), a, List.length rest )
+
+                [] ->
+                    ( ( "notificationGeneric", [] ), Nothing, 0 )
 
         ( key, params ) =
             keyAndParams
-
-        share : Maybe ActivityPhrase.Amount
-        share =
-            lastActivity
-                |> Maybe.andThen (\activity -> recipientShare ctx activity.detail recipientId)
 
         paramFields : List ( String, Encode.Value )
         paramFields =
             (( "actor", ctx.actorName ) :: params)
                 |> List.map (\( name, value ) -> ( name, Encode.string (truncateParam value) ))
-
-        optionalAmount : String -> Maybe ActivityPhrase.Amount -> List ( String, Encode.Value )
-        optionalAmount fieldName maybeAmount =
-            case maybeAmount of
-                Just a ->
-                    [ ( fieldName
-                      , Encode.object
-                            [ ( "v", Encode.int a.cents )
-                            , ( "sym", Encode.string (Currency.currencySymbol a.currency) )
-                            , ( "prec", Encode.int (Currency.precision a.currency) )
-                            ]
-                      )
-                    ]
-
-                Nothing ->
-                    []
 
         json : String
         json =
@@ -301,8 +268,20 @@ paddedPlaintext ctx lastActivity extraCount recipientId =
                      , ( "k", Encode.string key )
                      , ( "p", Encode.object paramFields )
                      ]
-                        ++ optionalAmount "a" amount
-                        ++ optionalAmount "s" share
+                        ++ (case amount of
+                                Just a ->
+                                    [ ( "a"
+                                      , Encode.object
+                                            [ ( "v", Encode.int a.cents )
+                                            , ( "sym", Encode.string (Currency.currencySymbol a.currency) )
+                                            , ( "prec", Encode.int (Currency.precision a.currency) )
+                                            ]
+                                      )
+                                    ]
+
+                                Nothing ->
+                                    []
+                           )
                         ++ (if extraCount > 0 then
                                 [ ( "n", Encode.int extraCount ) ]
 
@@ -322,74 +301,6 @@ paddedPlaintext ctx lastActivity extraCount recipientId =
             ((size + 511) // 512) * 512
     in
     json ++ String.repeat (bucket - size) " "
-
-
-{-| The recipient's own stake in the entry behind the notification: what they
-owe of an expense, what they gain from an income. Amounts follow
-`Balance.computeEntryOwed`/`computeEntryPaid`, so they are in the group's
-default currency whenever the entry carries a conversion and in the entry's
-own currency otherwise. Transfers carry no share — the amount is the whole
-story.
--}
-recipientShare : NotifyContext -> Detail -> Member.Id -> Maybe ActivityPhrase.Amount
-recipientShare ctx detail recipientId =
-    detailEntry detail
-        |> Maybe.andThen
-            (\entry ->
-                let
-                    shares : List ( Member.Id, Int )
-                    shares =
-                        case entry.kind of
-                            Expense _ ->
-                                Balance.computeEntryOwed entry
-
-                            Income _ ->
-                                Balance.computeEntryPaid entry
-
-                            Transfer _ ->
-                                []
-                in
-                shares
-                    |> List.filter (\( memberId, cents ) -> memberId == recipientId && cents /= 0)
-                    |> List.head
-                    |> Maybe.map
-                        (\( _, cents ) ->
-                            { cents = cents
-                            , currency =
-                                case entry.kind of
-                                    Expense data ->
-                                        entryShareCurrency ctx data
-
-                                    Income data ->
-                                        entryShareCurrency ctx data
-
-                                    Transfer data ->
-                                        data.currency
-                            }
-                        )
-            )
-
-
-entryShareCurrency : NotifyContext -> { data | currency : Currency, defaultCurrencyAmount : Maybe Int } -> Currency
-entryShareCurrency ctx data =
-    if data.defaultCurrencyAmount == Nothing then
-        data.currency
-
-    else
-        ctx.defaultCurrency
-
-
-detailEntry : Detail -> Maybe Entry.Entry
-detailEntry detail =
-    case detail of
-        EntryAddedDetail data ->
-            Just data.entry
-
-        EntryModifiedDetail data ->
-            Just data.entry
-
-        _ ->
-            Nothing
 
 
 truncateParam : String -> String

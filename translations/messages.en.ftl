@@ -556,7 +556,6 @@ notificationsEnabled = Enabled
 notificationsDisabled = Disabled
 notificationLine = { $actor } { $phrase }
 notificationGeneric = New activity
-notificationYourShare = your share: { $amount }
 groupConfigButton = Group Config
 initErrorTitle = Error
 entriesSearchLabel = Search
