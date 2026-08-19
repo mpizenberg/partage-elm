@@ -260,7 +260,7 @@ init flags =
         storeNotificationTranslations : Storage.InitData -> ConcurrentTask Idb.Error Storage.InitData
         storeNotificationTranslations initData =
             Storage.saveNotificationTranslations initData.db
-                (PushServer.notificationTranslations language)
+                (PushServer.notificationBundle language)
                 |> ConcurrentTask.map (\_ -> initData)
 
         pushServerUrl : Maybe String
@@ -520,7 +520,7 @@ update msg model =
                             (ConcurrentTask.map2 (\_ _ -> ())
                                 (Storage.saveLanguage readyData.db (T.languageToString lang))
                                 (Storage.saveNotificationTranslations readyData.db
-                                    (PushServer.notificationTranslations lang)
+                                    (PushServer.notificationBundle lang)
                                 )
                             )
                         |> Tuple.mapFirst (\r -> { updatedModel | runner = r })

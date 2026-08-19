@@ -5,6 +5,7 @@ module Domain.GroupState exposing
     , RejectionReason(..)
     , activeEntries
     , activeMembers
+    , activityContext
     , applyEvents
     , empty
     , nextLinkSeq

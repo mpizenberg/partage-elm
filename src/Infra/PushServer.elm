@@ -1,4 +1,11 @@
-module Infra.PushServer exposing (Error, NotifyContext, fetchVapidKey, notificationKey, notificationTranslations, notifyAffectedMembers, setGroupNotification, templates)
+module Infra.PushServer exposing
+    ( Error
+    , NotifyContext
+    , fetchVapidKey
+    , notificationBundle
+    , notifyAffectedMembers
+    , setGroupNotification
+    )
 
 {-| HTTP wrappers for push notification server communication.
 
@@ -6,20 +13,27 @@ The push-server base URL is supplied per call from deployment configuration
 (`PUSH_SERVER_URL`); an empty value means the deployment ships without push and
 these functions are never reached.
 
+Notification content never reaches the push server in cleartext: the outer
+payload is constant apart from an AES-256-GCM blob encrypted with the group
+key, which the recipient's service worker decrypts and localizes. The
+plaintext is padded to fixed-size buckets so its length reveals nothing.
+
 -}
 
+import ActivityPhrase
 import ConcurrentTask exposing (ConcurrentTask)
 import ConcurrentTask.Http as Http
-import Dict exposing (Dict)
-import Domain.Entry as Entry exposing (Kind(..))
-import Domain.Event as Event exposing (Payload(..))
+import Domain.Activity as Activity
+import Domain.Currency as Currency
+import Domain.Event as Event
 import Domain.Group as Group
-import Domain.GroupState exposing (EntryState)
 import Domain.Member as Member
+import Format
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Set
-import Translations exposing (Language(..))
+import Translations as T exposing (Language(..))
+import WebCrypto.Symmetric as Symmetric
 
 
 type alias Error =
@@ -71,88 +85,75 @@ type alias NotifyContext =
     , groupName : String
     , actorRootId : Member.Id
     , actorName : String
-    , entries : Dict Entry.Id EntryState
+    , stateContext : Activity.StateContext
+    , groupKey : Symmetric.Key
     , url : String
     }
 
 
 {-| Send push notifications to all affected members of pushed events.
-Extracts involved member rootIds from each event, deduplicates, removes the actor,
-and notifies each topic.
+Extracts involved member rootIds from each event, deduplicates, removes the
+actor, encrypts the content once with the group key, and notifies each topic.
+Notifications are best-effort: any failure is swallowed so it can never fail
+the sync that triggered it.
 -}
-notifyAffectedMembers : NotifyContext -> List Event.Envelope -> ConcurrentTask Error ()
-notifyAffectedMembers { pushServerUrl, groupId, groupName, actorRootId, actorName, entries, url } events =
+notifyAffectedMembers : NotifyContext -> List Event.Envelope -> ConcurrentTask x ()
+notifyAffectedMembers ctx events =
     let
-        entryCurrentVersion : Entry.Id -> Maybe Entry.Entry
-        entryCurrentVersion rootId =
-            Dict.get rootId entries |> Maybe.map .currentVersion
-
         affectedIds : List Member.Id
         affectedIds =
             events
-                |> List.concatMap (\e -> Event.involvedMembers entryCurrentVersion e.payload)
+                |> List.concatMap (\e -> Event.involvedMembers ctx.stateContext.entryCurrentVersion e.payload)
                 |> Set.fromList
-                |> Set.remove actorRootId
+                |> Set.remove ctx.actorRootId
                 |> Set.toList
-
-        { body, templateData } =
-            notificationBodyAndData actorName (List.map .payload events)
     in
-    affectedIds
-        |> List.map
-            (\memberId ->
-                notifyTopic pushServerUrl
-                    (groupId ++ "-" ++ memberId)
-                    { title = groupName
-                    , body = body
-                    , tag = groupId
-                    , icon = "/icon-192.png"
-                    , url = url
-                    , templateData = templateData
-                    }
-            )
-        |> ConcurrentTask.batch
-        |> ConcurrentTask.map (\_ -> ())
+    if List.isEmpty affectedIds then
+        ConcurrentTask.succeed ()
+
+    else
+        Symmetric.encryptString ctx.groupKey (paddedPlaintext ctx events)
+            |> ConcurrentTask.mapError (\_ -> ())
+            |> ConcurrentTask.andThen
+                (\encrypted ->
+                    affectedIds
+                        |> List.map
+                            (\memberId ->
+                                notifyTopic ctx.pushServerUrl (ctx.groupId ++ "-" ++ memberId) encrypted
+                            )
+                        |> ConcurrentTask.batch
+                        |> ConcurrentTask.map (\_ -> ())
+                        |> ConcurrentTask.mapError (\_ -> ())
+                )
+            |> ConcurrentTask.onError (\() -> ConcurrentTask.succeed ())
 
 
-type alias NotificationPayload =
-    { title : String
-    , body : String
-
-    -- same "tag" would replace notification instead of stacking multiple
-    , tag : String
-
-    -- use same origin path to the 192p icon
-    , icon : String
-
-    -- url useful to redirect to the correct page on opening
-    , url : String
-
-    -- template key and params for SW-based i18n (carried in data alongside url)
-    , templateData : List ( String, Encode.Value )
-    }
-
-
-{-| Send a push notification to all subscribers of a topic.
-Uses legacy mode to ensure the service worker handles the notification
-(required for SW-based i18n transform).
+{-| Send an encrypted push notification to all subscribers of a topic. Every
+cleartext field is constant across all notifications of all groups, except the
+tag, which repeats the topic from the request's own URL so notifications from
+one group replace each other without naming the group. Legacy mode keeps
+delivery on the service-worker path so the transform can decrypt (declarative
+rendering could only ever show the cleartext).
 -}
-notifyTopic : String -> String -> NotificationPayload -> ConcurrentTask Error ()
-notifyTopic pushServerUrl topic { title, body, url, tag, icon, templateData } =
+notifyTopic : String -> String -> Symmetric.EncryptedData -> ConcurrentTask Http.Error ()
+notifyTopic pushServerUrl topic encrypted =
     Http.post
         { url = pushServerUrl ++ "/topics/" ++ topic ++ "/notify"
         , headers = []
         , body =
             Http.jsonBody
                 (Encode.object
-                    [ ( "title", Encode.string title )
-                    , ( "body", Encode.string body )
-                    , ( "tag", Encode.string tag )
-                    , ( "icon", Encode.string icon )
+                    [ ( "title", Encode.string (T.shellPartage (T.init En)) )
+                    , ( "body", Encode.string fallbackBody )
+                    , ( "tag", Encode.string topic )
+                    , ( "icon", Encode.string "/icon-192.png" )
                     , ( "legacy", Encode.bool True )
                     , ( "data"
                       , Encode.object
-                            (( "url", Encode.string url ) :: templateData)
+                            [ ( "v", Encode.int 1 )
+                            , ( "iv", Encode.string encrypted.iv )
+                            , ( "ct", Encode.string encrypted.ciphertext )
+                            ]
                       )
                     ]
                 )
@@ -161,124 +162,170 @@ notifyTopic pushServerUrl topic { title, body, url, tag, icon, templateData } =
         }
 
 
-{-| Notification templates for the service worker to resolve template keys.
-Stored in IndexedDB so the SW can display localized push notifications.
+{-| The constant cleartext body, shown when the service worker cannot decrypt.
+The sender cannot know the recipient's language and localizing the cleartext
+would leak a per-topic hint, so it joins every shipped language.
 -}
-notificationTranslations : Language -> Encode.Value
-notificationTranslations lang =
-    templates lang
-        |> Dict.toList
-        |> List.map (Tuple.mapSecond Encode.string)
-        |> Encode.object
+fallbackBody : String
+fallbackBody =
+    T.languages
+        |> List.map (\lang -> T.notificationGeneric (T.init lang))
+        |> String.join " · "
 
 
-{-| The push-notification message templates keyed by event type, per language.
-The service worker interpolates `{name}` at display time; the English set also
-backs the fallback body sent with each notification.
+{-| The bundle the service worker assembles notifications from, stored in
+IndexedDB and refreshed on language change: phrase templates with `{param}`
+placeholders (`t`) and the locale's number formatting (`n`), so no locale
+knowledge lives in JavaScript.
 -}
-templates : Language -> Dict String String
-templates lang =
-    Dict.fromList <|
-        case lang of
-            En ->
-                [ ( "new_activity", "New activity" )
-                , ( "expense_added", "{name} added an expense" )
-                , ( "transfer_added", "{name} added a transfer" )
-                , ( "income_added", "{name} added an income" )
-                , ( "expense_modified", "{name} edited an expense" )
-                , ( "transfer_modified", "{name} edited a transfer" )
-                , ( "income_modified", "{name} edited an income" )
-                , ( "entry_deleted", "{name} deleted an entry" )
-                , ( "member_joined", "{name} joined the group" )
-                ]
+notificationBundle : Language -> Encode.Value
+notificationBundle lang =
+    let
+        i18n : T.I18n
+        i18n =
+            T.init lang
 
-            Fr ->
-                [ ( "new_activity", "Nouvelle activité" )
-                , ( "expense_added", "{name} a ajouté une dépense" )
-                , ( "transfer_added", "{name} a ajouté un transfert" )
-                , ( "income_added", "{name} a ajouté un revenu" )
-                , ( "expense_modified", "{name} a modifié une dépense" )
-                , ( "transfer_modified", "{name} a modifié un transfert" )
-                , ( "income_modified", "{name} a modifié un revenu" )
-                , ( "entry_deleted", "{name} a supprimé une entrée" )
-                , ( "member_joined", "{name} a rejoint le groupe" )
+        cfg : Format.LocaleConfig
+        cfg =
+            Format.localeConfig lang
+
+        wrappers : List ( String, String )
+        wrappers =
+            [ ( "activityAmountSuffix", T.activityAmountSuffix { text = "{text}", amount = "{amount}" } i18n )
+            , ( "notificationLine", T.notificationLine { actor = "{actor}", phrase = "{phrase}" } i18n )
+            , ( "notificationGeneric", T.notificationGeneric i18n )
+            ]
+    in
+    Encode.object
+        [ ( "t"
+          , (ActivityPhrase.templates i18n ++ wrappers)
+                |> List.map (Tuple.mapSecond Encode.string)
+                |> Encode.object
+          )
+        , ( "n"
+          , Encode.object
+                [ ( "decimal", Encode.string cfg.decimal )
+                , ( "group", Encode.string cfg.group )
+                , ( "pos"
+                  , Encode.string
+                        (case cfg.symbolPosition of
+                            Format.Prefix ->
+                                "prefix"
+
+                            Format.SuffixWithSpace ->
+                                "suffix"
+                        )
+                  )
                 ]
+          )
+        ]
 
 
 
 -- Internal
 
 
-{-| Build the outgoing notification body and template data for a batch of pushed
-payloads. The body is a readable English fallback (shown only if the SW can't
-read the stored translations); the template data carries the key and `{name}`
-for the SW to localize.
+{-| The encrypted notification content, serialized and padded to a fixed-size
+bucket so the ciphertext length reveals nothing about the description or group
+name. Carries the group name (`t`), the last visible event's phrase key (`k`)
+and parameters (`p`, actor included), its amount (`a`), the count of further
+events in the batch (`n`) and the target route (`u`).
 -}
-notificationBodyAndData : String -> List Event.Payload -> { body : String, templateData : List ( String, Encode.Value ) }
-notificationBodyAndData actorName payloads =
+paddedPlaintext : NotifyContext -> List Event.Envelope -> String
+paddedPlaintext ctx events =
     let
-        key : String
-        key =
-            notificationKey payloads
+        phrases : List ( ActivityPhrase.Phrase, Maybe ActivityPhrase.Amount )
+        phrases =
+            events
+                |> List.filterMap (Activity.fromEnvelope ctx.stateContext)
+                |> List.map (\a -> ActivityPhrase.phrase a.detail)
 
-        body : String
-        body =
-            Dict.get key (templates En)
-                |> Maybe.withDefault "New activity"
-                |> String.replace "{name}" actorName
+        ( keyAndParams, amount, extraCount ) =
+            case List.reverse phrases of
+                ( p, a ) :: rest ->
+                    ( ( ActivityPhrase.key p, ActivityPhrase.params p ), a, List.length rest )
+
+                [] ->
+                    ( ( "notificationGeneric", [] ), Nothing, 0 )
+
+        ( key, params ) =
+            keyAndParams
+
+        paramFields : List ( String, Encode.Value )
+        paramFields =
+            (( "actor", ctx.actorName ) :: params)
+                |> List.map (\( name, value ) -> ( name, Encode.string (truncateParam value) ))
+
+        json : String
+        json =
+            Encode.encode 0
+                (Encode.object
+                    ([ ( "t", Encode.string ctx.groupName )
+                     , ( "k", Encode.string key )
+                     , ( "p", Encode.object paramFields )
+                     ]
+                        ++ (case amount of
+                                Just a ->
+                                    [ ( "a"
+                                      , Encode.object
+                                            [ ( "v", Encode.int a.cents )
+                                            , ( "sym", Encode.string (Currency.currencySymbol a.currency) )
+                                            , ( "prec", Encode.int (Currency.precision a.currency) )
+                                            ]
+                                      )
+                                    ]
+
+                                Nothing ->
+                                    []
+                           )
+                        ++ (if extraCount > 0 then
+                                [ ( "n", Encode.int extraCount ) ]
+
+                            else
+                                []
+                           )
+                        ++ [ ( "u", Encode.string ctx.url ) ]
+                    )
+                )
+
+        size : Int
+        size =
+            utf8Length json
+
+        bucket : Int
+        bucket =
+            ((size + 511) // 512) * 512
     in
-    { body = body
-    , templateData =
-        [ ( "key", Encode.string key )
-        , ( "name", Encode.string actorName )
-        ]
-    }
+    json ++ String.repeat (bucket - size) " "
 
 
-{-| The notification template key for a batch of pushed payloads. A single added,
-edited, or deleted entry, or a joining member, gets its specific key; anything
-else — a mixed batch, an undelete, a metadata change — is generic activity.
--}
-notificationKey : List Event.Payload -> String
-notificationKey payloads =
-    case payloads of
-        [ EntryAdded entry ] ->
-            case entry.kind of
-                Expense _ ->
-                    "expense_added"
+truncateParam : String -> String
+truncateParam value =
+    if String.length value > 80 then
+        String.left 79 value ++ "…"
 
-                Transfer _ ->
-                    "transfer_added"
+    else
+        value
 
-                Income _ ->
-                    "income_added"
 
-        [ EntryModified entry ] ->
-            case entry.kind of
-                Expense _ ->
-                    "expense_modified"
+utf8Length : String -> Int
+utf8Length s =
+    String.foldl (\c acc -> acc + codePointUtf8Length (Char.toCode c)) 0 s
 
-                Transfer _ ->
-                    "transfer_modified"
 
-                Income _ ->
-                    "income_modified"
+codePointUtf8Length : Int -> Int
+codePointUtf8Length code =
+    if code < 0x80 then
+        1
 
-        [ EntryDeleted _ ] ->
-            "entry_deleted"
+    else if code < 0x0800 then
+        2
 
-        [ MemberCreated data ] ->
-            if data.memberType == Member.Real then
-                "member_joined"
+    else if code < 0x00010000 then
+        3
 
-            else
-                "new_activity"
-
-        [ MemberLinked _ ] ->
-            "member_joined"
-
-        _ ->
-            "new_activity"
+    else
+        4
 
 
 register : String -> { topic : String, subscription : Encode.Value } -> ConcurrentTask Error ()

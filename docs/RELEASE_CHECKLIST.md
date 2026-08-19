@@ -57,6 +57,13 @@ real.
 - [ ] **Per-group toggle.** A group's notification toggle subscribes/unsubscribes;
       an action by another member delivers a notification with the correct
       event-specific text in the active language (RR-005).
+- [ ] **Localized notification body.** With the app in French, a notification
+      renders the French sentence with French number formatting; an amount in a
+      zero-decimal currency (JPY) renders without decimals.
+- [ ] **Decryption fallback.** A notification for a group whose key is absent
+      locally (or a payload the service worker cannot decrypt) shows the
+      constant "Partage / New activity · Nouvelle activité" fallback, never the
+      raw payload and never nothing.
 - [ ] **Unavailable state.** With the push server unreachable, enabling shows the
       unavailable message instead of doing nothing (RR-006).
 - [ ] **Push disabled build.** With `PUSH_SERVER_URL` unset, the home control and

@@ -256,7 +256,7 @@ The response to confirmed compromise is migration to a new group and key. Migrat
 
 Push notifications are optional and use a separately configured external push service. The sending client determines affected members after a successful sync and excludes the actor.
 
-Push is not zero-knowledge: group name, actor display name, and event kind are sent in plaintext to the push service. Subscription topics include opaque group and member identifiers, and the external notify endpoint is not authenticated by the Partage group bearer. Deployments without a configured push service hide notification controls.
+Notification content is end-to-end encrypted. Every cleartext field is constant across all notifications of all groups except the per-topic tag; the group name, actor display name, event description, amount, and target route travel only inside a blob encrypted with the group key and padded to fixed-size buckets. The recipient's service worker decrypts and localizes it; when it cannot, the device shows a constant generic fallback. Subscription topics still include opaque group and member identifiers, and the external notify endpoint is not authenticated by the Partage group bearer — but forging descriptive content requires the group key. Deployments without a configured push service hide notification controls.
 
 ## Progressive Web App, language, and accessibility
 

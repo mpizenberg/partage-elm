@@ -180,7 +180,8 @@ saveLanguage db lang =
     Idb.putAt db identityStore (Idb.StringKey "language") (Encode.string lang)
 
 
-{-| Save notification translations for the service worker to use.
+{-| Save the notification bundle (phrase templates and locale number
+formatting) for the service worker to assemble notifications from.
 Stored in the identity store under the "notificationTranslations" key.
 -}
 saveNotificationTranslations : Idb.Db -> Encode.Value -> ConcurrentTask Idb.Error ()

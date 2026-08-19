@@ -346,7 +346,7 @@ sync ctx actorId { unpushedEvents, syncCursor, notifyContext } =
         pushedCount =
             List.length unpushedEvents
 
-        notifyTask : ConcurrentTask PushServer.Error ()
+        notifyTask : ConcurrentTask Error ()
         notifyTask =
             case notifyContext of
                 Just nc ->
@@ -366,9 +366,7 @@ sync ctx actorId { unpushedEvents, syncCursor, notifyContext } =
                 pushEvents ctx secret actorId unpushedEvents
                     |> ConcurrentTask.andThenDo
                         (ConcurrentTask.map2 (\_ pull -> { pullResult = pull, pushedCount = pushedCount })
-                            -- Discard errors on the notify task
-                            (ConcurrentTask.onError (\_ -> ConcurrentTask.succeed ()) notifyTask)
-                            -- Pull events
+                            notifyTask
                             (pullEvents ctx secret syncCursor)
                         )
             )

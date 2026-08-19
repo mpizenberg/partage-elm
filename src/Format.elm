@@ -1,4 +1,4 @@
-module Format exposing (formatCents, formatCentsForInput, formatCentsSigned, formatCentsWithCurrency)
+module Format exposing (LocaleConfig, SymbolPosition(..), formatCents, formatCentsForInput, formatCentsSigned, formatCentsWithCurrency, localeConfig)
 
 {-| Locale-aware formatting helpers for currency amounts stored as smallest currency units.
 

@@ -4,6 +4,7 @@ module Page.Group.ActivityTab exposing (Config, Model, Msg, init, update, view)
 expandable detail views, and filtering.
 -}
 
+import ActivityPhrase
 import Domain.Activity exposing (Activity, ChangedField(..), Detail(..), GroupMetadataSnapshot)
 import Domain.Currency as Currency exposing (Currency)
 import Domain.Date as Date
@@ -473,114 +474,27 @@ summaryRow i18n zone resolveName activity =
 
 detailSummaryText : I18n -> Detail -> String
 detailSummaryText i18n detail =
+    ActivityPhrase.renderLine i18n (ActivityPhrase.phrase detail)
+        ++ changesText i18n (detailChanges detail)
+
+
+detailChanges : Detail -> List ChangedField
+detailChanges detail =
     case detail of
-        UnknownDetail ->
-            T.activityUnknown i18n
-
-        EntryAddedDetail data ->
-            case data.entry.kind of
-                Expense expData ->
-                    T.activityEntryAdded expData.description i18n
-                        ++ " ("
-                        ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) expData.amount expData.currency
-                        ++ ")"
-
-                Transfer _ ->
-                    T.activityTransferAdded i18n
-
-                Income incData ->
-                    T.activityIncomeAdded incData.description i18n
-                        ++ " ("
-                        ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) incData.amount incData.currency
-                        ++ ")"
-
         EntryModifiedDetail data ->
-            case data.entry.kind of
-                Expense expData ->
-                    T.activityEntryModified expData.description i18n
-                        ++ " ("
-                        ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) expData.amount expData.currency
-                        ++ ")"
-                        ++ changesText i18n data.changes
-
-                Transfer _ ->
-                    T.activityTransferModified i18n
-
-                Income incData ->
-                    T.activityIncomeModified incData.description i18n
-                        ++ " ("
-                        ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) incData.amount incData.currency
-                        ++ ")"
-                        ++ changesText i18n data.changes
-
-        TransferAddedDetail data ->
-            case data.entry.kind of
-                Transfer tData ->
-                    T.activityTransferAdded i18n
-                        ++ " ("
-                        ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) tData.amount tData.currency
-                        ++ ")"
-
-                Expense _ ->
-                    T.activityTransferAdded i18n
-
-                Income _ ->
-                    T.activityTransferAdded i18n
+            data.changes
 
         TransferModifiedDetail data ->
-            case data.entry.kind of
-                Transfer tData ->
-                    T.activityTransferModified i18n
-                        ++ " ("
-                        ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) tData.amount tData.currency
-                        ++ ")"
-                        ++ changesText i18n data.changes
-
-                Expense _ ->
-                    T.activityTransferModified i18n
-
-                Income _ ->
-                    T.activityTransferModified i18n
-
-        EntryDeletedDetail data ->
-            T.activityEntryDeleted data.entryDescription i18n
-
-        EntryUndeletedDetail data ->
-            T.activityEntryUndeleted data.entryDescription i18n
-
-        MemberCreatedDetail data ->
-            case data.memberType of
-                Member.Real ->
-                    T.activityMemberCreated data.name i18n
-
-                Member.Virtual ->
-                    T.activityMemberCreatedVirtual data.name i18n
-
-        MemberLinkedDetail data ->
-            T.activityMemberLinked data.name i18n
-
-        MemberRenamedDetail data ->
-            T.activityMemberRenamed { oldName = data.oldName, newName = data.newName } i18n
-
-        MemberRetiredDetail data ->
-            T.activityMemberRetired data.name i18n
-
-        MemberUnretiredDetail data ->
-            T.activityMemberUnretired data.name i18n
+            data.changes
 
         MemberMetadataUpdatedDetail data ->
-            T.activityMemberMetadataUpdated data.name i18n
-                ++ changesText i18n data.updatedFields
-
-        GroupCreatedDetail _ ->
-            T.activityGroupCreated i18n
+            data.updatedFields
 
         GroupMetadataUpdatedDetail data ->
-            T.activityGroupMetadataUpdated i18n
-                ++ changesText i18n data.changedFields
+            data.changedFields
 
-        SettlementPreferencesUpdatedDetail data ->
-            T.activitySettlementPreferencesUpdated data.name i18n
+        _ ->
+            []
 
 
 changesText : I18n -> List ChangedField -> String

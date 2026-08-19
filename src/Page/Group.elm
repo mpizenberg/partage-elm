@@ -2002,7 +2002,8 @@ startSync config groupId model =
                                     , groupName = loaded.groupState.groupMeta.name
                                     , actorRootId = actorId
                                     , actorName = GroupState.resolveMemberName loaded.groupState actorId
-                                    , entries = loaded.groupState.entries
+                                    , stateContext = GroupState.activityContext loaded.groupState
+                                    , groupKey = loaded.groupKey
                                     , url = Route.toPath (GroupRoute groupId (Tab ActivityTab))
                                     }
 

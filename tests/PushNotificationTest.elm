@@ -1,10 +1,11 @@
 module PushNotificationTest exposing (suite)
 
-import Dict
-import Domain.Event exposing (Payload(..))
+import ActivityPhrase exposing (Phrase(..))
+import Domain.Activity exposing (Detail(..))
+import Domain.Currency exposing (Currency(..))
 import Domain.Member as Member
 import Expect
-import Infra.PushServer as PushServer
+import Set
 import Test exposing (Test, describe, test)
 import TestHelpers
     exposing
@@ -15,112 +16,108 @@ import TestHelpers
         , makeIncomeEntry
         , makeTransferEntry
         )
-import Translations exposing (Language(..))
+import Translations as T exposing (Language(..))
 
 
 suite : Test
 suite =
     describe "push notifications"
-        [ describe "notificationKey maps each documented event to its template key"
-            [ test "added expense" <|
+        [ describe "phrase maps activity details to wire keys and parameters"
+            [ test "added expense carries description and amount" <|
                 \_ ->
-                    PushServer.notificationKey [ EntryAdded (makeExpenseEntry "e1" 0 defaultExpenseData) ]
-                        |> Expect.equal "expense_added"
-            , test "added transfer" <|
+                    ActivityPhrase.phrase (EntryAddedDetail { entry = makeExpenseEntry "e1" 0 defaultExpenseData })
+                        |> Expect.equal ( EntryAdded "Test expense", Just { cents = 1000, currency = EUR } )
+            , test "added transfer carries only the amount" <|
                 \_ ->
-                    PushServer.notificationKey [ EntryAdded (makeTransferEntry "e1" 0 defaultTransferData) ]
-                        |> Expect.equal "transfer_added"
-            , test "added income" <|
+                    ActivityPhrase.phrase (TransferAddedDetail { entry = makeTransferEntry "e1" 0 defaultTransferData })
+                        |> Expect.equal ( TransferAdded, Just { cents = defaultTransferData.amount, currency = defaultTransferData.currency } )
+            , test "added income carries description and amount" <|
                 \_ ->
-                    PushServer.notificationKey [ EntryAdded (makeIncomeEntry "e1" 0 defaultIncomeData) ]
-                        |> Expect.equal "income_added"
-            , test "edited expense" <|
+                    ActivityPhrase.phrase (EntryAddedDetail { entry = makeIncomeEntry "e1" 0 defaultIncomeData })
+                        |> Expect.equal ( IncomeAdded defaultIncomeData.description, Just { cents = defaultIncomeData.amount, currency = defaultIncomeData.currency } )
+            , test "modified expense keeps the changes out of the phrase" <|
                 \_ ->
-                    PushServer.notificationKey [ EntryModified (makeExpenseEntry "e1" 0 defaultExpenseData) ]
-                        |> Expect.equal "expense_modified"
-            , test "edited transfer" <|
+                    ActivityPhrase.phrase
+                        (EntryModifiedDetail
+                            { entry = makeExpenseEntry "e1" 1 defaultExpenseData
+                            , previousEntry = Nothing
+                            , changes = []
+                            }
+                        )
+                        |> Tuple.first
+                        |> Expect.equal (EntryModified "Test expense")
+            , test "deleted entry has no amount" <|
                 \_ ->
-                    PushServer.notificationKey [ EntryModified (makeTransferEntry "e1" 0 defaultTransferData) ]
-                        |> Expect.equal "transfer_modified"
-            , test "edited income" <|
-                \_ ->
-                    PushServer.notificationKey [ EntryModified (makeIncomeEntry "e1" 0 defaultIncomeData) ]
-                        |> Expect.equal "income_modified"
-            , test "deleted entry" <|
-                \_ ->
-                    PushServer.notificationKey [ EntryDeleted { rootId = "e1" } ]
-                        |> Expect.equal "entry_deleted"
+                    ActivityPhrase.phrase (EntryDeletedDetail { entryDescription = "Old", entry = Nothing })
+                        |> Expect.equal ( EntryDeleted "Old", Nothing )
             , test "real member joined" <|
                 \_ ->
-                    PushServer.notificationKey [ MemberCreated { memberId = "m1", name = "Mia", memberType = Member.Real, addedBy = "admin" } ]
-                        |> Expect.equal "member_joined"
-            , test "linked member joined" <|
+                    ActivityPhrase.phrase (MemberCreatedDetail { name = "Mia", memberType = Member.Real })
+                        |> Expect.equal ( MemberCreated "Mia", Nothing )
+            , test "virtual member is created, not joined" <|
                 \_ ->
-                    PushServer.notificationKey [ MemberLinked { rootId = "m1", deviceId = "d1", seq = 0 } ]
-                        |> Expect.equal "member_joined"
+                    ActivityPhrase.phrase (MemberCreatedDetail { name = "Cat", memberType = Member.Virtual })
+                        |> Expect.equal ( MemberCreatedVirtual "Cat", Nothing )
+            , test "rename carries both names" <|
+                \_ ->
+                    ActivityPhrase.phrase (MemberRenamedDetail { oldName = "Paul", newName = "Paul D.", rootId = "m1" })
+                        |> Expect.equal ( MemberRenamed { oldName = "Paul", newName = "Paul D." }, Nothing )
             ]
-        , describe "notificationKey falls back to generic activity"
-            [ test "a virtual member is created, not joined" <|
+        , describe "samples cover the wire vocabulary consistently"
+            [ test "every sample argument is the placeholder of its parameter name" <|
                 \_ ->
-                    PushServer.notificationKey [ MemberCreated { memberId = "v1", name = "Cat", memberType = Member.Virtual, addedBy = "admin" } ]
-                        |> Expect.equal "new_activity"
-            , test "an undelete has no documented template" <|
+                    ActivityPhrase.samples
+                        |> List.concatMap ActivityPhrase.params
+                        |> List.filter (\( name, value ) -> value /= "{" ++ name ++ "}")
+                        |> Expect.equalLists []
+            , test "sample keys are unique" <|
                 \_ ->
-                    PushServer.notificationKey [ EntryUndeleted { rootId = "e1" } ]
-                        |> Expect.equal "new_activity"
-            , test "an empty batch" <|
-                \_ ->
-                    PushServer.notificationKey []
-                        |> Expect.equal "new_activity"
-            , test "a mixed batch" <|
-                \_ ->
-                    PushServer.notificationKey
-                        [ EntryAdded (makeExpenseEntry "e1" 0 defaultExpenseData)
-                        , EntryDeleted { rootId = "e2" }
-                        ]
-                        |> Expect.equal "new_activity"
+                    ActivityPhrase.samples
+                        |> List.map ActivityPhrase.key
+                        |> (\keys -> Set.size (Set.fromList keys) |> Expect.equal (List.length keys))
             ]
-        , describe "every template key is localized with an interpolation slot"
-            (List.map keyTranslated allKeys)
+        , describe "every template renders with its placeholders intact"
+            (List.map templatesContainPlaceholders [ En, Fr ])
+        , describe "renderLine appends the localized amount"
+            [ test "English prefix symbol" <|
+                \_ ->
+                    ActivityPhrase.renderLine (T.init En) ( EntryAdded "Groceries", Just { cents = 4250, currency = EUR } )
+                        |> Expect.equal "added \"Groceries\" (€42.50)"
+            , test "French suffix symbol" <|
+                \_ ->
+                    ActivityPhrase.renderLine (T.init Fr) ( EntryAdded "Courses", Just { cents = 4250, currency = EUR } )
+                        |> Expect.equal "a ajouté « Courses » (42,50\u{00A0}€)"
+            , test "no amount renders the bare phrase" <|
+                \_ ->
+                    ActivityPhrase.renderLine (T.init En) ( MemberRetired "Paul", Nothing )
+                        |> Expect.equal "retired Paul"
+            ]
         ]
 
 
-{-| Every key `notificationKey` can emit, plus the generic fallback.
+{-| A missing placeholder in one language's template would silently drop a
+parameter on the lock screen; a missing or empty template would drop the
+whole phrase.
 -}
-allKeys : List String
-allKeys =
-    [ "new_activity"
-    , "expense_added"
-    , "transfer_added"
-    , "income_added"
-    , "expense_modified"
-    , "transfer_modified"
-    , "income_modified"
-    , "entry_deleted"
-    , "member_joined"
-    ]
+templatesContainPlaceholders : Language -> Test
+templatesContainPlaceholders lang =
+    describe (T.languageToString lang)
+        (ActivityPhrase.samples
+            |> List.map
+                (\sample ->
+                    test (ActivityPhrase.key sample) <|
+                        \_ ->
+                            let
+                                rendered : String
+                                rendered =
+                                    ActivityPhrase.render (T.init lang) sample
+                            in
+                            if String.isEmpty rendered then
+                                Expect.fail "empty template"
 
-
-keyTranslated : String -> Test
-keyTranslated key =
-    describe key
-        [ test "English" <| \_ -> expectTemplate key (Dict.get key (PushServer.templates En))
-        , test "French" <| \_ -> expectTemplate key (Dict.get key (PushServer.templates Fr))
-        ]
-
-
-{-| A key must resolve to a template, and every key except the generic fallback
-must carry the `{name}` slot the service worker interpolates.
--}
-expectTemplate : String -> Maybe String -> Expect.Expectation
-expectTemplate key maybeTemplate =
-    case maybeTemplate of
-        Nothing ->
-            Expect.fail ("no template for key " ++ key)
-
-        Just template ->
-            if key == "new_activity" || String.contains "{name}" template then
-                Expect.pass
-
-            else
-                Expect.fail ("template for " ++ key ++ " lacks a {name} slot: " ++ template)
+                            else
+                                ActivityPhrase.params sample
+                                    |> List.filter (\( _, placeholder ) -> not (String.contains placeholder rendered))
+                                    |> Expect.equalLists []
+                )
+        )
