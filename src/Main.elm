@@ -1669,11 +1669,8 @@ processPwaOutMsgs model pwaCmd outMsgs =
                 (\outMsg ( m, cmds ) ->
                     case outMsg of
                         PwaState.ShowToastError ->
-                            let
-                                ( modelWithToast, toastCmd ) =
-                                    addToast Toast.Error (T.toastPushError m.i18n) m
-                            in
-                            ( logError ErrorLog.PushSource ErrorLog.Err "Push subscription error" modelWithToast, toastCmd :: cmds )
+                            addToast Toast.Error (T.toastPushError m.i18n) m
+                                |> Tuple.mapSecond (\toastCmd -> toastCmd :: cmds)
 
                         PwaState.NavigateToUrl url ->
                             case Url.fromString (m.origin ++ url) of
