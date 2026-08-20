@@ -2125,6 +2125,9 @@ viewReady model readyData =
                         , deviceId = readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault ""
                         , gitSha = model.gitSha
                         , onNavigate = NavigateTo
+                        , pushServerUrl = PwaState.pushServerUrl model.pwaState
+                        , pushUnreachable = PwaState.notificationUnavailable model.pwaState
+                        , pushActive = PwaState.pushIsActive model.pwaState
                         }
                         model.aboutModel
                     )

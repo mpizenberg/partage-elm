@@ -94,6 +94,9 @@ view :
         , deviceId : String
         , gitSha : String
         , onNavigate : Route -> msg
+        , pushServerUrl : Maybe String
+        , pushUnreachable : Bool
+        , pushActive : Bool
         }
     -> Model
     -> Ui.Element msg
@@ -102,6 +105,7 @@ view i18n config model =
         [ descriptionSection i18n
         , whatsNewLink i18n config.onNavigate
         , languageSection i18n config.onSwitchLanguage
+        , notificationsSection i18n config
         , Ui.map config.toMsg (usageSection i18n model)
         , Ui.map config.toMsg (deviceSecuritySection i18n config.deviceId model.confirmingRekey)
         , devModeSection i18n config
@@ -154,6 +158,56 @@ languageSection i18n onSwitchLanguage =
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.centerX ]
         [ UI.Components.sectionLabel (T.aboutLanguageTitle i18n)
         , UI.Components.languageSelector onSwitchLanguage (T.currentLanguage i18n)
+        ]
+
+
+
+-- NOTIFICATIONS
+
+
+{-| The push state, which no other surface reveals: the per-group toggles and
+the home enable button hide themselves when no push server is known, so without
+this a misconfigured deployment looks exactly like one that ships without push.
+-}
+notificationsSection :
+    I18n
+    -> { r | pushServerUrl : Maybe String, pushUnreachable : Bool, pushActive : Bool }
+    -> Ui.Element msg
+notificationsSection i18n config =
+    let
+        status : String
+        status =
+            case config.pushServerUrl of
+                Nothing ->
+                    T.aboutNotificationsNoServer i18n
+
+                Just _ ->
+                    if config.pushUnreachable then
+                        T.aboutNotificationsUnreachable i18n
+
+                    else if config.pushActive then
+                        T.aboutNotificationsActive i18n
+
+                    else
+                        T.aboutNotificationsInactive i18n
+    in
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+        [ UI.Components.sectionLabel (T.aboutNotificationsTitle i18n)
+        , Ui.el
+            [ Ui.Font.size Theme.font.sm
+            , Ui.Font.color Theme.base.textSubtle
+            ]
+            (Ui.text status)
+        , case config.pushServerUrl of
+            Just url ->
+                Ui.el
+                    [ Ui.Font.size Theme.font.xs
+                    , Ui.Font.color Theme.base.textSubtle
+                    ]
+                    (Ui.text (T.aboutNotificationsServer url i18n))
+
+            Nothing ->
+                Ui.none
         ]
 
 
