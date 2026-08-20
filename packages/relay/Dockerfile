@@ -8,7 +8,8 @@ COPY packages/relay/package.json packages/relay/pnpm-lock.yaml ./
 RUN corepack enable pnpm && pnpm install --frozen-lockfile --prod
 COPY packages/relay/src ./src
 COPY dist ./static
-ENV RELAY_DB=/data/relay.db STATIC_DIR=./static PORT=8090
+ARG GIT_SHA=""
+ENV RELAY_DB=/data/relay.db STATIC_DIR=./static PORT=8090 GIT_SHA=$GIT_SHA
 EXPOSE 8090
 VOLUME /data
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \

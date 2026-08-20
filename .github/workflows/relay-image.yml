@@ -62,6 +62,8 @@ jobs:
           context: .
           file: packages/relay/Dockerfile
           push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           tags: |
             ghcr.io/${{ github.repository }}/relay:latest
             ghcr.io/${{ github.repository }}/relay:${{ github.sha }}

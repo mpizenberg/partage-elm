@@ -25,9 +25,11 @@ One container, one volume. Works on any container host (Dokploy, Fly.io, a VPS w
 
 ```sh
 SERVER_URL= pnpm build:optimize
-docker build -t partage-relay -f packages/relay/Dockerfile .
+docker build -t partage-relay -f packages/relay/Dockerfile --build-arg GIT_SHA=$(git rev-parse HEAD) .
 docker run -d -p 8090:8090 -v partage-data:/data -e POW_SECRET="$(openssl rand -base64 32)" partage-relay
 ```
+
+`GIT_SHA` stamps the build identity into the image (CI does this automatically); a running deployment reports it as `version` on `GET /api/config`, so `curl https://your-host/api/config` names the exact commit that is live.
 
 Configuration (all optional except `POW_SECRET`):
 
