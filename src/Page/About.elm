@@ -3,6 +3,7 @@ module Page.About exposing (Model, Msg, Output(..), Stats, init, statsLoaded, up
 import FeatherIcons
 import Infra.UsageStats as UsageStats exposing (CostBreakdown)
 import Page.Welcome
+import Route exposing (Route)
 import Translations as T exposing (I18n, Language)
 import UI.Components
 import UI.Theme as Theme
@@ -92,12 +93,14 @@ view :
         , onToggleDevMode : msg
         , deviceId : String
         , gitSha : String
+        , onNavigate : Route -> msg
         }
     -> Model
     -> Ui.Element msg
 view i18n config model =
     Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.md ]
         [ descriptionSection i18n
+        , whatsNewLink i18n config.onNavigate
         , languageSection i18n config.onSwitchLanguage
         , Ui.map config.toMsg (usageSection i18n model)
         , Ui.map config.toMsg (deviceSecuritySection i18n config.deviceId model.confirmingRekey)
@@ -119,6 +122,27 @@ descriptionSection i18n =
         , Ui.Font.center
         ]
         (Ui.text (T.aboutDescription i18n))
+
+
+
+-- WHAT'S NEW
+
+
+whatsNewLink : I18n -> (Route -> msg) -> Ui.Element msg
+whatsNewLink i18n onNavigate =
+    Ui.row
+        (Ui.centerX
+            :: Ui.spacing Theme.spacing.xs
+            :: Ui.Font.size Theme.font.sm
+            :: Ui.Font.weight Theme.fontWeight.semibold
+            :: Ui.Font.color Theme.primary.text
+            :: Ui.contentCenterY
+            :: Ui.pointer
+            :: UI.Components.spaLinkAttrs (Route.toPath Route.Changelog) (onNavigate Route.Changelog)
+        )
+        [ UI.Components.featherIcon 16 FeatherIcons.gift
+        , Ui.text (T.changelogTitle i18n)
+        ]
 
 
 

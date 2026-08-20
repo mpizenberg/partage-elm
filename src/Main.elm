@@ -37,6 +37,7 @@ import Json.Encode
 import Maybe.Extra
 import Navigation
 import Page.About
+import Page.Changelog
 import Page.ErrorLog
 import Page.Group
 import Page.Home
@@ -2060,9 +2061,15 @@ viewReady model readyData =
                         , onToggleDevMode = ToggleDevMode
                         , deviceId = readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault ""
                         , gitSha = model.gitSha
+                        , onNavigate = NavigateTo
                         }
                         model.aboutModel
                     )
+
+        Changelog ->
+            noOverlay <|
+                UI.Shell.pageShell { title = T.changelogTitle i18n, onBack = GoBack }
+                    (Page.Changelog.view i18n)
 
         Route.ErrorLog ->
             -- Handled in viewPage before reaching viewReady

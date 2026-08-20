@@ -11,6 +11,15 @@ installed PWA** (Android Chrome or desktop Chromium). WebKit/iOS is a manual
 best-effort when a device is available. Use a fresh profile so first-run state is
 real.
 
+## Before the deploy
+
+- [ ] **Changelog entry.** Anything a user would notice — a new feature, a
+      changed flow, a misbehaviour they had been living with — gets one entry in
+      `src/Changelog.elm` plus its title and body in
+      `translations/messages.{en,fr}.ftl`, dated the day it ships. One entry per
+      batch of work, not per commit, and a date is never reused. A batch with
+      nothing user-visible in it gets no entry.
+
 ## Core flows
 
 - [ ] **First use.** Fresh profile → open the app → the welcome screen generates
