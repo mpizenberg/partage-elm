@@ -118,6 +118,7 @@ type alias Flags =
     , currentTime : Int
     , serverUrl : String
     , origin : String
+    , gitSha : String
     , isOnline : Bool
     , installHint : String
     }
@@ -141,6 +142,7 @@ type alias Model =
     , joinGroupModel : Page.JoinGroup.Model
     , serverUrl : String
     , origin : String
+    , gitSha : String
     , pwaState : PwaState.Model
     , errorLog : ErrorLog.Model
     }
@@ -300,6 +302,7 @@ init flags =
       , toastModel = Toast.init
       , serverUrl = flags.serverUrl
       , origin = flags.origin
+      , gitSha = flags.gitSha
       , pwaState = PwaState.init { isOnline = flags.isOnline, installHint = flags.installHint }
       , errorLog = ErrorLog.empty
       }
@@ -2056,6 +2059,7 @@ viewReady model readyData =
                         , devMode = readyData.devMode
                         , onToggleDevMode = ToggleDevMode
                         , deviceId = readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault ""
+                        , gitSha = model.gitSha
                         }
                         model.aboutModel
                     )

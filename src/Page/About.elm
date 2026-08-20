@@ -39,11 +39,6 @@ type Output
     | RequestRekeyIdentity
 
 
-appVersion : String
-appVersion =
-    "0.2.0"
-
-
 sourceUrl : String
 sourceUrl =
     "https://github.com/mpizenberg/partage-elm"
@@ -96,6 +91,7 @@ view :
         , devMode : Bool
         , onToggleDevMode : msg
         , deviceId : String
+        , gitSha : String
         }
     -> Model
     -> Ui.Element msg
@@ -106,7 +102,7 @@ view i18n config model =
         , Ui.map config.toMsg (usageSection i18n model)
         , Ui.map config.toMsg (deviceSecuritySection i18n config.deviceId model.confirmingRekey)
         , devModeSection i18n config
-        , sourceSection i18n
+        , sourceSection i18n config.gitSha
         ]
 
 
@@ -373,8 +369,8 @@ fingerprint deviceId =
 -- SOURCE LINK
 
 
-sourceSection : I18n -> Ui.Element msg
-sourceSection i18n =
+sourceSection : I18n -> String -> Ui.Element msg
+sourceSection i18n gitSha =
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.centerX, Ui.contentCenterX ]
         [ Ui.row
             [ Ui.centerX
@@ -388,10 +384,22 @@ sourceSection i18n =
             [ UI.Components.featherIcon 14 FeatherIcons.github
             , Ui.text (T.aboutSourceCode i18n)
             ]
-        , Ui.el
-            [ Ui.centerX
-            , Ui.Font.size Theme.font.xs
-            , Ui.Font.color Theme.base.textSubtle
-            ]
-            (Ui.text (T.aboutVersion appVersion i18n))
+        , if gitSha == "" then
+            Ui.el versionAttrs (Ui.text (T.aboutVersion "dev" i18n))
+
+          else
+            Ui.el
+                (Ui.linkNewTab (sourceUrl ++ "/commit/" ++ gitSha)
+                    :: Ui.pointer
+                    :: versionAttrs
+                )
+                (Ui.text (T.aboutVersion (String.left 7 gitSha) i18n))
         ]
+
+
+versionAttrs : List (Ui.Attribute msg)
+versionAttrs =
+    [ Ui.centerX
+    , Ui.Font.size Theme.font.xs
+    , Ui.Font.color Theme.base.textSubtle
+    ]

@@ -24,12 +24,12 @@ deployment is an env-var change and a restart, not a rebuild.
 One container, one volume. Works on any container host (Dokploy, Fly.io, a VPS with Docker).
 
 ```sh
-SERVER_URL= pnpm build:optimize
+SERVER_URL= GIT_SHA=$(git rev-parse HEAD) pnpm build:optimize
 docker build -t partage-relay -f packages/relay/Dockerfile --build-arg GIT_SHA=$(git rev-parse HEAD) .
 docker run -d -p 8090:8090 -v partage-data:/data -e POW_SECRET="$(openssl rand -base64 32)" partage-relay
 ```
 
-`GIT_SHA` stamps the build identity into the image (CI does this automatically); a running deployment reports it as `version` on `GET /api/config`, so `curl https://your-host/api/config` names the exact commit that is live.
+`GIT_SHA` stamps the build identity twice (CI does both automatically): into the frontend, which links it from the About page — what the browser is running — and into the image, which the relay reports as `version` on `GET /api/config` — what the server is running. `curl https://your-host/api/config` names the exact commit that is live; the two differ exactly while a client still runs a cached build predating the deploy. Unstamped builds show "dev".
 
 Configuration (all optional except `POW_SECRET`):
 

@@ -111,6 +111,7 @@ var app = Elm.Main.init({
     },
     currentTime: Date.now(),
     serverUrl: __SERVER_URL__ || location.origin,
+    gitSha: __GIT_SHA__,
     origin: location.origin,
     isOnline: navigator.onLine,
     installHint: evaluateInstallHint(installHintOptions),
