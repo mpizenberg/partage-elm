@@ -4,6 +4,7 @@ import AppUrl
 import Browser
 import Browser.Dom
 import Browser.Events
+import Changelog
 import ConcurrentTask exposing (ConcurrentTask)
 import ConcurrentTask.Http as Http
 import Dict
@@ -192,6 +193,7 @@ type Msg
     | OnSelfProfileSaved (ConcurrentTask.Response Idb.Error ())
     | ScheduleStorageCheck
     | ToggleDevMode
+    | MarkChangelogSeen
       -- Toast notifications
     | ClipboardCopied
     | DismissToast Toast.ToastId
@@ -527,6 +529,9 @@ update msg model =
                                 Home ->
                                     reloadActivityMarkers model
 
+                                Changelog ->
+                                    markChangelogSeen model
+
                                 NotificationLanding topic ->
                                     resolveNotificationTopic topic model
 
@@ -656,16 +661,25 @@ update msg model =
 
                         _ ->
                             ( modelWithReadyData, Cmd.none )
+
+                -- An install that has never seen the app change must not be shown
+                -- a changelog for one; landing on the page reads it outright.
+                ( modelAfterChangelog, changelogCmd ) =
+                    if readyData.lastSeenChangelog == Nothing || guardedRoute == Changelog then
+                        markChangelogSeen modelAfterNav
+
+                    else
+                        ( modelAfterNav, Cmd.none )
             in
-            ( modelAfterNav.runner, Cmd.batch [ guardCmd, navCmd_, rescheduleStorageCheckTomorrow ] )
+            ( modelAfterChangelog.runner, Cmd.batch [ guardCmd, navCmd_, changelogCmd, rescheduleStorageCheckTomorrow ] )
                 |> Runner.andRun OnStorageCheckComplete
                     (storageCheckTask readyData.db)
                 |> PwaState.configureTask
-                    { serverUrl = modelAfterNav.serverUrl
+                    { serverUrl = modelAfterChangelog.serverUrl
                     , cachedPushServerUrl = readyData.pushServerUrl
                     }
                     PwaStateMsg
-                |> Tuple.mapFirst (\r -> { modelAfterNav | runner = r })
+                |> Tuple.mapFirst (\r -> { modelAfterChangelog | runner = r })
 
         OnInitComplete (ConcurrentTask.Error err) ->
             ( { model | appState = InitError (Storage.errorToText model.i18n err) }, Cmd.none )
@@ -1299,6 +1313,9 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
 
+        MarkChangelogSeen ->
+            markChangelogSeen model
+
         ScheduleStorageCheck ->
             case model.appState of
                 Ready readyData ->
@@ -1625,6 +1642,32 @@ clearGroupActivity groupId model =
             ( model, Cmd.none )
 
 
+{-| Record that everything published so far has been read, so the what's-new
+banner stays down until the next entry ships.
+-}
+markChangelogSeen : Model -> ( Model, Cmd Msg )
+markChangelogSeen model =
+    case model.appState of
+        Ready readyData ->
+            if readyData.lastSeenChangelog == Just Changelog.latest then
+                ( model, Cmd.none )
+
+            else
+                ( model.runner, Cmd.none )
+                    |> Runner.andRun (\_ -> NoOp)
+                        (Storage.saveLastSeenChangelog readyData.db Changelog.latest)
+                    |> Tuple.mapFirst
+                        (\runner ->
+                            { model
+                                | runner = runner
+                                , appState = Ready { readyData | lastSeenChangelog = Just Changelog.latest }
+                            }
+                        )
+
+        _ ->
+            ( model, Cmd.none )
+
+
 {-| The service worker raises markers while the app is running too, so the
 home list re-reads them on every navigation to it.
 -}
@@ -1907,9 +1950,29 @@ view model =
                                 }
                     )
                 ]
-                [ Ui.map PwaStateMsg (PwaState.viewBanners model.i18n model.pwaState), pageResult.content ]
+                [ Ui.map PwaStateMsg (PwaState.viewBanners model.i18n model.pwaState)
+                , viewWhatsNewBanner model
+                , pageResult.content
+                ]
             )
         )
+
+
+viewWhatsNewBanner : Model -> Ui.Element Msg
+viewWhatsNewBanner model =
+    case model.appState of
+        Ready readyData ->
+            if Changelog.hasUnseen readyData.lastSeenChangelog then
+                UI.Components.whatsNewBanner model.i18n
+                    { onOpen = NavigateTo Route.Changelog
+                    , onDismiss = MarkChangelogSeen
+                    }
+
+            else
+                Ui.none
+
+        _ ->
+            Ui.none
 
 
 viewPage : Model -> Page.Group.ViewResult Msg

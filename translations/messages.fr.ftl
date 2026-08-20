@@ -605,3 +605,4 @@ changelogPaymentMethodsTitle = Wise et Cash App
 changelogPaymentMethodsBody = Ils rejoignent les coordonnées de paiement que tu peux enregistrer sur un profil de membre, pour que les remboursements pointent vers l'app que tu utilises vraiment.
 changelogArchiveTitle = Archive un groupe terminé
 changelogArchiveBody = Un groupe archivé passe en lecture seule et arrête de se synchroniser : un voyage fini quitte la liste active et cesse d'occuper de la place sur le relais. Tu peux le désarchiver quand tu veux.
+changelogBanner = Partage a été mis à jour.

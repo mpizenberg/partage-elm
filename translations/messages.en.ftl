@@ -602,3 +602,4 @@ changelogPaymentMethodsTitle = Wise and Cash App
 changelogPaymentMethodsBody = Both joined the payment handles you can save on a member profile, so settling up points at the app you actually use.
 changelogArchiveTitle = Archive a group you're done with
 changelogArchiveBody = An archived group turns read-only and stops syncing, so a finished trip leaves the active list and stops taking room on the relay. Unarchive it whenever you need it back.
+changelogBanner = Partage has been updated.

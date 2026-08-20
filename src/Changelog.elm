@@ -1,4 +1,4 @@
-module Changelog exposing (Entry, entries)
+module Changelog exposing (Entry, entries, hasUnseen, latest)
 
 {-| The user-facing history of the app.
 
@@ -38,3 +38,24 @@ entries =
       , body = T.changelogArchiveBody
       }
     ]
+
+
+{-| The date of the newest entry.
+-}
+latest : String
+latest =
+    List.head entries |> Maybe.map .date |> Maybe.withDefault ""
+
+
+{-| Whether anything was published after the last entry the reader saw. A marker
+that was never written belongs to an install that has never seen the app change,
+so nothing counts as new until the first launch records where it started.
+-}
+hasUnseen : Maybe String -> Bool
+hasUnseen marker =
+    case marker of
+        Nothing ->
+            False
+
+        Just seen ->
+            seen < latest

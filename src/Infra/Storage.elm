@@ -27,6 +27,7 @@ module Infra.Storage exposing
     , saveIdentity
     , saveJoinedGroup
     , saveLanguage
+    , saveLastSeenChangelog
     , saveNotificationTranslations
     , saveNotifyTopic
     , savePushServerUrl
@@ -64,6 +65,7 @@ type alias InitData =
     , devMode : Bool
     , activityMarkers : Set Group.Id
     , pushServerUrl : Maybe String
+    , lastSeenChangelog : Maybe String
     }
 
 
@@ -183,6 +185,7 @@ init db =
         |> ConcurrentTask.andMap (loadDevMode db)
         |> ConcurrentTask.andMap (loadActivityMarkers db)
         |> ConcurrentTask.andMap (loadPushServerUrl db)
+        |> ConcurrentTask.andMap (loadLastSeenChangelog db)
 
 
 {-| Save the user's identity to the database.
@@ -238,6 +241,19 @@ nonEmpty text =
 
     else
         Just text
+
+
+{-| Remember the newest changelog entry the user has seen, so the app only
+announces what was published after it.
+-}
+saveLastSeenChangelog : Idb.Db -> String -> ConcurrentTask Idb.Error ()
+saveLastSeenChangelog db date =
+    Idb.putAt db identityStore (Idb.StringKey "lastSeenChangelog") (Encode.string date)
+
+
+loadLastSeenChangelog : Idb.Db -> ConcurrentTask Idb.Error (Maybe String)
+loadLastSeenChangelog db =
+    Idb.get db identityStore (Idb.StringKey "lastSeenChangelog") Decode.string
 
 
 {-| Save the notification bundle (phrase templates and locale number

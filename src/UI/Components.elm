@@ -12,6 +12,7 @@ module UI.Components exposing
     , featherIcon, featherIconColored, animatedChevron
     , appLogo
     , archivedBanner, languageSelector, pwaBanners, readOnlyBanner, recoveryBanner, suspicionBanner, tamperBanner, unknownEventsBanner
+    , whatsNewBanner
     )
 
 {-| Reusable UI components.
@@ -56,6 +57,7 @@ module UI.Components exposing
 # Domain components
 
 @docs archivedBanner, languageSelector, pwaBanners, readOnlyBanner, recoveryBanner, suspicionBanner, tamperBanner, unknownEventsBanner
+@docs whatsNewBanner
 
 -}
 
@@ -1066,6 +1068,19 @@ recoveryBanner i18n { onRelink } =
         , textColor = Theme.primary.text
         , action = Just ( T.groupRecoveryRelink i18n, onRelink )
         , dismiss = Nothing
+        }
+
+
+{-| Banner raised once an update brings changelog entries the reader has not
+seen. Dismissing it counts as reading them.
+-}
+whatsNewBanner : I18n -> { onOpen : msg, onDismiss : msg } -> Ui.Element msg
+whatsNewBanner i18n { onOpen, onDismiss } =
+    pwaBanner (T.changelogBanner i18n)
+        { bgColor = Theme.primary.tint
+        , textColor = Theme.primary.text
+        , action = Just ( T.changelogTitle i18n, onOpen )
+        , dismiss = Just onDismiss
         }
 
 
