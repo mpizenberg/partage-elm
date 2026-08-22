@@ -55,6 +55,8 @@ The root application and relay deliberately have independent lockfiles. The rela
 
 `pnpm dev` runs the relay, elm-watch, esbuild, the i18n watcher, and the service worker builder concurrently via `run-pty`. The app is served by elm-watch (Elm dev server) and the backend at <http://localhost:8090>.
 
+Relay settings a local run wants — the operator dashboard, push, the feedback form — go in `packages/relay/.env`, which the relay reads at startup, so `pnpm dev` needs no exported variables. That file is untracked, and exported variables still win over it. The settings themselves are the deployment's own, listed in [`docs/DEPLOY.md`](docs/DEPLOY.md#container-deployment).
+
 ### Build for production
 
 ```sh

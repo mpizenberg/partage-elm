@@ -19,6 +19,10 @@
  * - GIT_SHA      Build identity reported by /api/config as `version` (optional;
  *                the image build stamps it, unset reads as an unstamped build).
  * - --dev        Development mode: allows a default POW_SECRET.
+ *
+ * A .env file in the working directory supplies any of the above, so a local
+ * run needs no exported variables. The environment wins over the file, so a
+ * deployment's own settings can never be shadowed by one left lying around.
  */
 
 import { mkdirSync } from 'node:fs';
@@ -26,6 +30,12 @@ import { dirname } from 'node:path';
 import { startServer } from './node-server.js';
 import { openStorage } from './storage.js';
 import { RETENTION_MS, fleetLevelParams } from './app.js';
+
+try {
+  process.loadEnvFile();
+} catch {
+  // No .env here: every setting comes from the environment or its default.
+}
 
 const dev = process.argv.includes('--dev');
 

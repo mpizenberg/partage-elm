@@ -56,6 +56,8 @@ Configuration (all optional except `POW_SECRET`):
 | `PUSH_SERVER_URL` | — (unset) | Web-push service the frontend addresses, served to it over `GET /api/config`. Must be **absolute** (`https://push.example.com`) — a scheme-less value is refused with a log line and the deployment starts without push. Unset ⇒ the app ships without push. Clients pick up a change on their next start. |
 | `FEEDBACK_PROJECT_ID` | — (unset) | [Feedback.one](https://feedback.one) project the in-app feedback form posts to, served to the frontend over `GET /api/config`. Unset ⇒ the app ships without the feedback button. It is configuration rather than a secret: any page carrying the widget discloses it. Clients pick up a change on their next start. |
 
+The relay also reads a `.env` file in its working directory, which is how a local run configures itself without exported variables. Anything set in the environment wins over that file, so a container's own configuration always stands.
+
 Put the container behind your TLS-terminating reverse proxy as usual. WebSocket upgrades on `/api/groups/*/ws` must be allowed.
 
 ### Operator dashboard
