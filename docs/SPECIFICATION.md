@@ -146,6 +146,8 @@ Date presets are Today, Yesterday, Last 7 days, Last 30 days, This month, and La
 
 The activity feed is derived from accepted history, shown newest first and grouped by date. It includes entry, member, group-metadata, and settlement-preference changes. Entry modifications identify changed fields and retain historical participant allocations, attachments, and stored locations. Activities can be filtered by activity family, actor, and involved members, and entry activities link back to the entry.
 
+Both views mark the items whose local changes the relay has not acknowledged yet, and the mark clears once they are pushed.
+
 Unknown events from newer clients appear as update-required activity rather than being discarded from storage.
 
 ## Invitations and joining

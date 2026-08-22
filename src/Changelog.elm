@@ -25,7 +25,11 @@ type alias Entry =
 -}
 entries : List Entry
 entries =
-    [ { date = "2026-08-19"
+    [ { date = "2026-08-22"
+      , title = T.changelogSyncMarkersTitle
+      , body = T.changelogSyncMarkersBody
+      }
+    , { date = "2026-08-19"
       , title = T.changelogNotificationsTitle
       , body = T.changelogNotificationsBody
       }

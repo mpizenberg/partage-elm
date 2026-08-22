@@ -40,7 +40,9 @@ real.
 
 - [ ] **Offline → reconnect.** Go offline (devtools), add entries, come back
       online; the offline banner clears and the queued entries push and appear on
-      a second device/profile in the same group.
+      a second device/profile in the same group. While offline, those entries and
+      their activity items carry the not-synced badge, and it survives a reload;
+      it clears once they push.
 - [ ] **Two-tab queue.** Open the same group in two tabs; add entries in each
       within the same sync window; after both sync, no entry is dropped from either
       tab (the unpushed-queue race, RR-002).
