@@ -22,7 +22,10 @@ project with `FEEDBACK_PROJECT_ID` (below); leave it unset and the app ships
 without the button. As with push, the frontend asks the relay for that id at
 runtime, so turning feedback on is an env-var change and a restart, not a
 rebuild. The SDK is vendored, served from the app's own origin, and fetched only
-once someone opens the form; only the form itself is remote.
+once someone opens the form; only the form itself is remote. **Register the
+deployment's origin on the Feedback.one project**: the hosted form answers with
+`frame-ancestors` listing only the project's own domains, so an unregistered
+origin gets a dialog with an empty, CSP-blocked iframe.
 
 > **Before a release:** CI covers Elm and relay logic but not browser/PWA behaviour. Run through [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) (a manual two-browser + one-installed-PWA pass) before deploying.
 

@@ -98,7 +98,10 @@ real.
 
 - [ ] **Feedback tab.** The grey tab on the right edge is present on the home
       screen, inside a group, and on the About page; it opens the form in the
-      app's language (switch to French and reopen: the form follows).
+      app's language (switch to French and reopen: the form follows). The form
+      must render, not sit empty: the vendor serves it with `frame-ancestors`
+      naming the project's registered domains, so a host that was never
+      registered is blocked from framing it.
 - [ ] **Fetched on demand.** With the network panel open, `/feedback-one.js` is
       requested when the form is first opened, not on load, and opening it a
       second time neither re-fetches nor mounts a second widget.
