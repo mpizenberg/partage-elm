@@ -2970,6 +2970,36 @@ entryFreshness loaded =
     \entryId -> Dict.get entryId freshnessDict
 
 
+{-| Entries carrying a locally authored change the relay has not acknowledged.
+-}
+pendingEntryIds : LoadedGroup -> Set Entry.Id
+pendingEntryIds loaded =
+    loaded.events
+        |> List.filterMap
+            (\envelope ->
+                if Set.member envelope.id loaded.unpushedIds then
+                    case envelope.payload of
+                        Event.EntryAdded entry ->
+                            Just entry.meta.rootId
+
+                        Event.EntryModified entry ->
+                            Just entry.meta.rootId
+
+                        Event.EntryDeleted { rootId } ->
+                            Just rootId
+
+                        Event.EntryUndeleted { rootId } ->
+                            Just rootId
+
+                        _ ->
+                            Nothing
+
+                else
+                    Nothing
+            )
+        |> Set.fromList
+
+
 {-| Resolve the current user's member root ID within a loaded group.
 Returns Nothing if the user is not a member of this group.
 -}
@@ -3456,6 +3486,7 @@ tabContent config maybeUserRootId loaded model =
                 , entryLinkHref = \entryId -> config.origin ++ Route.toPath (GroupRoute loaded.summary.id (HighlightEntry entryId))
                 , toMsg = config.toMsg << EntriesTabMsg
                 , freshness = entryFreshness loaded
+                , pendingEntryIds = pendingEntryIds loaded
                 }
                 maybeUserRootId
                 config.today
@@ -3518,6 +3549,7 @@ tabContent config maybeUserRootId loaded model =
                 , allMembers = allMembers
                 , timeZone = config.timeZone
                 , unseenEventIds = loaded.unseenEventIds
+                , pendingEventIds = loaded.unpushedIds
                 }
                 model.activityTabModel
                 loaded.groupState.activities

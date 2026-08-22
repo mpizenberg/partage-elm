@@ -90,6 +90,7 @@ groupRecoveryBanner = This device isn't linked to this group under its current k
 groupRecoveryRelink = Re-link this device
 groupArchivedBanner = This group is archived: read-only, and it doesn't sync.
 groupArchivedUnarchive = Unarchive
+syncPendingLabel = Not synced
 migrateTitle = Migrate to a new group
 migrateIntro = Migration creates a brand-new group with a new encryption key and moves your verified history into it. Use this if this group shows signs of tampering you didn't expect.
 migrateCarries = Your full verified history is carried over, so balances and members stay identical in the new group.

@@ -76,6 +76,7 @@ type alias Config msg =
     , entryLinkHref : Entry.Id -> String
     , toMsg : Msg -> msg
     , freshness : Entry.Id -> Maybe Freshness
+    , pendingEntryIds : Set Entry.Id
     }
 
 
@@ -374,7 +375,19 @@ view i18n config maybeUserRootId today (Model data) state =
 
           else
             Ui.column [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
-                (groupedByDate i18n groupDefaultCurrency (maybeUserRootId /= Nothing) resolveName config.entryLinkHref data.expandedEntries data.confirmingAction config.freshness visibleEntries)
+                (groupedByDate
+                    { i18n = i18n
+                    , groupDefaultCurrency = groupDefaultCurrency
+                    , isMember = maybeUserRootId /= Nothing
+                    , resolveName = resolveName
+                    , entryLinkHref = config.entryLinkHref
+                    , expandedEntries = data.expandedEntries
+                    , confirmingAction = data.confirmingAction
+                    , freshness = config.freshness
+                    , pendingEntryIds = config.pendingEntryIds
+                    }
+                    visibleEntries
+                )
                 |> Ui.map toMsg
         ]
 
@@ -694,8 +707,23 @@ dateFilterSection i18n activeRanges =
 -- DATE GROUPING
 
 
-groupedByDate : I18n -> Currency.Currency -> Bool -> (Member.Id -> String) -> (Entry.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> (Entry.Id -> Maybe Freshness) -> List { entry : Entry.Entry, isDeleted : Bool } -> List (Ui.Element Msg)
-groupedByDate i18n groupDefaultCurrency isMember resolveName entryLinkHref expandedEntries confirmingAction freshnessOf entries =
+{-| Everything an entry card renders from besides the entry itself.
+-}
+type alias CardEnv =
+    { i18n : I18n
+    , groupDefaultCurrency : Currency.Currency
+    , isMember : Bool
+    , resolveName : Member.Id -> String
+    , entryLinkHref : Entry.Id -> String
+    , expandedEntries : Set Entry.Id
+    , confirmingAction : Maybe ( Entry.Id, ConfirmAction )
+    , freshness : Entry.Id -> Maybe Freshness
+    , pendingEntryIds : Set Entry.Id
+    }
+
+
+groupedByDate : CardEnv -> List { entry : Entry.Entry, isDeleted : Bool } -> List (Ui.Element Msg)
+groupedByDate env entries =
     let
         getDate : Entry.Entry -> Date
         getDate entry =
@@ -717,8 +745,8 @@ groupedByDate i18n groupDefaultCurrency isMember resolveName entryLinkHref expan
     groupEntries entries
         |> List.concatMap
             (\( date, group ) ->
-                dateSeparator i18n date
-                    :: List.map (entryCardView i18n groupDefaultCurrency isMember resolveName entryLinkHref expandedEntries confirmingAction freshnessOf) group
+                dateSeparator env.i18n date
+                    :: List.map (entryCardView env) group
             )
 
 
@@ -738,8 +766,8 @@ dateSeparator i18n date =
 -- ENTRY CARD
 
 
-entryCardView : I18n -> Currency.Currency -> Bool -> (Member.Id -> String) -> (Entry.Id -> String) -> Set Entry.Id -> Maybe ( Entry.Id, ConfirmAction ) -> (Entry.Id -> Maybe Freshness) -> { entry : Entry.Entry, isDeleted : Bool } -> Ui.Element Msg
-entryCardView i18n groupDefaultCurrency isMember resolveName entryLinkHref expandedEntries confirmingAction freshnessOf { entry, isDeleted } =
+entryCardView : CardEnv -> { entry : Entry.Entry, isDeleted : Bool } -> Ui.Element Msg
+entryCardView env { entry, isDeleted } =
     let
         entryId : Entry.Id
         entryId =
@@ -747,11 +775,11 @@ entryCardView i18n groupDefaultCurrency isMember resolveName entryLinkHref expan
 
         isExpanded : Bool
         isExpanded =
-            Set.member entryId expandedEntries
+            Set.member entryId env.expandedEntries
 
         freshnessAttrs : List (Ui.Attribute Msg)
         freshnessAttrs =
-            case freshnessOf entryId of
+            case env.freshness entryId of
                 Just FreshlyAdded ->
                     [ Ui.borderWith { left = 4, top = Theme.border, right = Theme.border, bottom = Theme.border }
                     , Ui.borderColor Theme.primary.solid
@@ -769,13 +797,13 @@ entryCardView i18n groupDefaultCurrency isMember resolveName entryLinkHref expan
         headerEl =
             case entry.kind of
                 Entry.Expense data ->
-                    expenseCardHeader i18n resolveName data
+                    expenseCardHeader env.i18n env.resolveName data
 
                 Entry.Transfer data ->
-                    transferCardHeader i18n resolveName data
+                    transferCardHeader env.i18n env.resolveName data
 
                 Entry.Income data ->
-                    incomeCardHeader i18n resolveName data
+                    incomeCardHeader env.i18n env.resolveName data
 
         cardEl : Ui.Element Msg
         cardEl =
@@ -786,8 +814,14 @@ entryCardView i18n groupDefaultCurrency isMember resolveName entryLinkHref expan
                 )
                 [ Ui.el [ Ui.Input.button (ToggleEntry entryId), Ui.pointer ]
                     headerEl
+                , if Set.member entryId env.pendingEntryIds then
+                    Ui.el [ Ui.paddingTop Theme.spacing.xs ]
+                        (UI.Components.pendingSyncBadge env.i18n)
+
+                  else
+                    Ui.none
                 , if isExpanded then
-                    entryDetail i18n groupDefaultCurrency isMember resolveName (entryLinkHref entryId) entryId entry isDeleted confirmingAction
+                    entryDetail env.i18n env.groupDefaultCurrency env.isMember env.resolveName (env.entryLinkHref entryId) entryId entry isDeleted env.confirmingAction
 
                   else
                     Ui.none

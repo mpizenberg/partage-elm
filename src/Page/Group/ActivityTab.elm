@@ -55,6 +55,7 @@ type alias Config msg =
     , allMembers : List ( Member.Id, String )
     , timeZone : Time.Zone
     , unseenEventIds : Set Event.Id
+    , pendingEventIds : Set Event.Id
     }
 
 
@@ -436,7 +437,7 @@ activityItem i18n config expandedActivities activity =
         , borderColor
         ]
         [ Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-            [ summaryRow i18n config.timeZone config.resolveName activity
+            [ summaryRow i18n config.timeZone config.resolveName (Set.member activity.eventId config.pendingEventIds) activity
             , if isExpanded then
                 detailPanel i18n config activity.detail
 
@@ -498,25 +499,31 @@ detailIcon detail =
             FeatherIcons.sliders
 
 
-summaryRow : I18n -> Time.Zone -> (Member.Id -> String) -> Activity -> Ui.Element msg
-summaryRow i18n zone resolveName activity =
+summaryRow : I18n -> Time.Zone -> (Member.Id -> String) -> Bool -> Activity -> Ui.Element msg
+summaryRow i18n zone resolveName isPending activity =
     Ui.row [ Ui.spacing Theme.spacing.md, Ui.contentCenterY ]
         [ Ui.el [ Ui.width Ui.shrink, Ui.Font.color Theme.base.textSubtle ]
             (UI.Components.featherIcon 16 (detailIcon activity.detail))
         , Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.shrink ]
-            [ Ui.el
+            (Ui.el
                 [ Ui.Font.weight Theme.fontWeight.semibold
                 , Ui.Font.size Theme.font.sm
                 , Ui.clipWithEllipsis
                 ]
                 (Ui.text (resolveName activity.actorId))
-            , Ui.el
-                [ Ui.Font.size Theme.font.xs
-                , Ui.Font.color Theme.base.textSubtle
-                , Ui.clipWithEllipsis
-                ]
-                (Ui.text (formatTimestamp zone activity.timestamp))
-            ]
+                :: Ui.el
+                    [ Ui.Font.size Theme.font.xs
+                    , Ui.Font.color Theme.base.textSubtle
+                    , Ui.clipWithEllipsis
+                    ]
+                    (Ui.text (formatTimestamp zone activity.timestamp))
+                :: (if isPending then
+                        [ UI.Components.pendingSyncBadge i18n ]
+
+                    else
+                        []
+                   )
+            )
         , Ui.el [ Ui.Font.size Theme.font.sm ]
             (Ui.text (detailSummaryText i18n activity.detail))
         ]

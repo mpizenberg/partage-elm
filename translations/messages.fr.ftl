@@ -90,6 +90,7 @@ groupRecoveryBanner = Cet appareil n’est pas rattaché à ce groupe avec sa cl
 groupRecoveryRelink = Rattacher cet appareil
 groupArchivedBanner = Ce groupe est archivé : lecture seule, sans synchronisation.
 groupArchivedUnarchive = Désarchiver
+syncPendingLabel = Non synchronisé
 migrateTitle = Migrer vers un nouveau groupe
 migrateIntro = La migration crée un tout nouveau groupe avec une nouvelle clé de chiffrement et y transfère ton historique vérifié. À utiliser si ce groupe présente des signes de falsification inattendus.
 migrateCarries = L'intégralité de ton historique vérifié est transférée : les soldes et les membres restent identiques dans le nouveau groupe.

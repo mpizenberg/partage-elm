@@ -12,7 +12,7 @@ module UI.Components exposing
     , featherIcon, featherIconColored, animatedChevron
     , appLogo
     , archivedBanner, languageSelector, pwaBanners, readOnlyBanner, recoveryBanner, suspicionBanner, tamperBanner, unknownEventsBanner
-    , whatsNewBanner
+    , whatsNewBanner, pendingSyncBadge
     )
 
 {-| Reusable UI components.
@@ -57,7 +57,7 @@ module UI.Components exposing
 # Domain components
 
 @docs archivedBanner, languageSelector, pwaBanners, readOnlyBanner, recoveryBanner, suspicionBanner, tamperBanner, unknownEventsBanner
-@docs whatsNewBanner
+@docs whatsNewBanner, pendingSyncBadge
 
 -}
 
@@ -1123,3 +1123,25 @@ suspicionBanner i18n { onReview } =
         , action = Just ( T.groupSuspicionReview i18n, onReview )
         , dismiss = Nothing
         }
+
+
+{-| Marks one feed or entry card whose author's change is still local: the relay
+has not acknowledged it yet. Sits in the card's meta line rather than on its
+left border, which both lists already spend on other people's recent activity.
+-}
+pendingSyncBadge : I18n -> Ui.Element msg
+pendingSyncBadge i18n =
+    Ui.row
+        [ Ui.width Ui.shrink
+        , Ui.spacing Theme.spacing.xs
+        , Ui.contentCenterY
+        , Ui.paddingXY Theme.spacing.sm Theme.spacing.xs
+        , Ui.rounded Theme.radius.md
+        , Ui.background Theme.warning.tint
+        , Ui.Font.color Theme.warning.text
+        , Ui.Font.size Theme.font.xs
+        , Ui.Font.weight Theme.fontWeight.semibold
+        ]
+        [ featherIcon 12 FeatherIcons.cloudOff
+        , Ui.text (T.syncPendingLabel i18n)
+        ]
