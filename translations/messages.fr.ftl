@@ -601,6 +601,7 @@ aboutVersion = Version { $version }
 aboutSourceCode = Code source
 errorLogTitle = Journal d'erreurs
 errorLogOpenLabel = Ouvrir le journal d'erreurs
+feedbackOpenLabel = Donner ton avis
 errorLogEmpty = Aucune erreur enregistrée.
 errorLogCopyReport = Copier le rapport de debug
 errorLogShareReport = Partager le rapport de debug

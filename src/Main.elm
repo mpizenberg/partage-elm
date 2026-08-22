@@ -113,6 +113,9 @@ port pwaOut : Json.Encode.Value -> Cmd msg
 port setDocumentLang : String -> Cmd msg
 
 
+port openFeedback : () -> Cmd msg
+
+
 type alias Flags =
     { initialUrl : String
     , language : String
@@ -123,6 +126,7 @@ type alias Flags =
     , gitSha : String
     , isOnline : Bool
     , installHint : String
+    , feedbackEnabled : Bool
     }
 
 
@@ -147,6 +151,7 @@ type alias Model =
     , gitSha : String
     , pwaState : PwaState.Model
     , errorLog : ErrorLog.Model
+    , feedbackEnabled : Bool
     }
 
 
@@ -194,6 +199,7 @@ type Msg
     | ScheduleStorageCheck
     | ToggleDevMode
     | MarkChangelogSeen
+    | OpenFeedback
       -- Toast notifications
     | ClipboardCopied
     | DismissToast Toast.ToastId
@@ -308,6 +314,7 @@ init flags =
       , gitSha = flags.gitSha
       , pwaState = PwaState.init { isOnline = flags.isOnline, installHint = flags.installHint }
       , errorLog = ErrorLog.empty
+      , feedbackEnabled = flags.feedbackEnabled
       }
     , Cmd.batch
         [ initCmds
@@ -1316,6 +1323,9 @@ update msg model =
         MarkChangelogSeen ->
             markChangelogSeen model
 
+        OpenFeedback ->
+            ( model, openFeedback () )
+
         ScheduleStorageCheck ->
             case model.appState of
                 Ready readyData ->
@@ -1894,29 +1904,36 @@ view model =
                     )
                     (Toast.view model.toastModel)
 
-        errorLogButton : Ui.Attribute Msg
-        errorLogButton =
-            if model.errorLog.size > 0 && model.route /= Route.ErrorLog then
-                Ui.inFront <|
-                    Ui.el
-                        [ Ui.alignRight
-                        , Ui.centerY
-                        ]
-                        (Ui.el
-                            [ Ui.Input.button (NavigateTo Route.ErrorLog)
-                            , Ui.Accessibility.description (T.errorLogOpenLabel model.i18n)
-                            , Ui.pointer
-                            , Ui.background Theme.danger.solid
-                            , Ui.rounded 8
-                            , Ui.padding Theme.spacing.sm
-                            , Ui.htmlAttribute (Html.Attributes.style "border-top-right-radius" "0")
-                            , Ui.htmlAttribute (Html.Attributes.style "border-bottom-right-radius" "0")
-                            ]
-                            (UI.Components.featherIconColored "white" 20 FeatherIcons.alertTriangle)
-                        )
+        edgeTabs : Ui.Attribute Msg
+        edgeTabs =
+            Ui.inFront <|
+                Ui.column
+                    [ Ui.alignRight
+                    , Ui.centerY
+                    , Ui.width Ui.shrink
+                    , Ui.spacing Theme.spacing.sm
+                    ]
+                    [ if model.errorLog.size > 0 && model.route /= Route.ErrorLog then
+                        edgeTab
+                            { onPress = NavigateTo Route.ErrorLog
+                            , label = T.errorLogOpenLabel model.i18n
+                            , background = Theme.danger.solid
+                            , icon = FeatherIcons.alertTriangle
+                            }
 
-            else
-                Ui.noAttr
+                      else
+                        Ui.none
+                    , if model.feedbackEnabled && feedbackAllowed model.route then
+                        edgeTab
+                            { onPress = OpenFeedback
+                            , label = T.feedbackOpenLabel model.i18n
+                            , background = Theme.base.solid
+                            , icon = FeatherIcons.messageSquare
+                            }
+
+                      else
+                        Ui.none
+                    ]
     in
     Ui.layout (Ui.default |> Ui.withBreakpoints Theme.breakpoints)
         [ Ui.background Theme.base.bg
@@ -1925,7 +1942,7 @@ view model =
         , Ui.Font.size Theme.font.md
         , overlayAttr
         , toasts
-        , errorLogButton
+        , edgeTabs
         ]
         (Ui.el [ Ui.background Theme.base.bg ]
             (Ui.column
@@ -1956,6 +1973,41 @@ view model =
                 ]
             )
         )
+
+
+{-| A tab flush against the right edge of the viewport, outside any page's
+layout, so it reaches every route.
+-}
+edgeTab : { onPress : Msg, label : String, background : Ui.Color, icon : FeatherIcons.Icon } -> Ui.Element Msg
+edgeTab config =
+    Ui.el
+        [ Ui.Input.button config.onPress
+        , Ui.Accessibility.description config.label
+        , Ui.pointer
+        , Ui.background config.background
+        , Ui.rounded Theme.radius.md
+        , Ui.padding Theme.spacing.md
+        , Ui.htmlAttribute (Html.Attributes.style "border-top-right-radius" "0")
+        , Ui.htmlAttribute (Html.Attributes.style "border-bottom-right-radius" "0")
+        ]
+        (UI.Components.featherIconColored "white" 20 config.icon)
+
+
+{-| The feedback widget reports `location.href`, fragment included, when it
+opens. A join link carries the group key in its fragment and a notification
+landing carries the blinded topic, so neither route gets the button.
+-}
+feedbackAllowed : Route -> Bool
+feedbackAllowed route =
+    case route of
+        GroupRoute _ (Join _) ->
+            False
+
+        NotificationLanding _ ->
+            False
+
+        _ ->
+            True
 
 
 viewWhatsNewBanner : Model -> Ui.Element Msg

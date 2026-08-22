@@ -16,6 +16,13 @@ hidden. The frontend asks the relay for that URL at runtime, so repointing a
 deployment is an env-var change and a restart, not a rebuild. Its privacy design
 is in [`NOTIFICATIONS.md`](NOTIFICATIONS.md).
 
+**In-app feedback is opt-in too.** The feedback button opens a hosted
+[Feedback.one](https://feedback.one) form; build with `FEEDBACK_PROJECT_ID=<id>`
+to enable it for your own project, and leave it unset to ship without the button.
+It is a build-time value (the id is public in the served bundle anyway); CI reads
+it from the `FEEDBACK_PROJECT_ID` repository variable. The SDK is vendored and
+served from the app's own origin; only the form itself is remote.
+
 > **Before a release:** CI covers Elm and relay logic but not browser/PWA behaviour. Run through [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) (a manual two-browser + one-installed-PWA pass) before deploying.
 
 > **Migrating from the PocketBase deployment:** the relay starts with an empty database — there is no server-side data migration. Group members move a group by exporting it to JSON in the app and importing it again once the new instance is live.

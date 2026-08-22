@@ -5,6 +5,7 @@ import {
   init as initPwa,
   evaluateInstallHint,
 } from "../vendor/elm-pwa/js/src/index.js";
+import "../vendor/feedback-one/core.min.js";
 
 // Keep these options identical to the ones passed to `initPwa` below so the
 // initial flag and the runtime `installHintChanged` events agree.
@@ -115,6 +116,7 @@ var app = Elm.Main.init({
     origin: location.origin,
     isOnline: navigator.onLine,
     installHint: evaluateInstallHint(installHintOptions),
+    feedbackEnabled: Boolean(__FEEDBACK_PROJECT_ID__),
   },
 });
 
@@ -126,6 +128,18 @@ initNavigation({
 app.ports.setDocumentLang.subscribe((lang) => {
   document.documentElement.lang = lang;
 });
+
+// The widget is mounted without its own trigger; Elm owns the button so it
+// can stay off the routes whose URL fragment carries a secret.
+if (__FEEDBACK_PROJECT_ID__) {
+  window.FeedbackOne.init({
+    projectId: __FEEDBACK_PROJECT_ID__,
+    showDefaultTrigger: false,
+  });
+  app.ports.openFeedback.subscribe(() => {
+    window.FeedbackOne.show();
+  });
+}
 
 // Live-update WebSockets: one connection per group, auto-reconnecting with
 // capped backoff. Incoming messages only signal "something new" — the Elm side

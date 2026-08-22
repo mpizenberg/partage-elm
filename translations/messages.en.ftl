@@ -598,6 +598,7 @@ aboutVersion = Version { $version }
 aboutSourceCode = Source code
 errorLogTitle = Error Log
 errorLogOpenLabel = Open error log
+feedbackOpenLabel = Send feedback
 errorLogEmpty = No errors recorded.
 errorLogCopyReport = Copy Debug Report
 errorLogShareReport = Share Debug Report
