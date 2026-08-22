@@ -17,11 +17,12 @@ deployment is an env-var change and a restart, not a rebuild. Its privacy design
 is in [`NOTIFICATIONS.md`](NOTIFICATIONS.md).
 
 **In-app feedback is opt-in too.** The feedback button opens a hosted
-[Feedback.one](https://feedback.one) form; build with `FEEDBACK_PROJECT_ID=<id>`
-to enable it for your own project, and leave it unset to ship without the button.
-It is a build-time value (the id is public in the served bundle anyway); CI reads
-it from the `FEEDBACK_PROJECT_ID` repository variable. The SDK is vendored and
-served from the app's own origin; only the form itself is remote.
+[Feedback.one](https://feedback.one) form. Point the *container* at your own
+project with `FEEDBACK_PROJECT_ID` (below); leave it unset and the app ships
+without the button. As with push, the frontend asks the relay for that id at
+runtime, so turning feedback on is an env-var change and a restart, not a
+rebuild. The SDK is vendored, served from the app's own origin, and fetched only
+once someone opens the form; only the form itself is remote.
 
 > **Before a release:** CI covers Elm and relay logic but not browser/PWA behaviour. Run through [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) (a manual two-browser + one-installed-PWA pass) before deploying.
 
@@ -50,6 +51,7 @@ Configuration (all optional except `POW_SECRET`):
 | `ADMIN_SECRET` | — (unset) | Bearer secret for the operator dashboard ([below](#operator-dashboard)). Unset ⇒ the dashboard and its endpoint are absent (`404`). Generate like `POW_SECRET`. |
 | `ADMIN_STORAGE_BUDGET_BYTES` | — (unset) | Optional. When set, the dashboard's storage-over-budget flag fires once total stored bytes exceed it. |
 | `PUSH_SERVER_URL` | — (unset) | Web-push service the frontend addresses, served to it over `GET /api/config`. Must be **absolute** (`https://push.example.com`) — a scheme-less value is refused with a log line and the deployment starts without push. Unset ⇒ the app ships without push. Clients pick up a change on their next start. |
+| `FEEDBACK_PROJECT_ID` | — (unset) | [Feedback.one](https://feedback.one) project the in-app feedback form posts to, served to the frontend over `GET /api/config`. Unset ⇒ the app ships without the feedback button. It is configuration rather than a secret: any page carrying the widget discloses it. Clients pick up a change on their next start. |
 
 Put the container behind your TLS-terminating reverse proxy as usual. WebSocket upgrades on `/api/groups/*/ws` must be allowed.
 

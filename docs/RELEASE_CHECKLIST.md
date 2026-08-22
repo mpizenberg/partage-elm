@@ -94,19 +94,23 @@ real.
       a client that had notifications enabled re-subscribes on its next start and
       still receives another member's action, without clearing site data.
 
-## Feedback (only on a build with `FEEDBACK_PROJECT_ID` set)
+## Feedback (only if the relay is run with `FEEDBACK_PROJECT_ID` set)
 
 - [ ] **Feedback tab.** The grey tab on the right edge is present on the home
       screen, inside a group, and on the About page; it opens the form in the
       app's language (switch to French and reopen: the form follows).
+- [ ] **Fetched on demand.** With the network panel open, `/feedback-one.js` is
+      requested when the form is first opened, not on load, and opening it a
+      second time neither re-fetches nor mounts a second widget.
 - [ ] **Secret-carrying screens.** Open an invite link (`/join/…#…`) and a
       notification landing: no feedback tab while the fragment is in the
       address bar; it reappears once the join completes.
 - [ ] **Mobile screenshot.** On a phone, the form's screenshot button fails
       with the vendor's English message and the report still submits without
       it (no mobile browser has `getDisplayMedia`); on desktop it captures.
-- [ ] **Unconfigured build.** With `FEEDBACK_PROJECT_ID` unset, no tab
-      anywhere and no `<feedback-one>` element in the DOM.
+- [ ] **Unconfigured deployment.** With `FEEDBACK_PROJECT_ID` unset on the
+      relay, no tab anywhere and no `<feedback-one>` element in the DOM; setting
+      it and restarting the relay brings the tab back without a rebuild.
 
 ## Accessibility and i18n
 

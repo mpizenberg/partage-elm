@@ -7,6 +7,9 @@ const precacheUrls = [
   // Elm and JS compilation targets
   "/elm.js",
   "/index.js",
+  // Feedback SDK: never executed until someone opens the form, but cached with
+  // the shell so opening it is not a cold fetch.
+  "/feedback-one.js",
   // Web Manifest
   "/manifest.webmanifest",
   // Icons

@@ -269,6 +269,7 @@ export function createApp({
   adminSecret = null,
   adminStorageBudgetBytes = null,
   pushServerUrl = '',
+  feedbackProjectId = '',
   version = '',
 }) {
   const app = new Hono();
@@ -292,11 +293,13 @@ export function createApp({
 
   // Deployment configuration the frontend cannot know at build time. Serving it
   // from the running process is what lets an operator repoint a container at
-  // another push server without rebuilding the image. An empty URL means the
-  // deployment ships without push. The version identifies the running build
-  // (the image build stamps the git commit); empty means an unstamped build.
+  // another push server, or turn the feedback form on, without rebuilding the
+  // image. An empty push URL means the deployment ships without push, an empty
+  // feedback project id means it ships without the feedback form. The version
+  // identifies the running build (the image build stamps the git commit); empty
+  // means an unstamped build.
   const pushServer = usablePushServerUrl(pushServerUrl);
-  app.get('/api/config', (c) => c.json({ pushServerUrl: pushServer, version }));
+  app.get('/api/config', (c) => c.json({ pushServerUrl: pushServer, feedbackProjectId, version }));
 
   app.get('/api/pow/challenge', async (c) => {
     const groupId = c.req.query('groupId') ?? '';

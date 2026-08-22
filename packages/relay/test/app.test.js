@@ -413,23 +413,45 @@ describe('deployment config', () => {
     const { app } = makeApp({ pushServerUrl: 'https://push.example.com' });
     const res = await app.request('/api/config');
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { pushServerUrl: 'https://push.example.com', version: '' });
+    assert.deepEqual(await res.json(), {
+      pushServerUrl: 'https://push.example.com',
+      feedbackProjectId: '',
+      version: '',
+    });
   });
 
   it('serves an empty push server url when the deployment ships without push', async () => {
     const { app } = makeApp();
-    assert.deepEqual(await (await app.request('/api/config')).json(), { pushServerUrl: '', version: '' });
+    assert.deepEqual(await (await app.request('/api/config')).json(), {
+      pushServerUrl: '',
+      feedbackProjectId: '',
+      version: '',
+    });
   });
 
   it('refuses a scheme-less push server url, which the frontend would read as relative', async () => {
     const { app } = makeApp({ pushServerUrl: 'push.example.com' });
-    assert.deepEqual(await (await app.request('/api/config')).json(), { pushServerUrl: '', version: '' });
+    assert.deepEqual(await (await app.request('/api/config')).json(), {
+      pushServerUrl: '',
+      feedbackProjectId: '',
+      version: '',
+    });
   });
 
   it('drops a trailing slash so appended paths stay well formed', async () => {
     const { app } = makeApp({ pushServerUrl: 'https://push.example.com/' });
     assert.deepEqual(await (await app.request('/api/config')).json(), {
       pushServerUrl: 'https://push.example.com',
+      feedbackProjectId: '',
+      version: '',
+    });
+  });
+
+  it('serves the configured feedback project id', async () => {
+    const { app } = makeApp({ feedbackProjectId: 'proj-42' });
+    assert.deepEqual(await (await app.request('/api/config')).json(), {
+      pushServerUrl: '',
+      feedbackProjectId: 'proj-42',
       version: '',
     });
   });
@@ -438,6 +460,7 @@ describe('deployment config', () => {
     const { app } = makeApp({ version: 'abc1234' });
     assert.deepEqual(await (await app.request('/api/config')).json(), {
       pushServerUrl: '',
+      feedbackProjectId: '',
       version: 'abc1234',
     });
   });

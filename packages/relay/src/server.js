@@ -13,6 +13,9 @@
  *                bytes exceed it (optional).
  * - PUSH_SERVER_URL  Push service the frontend addresses, served to it at
  *                runtime via /api/config (optional; unset ships without push).
+ * - FEEDBACK_PROJECT_ID  Feedback.one project the in-app form posts to, served
+ *                to the frontend via /api/config (optional; unset ships without
+ *                the feedback button).
  * - GIT_SHA      Build identity reported by /api/config as `version` (optional;
  *                the image build stamps it, unset reads as an unstamped build).
  * - --dev        Development mode: allows a default POW_SECRET.
@@ -66,6 +69,7 @@ const { url, close } = await startServer({
     ? Number(process.env.ADMIN_STORAGE_BUDGET_BYTES)
     : null,
   pushServerUrl: process.env.PUSH_SERVER_URL ?? '',
+  feedbackProjectId: process.env.FEEDBACK_PROJECT_ID ?? '',
   version: process.env.GIT_SHA ?? '',
 });
 

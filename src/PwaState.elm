@@ -15,6 +15,7 @@ import ConcurrentTask
 import ErrorLog
 import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
 import Infra.PushServer as PushServer
+import Infra.RelayConfig as RelayConfig
 import Json.Decode
 import Json.Encode
 import Pwa
@@ -45,6 +46,15 @@ type PushSetup
     | PushPending String
     | PushUnreachable String
     | PushReady String String
+
+
+{-| The deployment configuration once resolved: the push half turned into a
+`PushSetup`, the rest passed on to whoever owns it.
+-}
+type alias DeploymentConfig =
+    { push : PushSetup
+    , feedbackProjectId : Maybe String
+    }
 
 
 init : { isOnline : Bool, installHint : String } -> Model
@@ -103,9 +113,9 @@ withCachedPushServer cached model =
             model
 
 
-{-| Resolve the deployment's push configuration: ask the relay which push server
-to use, then ask that server for its VAPID key. Call once storage is open, so
-the cached URL can carry the app until the answer arrives — and stand in for it
+{-| Resolve the deployment's configuration: ask the relay for it, then ask the
+push server it names for its VAPID key. Call once storage is open, so the
+cached URL can carry the app until the answer arrives — and stand in for it
 when the relay cannot be reached.
 
     ( runner, initCmds )
@@ -120,21 +130,34 @@ configureTask :
     -> ( TaskRunner msg, Cmd msg )
     -> ( TaskRunner msg, Cmd msg )
 configureTask { serverUrl, cachedPushServerUrl } toMsg =
-    Runner.andRun (toMsg << OnPushSetup)
-        (PushServer.fetchPushConfig serverUrl
-            |> ConcurrentTask.onError (\_ -> ConcurrentTask.succeed cachedPushServerUrl)
+    Runner.andRun (toMsg << OnDeploymentConfig)
+        (RelayConfig.fetch serverUrl
+            |> ConcurrentTask.onError
+                (\_ ->
+                    ConcurrentTask.succeed
+                        { pushServerUrl = cachedPushServerUrl, feedbackProjectId = Nothing }
+                )
             |> ConcurrentTask.andThen
-                (\configured ->
-                    case configured of
-                        Just url ->
-                            PushServer.fetchVapidKey url
-                                |> ConcurrentTask.map (PushReady url)
-                                |> ConcurrentTask.onError (\_ -> ConcurrentTask.succeed (PushUnreachable url))
-
-                        Nothing ->
-                            ConcurrentTask.succeed PushUnconfigured
+                (\config ->
+                    resolvePush config.pushServerUrl
+                        |> ConcurrentTask.map
+                            (\push ->
+                                { push = push, feedbackProjectId = config.feedbackProjectId }
+                            )
                 )
         )
+
+
+resolvePush : Maybe String -> ConcurrentTask.ConcurrentTask x PushSetup
+resolvePush configured =
+    case configured of
+        Just url ->
+            PushServer.fetchVapidKey url
+                |> ConcurrentTask.map (PushReady url)
+                |> ConcurrentTask.onError (\_ -> ConcurrentTask.succeed (PushUnreachable url))
+
+        Nothing ->
+            ConcurrentTask.succeed PushUnconfigured
 
 
 {-| Subscribe to PWA events from the JS runtime.
@@ -154,15 +177,20 @@ type Msg
     | DismissInstallHint
     | DismissJustInstalled
     | EnableNotifications
-    | OnPushSetup (ConcurrentTask.Response PushServer.Error PushSetup)
+    | OnDeploymentConfig (ConcurrentTask.Response RelayConfig.Error DeploymentConfig)
 
 
+{-| The relay serves one configuration for the whole deployment, so settings
+this module does not own ride out on the same answer rather than costing a
+second fetch of the same endpoint.
+-}
 type OutMsg
     = ShowToastError
     | NavigateToUrl String
     | CameOnline
     | RegisterPushTopics { pushServerUrl : String, subscription : Json.Encode.Value }
     | PushServerUrlResolved (Maybe String)
+    | FeedbackProjectIdResolved (Maybe String)
     | LogError ErrorLog.Source ErrorLog.Severity String
 
 
@@ -249,23 +277,25 @@ update pwaOut msg model =
                 _ ->
                     ( model, Pwa.requestNotificationPermission pwaOut, [] )
 
-        OnPushSetup (ConcurrentTask.Success setup) ->
+        OnDeploymentConfig (ConcurrentTask.Success config) ->
             let
                 newModel : Model
                 newModel =
-                    { model | pushSetup = setup }
+                    { model | pushSetup = config.push }
             in
             ( newModel
-            , case ( setup, model.notificationPermission ) of
+            , case ( config.push, model.notificationPermission ) of
                 ( PushReady _ key, Just Pwa.Granted ) ->
                     Pwa.subscribePush pwaOut key
 
                 _ ->
                     Cmd.none
-            , PushServerUrlResolved (pushServerUrl newModel) :: registerTopics newModel
+            , PushServerUrlResolved (pushServerUrl newModel)
+                :: FeedbackProjectIdResolved config.feedbackProjectId
+                :: registerTopics newModel
             )
 
-        OnPushSetup _ ->
+        OnDeploymentConfig _ ->
             ( { model
                 | pushSetup =
                     case pushServerUrl model of
@@ -276,7 +306,7 @@ update pwaOut msg model =
                             PushUnconfigured
               }
             , Cmd.none
-            , [ LogError ErrorLog.PwaSource ErrorLog.Err "Failed to resolve push configuration" ]
+            , [ LogError ErrorLog.PwaSource ErrorLog.Err "Failed to resolve the deployment configuration" ]
             )
 
 

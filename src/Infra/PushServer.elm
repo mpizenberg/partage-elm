@@ -1,7 +1,6 @@
 module Infra.PushServer exposing
     ( Error
     , NotifyContext
-    , fetchPushConfig
     , fetchVapidKey
     , notificationBundle
     , notifyAffectedMembers
@@ -10,9 +9,9 @@ module Infra.PushServer exposing
 
 {-| HTTP wrappers for push notification server communication.
 
-The push-server base URL is supplied per call. Callers obtain it from the relay
-with `fetchPushConfig`; no push server means the deployment ships without push
-and the remaining functions are never reached.
+The push-server base URL is supplied per call. Callers read it from the
+deployment configuration the relay serves; no push server means the deployment
+ships without push and these functions are never reached.
 
 Notification content never reaches the push server in cleartext: the outer
 payload is constant apart from an AES-256-GCM blob encrypted with the group
@@ -39,32 +38,6 @@ import WebCrypto.Symmetric as Symmetric
 
 type alias Error =
     Http.Error
-
-
-{-| Fetch the push server the deployment addresses, from the relay that serves
-the app. Reading it at runtime rather than at build time is what lets an
-operator repoint a deployment without rebuilding; the relay answers with an
-empty URL when it ships without push.
--}
-fetchPushConfig : String -> ConcurrentTask Error (Maybe String)
-fetchPushConfig serverUrl =
-    Http.get
-        { url = serverUrl ++ "/api/config"
-        , headers = []
-        , expect =
-            Http.expectJson
-                (Decode.field "pushServerUrl" Decode.string
-                    |> Decode.map
-                        (\url ->
-                            if String.isEmpty url then
-                                Nothing
-
-                            else
-                                Just url
-                        )
-                )
-        , timeout = Nothing
-        }
 
 
 {-| Fetch the VAPID public key from the push server.

@@ -5,7 +5,6 @@ import {
   init as initPwa,
   evaluateInstallHint,
 } from "../vendor/elm-pwa/js/src/index.js";
-import "../vendor/feedback-one/core.min.js";
 
 // Keep these options identical to the ones passed to `initPwa` below so the
 // initial flag and the runtime `installHintChanged` events agree.
@@ -116,7 +115,6 @@ var app = Elm.Main.init({
     origin: location.origin,
     isOnline: navigator.onLine,
     installHint: evaluateInstallHint(installHintOptions),
-    feedbackEnabled: Boolean(__FEEDBACK_PROJECT_ID__),
   },
 });
 
@@ -129,17 +127,48 @@ app.ports.setDocumentLang.subscribe((lang) => {
   document.documentElement.lang = lang;
 });
 
-// The widget is mounted without its own trigger; Elm owns the button so it
-// can stay off the routes whose URL fragment carries a secret.
-if (__FEEDBACK_PROJECT_ID__) {
-  window.FeedbackOne.init({
-    projectId: __FEEDBACK_PROJECT_ID__,
-    showDefaultTrigger: false,
-  });
-  app.ports.openFeedback.subscribe(() => {
-    window.FeedbackOne.show();
-  });
+// The feedback SDK replaces the global custom-element registry with its own
+// implementation as soon as it runs, so it is fetched only once someone opens
+// the form and never at all for the users who don't. It is mounted without its
+// own trigger: Elm owns the button, supplies the project id the relay reported,
+// and keeps it off the routes whose URL fragment carries a secret. The widget
+// outlives no page, so the observer that would re-add it to a wiped <body> is
+// off too.
+var feedbackSdk = null;
+var feedbackMounted = false;
+
+function loadFeedbackSdk() {
+  if (feedbackSdk === null) {
+    feedbackSdk = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "/feedback-one.js";
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    }).catch((error) => {
+      // Let a later click retry rather than leaving a dead button behind.
+      feedbackSdk = null;
+      throw error;
+    });
+  }
+  return feedbackSdk;
 }
+
+app.ports.openFeedback.subscribe((projectId) => {
+  loadFeedbackSdk()
+    .then(() => {
+      if (!feedbackMounted) {
+        window.FeedbackOne.init({
+          projectId: projectId,
+          showDefaultTrigger: false,
+          persistent: false,
+        });
+        feedbackMounted = true;
+      }
+      window.FeedbackOne.show();
+    })
+    .catch(() => {});
+});
 
 // Live-update WebSockets: one connection per group, auto-reconnecting with
 // capped backoff. Incoming messages only signal "something new" — the Elm side

@@ -113,7 +113,7 @@ port pwaOut : Json.Encode.Value -> Cmd msg
 port setDocumentLang : String -> Cmd msg
 
 
-port openFeedback : () -> Cmd msg
+port openFeedback : String -> Cmd msg
 
 
 type alias Flags =
@@ -126,7 +126,6 @@ type alias Flags =
     , gitSha : String
     , isOnline : Bool
     , installHint : String
-    , feedbackEnabled : Bool
     }
 
 
@@ -151,7 +150,7 @@ type alias Model =
     , gitSha : String
     , pwaState : PwaState.Model
     , errorLog : ErrorLog.Model
-    , feedbackEnabled : Bool
+    , feedbackProjectId : Maybe String
     }
 
 
@@ -314,7 +313,7 @@ init flags =
       , gitSha = flags.gitSha
       , pwaState = PwaState.init { isOnline = flags.isOnline, installHint = flags.installHint }
       , errorLog = ErrorLog.empty
-      , feedbackEnabled = flags.feedbackEnabled
+      , feedbackProjectId = Nothing
       }
     , Cmd.batch
         [ initCmds
@@ -1324,7 +1323,11 @@ update msg model =
             markChangelogSeen model
 
         OpenFeedback ->
-            ( model, openFeedback () )
+            ( model
+            , model.feedbackProjectId
+                |> Maybe.map openFeedback
+                |> Maybe.withDefault Cmd.none
+            )
 
         ScheduleStorageCheck ->
             case model.appState of
@@ -1778,6 +1781,9 @@ processPwaOutMsgs model pwaCmd outMsgs =
                                 _ ->
                                     ( m, cmds )
 
+                        PwaState.FeedbackProjectIdResolved projectId ->
+                            ( { m | feedbackProjectId = projectId }, cmds )
+
                         PwaState.PushServerUrlResolved url ->
                             case m.appState of
                                 Ready readyData ->
@@ -1923,7 +1929,7 @@ view model =
 
                       else
                         Ui.none
-                    , if model.feedbackEnabled && feedbackAllowed model.route then
+                    , if model.feedbackProjectId /= Nothing && feedbackAllowed model.route then
                         edgeTab
                             { onPress = OpenFeedback
                             , label = T.feedbackOpenLabel model.i18n
