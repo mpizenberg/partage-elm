@@ -13,9 +13,10 @@ service (the [elm-pwa](https://github.com/mpizenberg/elm-pwa) push server), not 
 relay. Point the *container* at one with `PUSH_SERVER_URL` (below); leave it unset
 and the app ships without push — the enable control and the per-group toggles are
 hidden. The frontend asks the relay for that URL at runtime, so repointing a
-deployment is an env-var change and a restart, not a rebuild.
+deployment is an env-var change and a restart, not a rebuild. Its privacy design
+is in [`NOTIFICATIONS.md`](NOTIFICATIONS.md).
 
-> **Before a release:** CI covers Elm and relay logic but not browser/PWA behaviour. Run through [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) (a manual two-browser + one-installed-PWA pass) before tagging or deploying.
+> **Before a release:** CI covers Elm and relay logic but not browser/PWA behaviour. Run through [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) (a manual two-browser + one-installed-PWA pass) before deploying.
 
 > **Migrating from the PocketBase deployment:** the relay starts with an empty database — there is no server-side data migration. Group members move a group by exporting it to JSON in the app and importing it again once the new instance is live.
 

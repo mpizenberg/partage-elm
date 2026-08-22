@@ -258,13 +258,19 @@ Push notifications are optional and use a separately configured external push se
 
 Notification content is end-to-end encrypted. Every cleartext field is constant across all notifications of all groups except the per-topic tag; the group name, actor display name, event description, amount, and target route travel only inside a blob encrypted with the group key and padded to fixed-size buckets. The recipient's service worker decrypts and localizes it; when it cannot, the device shows a constant generic fallback.
 
-Subscription topics are blinded: each is a domain-separated hash of the group key and one member root, so the push service sees only unlinkable identifiers — joinable neither to relay group ids nor to each other — carrying constant-size opaque payloads. Its residual knowledge is the subscription-to-endpoint mapping, the sender's address, and timing. The notify endpoint remains unauthenticated, but posting to a topic requires knowing it, and forging descriptive content requires the group key. Registered topics are re-registered whenever a fresh push subscription arrives, so a rotated push endpoint keeps delivering. Deployments without a configured push service hide notification controls.
+Subscription topics are blinded: each is a domain-separated hash of the group key and one member root, so the push service sees only unlinkable identifiers — joinable neither to relay group ids nor to each other — carrying constant-size opaque payloads. Its residual knowledge is the subscription-to-endpoint mapping, the sender's address, and timing. The notify endpoint remains unauthenticated, but posting to a topic requires knowing it, and forging descriptive content requires the group key. Registered topics are re-registered whenever a fresh push subscription arrives, so a rotated push endpoint keeps delivering. Deployments without a configured push service hide notification controls. The About page names the push state — none known, unreachable, active here, or available but not enabled — so a misconfigured deployment is distinguishable from a deliberately push-free one.
 
 A delivered notification also raises a local activity marker for its group: the home list marks the group until it is opened, opening it lands on the activity feed and closes the group's outstanding system notifications, and inside the group, events pulled during the visit that the member did not author carry their own marks. Marker state is local-only — never exported and never synced.
+
+Rationale and rejected alternatives: [NOTIFICATIONS.md](NOTIFICATIONS.md).
 
 ## Progressive Web App, language, and accessibility
 
 Partage can be installed on Android, iOS, macOS, and desktop browsers. It caches the application shell for offline use, reconnects and synchronizes after network recovery, and surfaces available application updates.
+
+There are no versions, tags, or releases: every push to `main` is a deployment, and the running commit is the build's identity, named and linked from the About page.
+
+A *What's new* page lists one entry per shipped batch of user-visible work, newest first and dated, no two entries sharing a date. Entries ship inside the bundle, so a client only reads about changes the build it is running has. A dismissible banner announces an unseen entry once, seeded on first launch so a new install is never told about an app it has never used.
 
 English and French are supported. Browser locale chooses the initial language, which can be changed from public, join, and About views. Translation sources are Fluent (`.ftl`) files compiled into Elm at build time. Currency, number, and date presentation follows the selected language and each currency's precision.
 

@@ -18,7 +18,8 @@ real.
       `src/Changelog.elm` plus its title and body in
       `translations/messages.{en,fr}.ftl`, dated the day it ships. One entry per
       batch of work, not per commit, and a date is never reused. A batch with
-      nothing user-visible in it gets no entry.
+      nothing user-visible in it gets no entry. It is the only changelog; there
+      is no `CHANGELOG.md`.
 
 ## Core flows
 
