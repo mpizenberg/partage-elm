@@ -30,7 +30,7 @@ The device also stores a local self-profile containing contact and payment detai
 
 Language, archive state, notification subscriptions, usage statistics, dismissed security findings, and developer-mode settings are local to the browser unless their feature explicitly says otherwise.
 
-The app keeps an in-memory error log that can be copied or shared as a debug report. Developer mode exposes per-group diagnostics for event counts, storage, compression, synchronization, verification, replay timing, and security signals. Diagnostics are computed locally and do not expose decrypted content to the relay.
+The app keeps an in-memory error log that can be copied or shared as a debug report. Developer mode exposes per-group diagnostics for event counts, storage, compression, synchronization, verification, replay timing, and security signals. Diagnostics are computed locally and do not expose decrypted content to the relay. A feedback button on every screen opens a hosted form for anything that raised no error; what it transmits is bounded in the [feedback exception](#feedback-exception).
 
 ## Groups and membership
 
@@ -265,6 +265,10 @@ Subscription topics are blinded: each is a domain-separated hash of the group ke
 A delivered notification also raises a local activity marker for its group: the home list marks the group until it is opened, opening it lands on the activity feed and closes the group's outstanding system notifications, and inside the group, events pulled during the visit that the member did not author carry their own marks. Marker state is local-only — never exported and never synced.
 
 Rationale and rejected alternatives: [NOTIFICATIONS.md](NOTIFICATIONS.md).
+
+### Feedback exception
+
+In-app feedback is optional and uses a separately configured external service ([Feedback.one](https://feedback.one)); a build without a project id ships no feedback control. When configured, a button on every screen opens the service's hosted form in a cross-origin iframe, which cannot reach the app's storage. The SDK that mounts it runs in the app origin, so it is vendored at a pinned, audited version and served from the app's own origin rather than fetched live. Beyond what the user types, the form receives only the page URL, the browser's user-agent string, an email the user may choose to give, and a screenshot the user explicitly captures — a path that does not exist on phones, where no browser offers screen capture. Because the page URL includes its fragment, the button is absent from the two screens whose fragment carries a secret: join links and notification landings. The form is remote and does not work offline.
 
 ## Progressive Web App, language, and accessibility
 
