@@ -118,8 +118,8 @@ real.
 - [ ] **Report an issue.** On `/error-log`, "Report this issue" copies the debug
       report and opens the form in one gesture — the copied JSON pastes into the
       description. The copy and share buttons beside it still work on their own.
-- [ ] **Idea from the changelog.** `/changelog` ends with the "what should we
-      build next?" card, and its button opens the form.
+- [ ] **Idea from the changelog.** `/changelog` opens with the "what should we
+      build next?" card, above the first entry, and its button opens the form.
 - [ ] **A prompt banner.** In a group of five or more claimed members with ten or
       more entries, recording the transfer that clears the settlement plan raises
       a green banner. Its button opens the form; dismissing hides it; leaving the

@@ -18,20 +18,17 @@ view { i18n, onSuggest } =
         , Ui.width Ui.fill
         , Ui.paddingXY 0 Theme.spacing.md
         ]
-        (List.map (viewEntry i18n) Changelog.entries
-            ++ (case onSuggest of
-                    Just onPress ->
-                        [ suggestCard i18n onPress ]
+        ((case onSuggest of
+            Just onPress ->
+                [ suggestCard i18n onPress ]
 
-                    Nothing ->
-                        []
-               )
+            Nothing ->
+                []
+         )
+            ++ List.map (viewEntry i18n) Changelog.entries
         )
 
 
-{-| Reaching the end of the list is the engagement signal: whoever read every
-entry is the reader worth asking what the next one should say.
--}
 suggestCard : I18n -> msg -> Ui.Element msg
 suggestCard i18n onPress =
     UI.Components.card [ Ui.padding Theme.spacing.lg ]
@@ -41,11 +38,6 @@ suggestCard i18n onPress =
                 , Ui.Font.weight Theme.fontWeight.semibold
                 ]
                 (Ui.text (T.changelogSuggestTitle i18n))
-            , Ui.el
-                [ Ui.Font.size Theme.font.sm
-                , Ui.Font.color Theme.base.text
-                ]
-                (Ui.text (T.changelogSuggestBody i18n))
             , UI.Components.btnPrimary []
                 { label = T.changelogSuggestButton i18n
                 , onPress = onPress
