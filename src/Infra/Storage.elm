@@ -22,6 +22,7 @@ module Infra.Storage exposing
     , saveDevMode
     , saveEvents
     , saveExchangeRate
+    , saveFeedbackPrompts
     , saveGroup
     , saveGroupSummary
     , saveIdentity
@@ -41,6 +42,7 @@ module Infra.Storage exposing
 import ConcurrentTask exposing (ConcurrentTask)
 import Dict exposing (Dict)
 import Domain.Event as Event
+import Domain.FeedbackMoment as FeedbackMoment
 import Domain.Group as Group
 import Domain.Member as Member
 import Domain.TamperSignals as TamperSignals exposing (TamperSignals)
@@ -66,6 +68,7 @@ type alias InitData =
     , activityMarkers : Set Group.Id
     , pushServerUrl : Maybe String
     , lastSeenChangelog : Maybe String
+    , feedbackPrompts : FeedbackMoment.History
     }
 
 
@@ -186,6 +189,7 @@ init db =
         |> ConcurrentTask.andMap (loadActivityMarkers db)
         |> ConcurrentTask.andMap (loadPushServerUrl db)
         |> ConcurrentTask.andMap (loadLastSeenChangelog db)
+        |> ConcurrentTask.andMap (loadFeedbackPrompts db)
 
 
 {-| Save the user's identity to the database.
@@ -254,6 +258,20 @@ saveLastSeenChangelog db date =
 loadLastSeenChangelog : Idb.Db -> ConcurrentTask Idb.Error (Maybe String)
 loadLastSeenChangelog db =
     Idb.get db identityStore (Idb.StringKey "lastSeenChangelog") Decode.string
+
+
+{-| Remember which feedback prompts this device has already shown, so the
+pacing survives a reload. Device-local on purpose: it never reaches the group.
+-}
+saveFeedbackPrompts : Idb.Db -> FeedbackMoment.History -> ConcurrentTask Idb.Error ()
+saveFeedbackPrompts db history =
+    Idb.putAt db identityStore (Idb.StringKey "feedbackPrompts") (FeedbackMoment.encode history)
+
+
+loadFeedbackPrompts : Idb.Db -> ConcurrentTask Idb.Error FeedbackMoment.History
+loadFeedbackPrompts db =
+    Idb.get db identityStore (Idb.StringKey "feedbackPrompts") FeedbackMoment.decoder
+        |> ConcurrentTask.map (Maybe.withDefault FeedbackMoment.empty)
 
 
 {-| Save the notification bundle (phrase templates and locale number

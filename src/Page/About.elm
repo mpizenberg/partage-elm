@@ -91,6 +91,7 @@ view :
         , toMsg : Msg -> msg
         , devMode : Bool
         , onToggleDevMode : msg
+        , onResetFeedbackPrompts : msg
         , deviceId : String
         , gitSha : String
         , onNavigate : Route -> msg
@@ -314,7 +315,10 @@ costRow label value =
 -- DEVELOPER MODE
 
 
-devModeSection : I18n -> { r | devMode : Bool, onToggleDevMode : msg } -> Ui.Element msg
+devModeSection :
+    I18n
+    -> { r | devMode : Bool, onToggleDevMode : msg, onResetFeedbackPrompts : msg }
+    -> Ui.Element msg
 devModeSection i18n config =
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
         [ UI.Components.sectionLabel (T.aboutDevModeLabel i18n)
@@ -326,6 +330,15 @@ devModeSection i18n config =
                 (Ui.text (T.aboutDevModeHint i18n))
             , UI.Components.toggle { isOn = config.devMode, onPress = config.onToggleDevMode }
             ]
+        , if config.devMode then
+            UI.Components.btnOutline []
+                { label = T.aboutResetFeedbackPrompts i18n
+                , icon = Just (UI.Components.featherIcon 16 FeatherIcons.refreshCw)
+                , onPress = config.onResetFeedbackPrompts
+                }
+
+          else
+            Ui.none
         ]
 
 

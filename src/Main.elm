@@ -12,6 +12,7 @@ import Domain.Compaction as Compaction
 import Domain.Currency as Currency exposing (Currency)
 import Domain.Date as Date
 import Domain.Event as Event
+import Domain.FeedbackMoment as FeedbackMoment
 import Domain.Group as Group
 import Domain.GroupState as GroupState
 import Domain.Member as Member
@@ -197,6 +198,7 @@ type Msg
     | OnSelfProfileSaved (ConcurrentTask.Response Idb.Error ())
     | ScheduleStorageCheck
     | ToggleDevMode
+    | ResetFeedbackPrompts
     | MarkChangelogSeen
     | OpenFeedback
     | ReportIssue String
@@ -1349,6 +1351,27 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
 
+        ResetFeedbackPrompts ->
+            case model.appState of
+                Ready readyData ->
+                    let
+                        ( toasted, toastCmd ) =
+                            addToast Toast.Success (T.toastFeedbackPromptsReset model.i18n) model
+                    in
+                    ( toasted.runner, toastCmd )
+                        |> Runner.andRun (\_ -> NoOp)
+                            (Storage.saveFeedbackPrompts readyData.db FeedbackMoment.empty)
+                        |> Tuple.mapFirst
+                            (\r ->
+                                { toasted
+                                    | runner = r
+                                    , appState = Ready { readyData | feedbackPrompts = FeedbackMoment.empty }
+                                }
+                            )
+
+                _ ->
+                    ( model, Cmd.none )
+
         MarkChangelogSeen ->
             markChangelogSeen model
 
@@ -2219,6 +2242,7 @@ viewReady model readyData =
                         , toMsg = AboutMsg
                         , devMode = readyData.devMode
                         , onToggleDevMode = ToggleDevMode
+                        , onResetFeedbackPrompts = ResetFeedbackPrompts
                         , deviceId = readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault ""
                         , gitSha = model.gitSha
                         , onNavigate = NavigateTo

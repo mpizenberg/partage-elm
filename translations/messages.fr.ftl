@@ -623,3 +623,5 @@ errorLogReportHint = Copie le rapport dans ton presse-papiers et ouvre le formul
 changelogSuggestTitle = On construit quoi ensuite ?
 changelogSuggestBody = Tu viens de lire ce qui a changé. Dis-nous ce qui manque : ça arrive chez la personne qui écrira la prochaine entrée.
 changelogSuggestButton = Proposer une idée
+aboutResetFeedbackPrompts = Réinitialiser les demandes d'avis
+toastFeedbackPromptsReset = Demandes d'avis réinitialisées — chaque question peut être reposée.

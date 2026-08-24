@@ -620,3 +620,5 @@ errorLogReportHint = Copies the report to your clipboard and opens the feedback 
 changelogSuggestTitle = What should we build next?
 changelogSuggestBody = You've read what changed. Tell us what's missing, and it lands with the person writing the next entry.
 changelogSuggestButton = Send an idea
+aboutResetFeedbackPrompts = Reset feedback prompts
+toastFeedbackPromptsReset = Feedback prompts reset — every question can be asked again.
