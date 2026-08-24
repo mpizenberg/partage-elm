@@ -6,6 +6,9 @@ One entry per shipped batch of user-visible work: a change nobody would notice
 does not belong here, and neither does one entry per commit. The date labels the
 entry and identifies it, so no two entries share one.
 
+One or two sentences, never more: the whole list is read in a single pass, and
+an entry that needs a paragraph is documentation in a changelog's clothes.
+
 Entries live in the translation files and therefore ship inside the bundle, so a
 client only ever reads about changes the build it is running actually has.
 
@@ -25,11 +28,7 @@ type alias Entry =
 -}
 entries : List Entry
 entries =
-    [ { date = "2026-08-24"
-      , title = T.changelogReportTitle
-      , body = T.changelogReportBody
-      }
-    , { date = "2026-08-23"
+    [ { date = "2026-08-23"
       , title = T.changelogFeedbackTitle
       , body = T.changelogFeedbackBody
       }

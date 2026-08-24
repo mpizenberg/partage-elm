@@ -276,7 +276,7 @@ Partage can be installed on Android, iOS, macOS, and desktop browsers. It caches
 
 There are no versions, tags, or releases: every push to `main` is a deployment, and the running commit is the build's identity, named and linked from the About page.
 
-A *What's new* page lists one entry per shipped batch of user-visible work, newest first and dated, no two entries sharing a date. Entries ship inside the bundle, so a client only reads about changes the build it is running has. A dismissible banner announces an unseen entry once, seeded on first launch so a new install is never told about an app it has never used.
+A *What's new* page lists one entry per shipped batch of user-visible work, newest first and dated, no two entries sharing a date, each one or two sentences long. Entries ship inside the bundle, so a client only reads about changes the build it is running has. A dismissible banner announces an unseen entry once, seeded on first launch so a new install is never told about an app it has never used.
 
 English and French are supported. Browser locale chooses the initial language, which can be changed from public, join, and About views. Translation sources are Fluent (`.ftl`) files compiled into Elm at build time. Currency, number, and date presentation follows the selected language and each currency's precision.
 

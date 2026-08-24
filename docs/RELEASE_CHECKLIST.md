@@ -17,9 +17,9 @@ real.
       changed flow, a misbehaviour they had been living with — gets one entry in
       `src/Changelog.elm` plus its title and body in
       `translations/messages.{en,fr}.ftl`, dated the day it ships. One entry per
-      batch of work, not per commit, and a date is never reused. A batch with
-      nothing user-visible in it gets no entry. It is the only changelog; there
-      is no `CHANGELOG.md`.
+      batch of work, not per commit, and a date is never reused. One or two
+      sentences per entry, never more. A batch with nothing user-visible in it
+      gets no entry. It is the only changelog; there is no `CHANGELOG.md`.
 
 ## Core flows
 
