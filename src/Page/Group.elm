@@ -41,6 +41,7 @@ import Domain.Currency exposing (Currency(..))
 import Domain.Date as Date exposing (Date)
 import Domain.Entry as Entry
 import Domain.Event as Event
+import Domain.FeedbackMoment as FeedbackMoment
 import Domain.Group as Group
 import Domain.GroupState as GroupState
 import Domain.Member as Member
@@ -346,6 +347,7 @@ type Output
     | RemoveGroup Group.Id
     | LogError ErrorLog.Source ErrorLog.Severity String
     | SaveSelfProfile Member.Metadata
+    | RequestFeedback Group.Id FeedbackMoment.Trigger
 
 
 
@@ -972,7 +974,10 @@ update config msg model =
                         ( syncModel, syncCmd ) =
                             triggerSyncInternal config groupId migratedModel
                     in
-                    ( syncModel, Cmd.batch [ syncCmd, initCmd, migrateCmd ], [] )
+                    ( syncModel
+                    , Cmd.batch [ syncCmd, initCmd, migrateCmd ]
+                    , feedbackOutputs config False syncModel
+                    )
 
                 Nothing ->
                     ( model, Cmd.none, [] )
@@ -1889,8 +1894,51 @@ applyAndSync config groupId envelope model =
                     ( syncModel, syncCmd ) =
                         triggerSyncInternal config groupId summaryModel
                 in
-                ( syncModel, Cmd.batch [ summaryCmd, syncCmd ], summaryOutputs )
+                ( syncModel
+                , Cmd.batch [ summaryCmd, syncCmd ]
+                , summaryOutputs ++ feedbackOutputs config (isTransferAdded envelope) syncModel
+                )
             )
+
+
+{-| Ask Main whether this is a moment worth interrupting the user for. Main
+owns the pacing, so this only reports what the group state says.
+-}
+feedbackOutputs : UpdateConfig -> Bool -> Model -> List Output
+feedbackOutputs config justAddedTransfer model =
+    case model.workspace of
+        WorkspaceLoaded loaded ->
+            case currentUserRootId model loaded of
+                Just selfRootId ->
+                    FeedbackMoment.detect
+                        { now = config.currentTime
+                        , selfRootId = selfRootId
+                        , justAddedTransfer = justAddedTransfer
+                        }
+                        loaded.groupState
+                        |> Maybe.map (RequestFeedback loaded.summary.id >> List.singleton)
+                        |> Maybe.withDefault []
+
+                Nothing ->
+                    []
+
+        _ ->
+            []
+
+
+isTransferAdded : Event.Envelope -> Bool
+isTransferAdded envelope =
+    case envelope.payload of
+        Event.EntryAdded entry ->
+            case entry.kind of
+                Entry.Transfer _ ->
+                    True
+
+                _ ->
+                    False
+
+        _ ->
+            False
 
 
 {-| Append an event to the loaded group and recompute state.

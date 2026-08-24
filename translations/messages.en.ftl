@@ -622,3 +622,7 @@ changelogSuggestBody = You've read what changed. Tell us what's missing, and it 
 changelogSuggestButton = Send an idea
 aboutResetFeedbackPrompts = Reset feedback prompts
 toastFeedbackPromptsReset = Feedback prompts reset — every question can be asked again.
+feedbackPromptAnswer = Answer
+feedbackPromptConcluded = This group is nearly settled. Did the payment plan work out?
+feedbackPromptProlific = You're the one keeping this group up to date. What is that costing you?
+feedbackPromptRefusal = Some members of this group never joined. Do you know why?

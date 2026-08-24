@@ -1,5 +1,5 @@
 module Domain.FeedbackMoment exposing
-    ( Trigger(..)
+    ( Trigger(..), detect
     , History, empty, allow, record
     , encode, decoder
     )
@@ -15,7 +15,7 @@ group. The windows are short while the app is young; they grow, not shrink.
 
 # Triggers
 
-@docs Trigger
+@docs Trigger, detect
 
 
 # What has already been asked
@@ -26,7 +26,11 @@ group. The windows are short while the app is young; they grow, not shrink.
 -}
 
 import Dict exposing (Dict)
+import Domain.Entry exposing (Entry)
 import Domain.Group as Group
+import Domain.GroupState as GroupState exposing (GroupState)
+import Domain.Member as Member
+import Domain.StableSettlement as StableSettlement
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
 import Set exposing (Set)
@@ -44,6 +48,120 @@ type Trigger
     = Concluded
     | Prolific
     | Refusal
+
+
+{-| The moment this group is at, if it is at one worth interrupting for.
+
+Every trigger needs a group that is still alive: the newest entry has to be
+days old, not months, or the answers describe an app the user barely remembers.
+The asker also has to still be an active member — nobody who left a group is
+asked anything about it.
+
+`justAddedTransfer` is the one thing the state cannot tell us: `Concluded` is
+about the person who just settled up, not about anyone who opens the group
+afterwards.
+
+-}
+detect :
+    { now : Time.Posix, selfRootId : Member.Id, justAddedTransfer : Bool }
+    -> GroupState
+    -> Maybe Trigger
+detect { now, selfRootId, justAddedTransfer } state =
+    let
+        entries : List Entry
+        entries =
+            GroupState.activeEntries state
+
+        members : List Member.State
+        members =
+            GroupState.activeMembers state
+    in
+    if not (List.any (\member -> member.rootId == selfRootId) members) || not (isFresh now entries) then
+        Nothing
+
+    else
+        let
+            claimed : Int
+            claimed =
+                List.length (List.filter (\member -> member.memberType == Member.Real) members)
+
+            entryCount : Int
+            entryCount =
+                List.length entries
+
+            plan : Int
+            plan =
+                List.length
+                    (StableSettlement.stablePlan
+                        state.anchorBalances
+                        state.settlementPreferences
+                        state.balances
+                    )
+
+            isCreator : Bool
+            isCreator =
+                (state.createdBy |> Maybe.andThen (GroupState.resolveMemberRootId state))
+                    == Just selfRootId
+        in
+        if isCreator && claimed >= 4 && entryCount >= 10 && plan == 0 && List.any (\member -> member.memberType == Member.Virtual) members then
+            Just Refusal
+
+        else if justAddedTransfer && claimed >= 5 && entryCount >= 10 && plan <= (claimed + 4) // 5 then
+            Just Concluded
+
+        else if claimed >= 5 && entryCount >= 100 && topAuthor state entries == Just selfRootId then
+            Just Prolific
+
+        else
+            Nothing
+
+
+{-| A group nobody has written to in a week has nothing current to say.
+-}
+isFresh : Time.Posix -> List Entry -> Bool
+isFresh now entries =
+    entries
+        |> List.map (.meta >> .createdAt >> Time.posixToMillis)
+        |> List.maximum
+        |> Maybe.map (\newest -> Time.posixToMillis now - newest <= 7 * dayMs)
+        |> Maybe.withDefault False
+
+
+{-| The member who wrote strictly more entries than anyone else. A tie has no
+answer, so it asks nobody.
+-}
+topAuthor : GroupState -> List Entry -> Maybe Member.Id
+topAuthor state entries =
+    let
+        counts : List ( Member.Id, Int )
+        counts =
+            entries
+                |> List.foldl
+                    (\entry acc ->
+                        case GroupState.resolveMemberRootId state entry.meta.createdBy of
+                            Just rootId ->
+                                Dict.update rootId (\count -> Just (Maybe.withDefault 0 count + 1)) acc
+
+                            Nothing ->
+                                acc
+                    )
+                    Dict.empty
+                |> Dict.toList
+                |> List.sortBy (Tuple.second >> negate)
+    in
+    case counts of
+        ( winner, count ) :: ( _, runnerUp ) :: _ ->
+            if count > runnerUp then
+                Just winner
+
+            else
+                Nothing
+
+        [ ( winner, _ ) ] ->
+            Just winner
+
+        [] ->
+            Nothing
 
 
 {-| What this device has already asked, and when. Device-local by design: a

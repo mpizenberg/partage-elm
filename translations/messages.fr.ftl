@@ -625,3 +625,7 @@ changelogSuggestBody = Tu viens de lire ce qui a changé. Dis-nous ce qui manque
 changelogSuggestButton = Proposer une idée
 aboutResetFeedbackPrompts = Réinitialiser les demandes d'avis
 toastFeedbackPromptsReset = Demandes d'avis réinitialisées — chaque question peut être reposée.
+feedbackPromptAnswer = Répondre
+feedbackPromptConcluded = Ce groupe est presque soldé. Est-ce que le plan de remboursement a bien marché ?
+feedbackPromptProlific = C'est toi qui tiens ce groupe à jour. Qu'est-ce que ça te coûte ?
+feedbackPromptRefusal = Certains membres de ce groupe n'ont jamais rejoint l'app. Sais-tu pourquoi ?

@@ -12,7 +12,7 @@ module UI.Components exposing
     , featherIcon, featherIconColored, animatedChevron
     , appLogo
     , archivedBanner, languageSelector, pwaBanners, readOnlyBanner, recoveryBanner, suspicionBanner, tamperBanner, unknownEventsBanner
-    , whatsNewBanner, pendingSyncBadge
+    , feedbackPromptBanner, whatsNewBanner, pendingSyncBadge
     )
 
 {-| Reusable UI components.
@@ -57,7 +57,7 @@ module UI.Components exposing
 # Domain components
 
 @docs archivedBanner, languageSelector, pwaBanners, readOnlyBanner, recoveryBanner, suspicionBanner, tamperBanner, unknownEventsBanner
-@docs whatsNewBanner, pendingSyncBadge
+@docs feedbackPromptBanner, whatsNewBanner, pendingSyncBadge
 
 -}
 
@@ -1068,6 +1068,20 @@ recoveryBanner i18n { onRelink } =
         , textColor = Theme.primary.text
         , action = Just ( T.groupRecoveryRelink i18n, onRelink )
         , dismiss = Nothing
+        }
+
+
+{-| Banner asking the reader one specific question about the group they are
+looking at. Warmer than the warning banners it shares a slot with: it is a
+request, not a problem.
+-}
+feedbackPromptBanner : I18n -> { question : String, onAnswer : msg, onDismiss : msg } -> Ui.Element msg
+feedbackPromptBanner i18n { question, onAnswer, onDismiss } =
+    pwaBanner question
+        { bgColor = Theme.success.tint
+        , textColor = Theme.success.text
+        , action = Just ( T.feedbackPromptAnswer i18n, onAnswer )
+        , dismiss = Just onDismiss
         }
 
 

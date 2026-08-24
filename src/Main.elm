@@ -152,6 +152,7 @@ type alias Model =
     , pwaState : PwaState.Model
     , errorLog : ErrorLog.Model
     , feedbackProjectId : Maybe String
+    , feedbackPrompt : Maybe { groupId : Group.Id, trigger : FeedbackMoment.Trigger }
     }
 
 
@@ -202,6 +203,7 @@ type Msg
     | MarkChangelogSeen
     | OpenFeedback
     | ReportIssue String
+    | DismissFeedbackPrompt
       -- Toast notifications
     | ClipboardCopied
     | DismissToast Toast.ToastId
@@ -317,6 +319,7 @@ init flags =
       , pwaState = PwaState.init { isOnline = flags.isOnline, installHint = flags.installHint }
       , errorLog = ErrorLog.empty
       , feedbackProjectId = Nothing
+      , feedbackPrompt = Nothing
       }
     , Cmd.batch
         [ initCmds
@@ -445,6 +448,38 @@ processGroupOutputs model groupCmd outputs =
 
                         Page.Group.LogError source severity message ->
                             ( logError source severity message m, cmds )
+
+                        Page.Group.RequestFeedback groupId trigger ->
+                            case m.appState of
+                                Ready readyData ->
+                                    if
+                                        feedbackEnabled m
+                                            && m.pwaState.isOnline
+                                            && FeedbackMoment.allow m.currentTime groupId trigger readyData.feedbackPrompts
+                                    then
+                                        let
+                                            history : FeedbackMoment.History
+                                            history =
+                                                FeedbackMoment.record m.currentTime groupId trigger readyData.feedbackPrompts
+
+                                            ( runner, saveCmd ) =
+                                                ( m.runner, Cmd.none )
+                                                    |> Runner.andRun (\_ -> NoOp)
+                                                        (Storage.saveFeedbackPrompts readyData.db history)
+                                        in
+                                        ( { m
+                                            | runner = runner
+                                            , feedbackPrompt = Just { groupId = groupId, trigger = trigger }
+                                            , appState = Ready { readyData | feedbackPrompts = history }
+                                          }
+                                        , saveCmd :: cmds
+                                        )
+
+                                    else
+                                        ( m, cmds )
+
+                                _ ->
+                                    ( m, cmds )
 
                         Page.Group.SaveSelfProfile meta ->
                             case m.appState of
@@ -1376,10 +1411,13 @@ update msg model =
             markChangelogSeen model
 
         OpenFeedback ->
-            ( model, openFeedbackCmd "" model )
+            ( { model | feedbackPrompt = Nothing }, openFeedbackCmd "" model )
 
         ReportIssue report ->
-            ( model, openFeedbackCmd report model )
+            ( { model | feedbackPrompt = Nothing }, openFeedbackCmd report model )
+
+        DismissFeedbackPrompt ->
+            ( { model | feedbackPrompt = Nothing }, Cmd.none )
 
         ScheduleStorageCheck ->
             case model.appState of
@@ -2026,7 +2064,7 @@ view model =
                     )
                 ]
                 [ Ui.map PwaStateMsg (PwaState.viewBanners model.i18n model.pwaState)
-                , viewWhatsNewBanner model
+                , viewPromptBanner model
                 , pageResult.content
                 ]
             )
@@ -2072,10 +2110,26 @@ feedbackEnabled model =
            )
 
 
-viewWhatsNewBanner : Model -> Ui.Element Msg
-viewWhatsNewBanner model =
-    case model.appState of
-        Ready readyData ->
+{-| One banner slot, and a request for feedback outranks the changelog: the
+moment it asks about is now, while "what's new" keeps its unseen marker and
+comes back on the next launch.
+
+The question names the group the reader is looking at, so it shows only there —
+leaving the group hides it, and coming back brings it back until it is answered
+or dismissed. The budget was charged when it first appeared either way.
+
+-}
+viewPromptBanner : Model -> Ui.Element Msg
+viewPromptBanner model =
+    case ( pendingPrompt model, model.appState ) of
+        ( Just trigger, _ ) ->
+            UI.Components.feedbackPromptBanner model.i18n
+                { question = feedbackQuestion model.i18n trigger
+                , onAnswer = OpenFeedback
+                , onDismiss = DismissFeedbackPrompt
+                }
+
+        ( Nothing, Ready readyData ) ->
             if Changelog.hasUnseen readyData.lastSeenChangelog then
                 UI.Components.whatsNewBanner model.i18n
                     { onOpen = NavigateTo Route.Changelog
@@ -2085,8 +2139,35 @@ viewWhatsNewBanner model =
             else
                 Ui.none
 
-        _ ->
+        ( Nothing, _ ) ->
             Ui.none
+
+
+pendingPrompt : Model -> Maybe FeedbackMoment.Trigger
+pendingPrompt model =
+    case ( model.feedbackPrompt, model.route ) of
+        ( Just prompt, GroupRoute groupId _ ) ->
+            if prompt.groupId == groupId then
+                Just prompt.trigger
+
+            else
+                Nothing
+
+        _ ->
+            Nothing
+
+
+feedbackQuestion : I18n -> FeedbackMoment.Trigger -> String
+feedbackQuestion i18n trigger =
+    case trigger of
+        FeedbackMoment.Concluded ->
+            T.feedbackPromptConcluded i18n
+
+        FeedbackMoment.Prolific ->
+            T.feedbackPromptProlific i18n
+
+        FeedbackMoment.Refusal ->
+            T.feedbackPromptRefusal i18n
 
 
 viewPage : Model -> Page.Group.ViewResult Msg

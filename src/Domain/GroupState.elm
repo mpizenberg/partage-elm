@@ -31,6 +31,10 @@ import Time
 
 {-| The full state of a group, computed by replaying events.
 
+`createdBy` sits outside `groupMeta` because that record mirrors the metadata
+members can edit and feeds the metadata diff; authorship of the genesis event
+is neither. It is `Nothing` for a log whose genesis was compacted away.
+
 The `anchor*` fields support `Domain.StableSettlement`: they hold the entries
 as of the most recent **anchor-mover** event (anything other than a Transfer).
 The displayed settlement plan is derived from `anchorBalances` +
@@ -47,6 +51,7 @@ type alias GroupState =
     , balances : Dict Member.Id MemberBalance
     , expenseShares : Dict Member.Id Int
     , groupMeta : GroupMetadata
+    , createdBy : Maybe Member.Id
     , activities : List Activity
     , pendingActivities : List Activity
     , rejectedEntries : List ( Entry.Entry, RejectionReason )
@@ -111,6 +116,7 @@ empty =
         , defaultCurrency = EUR
         , createdAt = Time.millisToPosix 0
         }
+    , createdBy = Nothing
     , activities = []
     , pendingActivities = []
     , rejectedEntries = []
@@ -366,7 +372,7 @@ applyPayload envelope state =
             applyEntryUndeleted data state
 
         GroupCreated data ->
-            applyGroupCreated timestamp data state
+            applyGroupCreated timestamp envelope.triggeredBy data state
 
         GroupMetadataUpdated change ->
             applyGroupMetadataUpdated change state
@@ -704,8 +710,8 @@ applyEntryUndeleted data state =
 -- GROUP METADATA
 
 
-applyGroupCreated : Time.Posix -> { name : String, defaultCurrency : Currency } -> GroupState -> GroupState
-applyGroupCreated timestamp data state =
+applyGroupCreated : Time.Posix -> Member.Id -> { name : String, defaultCurrency : Currency } -> GroupState -> GroupState
+applyGroupCreated timestamp author data state =
     -- Only the genesis event may set group metadata: a duplicate GroupCreated
     -- would silently rewrite the default currency, re-basing every balance.
     if state.groupMeta.createdAt /= Time.millisToPosix 0 then
@@ -721,6 +727,7 @@ applyGroupCreated timestamp data state =
                 , defaultCurrency = data.defaultCurrency
                 , createdAt = timestamp
                 }
+            , createdBy = Just author
         }
 
 
