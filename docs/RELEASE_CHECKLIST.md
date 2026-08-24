@@ -111,9 +111,27 @@ real.
 - [ ] **Mobile screenshot.** On a phone, the form's screenshot button fails
       with the vendor's English message and the report still submits without
       it (no mobile browser has `getDisplayMedia`); on desktop it captures.
+- [ ] **Reporter prefill.** With an email saved in the local profile (About →
+      your profile), the form's reporter field arrives filled in. Clear the
+      email from the profile, reopen: the field is empty again, including in a
+      session that had already sent a report.
+- [ ] **Report an issue.** On `/error-log`, "Report this issue" copies the debug
+      report and opens the form in one gesture — the copied JSON pastes into the
+      description. The copy and share buttons beside it still work on their own.
+- [ ] **Idea from the changelog.** `/changelog` ends with the "what should we
+      build next?" card, and its button opens the form.
+- [ ] **A prompt banner.** In a group of five or more claimed members with ten or
+      more entries, recording the transfer that clears the settlement plan raises
+      a green banner. Its button opens the form; dismissing hides it; leaving the
+      group hides it and returning brings it back. It does not appear again for
+      that group — About → dev mode → "Reset feedback prompts" makes every
+      question askable again.
+- [ ] **Offline.** With the browser offline, the same moment raises no banner
+      (the form is a remote iframe and would open empty).
 - [ ] **Unconfigured deployment.** With `FEEDBACK_PROJECT_ID` unset on the
-      relay, no tab anywhere and no `<feedback-one>` element in the DOM; setting
-      it and restarting the relay brings the tab back without a rebuild.
+      relay, no tab anywhere, no report or idea button, no banner, and no
+      `<feedback-one>` element in the DOM; setting it and restarting the relay
+      brings them back without a rebuild.
 
 ## Accessibility and i18n
 

@@ -629,3 +629,5 @@ feedbackPromptAnswer = Répondre
 feedbackPromptConcluded = Ce groupe est presque soldé. Est-ce que le plan de remboursement a bien marché ?
 feedbackPromptProlific = C'est toi qui tiens ce groupe à jour. Qu'est-ce que ça te coûte ?
 feedbackPromptRefusal = Certains membres de ce groupe n'ont jamais rejoint l'app. Sais-tu pourquoi ?
+changelogReportTitle = Signale une erreur sans avoir à la décrire
+changelogReportBody = La page d'erreurs a maintenant un bouton « Signaler ce problème » : il copie le rapport de debug complet et ouvre le formulaire de retour, tu n'as plus qu'à le coller dans la description au lieu de raconter ce qui s'est passé.

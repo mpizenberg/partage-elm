@@ -19,9 +19,10 @@ is in [`NOTIFICATIONS.md`](NOTIFICATIONS.md).
 **In-app feedback is opt-in too.** The feedback button opens a hosted
 [Feedback.one](https://feedback.one) form. Point the *container* at your own
 project with `FEEDBACK_PROJECT_ID` (below); leave it unset and the app ships
-without the button. As with push, the frontend asks the relay for that id at
-runtime, so turning feedback on is an env-var change and a restart, not a
-rebuild. The SDK is vendored, served from the app's own origin, and fetched only
+without the button — and with it the report and idea buttons, and the banners
+that ask a group's members a question at the moment it is worth asking. As with
+push, the frontend asks the relay for that id at runtime, so turning feedback on
+is an env-var change and a restart, not a rebuild. The SDK is vendored, served from the app's own origin, and fetched only
 once someone opens the form; only the form itself is remote. **Register the
 deployment's origin on the Feedback.one project**: the hosted form answers with
 `frame-ancestors` listing only the project's own domains, so an unregistered

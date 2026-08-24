@@ -626,3 +626,5 @@ feedbackPromptAnswer = Answer
 feedbackPromptConcluded = This group is nearly settled. Did the payment plan work out?
 feedbackPromptProlific = You're the one keeping this group up to date. What is that costing you?
 feedbackPromptRefusal = Some members of this group never joined. Do you know why?
+changelogReportTitle = Report an error without describing it
+changelogReportBody = The error page now has a "Report this issue" button: it copies the full debug report and opens the feedback form, so you paste it into the description instead of writing down what happened.
