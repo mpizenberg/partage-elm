@@ -113,7 +113,7 @@ port pwaOut : Json.Encode.Value -> Cmd msg
 port setDocumentLang : String -> Cmd msg
 
 
-port openFeedback : String -> Cmd msg
+port openFeedback : { projectId : String, email : String } -> Cmd msg
 
 
 type alias Flags =
@@ -370,6 +370,20 @@ selectedGroupSummary groupId model =
 
         _ ->
             Nothing
+
+
+{-| Address the feedback form prefills its optional reporter field with. Empty
+clears whatever a previous report left in the widget's own storage, so a
+cleared profile stops identifying the device.
+-}
+feedbackReporterEmail : Model -> String
+feedbackReporterEmail model =
+    case model.appState of
+        Ready readyData ->
+            Maybe.withDefault "" readyData.selfProfile.email
+
+        _ ->
+            ""
 
 
 {-| Process outputs from Page.Group.update by folding over the output list.
@@ -1324,9 +1338,15 @@ update msg model =
 
         OpenFeedback ->
             ( model
-            , model.feedbackProjectId
-                |> Maybe.map openFeedback
-                |> Maybe.withDefault Cmd.none
+            , case model.feedbackProjectId of
+                Just projectId ->
+                    openFeedback
+                        { projectId = projectId
+                        , email = feedbackReporterEmail model
+                        }
+
+                Nothing ->
+                    Cmd.none
             )
 
         ScheduleStorageCheck ->

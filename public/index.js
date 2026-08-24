@@ -154,7 +154,7 @@ function loadFeedbackSdk() {
   return feedbackSdk;
 }
 
-app.ports.openFeedback.subscribe((projectId) => {
+app.ports.openFeedback.subscribe(({ projectId, email }) => {
   loadFeedbackSdk()
     .then(() => {
       if (!feedbackMounted) {
@@ -165,6 +165,15 @@ app.ports.openFeedback.subscribe((projectId) => {
         });
         feedbackMounted = true;
       }
+      // Both calls throw when the form's iframe has no window yet, and an
+      // unusable reporter must not cost the user their report.
+      try {
+        if (email) {
+          window.FeedbackOne.identify({ email: email });
+        } else {
+          window.FeedbackOne.unidentify();
+        }
+      } catch (_) {}
       window.FeedbackOne.show();
     })
     .catch(() => {});
