@@ -113,7 +113,7 @@ port pwaOut : Json.Encode.Value -> Cmd msg
 port setDocumentLang : String -> Cmd msg
 
 
-port openFeedback : { projectId : String, email : String } -> Cmd msg
+port openFeedback : { projectId : String, email : String, copyText : String } -> Cmd msg
 
 
 type alias Flags =
@@ -199,6 +199,7 @@ type Msg
     | ToggleDevMode
     | MarkChangelogSeen
     | OpenFeedback
+    | ReportIssue String
       -- Toast notifications
     | ClipboardCopied
     | DismissToast Toast.ToastId
@@ -372,18 +373,33 @@ selectedGroupSummary groupId model =
             Nothing
 
 
-{-| Address the feedback form prefills its optional reporter field with. Empty
-clears whatever a previous report left in the widget's own storage, so a
-cleared profile stops identifying the device.
--}
-feedbackReporterEmail : Model -> String
-feedbackReporterEmail model =
-    case model.appState of
-        Ready readyData ->
-            Maybe.withDefault "" readyData.selfProfile.email
+{-| Open the hosted feedback form, optionally putting `copyText` on the
+clipboard first so the user can paste it into the description — the widget's
+protocol carries no message that would fill that field for them.
 
-        _ ->
-            ""
+The reporter field is prefilled from the local member profile. An empty address
+clears whatever a previous report left in the widget's own storage, so a cleared
+profile stops identifying the device.
+
+-}
+openFeedbackCmd : String -> Model -> Cmd Msg
+openFeedbackCmd copyText model =
+    case model.feedbackProjectId of
+        Just projectId ->
+            openFeedback
+                { projectId = projectId
+                , email =
+                    case model.appState of
+                        Ready readyData ->
+                            Maybe.withDefault "" readyData.selfProfile.email
+
+                        _ ->
+                            ""
+                , copyText = copyText
+                }
+
+        Nothing ->
+            Cmd.none
 
 
 {-| Process outputs from Page.Group.update by folding over the output list.
@@ -1337,17 +1353,10 @@ update msg model =
             markChangelogSeen model
 
         OpenFeedback ->
-            ( model
-            , case model.feedbackProjectId of
-                Just projectId ->
-                    openFeedback
-                        { projectId = projectId
-                        , email = feedbackReporterEmail model
-                        }
+            ( model, openFeedbackCmd "" model )
 
-                Nothing ->
-                    Cmd.none
-            )
+        ReportIssue report ->
+            ( model, openFeedbackCmd report model )
 
         ScheduleStorageCheck ->
             case model.appState of
@@ -1949,7 +1958,7 @@ view model =
 
                       else
                         Ui.none
-                    , if model.feedbackProjectId /= Nothing && feedbackAllowed model.route then
+                    , if feedbackEnabled model then
                         edgeTab
                             { onPress = OpenFeedback
                             , label = T.feedbackOpenLabel model.i18n
@@ -2019,21 +2028,25 @@ edgeTab config =
         (UI.Components.featherIconColored "white" 20 config.icon)
 
 
-{-| The feedback widget reports `location.href`, fragment included, when it
+{-| Whether this screen may offer the feedback form: the relay has to name a
+project, and the widget reports `location.href`, fragment included, when it
 opens. A join link carries the group key in its fragment and a notification
-landing carries the blinded topic, so neither route gets the button.
+landing carries the blinded topic, so neither route qualifies.
 -}
-feedbackAllowed : Route -> Bool
-feedbackAllowed route =
-    case route of
-        GroupRoute _ (Join _) ->
-            False
+feedbackEnabled : Model -> Bool
+feedbackEnabled model =
+    model.feedbackProjectId
+        /= Nothing
+        && (case model.route of
+                GroupRoute _ (Join _) ->
+                    False
 
-        NotificationLanding _ ->
-            False
+                NotificationLanding _ ->
+                    False
 
-        _ ->
-            True
+                _ ->
+                    True
+           )
 
 
 viewWhatsNewBanner : Model -> Ui.Element Msg
@@ -2086,6 +2099,12 @@ viewPage model =
 
                                 Ready _ ->
                                     "Ready"
+                        , onReport =
+                            if feedbackEnabled model then
+                                Just ReportIssue
+
+                            else
+                                Nothing
                         }
                     )
 
@@ -2213,7 +2232,16 @@ viewReady model readyData =
         Changelog ->
             noOverlay <|
                 UI.Shell.pageShell { title = T.changelogTitle i18n, onBack = GoBack }
-                    (Page.Changelog.view i18n)
+                    (Page.Changelog.view
+                        { i18n = i18n
+                        , onSuggest =
+                            if feedbackEnabled model then
+                                Just OpenFeedback
+
+                            else
+                                Nothing
+                        }
+                    )
 
         Route.ErrorLog ->
             -- Handled in viewPage before reaching viewReady

@@ -1,6 +1,7 @@
 module Page.ErrorLog exposing (ViewConfig, view)
 
-{-| Error log page — displays in-memory error entries and a debug report copy button.
+{-| Error log page — the in-memory error entries plus the ways out of them: a
+debug report to copy or share, and a report that opens the feedback form.
 -}
 
 import Domain.Currency as Currency
@@ -18,17 +19,18 @@ import Ui
 import Ui.Font
 
 
-type alias ViewConfig =
+type alias ViewConfig msg =
     { i18n : I18n
     , errorLog : ErrorLog.Model
     , groups : List Group.Summary
     , currentTime : Time.Posix
     , timeZone : Time.Zone
     , appState : String
+    , onReport : Maybe (String -> msg)
     }
 
 
-view : ViewConfig -> Ui.Element msg
+view : ViewConfig msg -> Ui.Element msg
 view config =
     Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.md ]
         [ debugReportSection config
@@ -40,7 +42,7 @@ view config =
 -- DEBUG REPORT
 
 
-debugReportSection : ViewConfig -> Ui.Element msg
+debugReportSection : ViewConfig msg -> Ui.Element msg
 debugReportSection config =
     let
         reportJson : String
@@ -48,7 +50,23 @@ debugReportSection config =
             Encode.encode 2 (encodeDebugReport config)
     in
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-        [ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+        [ case config.onReport of
+            Just onReport ->
+                Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+                    [ UI.Components.btnPrimary []
+                        { label = T.errorLogReportIssue config.i18n
+                        , onPress = onReport reportJson
+                        }
+                    , Ui.el
+                        [ Ui.Font.size Theme.font.xs
+                        , Ui.Font.color Theme.base.textSubtle
+                        ]
+                        (Ui.text (T.errorLogReportHint config.i18n))
+                    ]
+
+            Nothing ->
+                Ui.none
+        , Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
             [ copyReportButton reportJson (T.errorLogCopyReport config.i18n)
             , shareReportButton reportJson (T.errorLogShareReport config.i18n)
             ]
@@ -104,7 +122,7 @@ shareReportButton shareText label =
         )
 
 
-encodeDebugReport : ViewConfig -> Encode.Value
+encodeDebugReport : ViewConfig msg -> Encode.Value
 encodeDebugReport config =
     Encode.object
         [ ( "exportedAt", Encode.int (Time.posixToMillis config.currentTime) )
@@ -129,7 +147,7 @@ encodeGroupSummary summary =
 -- ERROR ENTRIES
 
 
-entriesSection : ViewConfig -> Ui.Element msg
+entriesSection : ViewConfig msg -> Ui.Element msg
 entriesSection config =
     if List.isEmpty config.errorLog.entries then
         Ui.el

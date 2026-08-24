@@ -154,7 +154,18 @@ function loadFeedbackSdk() {
   return feedbackSdk;
 }
 
-app.ports.openFeedback.subscribe(({ projectId, email }) => {
+app.ports.openFeedback.subscribe(({ projectId, email, copyText }) => {
+  // The form's protocol carries no description, so a report reaches it through
+  // the clipboard. Write before the dialog opens: the modal takes the top layer
+  // and would hide the confirmation toast.
+  if (copyText) {
+    navigator.clipboard
+      .writeText(copyText)
+      .then(() => {
+        app.ports.onClipboardCopy.send(null);
+      })
+      .catch(() => {});
+  }
   loadFeedbackSdk()
     .then(() => {
       if (!feedbackMounted) {

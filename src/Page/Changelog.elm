@@ -4,21 +4,54 @@ module Page.Changelog exposing (view)
 -}
 
 import Changelog exposing (Entry)
-import Translations exposing (I18n)
+import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
 import Ui
 import Ui.Font
 
 
-view : I18n -> Ui.Element msg
-view i18n =
+view : { i18n : I18n, onSuggest : Maybe msg } -> Ui.Element msg
+view { i18n, onSuggest } =
     Ui.column
         [ Ui.spacing Theme.spacing.md
         , Ui.width Ui.fill
         , Ui.paddingXY 0 Theme.spacing.md
         ]
-        (List.map (viewEntry i18n) Changelog.entries)
+        (List.map (viewEntry i18n) Changelog.entries
+            ++ (case onSuggest of
+                    Just onPress ->
+                        [ suggestCard i18n onPress ]
+
+                    Nothing ->
+                        []
+               )
+        )
+
+
+{-| Reaching the end of the list is the engagement signal: whoever read every
+entry is the reader worth asking what the next one should say.
+-}
+suggestCard : I18n -> msg -> Ui.Element msg
+suggestCard i18n onPress =
+    UI.Components.card [ Ui.padding Theme.spacing.lg ]
+        [ Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+            [ Ui.el
+                [ Ui.Font.size Theme.font.md
+                , Ui.Font.weight Theme.fontWeight.semibold
+                ]
+                (Ui.text (T.changelogSuggestTitle i18n))
+            , Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.base.text
+                ]
+                (Ui.text (T.changelogSuggestBody i18n))
+            , UI.Components.btnPrimary []
+                { label = T.changelogSuggestButton i18n
+                , onPress = onPress
+                }
+            ]
+        ]
 
 
 viewEntry : I18n -> Entry -> Ui.Element msg
