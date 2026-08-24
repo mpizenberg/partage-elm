@@ -329,6 +329,18 @@ init flags =
     )
 
 
+{-| The document element carries the language too, and nothing else can: the
+feedback form reads its own locale off `<html lang>` — its API has no setter —
+and assistive technology reads the same attribute. A language that reaches
+`i18n` and stops there leaves the form answering a French reader in English.
+-}
+applyLanguage : Language -> Model -> ( Model, Cmd Msg )
+applyLanguage language model =
+    ( { model | i18n = T.load language model.i18n }
+    , setDocumentLang (T.languageToString language)
+    )
+
+
 addToast : Toast.ToastLevel -> String -> Model -> ( Model, Cmd Msg )
 addToast level message model =
     Toast.push DismissToast level message model.toastModel
@@ -621,13 +633,8 @@ update msg model =
 
         SwitchLanguage lang ->
             let
-                updatedModel : Model
-                updatedModel =
-                    { model | i18n = T.load lang model.i18n }
-
-                langCmd : Cmd Msg
-                langCmd =
-                    setDocumentLang (T.languageToString lang)
+                ( updatedModel, langCmd ) =
+                    applyLanguage lang model
             in
             case model.appState of
                 -- Save the current language notifications translations to IndexedDB
@@ -683,14 +690,13 @@ update msg model =
                     { model | pwaState = PwaState.withCachedPushServer readyData.pushServerUrl model.pwaState }
 
                 -- Override language if a saved preference exists
-                modelWithLanguage : Model
-                modelWithLanguage =
+                ( modelWithLanguage, languageCmd ) =
                     case readyData.savedLanguage |> Maybe.andThen T.languageFromString of
                         Just savedLang ->
-                            { modelWithPushServer | i18n = T.load savedLang modelWithPushServer.i18n }
+                            applyLanguage savedLang modelWithPushServer
 
                         Nothing ->
-                            modelWithPushServer
+                            ( modelWithPushServer, Cmd.none )
 
                 ( guardedRoute, guardCmd ) =
                     applyRouteGuard readyData.identity modelWithLanguage.route
@@ -744,7 +750,7 @@ update msg model =
                     else
                         ( modelAfterNav, Cmd.none )
             in
-            ( modelAfterChangelog.runner, Cmd.batch [ guardCmd, navCmd_, changelogCmd, rescheduleStorageCheckTomorrow ] )
+            ( modelAfterChangelog.runner, Cmd.batch [ languageCmd, guardCmd, navCmd_, changelogCmd, rescheduleStorageCheckTomorrow ] )
                 |> Runner.andRun OnStorageCheckComplete
                     (storageCheckTask readyData.db)
                 |> PwaState.configureTask
@@ -2164,7 +2170,7 @@ feedbackQuestion i18n trigger =
             T.feedbackPromptConcluded i18n
 
         FeedbackMoment.Prolific ->
-            T.feedbackPromptProlific i18n
+            T.feedbackPromptProlific (String.fromInt FeedbackMoment.prolificEntries) i18n
 
         FeedbackMoment.Refusal ->
             T.feedbackPromptRefusal i18n

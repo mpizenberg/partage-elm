@@ -1,5 +1,5 @@
 module Domain.FeedbackMoment exposing
-    ( Trigger(..), detect
+    ( Trigger(..), detect, prolificEntries
     , History, empty, allow, record
     , encode, decoder
     )
@@ -15,7 +15,7 @@ group. The windows are short while the app is young; they grow, not shrink.
 
 # Triggers
 
-@docs Trigger, detect
+@docs Trigger, detect, prolificEntries
 
 
 # What has already been asked
@@ -109,11 +109,19 @@ detect { now, selfRootId, justAddedTransfer } state =
         else if justAddedTransfer && claimed >= 5 && entryCount >= 10 && plan <= (claimed + 4) // 5 then
             Just Concluded
 
-        else if claimed >= 5 && entryCount >= 100 && topAuthor state entries == Just selfRootId then
+        else if claimed >= 5 && entryCount >= prolificEntries && topAuthor state entries == Just selfRootId then
             Just Prolific
 
         else
             Nothing
+
+
+{-| The milestone `Prolific` congratulates the reader on reaching. The question
+says the number out loud, so it is read from here rather than written twice.
+-}
+prolificEntries : Int
+prolificEntries =
+    100
 
 
 {-| A group nobody has written to in a week has nothing current to say.
