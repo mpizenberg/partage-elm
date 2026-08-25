@@ -4,7 +4,9 @@
 copied to `dist/feedback-one.js` and loaded only when someone opens the form.
 Upstream serves that URL `no-cache` and updates it in place, so loading it live
 would hand a third party a standing remote-code channel into an origin that
-holds decrypted group data.
+holds decrypted group data. The initial integration did not establish whether
+upstream permits redistributing a pinned copy; treat that permission as
+unresolved and confirm the current terms before re-vendoring.
 
 Running it is not free either: it replaces `customElements` with its own
 registry implementation for the whole page, which is why it is fetched on
