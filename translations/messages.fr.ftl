@@ -30,7 +30,6 @@ welcomeScreenshotBalance = Soldes et remboursements optimisés
 welcomeScreenshotMultiCurrency = Ajouter une dépense dans n'importe quelle devise
 welcomeScreenshotActivity = Journal d'activité complet avec historique des modifications
 welcomeScreenshotInvite = Inviter par lien ou QR code
-welcomeScreenshotPending = Capture à venir
 welcomeDetailsTitle = Les détails qui comptent
 welcomeDetailFilter = Filtrer par personne, catégorie, devise ou date
 welcomeDetailBackup = Export CSV gratuit et sauvegarde JSON complète

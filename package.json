@@ -6,7 +6,7 @@
     "i18n": "travelm-agency translations --elm_path=src/Translations.elm --inline",
     "prepare:dist": "rimraf dist && shx mkdir dist",
     "bundle:html": "node build-html.mjs",
-    "bundle:assets": "shx cp public/manifest.webmanifest public/*.svg public/icon-*.png dist/ && shx cp vendor/feedback-one/core.min.js dist/feedback-one.js",
+    "bundle:assets": "shx cp public/manifest.webmanifest public/*.svg public/icon-*.png public/screenshot-*.webp dist/ && shx cp vendor/feedback-one/core.min.js dist/feedback-one.js",
     "bundle:js": "esbuild public/index.js --bundle --outfile=dist/index.js --format=iife --define:__SERVER_URL__=\\\"${SERVER_URL-http://127.0.0.1:8090}\\\" --define:__GIT_SHA__=\\\"${GIT_SHA-}\\\"",
     "make": "elm-watch make",
     "pwa": "node build-sw.mjs",

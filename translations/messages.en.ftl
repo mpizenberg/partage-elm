@@ -30,7 +30,6 @@ welcomeScreenshotBalance = Balances and smart settle-up
 welcomeScreenshotMultiCurrency = Add expenses in any currency
 welcomeScreenshotActivity = Full activity log with edit history
 welcomeScreenshotInvite = Invite by link or QR code
-welcomeScreenshotPending = Screenshot coming soon
 welcomeDetailsTitle = Details that matter
 welcomeDetailFilter = Filter by person, category, currency, or date
 welcomeDetailBackup = Free CSV export and full JSON backup

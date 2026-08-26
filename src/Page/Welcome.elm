@@ -187,16 +187,16 @@ screenshotsSection i18n =
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
         [ UI.Components.sectionLabel (T.welcomeScreenshotsTitle i18n)
         , Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill, Ui.contentCenterX ]
-            [ screenshot i18n "https://github.com/user-attachments/assets/11f892b5-6a9c-4495-98b3-aaa99fd86a96" (T.welcomeScreenshotBalance i18n)
-            , screenshot i18n "https://github.com/user-attachments/assets/e18a1a55-d3be-49ec-a5b1-b74f40e82b27" (T.welcomeScreenshotMultiCurrency i18n)
-            , screenshot i18n "https://github.com/user-attachments/assets/1338983d-4acb-41c5-9a74-cf2eef77d298" (T.welcomeScreenshotActivity i18n)
-            , screenshot i18n "https://github.com/user-attachments/assets/a9a57610-83a7-4c55-9641-700fb32a3699" (T.welcomeScreenshotInvite i18n)
+            [ screenshot "/screenshot-balance.webp" (T.welcomeScreenshotBalance i18n)
+            , screenshot "/screenshot-multicurrency.webp" (T.welcomeScreenshotMultiCurrency i18n)
+            , screenshot "/screenshot-activity.webp" (T.welcomeScreenshotActivity i18n)
+            , screenshot "/screenshot-invite.webp" (T.welcomeScreenshotInvite i18n)
             ]
         ]
 
 
-screenshot : I18n -> String -> String -> Ui.Element msg
-screenshot i18n source caption =
+screenshot : String -> String -> Ui.Element msg
+screenshot source caption =
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.centerX, Ui.width (Ui.px 280) ]
         [ Ui.imageWithFallback
             [ Ui.width (Ui.px 280)
@@ -206,7 +206,7 @@ screenshot i18n source caption =
             , Ui.borderColor Theme.base.accent
             ]
             { source = source
-            , fallback = screenshotPlaceholder i18n caption
+            , fallback = screenshotPlaceholder
             }
         , Ui.el
             [ Ui.Font.size Theme.font.sm
@@ -218,34 +218,20 @@ screenshot i18n source caption =
         ]
 
 
-screenshotPlaceholder : I18n -> String -> Ui.Element msg
-screenshotPlaceholder i18n caption =
-    Ui.column
+{-| Stands in when the image cannot be shown — an offline first visit, before
+the shell has ever served it. The caption under the frame does the naming.
+-}
+screenshotPlaceholder : Ui.Element msg
+screenshotPlaceholder =
+    Ui.el
         [ Ui.width Ui.fill
         , Ui.height Ui.fill
         , Ui.contentCenterX
         , Ui.contentCenterY
-        , Ui.spacing Theme.spacing.sm
         , Ui.background Theme.base.bgSubtle
+        , Ui.Font.color Theme.base.textSubtle
         ]
-        [ Ui.el [ Ui.Font.color Theme.base.textSubtle, Ui.centerX ]
-            (UI.Components.featherIcon 32 FeatherIcons.image)
-        , Ui.el
-            [ Ui.Font.size Theme.font.xs
-            , Ui.Font.color Theme.base.textSubtle
-            , Ui.Font.center
-            , Ui.centerX
-            , Ui.paddingXY Theme.spacing.sm 0
-            ]
-            (Ui.text caption)
-        , Ui.el
-            [ Ui.Font.size Theme.font.xs
-            , Ui.Font.color Theme.base.textSubtle
-            , Ui.Font.center
-            , Ui.centerX
-            ]
-            (Ui.text ("(" ++ T.welcomeScreenshotPending i18n ++ ")"))
-        ]
+        (UI.Components.featherIcon 32 FeatherIcons.image)
 
 
 
