@@ -876,12 +876,14 @@ languageFlag lang =
 -- PWA BANNERS
 
 
-{-| PWA banners: offline indicator, update prompt, and install prompt.
+{-| Deployment banners: frozen relay, offline indicator, update prompt, and
+install prompt.
 -}
 pwaBanners :
     I18n
     ->
         { isOnline : Bool
+        , serverReadOnly : Bool
         , updateAvailable : Bool
         , installHint : Pwa.InstallHint
         , justInstalled : Bool
@@ -904,7 +906,17 @@ pwaBanners i18n config =
         banners : List (Ui.Element msg)
         banners =
             List.filterMap identity
-                [ showIf (not config.isOnline) <|
+                [ -- Not an error and never dismissible: the server has stopped
+                  -- taking changes for good, and every screen that lets one be
+                  -- made has to say so.
+                  showIf config.serverReadOnly <|
+                    pwaBanner (T.serverFrozenBanner i18n)
+                        { bgColor = Theme.warning.tint
+                        , textColor = Theme.warning.text
+                        , action = Nothing
+                        , dismiss = Nothing
+                        }
+                , showIf (not config.isOnline) <|
                     pwaBanner (T.pwaOffline i18n)
                         { bgColor = Theme.warning.tint
                         , textColor = Theme.warning.text

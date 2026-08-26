@@ -73,4 +73,10 @@ describe('read-only relay', () => {
     assert.equal((await frozen.request('/api/config')).status, 200);
     assert.equal((await frozen.request('/health')).status, 200);
   });
+
+  it('declares the freeze in /api/config, so the app can say so before writing', async () => {
+    const { frozen, writable } = await frozenAppWithGroup();
+    assert.equal((await (await frozen.request('/api/config')).json()).readOnly, true);
+    assert.equal((await (await writable.request('/api/config')).json()).readOnly, false);
+  });
 });

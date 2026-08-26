@@ -24,6 +24,7 @@ type alias Config =
     , feedbackProjectId : Maybe String
     , migrationTarget : Maybe String
     , migrationSource : Maybe String
+    , readOnly : Bool
     }
 
 
@@ -34,14 +35,20 @@ fetch serverUrl =
         , headers = []
         , expect =
             Http.expectJson
-                (Decode.map4 Config
+                (Decode.map5 Config
                     (configured "pushServerUrl")
                     (configured "feedbackProjectId")
                     (configured "migrationTarget")
                     (configured "migrationSource")
+                    (flag "readOnly")
                 )
         , timeout = Nothing
         }
+
+
+flag : String -> Decode.Decoder Bool
+flag field =
+    Decode.oneOf [ Decode.field field Decode.bool, Decode.succeed False ]
 
 
 configured : String -> Decode.Decoder (Maybe String)

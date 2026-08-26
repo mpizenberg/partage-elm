@@ -1083,7 +1083,10 @@ update config msg model =
                         let
                             failureOutputs : List Output
                             failureOutputs =
-                                if Server.isNetworkError err then
+                                -- Offline and frozen are states of the
+                                -- deployment, each with its own banner: the
+                                -- entries stay queued and nothing broke.
+                                if Server.isNetworkError err || Server.isFrozen err then
                                     []
 
                                 else
@@ -1176,7 +1179,11 @@ update config msg model =
             if hasLoadedGroup groupId model then
                 ( { model | syncState = SyncIdle }
                 , Cmd.none
-                , [ ShowToast Toast.Error (T.toastSyncError (Server.errorToText config.i18n err) config.i18n) ]
+                , if Server.isNetworkError err || Server.isFrozen err then
+                    []
+
+                  else
+                    [ ShowToast Toast.Error (T.toastSyncError (Server.errorToText config.i18n err) config.i18n) ]
                 )
 
             else
@@ -1272,7 +1279,7 @@ update config msg model =
                     ( model, Cmd.none, [] )
 
         OnCompactionStep _ (ConcurrentTask.Error err) ->
-            if Server.isNetworkError err then
+            if Server.isNetworkError err || Server.isFrozen err then
                 ( model, Cmd.none, [] )
 
             else

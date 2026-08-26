@@ -11,6 +11,7 @@ module Infra.Server exposing
     , errorToText
     , fetchEventOrder
     , isConflict
+    , isFrozen
     , isNetworkError
     , isNotFound
     , isQuotaExceeded
@@ -217,6 +218,14 @@ group another member already created).
 isConflict : Error -> Bool
 isConflict =
     isStatus 409
+
+
+{-| True when the deployment has stopped accepting writes for good. Permanent,
+and announced by its own banner, so a refusal is a state rather than a failure.
+-}
+isFrozen : Error -> Bool
+isFrozen =
+    isStatus 403
 
 
 isStatus : Int -> Error -> Bool

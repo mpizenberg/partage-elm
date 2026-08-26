@@ -424,6 +424,7 @@ describe('deployment config', () => {
       version: '',
       migrationTarget: '',
       migrationSource: '',
+      readOnly: false,
     });
   });
 

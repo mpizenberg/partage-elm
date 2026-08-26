@@ -33,6 +33,7 @@ type alias Model =
     , notificationPermission : Maybe Pwa.NotificationPermission
     , pushSubscription : Maybe Json.Encode.Value
     , pushSetup : PushSetup
+    , serverReadOnly : Bool
     }
 
 
@@ -56,6 +57,7 @@ type alias DeploymentConfig =
     , feedbackProjectId : Maybe String
     , migrationTarget : Maybe String
     , migrationSource : Maybe String
+    , readOnly : Bool
     }
 
 
@@ -69,6 +71,7 @@ init flags =
     , notificationPermission = Nothing
     , pushSubscription = Nothing
     , pushSetup = PushUnconfigured
+    , serverReadOnly = False
     }
 
 
@@ -141,6 +144,7 @@ configureTask { serverUrl, cachedPushServerUrl } toMsg =
                         , feedbackProjectId = Nothing
                         , migrationTarget = Nothing
                         , migrationSource = Nothing
+                        , readOnly = False
                         }
                 )
             |> ConcurrentTask.andThen
@@ -152,6 +156,7 @@ configureTask { serverUrl, cachedPushServerUrl } toMsg =
                                 , feedbackProjectId = config.feedbackProjectId
                                 , migrationTarget = config.migrationTarget
                                 , migrationSource = config.migrationSource
+                                , readOnly = config.readOnly
                                 }
                             )
                 )
@@ -231,13 +236,14 @@ enableNotificationsMsg =
     EnableNotifications
 
 
-{-| Render the PWA banners (offline, update available, install prompt).
-Wrap with `Ui.map PwaStateMsg` in Main.
+{-| Render the deployment banners (frozen relay, offline, update available,
+install prompt). Wrap with `Ui.map PwaStateMsg` in Main.
 -}
 viewBanners : I18n -> Model -> Ui.Element Msg
 viewBanners i18n model =
     UI.Components.pwaBanners i18n
         { isOnline = model.isOnline
+        , serverReadOnly = model.serverReadOnly
         , updateAvailable = model.updateAvailable
         , installHint =
             if model.installHintDismissed || model.justInstalled then
@@ -292,7 +298,7 @@ update pwaOut msg model =
             let
                 newModel : Model
                 newModel =
-                    { model | pushSetup = config.push }
+                    { model | pushSetup = config.push, serverReadOnly = config.readOnly }
             in
             ( newModel
             , case ( config.push, model.notificationPermission ) of

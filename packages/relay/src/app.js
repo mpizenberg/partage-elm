@@ -350,13 +350,15 @@ export function createApp({
       version,
       migrationTarget: migrateTo,
       migrationSource: migrateFrom,
+      readOnly,
     }),
   );
 
   // A frozen deployment refuses every write but keeps serving reads and live
   // updates. Clients queue refused entries locally (the disk-full path) and
   // carry them along when they migrate, so nothing written after the freeze
-  // can be lost; the frontend renders the `code` as "this server is frozen".
+  // can be lost. The app announces the freeze from the flag above rather than
+  // from a refusal, so it can say so before anyone writes anything.
   if (readOnly) {
     const frozen = (c) => c.json({ error: 'This relay is read-only', code: 'relay_read_only' }, 403);
     app.post('/api/groups', frozen);
