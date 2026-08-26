@@ -100,8 +100,8 @@ describe('service worker cache identity', () => {
     // setting has to expire with the cache holding it — otherwise turning the
     // setting on leaves every existing client unable to reach what it allows.
     const unset = await serveSw({});
-    assert.notEqual(await serveSw({ migrationTarget: 'https://onpartage.eu' }), unset);
-    assert.notEqual(await serveSw({ pushServerUrl: 'https://push.onpartage.eu' }), unset);
+    assert.notEqual(await serveSw({ migrationTarget: 'https://new.example.com' }), unset);
+    assert.notEqual(await serveSw({ pushServerUrl: 'https://push.example.com' }), unset);
     assert.notEqual(await serveSw({ feedbackProjectId: 'proj_123' }), unset);
   });
 
@@ -110,6 +110,6 @@ describe('service worker cache identity', () => {
     // never cached, so re-precaching every client for them is pure churn.
     const unset = await serveSw({});
     assert.equal(await serveSw({ readOnly: true }), unset);
-    assert.equal(await serveSw({ migrationSource: 'https://partage-beta.example' }), unset);
+    assert.equal(await serveSw({ migrationSource: 'https://old.example.com' }), unset);
   });
 });
