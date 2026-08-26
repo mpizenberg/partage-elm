@@ -413,56 +413,41 @@ describe('deployment config', () => {
     const { app } = makeApp({ pushServerUrl: 'https://push.example.com' });
     const res = await app.request('/api/config');
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), {
-      pushServerUrl: 'https://push.example.com',
-      feedbackProjectId: '',
-      version: '',
-    });
+    assert.equal((await res.json()).pushServerUrl, 'https://push.example.com');
   });
 
-  it('serves an empty push server url when the deployment ships without push', async () => {
+  it('serves every setting empty when the deployment configures none', async () => {
     const { app } = makeApp();
     assert.deepEqual(await (await app.request('/api/config')).json(), {
       pushServerUrl: '',
       feedbackProjectId: '',
       version: '',
+      migrationTarget: '',
+      migrationSource: '',
     });
   });
 
   it('refuses a scheme-less push server url, which the frontend would read as relative', async () => {
     const { app } = makeApp({ pushServerUrl: 'push.example.com' });
-    assert.deepEqual(await (await app.request('/api/config')).json(), {
-      pushServerUrl: '',
-      feedbackProjectId: '',
-      version: '',
-    });
+    assert.equal((await (await app.request('/api/config')).json()).pushServerUrl, '');
   });
 
   it('drops a trailing slash so appended paths stay well formed', async () => {
     const { app } = makeApp({ pushServerUrl: 'https://push.example.com/' });
-    assert.deepEqual(await (await app.request('/api/config')).json(), {
-      pushServerUrl: 'https://push.example.com',
-      feedbackProjectId: '',
-      version: '',
-    });
+    assert.equal(
+      (await (await app.request('/api/config')).json()).pushServerUrl,
+      'https://push.example.com',
+    );
   });
 
   it('serves the configured feedback project id', async () => {
     const { app } = makeApp({ feedbackProjectId: 'proj-42' });
-    assert.deepEqual(await (await app.request('/api/config')).json(), {
-      pushServerUrl: '',
-      feedbackProjectId: 'proj-42',
-      version: '',
-    });
+    assert.equal((await (await app.request('/api/config')).json()).feedbackProjectId, 'proj-42');
   });
 
   it('reports the stamped build version', async () => {
     const { app } = makeApp({ version: 'abc1234' });
-    assert.deepEqual(await (await app.request('/api/config')).json(), {
-      pushServerUrl: '',
-      feedbackProjectId: '',
-      version: 'abc1234',
-    });
+    assert.equal((await (await app.request('/api/config')).json()).version, 'abc1234');
   });
 });
 

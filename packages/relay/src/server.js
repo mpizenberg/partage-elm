@@ -18,6 +18,15 @@
  *                the feedback button).
  * - GIT_SHA      Build identity reported by /api/config as `version` (optional;
  *                the image build stamps it, unset reads as an unstamped build).
+ * - MIGRATION_TARGET  Deployment this one migrates *to*: enables the frontend's
+ *                migration flow and lets its pages address that origin (CSP).
+ *                Absolute URL, served via /api/config (optional).
+ * - MIGRATION_SOURCE  Deployment users migrate *from*: enables the frontend's
+ *                /migrate receiver, which only trusts messages from that
+ *                origin. Absolute URL, served via /api/config (optional).
+ * - RELAY_READ_ONLY  `true` or `1` freezes writes: group creation, appends and
+ *                compactions are refused with 403 `{code:"relay_read_only"}`;
+ *                pulls and live updates keep working (optional).
  * - --dev        Development mode: allows a default POW_SECRET.
  *
  * A .env file in the working directory supplies any of the above, so a local
@@ -86,6 +95,9 @@ const { url, close } = await startServer({
   pushServerUrl: process.env.PUSH_SERVER_URL ?? '',
   feedbackProjectId: process.env.FEEDBACK_PROJECT_ID ?? '',
   version: process.env.GIT_SHA ?? '',
+  migrationTarget: process.env.MIGRATION_TARGET ?? '',
+  migrationSource: process.env.MIGRATION_SOURCE ?? '',
+  readOnly: ['true', '1'].includes(process.env.RELAY_READ_ONLY ?? ''),
 });
 
 dailyMaintenance();

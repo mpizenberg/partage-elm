@@ -56,6 +56,9 @@ Configuration (all optional except `POW_SECRET`):
 | `ADMIN_STORAGE_BUDGET_BYTES` | — (unset) | Optional. When set, the dashboard's storage-over-budget flag fires once total stored bytes exceed it. |
 | `PUSH_SERVER_URL` | — (unset) | Web-push service the frontend addresses, served to it over `GET /api/config`. Must be **absolute** (`https://push.example.com`) — a scheme-less value is refused with a log line and the deployment starts without push. Unset ⇒ the app ships without push. Clients pick up a change on their next start. |
 | `FEEDBACK_PROJECT_ID` | — (unset) | [Feedback.one](https://feedback.one) project the in-app feedback form posts to, served to the frontend over `GET /api/config`. Unset ⇒ the app ships without the feedback button. It is configuration rather than a secret: any page carrying the widget discloses it. Clients pick up a change on their next start. |
+| `MIGRATION_TARGET` | — (unset) | Deployment this one migrates *to* (absolute URL). Enables the frontend's migration flow and lets its pages address that origin (CSP `connect-src`). Served over `GET /api/config`. |
+| `MIGRATION_SOURCE` | — (unset) | Deployment users migrate *from* (absolute URL). Enables the frontend's `/migrate` receiver, which only trusts messages from that origin. Served over `GET /api/config`. |
+| `RELAY_READ_ONLY` | — (unset) | `true` or `1` freezes writes: group creation, appends and compactions are refused with `403 {"code":"relay_read_only"}` while pulls and live updates keep working. Clients queue refused entries locally and carry them along when they migrate. |
 
 The relay also reads a `.env` file in its working directory, which is how a local run configures itself without exported variables. Anything set in the environment wins over that file, so a container's own configuration always stands.
 

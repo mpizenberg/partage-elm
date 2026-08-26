@@ -239,22 +239,21 @@ function computeCost({ levels, history, nowMs }) {
  * HTTP transport can notify live subscribers.
  */
 /**
- * The frontend appends paths to this URL and hands the result to fetch, so a
+ * The frontend appends paths to these URLs and hands the result to fetch, so a
  * value without a scheme is a *relative* URL: the browser would request it from
- * its own origin, get nothing back, and report push as unavailable. Refuse it
- * here, where the operator can still see why, rather than let a typo surface as
- * a mystery in the UI. Push is optional, so an unusable value degrades to no
- * push instead of taking the relay down with it.
+ * its own origin, get nothing back, and report the feature as unavailable.
+ * Refuse it here, where the operator can still see why, rather than let a typo
+ * surface as a mystery in the UI. Every URL-valued setting is optional, so an
+ * unusable value degrades to "not configured" instead of taking the relay down
+ * with it.
  */
-function usablePushServerUrl(configured) {
+function usableAbsoluteUrl(name, configured) {
   if (configured === '') {
     return '';
   }
   const parsed = URL.parse(configured);
   if (parsed === null || (parsed.protocol !== 'https:' && parsed.protocol !== 'http:')) {
-    console.error(
-      `PUSH_SERVER_URL must be an absolute http(s) URL, got "${configured}" - starting without push`,
-    );
+    console.error(`${name} must be an absolute http(s) URL, got "${configured}" - ignoring it`);
     return '';
   }
   return configured.replace(/\/+$/, '');
@@ -271,6 +270,9 @@ export function createApp({
   pushServerUrl = '',
   feedbackProjectId = '',
   version = '',
+  migrationTarget = '',
+  migrationSource = '',
+  readOnly = false,
 }) {
   const app = new Hono();
   const bump = (name, amount = 1) => storage.bumpMetric(name, new Date().toISOString().slice(0, 10), amount);
@@ -287,7 +289,9 @@ export function createApp({
   // (spelled out because not every engine lets 'self' cover WebSockets), and
   // the feedback form is a remote iframe. /admin sets its own CSP: that page
   // is one self-contained document of inline script and style.
-  const pushServer = usablePushServerUrl(pushServerUrl);
+  const pushServer = usableAbsoluteUrl('PUSH_SERVER_URL', pushServerUrl);
+  const migrateTo = usableAbsoluteUrl('MIGRATION_TARGET', migrationTarget);
+  const migrateFrom = usableAbsoluteUrl('MIGRATION_SOURCE', migrationSource);
   const cspParts = [
     "default-src 'self'",
     "script-src 'self'",
@@ -302,6 +306,11 @@ export function createApp({
   const connectSources = ["'self'", 'https://api.frankfurter.dev'];
   if (pushServer !== '') {
     connectSources.push(new URL(pushServer).origin);
+  }
+  // The migration flow seeds the target deployment's relay from this app's
+  // pages, so the target origin must be fetchable.
+  if (migrateTo !== '') {
+    connectSources.push(new URL(migrateTo).origin);
   }
   app.use(async (c, next) => {
     await next();
@@ -330,7 +339,26 @@ export function createApp({
   // feedback project id means it ships without the feedback form. The version
   // identifies the running build (the image build stamps the git commit); empty
   // means an unstamped build.
-  app.get('/api/config', (c) => c.json({ pushServerUrl: pushServer, feedbackProjectId, version }));
+  app.get('/api/config', (c) =>
+    c.json({
+      pushServerUrl: pushServer,
+      feedbackProjectId,
+      version,
+      migrationTarget: migrateTo,
+      migrationSource: migrateFrom,
+    }),
+  );
+
+  // A frozen deployment refuses every write but keeps serving reads and live
+  // updates. Clients queue refused entries locally (the disk-full path) and
+  // carry them along when they migrate, so nothing written after the freeze
+  // can be lost; the frontend renders the `code` as "this server is frozen".
+  if (readOnly) {
+    const frozen = (c) => c.json({ error: 'This relay is read-only', code: 'relay_read_only' }, 403);
+    app.post('/api/groups', frozen);
+    app.post('/api/groups/:id/events', frozen);
+    app.post('/api/groups/:id/compact', frozen);
+  }
 
   app.get('/api/pow/challenge', async (c) => {
     const groupId = c.req.query('groupId') ?? '';
