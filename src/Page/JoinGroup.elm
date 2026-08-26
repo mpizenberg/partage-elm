@@ -1,4 +1,4 @@
-module Page.JoinGroup exposing (Model, Msg, Output(..), PreviewData, acceptanceFailed, defaultAction, error, getPreview, init, showPreview, update, view, viewPreview)
+module Page.JoinGroup exposing (Model, Msg, Output(..), PreviewData, acceptanceFailed, defaultAction, error, getPreview, init, showPreview, update, view, viewGroupName, viewPreview)
 
 {-| Join group page shown when opening an invite link.
 Displays a group preview with options to claim a virtual member or join as new.
@@ -206,14 +206,36 @@ view i18n config model =
 
                 _ ->
                     []
+
+        languageSelector : Ui.Element msg
+        languageSelector =
+            Ui.el [ Ui.centerX ]
+                (UI.Components.languageSelector config.onSwitchLanguage (T.currentLanguage i18n))
+
+        ( header, footer ) =
+            case getPreview model of
+                Just preview ->
+                    ( [ viewGroupName preview, languageSelector ], [] )
+
+                Nothing ->
+                    ( [], [ languageSelector ] )
     in
     Ui.column [ Ui.spacing Theme.spacing.xl ]
-        (List.map (Ui.map config.toMsg) content
-            ++ errorActions
-            ++ [ Ui.el [ Ui.centerX ]
-                    (UI.Components.languageSelector config.onSwitchLanguage (T.currentLanguage i18n))
-               ]
-        )
+        (header ++ List.map (Ui.map config.toMsg) content ++ errorActions ++ footer)
+
+
+{-| The group's name, headlining the picker. Kept out of `viewPreview` so each
+caller decides what sits between the two.
+-}
+viewGroupName : PreviewData -> Ui.Element msg
+viewGroupName preview =
+    Ui.el
+        [ Ui.centerX
+        , Ui.Font.size Theme.font.xl
+        , Ui.Font.weight Theme.fontWeight.bold
+        , Ui.Font.letterSpacing Theme.letterSpacing.tight
+        ]
+        (Ui.text preview.groupName)
 
 
 {-| The member picker (claim an existing member or join as new). Also used by
@@ -266,14 +288,7 @@ viewPreview i18n preview =
                 Member.JoinAsNewMember ->
                     not (String.isEmpty trimmedName) && not isDuplicateName
     in
-    [ Ui.el
-        [ Ui.centerX
-        , Ui.Font.size Theme.font.xl
-        , Ui.Font.weight Theme.fontWeight.bold
-        , Ui.Font.letterSpacing Theme.letterSpacing.tight
-        ]
-        (Ui.text preview.groupName)
-    , if preview.historyWarning then
+    [ if preview.historyWarning then
         UI.Components.card [ Ui.padding Theme.spacing.md ]
             [ Ui.el
                 [ Ui.Font.size Theme.font.sm

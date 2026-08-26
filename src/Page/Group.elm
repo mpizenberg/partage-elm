@@ -3334,8 +3334,10 @@ viewGroupPage config groupView loaded model =
                         noOverlay <|
                             pageShell config (T.rejoinTitle config.i18n) <|
                                 Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill ]
-                                    (Page.JoinGroup.viewPreview config.i18n preview
-                                        |> List.map (Ui.map (config.toMsg << RejoinMsg))
+                                    (Page.JoinGroup.viewGroupName preview
+                                        :: (Page.JoinGroup.viewPreview config.i18n preview
+                                                |> List.map (Ui.map (config.toMsg << RejoinMsg))
+                                           )
                                     )
 
                     else
