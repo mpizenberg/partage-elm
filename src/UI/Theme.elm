@@ -205,14 +205,15 @@ type alias Scale =
     { xs : Int, sm : Int, md : Int, lg : Int, xl : Int, xxl : Int, xxxl : Int }
 
 
-{-| Font size scale. `md` (15px) is the default body text size.
+{-| Font size scale whose `md` body default must stay at least 16px, because
+form controls inherit it and iOS Safari zooms in on a focused field below that.
 -}
 font : Scale
 font =
-    { xs = 10
-    , sm = 12
-    , md = 15
-    , lg = 17
+    { xs = 11
+    , sm = 13
+    , md = 16
+    , lg = 18
     , xl = 22
     , xxl = 28
     , xxxl = 32
