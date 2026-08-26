@@ -8,6 +8,8 @@
  * leaked URL never compromises encrypted content.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { createNodeWebSocket } from '@hono/node-ws';
@@ -90,10 +92,23 @@ export function startServer({ storage, powSecret, port = 8090, staticDir, adminS
         c.header('Cache-Control', 'no-cache');
       }
     });
+    // The shell's canonical/Open Graph tags must carry the deployment's own
+    // origin, which only the serving process knows: substitute the build-time
+    // placeholder with each request's origin (the proxy's forwarded proto,
+    // else plain http). A build that already baked an origin passes through
+    // unchanged.
+    const shellTemplate = readFileSync(join(staticDir, 'index.html'), 'utf8');
+    const shell = (c) => {
+      const proto = (c.req.header('x-forwarded-proto') ?? 'http').split(',')[0].trim();
+      const origin = `${proto}://${c.req.header('host') ?? ''}`;
+      return c.html(shellTemplate.replaceAll('__CANONICAL_ORIGIN__', origin));
+    };
+    app.get('/', shell);
+    app.get('/index.html', shell);
     app.use('/*', serveStatic({ root: staticDir }));
     // SPA fallback: client-side routes like /join/<id> must serve the app.
     app.get('*', (c, next) => (c.req.path.startsWith('/api/') ? c.notFound() : next()));
-    app.get('*', serveStatic({ root: staticDir, path: 'index.html' }));
+    app.get('*', shell);
   }
 
   return new Promise((resolve) => {

@@ -13,7 +13,10 @@ describe('static frontend serving', () => {
 
   before(async () => {
     staticDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-static-'));
-    fs.writeFileSync(path.join(staticDir, 'index.html'), '<html>app shell</html>');
+    fs.writeFileSync(
+      path.join(staticDir, 'index.html'),
+      '<html><link rel="canonical" href="__CANONICAL_ORIGIN__/" />app shell</html>',
+    );
     fs.writeFileSync(path.join(staticDir, 'main.js'), 'console.log("js")');
     fs.writeFileSync(path.join(staticDir, 'sw.js'), 'self.skipWaiting()');
     relay = await startServer({
@@ -38,7 +41,18 @@ describe('static frontend serving', () => {
   it('falls back to index.html for client-side routes', async () => {
     const res = await fetch(`${relay.url}/join/zryq1q3a58m535p`);
     assert.equal(res.status, 200);
-    assert.equal(await res.text(), '<html>app shell</html>');
+    assert.equal(
+      await res.text(),
+      `<html><link rel="canonical" href="${relay.url}/" />app shell</html>`,
+    );
+  });
+
+  it('substitutes the canonical origin from the request', async () => {
+    const plain = await fetch(`${relay.url}/`);
+    assert.ok((await plain.text()).includes(`href="${relay.url}/"`));
+
+    const proxied = await fetch(`${relay.url}/`, { headers: { 'x-forwarded-proto': 'https' } });
+    assert.match(await proxied.text(), /href="https:\/\/127\.0\.0\.1:\d+\/"/);
   });
 
   it('does not shadow unknown API paths', async () => {

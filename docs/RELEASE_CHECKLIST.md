@@ -148,8 +148,9 @@ real.
 
 ## Metadata
 
-- [ ] **Canonical / social tags.** In the built `dist/index.html`, the canonical
-      and Open Graph URLs point at `CANONICAL_ORIGIN` (the deploy's own host, or
-      the project site by default), not a stale host (RR-012).
+- [ ] **Canonical / social tags.** In the *served* `index.html` (view source on
+      the deployed origin), the canonical and Open Graph URLs point at the
+      deploy's own host — the relay substitutes them per request; a static-host
+      build must bake them via `CANONICAL_ORIGIN` (RR-012).
 - [ ] **Manifest.** `dist/manifest.webmanifest` installs cleanly and includes
       `categories` and portrait `orientation`.

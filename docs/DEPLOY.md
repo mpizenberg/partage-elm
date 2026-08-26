@@ -166,7 +166,7 @@ SERVER_URL=https://relay.example.com pnpm build:optimize
 
 The relay already answers cross-origin requests (permissive CORS), so no server-side change is needed.
 
-Set `CANONICAL_ORIGIN` to your own domain so the built `canonical` and Open Graph tags identify your instance rather than the project site (the default). Link previews and search indexing then point at the host you actually serve:
+Set `CANONICAL_ORIGIN` to the domain you serve on. The same-origin container needs no such variable — the relay fills the `canonical` and Open Graph tags in per request from the origin it is actually serving — but a static host serves `index.html` as-is, so a separate-frontend build must bake them in or the placeholder ships verbatim:
 
 ```sh
 SERVER_URL=https://relay.example.com CANONICAL_ORIGIN=https://partage.example.com pnpm build:optimize
