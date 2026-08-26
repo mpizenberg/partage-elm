@@ -2711,6 +2711,7 @@ viewReady model readyData =
                             Page.Move.view i18n
                                 { targetName = displayDomain target
                                 , groups = Dict.values readyData.groups
+                                , installHint = model.pwaState.installHint
                                 }
                                 MoveMsg
                                 model.moveModel

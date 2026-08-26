@@ -26,6 +26,7 @@ import Domain.Group as Group
 import FeatherIcons
 import Html
 import Html.Attributes
+import Pwa
 import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
@@ -228,8 +229,17 @@ handoffDelivered (Model data) =
 -- VIEW
 
 
-view : I18n -> { targetName : String, groups : List Group.Summary } -> (Msg -> msg) -> Model -> Ui.Element msg
-view i18n { targetName, groups } toMsg (Model data) =
+view :
+    I18n
+    ->
+        { targetName : String
+        , groups : List Group.Summary
+        , installHint : Pwa.InstallHint
+        }
+    -> (Msg -> msg)
+    -> Model
+    -> Ui.Element msg
+view i18n { targetName, groups, installHint } toMsg (Model data) =
     let
         selectedGroups : List Group.Summary
         selectedGroups =
@@ -244,7 +254,7 @@ view i18n { targetName, groups } toMsg (Model data) =
                 viewProgress i18n targetName data selectedGroups
 
             Done ->
-                viewDone i18n targetName data selectedGroups
+                viewDone i18n targetName installHint data selectedGroups
         )
         |> Ui.map toMsg
 
@@ -310,8 +320,8 @@ viewProgress i18n targetName data selectedGroups =
     ]
 
 
-viewDone : I18n -> String -> Data -> List Group.Summary -> List (Ui.Element Msg)
-viewDone i18n targetName data selectedGroups =
+viewDone : I18n -> String -> Pwa.InstallHint -> Data -> List Group.Summary -> List (Ui.Element Msg)
+viewDone i18n targetName installHint data selectedGroups =
     [ statusList i18n data selectedGroups
     , UI.Components.card [ Ui.padding Theme.spacing.lg ]
         [ Ui.el [ Ui.Font.size Theme.font.md ] (Ui.text (T.moveAllSeeded targetName i18n))
@@ -321,7 +331,7 @@ viewDone i18n targetName data selectedGroups =
             hint (T.moveBuildingHandoff i18n)
 
         Just payload ->
-            handoffSection i18n targetName data.delivered payload
+            handoffSection i18n targetName installHint data.delivered payload
     ]
 
 
@@ -329,23 +339,48 @@ viewDone i18n targetName data selectedGroups =
 The one-tap button covers browsers where the destination's tab and installed
 app share storage; the code covers everything else, iOS above all — its Home
 Screen apps have isolated storage, so the code must be pasted _inside_ the
-installed app.
+installed app. On iOS the button is worse than useless: it would land the
+profile in a Safari tab the installed app can never read, and look like it
+worked, so only the code is offered there.
 -}
-handoffSection : I18n -> String -> Bool -> String -> Ui.Element Msg
-handoffSection i18n targetName delivered payload =
+handoffSection : I18n -> String -> Pwa.InstallHint -> Bool -> String -> Ui.Element Msg
+handoffSection i18n targetName installHint delivered payload =
+    let
+        codeOnly : Bool
+        codeOnly =
+            case installHint of
+                Pwa.ManualIosSafari ->
+                    True
+
+                Pwa.IosInAppBrowser ->
+                    True
+
+                _ ->
+                    False
+    in
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         [ hint (T.moveHandoffIntro targetName i18n)
-        , UI.Components.btnPrimary [ Ui.width Ui.shrink ]
-            { label = T.moveHandoffOpen targetName i18n
-            , onPress = OpenTarget
-            }
+        , if codeOnly then
+            Ui.none
+
+          else
+            UI.Components.btnPrimary [ Ui.width Ui.shrink ]
+                { label = T.moveHandoffOpen targetName i18n
+                , onPress = OpenTarget
+                }
         , if delivered then
             Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.success.text ]
                 (Ui.text (T.moveHandoffDelivered i18n))
 
           else
             Ui.none
-        , hint (T.moveHandoffCodeHint i18n)
+        , hint
+            (if codeOnly then
+                T.moveHandoffCodeIos targetName i18n
+
+             else
+                T.moveHandoffCodeHint i18n
+            )
         , codeBlock payload
         , copyBtn payload (T.moveHandoffCopy i18n)
         ]
@@ -365,6 +400,7 @@ codeBlock payload =
         , Ui.width Ui.fill
         , Ui.height (Ui.px 120)
         , Ui.clip
+        , Ui.htmlAttribute (Html.Attributes.style "overflow-wrap" "anywhere")
         ]
         (Ui.text payload)
 

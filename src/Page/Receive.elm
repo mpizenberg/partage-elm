@@ -18,6 +18,7 @@ Home Screen app has storage isolated from every browser tab, so the handoff
 must be brought _inside_ the installed app by hand.
 -}
 
+import Html.Attributes
 import Infra.Handoff as Handoff
 import Pwa
 import Translations as T exposing (I18n)
@@ -164,6 +165,13 @@ viewReceiving i18n sourceName installHint data =
             , Ui.borderColor Theme.base.accent
             , Ui.Font.size Theme.font.sm
             , Ui.Font.family [ Ui.Font.monospace ]
+
+            -- The code is one unbroken 2 KB word: without a break opportunity
+            -- the box sizes itself to the whole string and drags the page
+            -- sideways with it. `anywhere` is the value that also shrinks the
+            -- intrinsic width the grid measures.
+            , Ui.htmlAttribute (Html.Attributes.style "overflow-wrap" "anywhere")
+            , Ui.htmlAttribute (Html.Attributes.style "overflow-y" "auto")
             ]
             { onChange = InputCode
             , text = data.pasted
