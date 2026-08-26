@@ -12,10 +12,8 @@ module Page.Receive exposing
     )
 
 {-| The destination side of a domain migration: take delivery of the profile
-handoff — over `postMessage` from the source app's window, or as a pasted
-code — and apply it. The paste path is the primary one on iOS: an installed
-Home Screen app has storage isolated from every browser tab, so the handoff
-must be brought _inside_ the installed app by hand.
+handoff, over `postMessage` or as a pasted code, and apply it. An installed
+iOS app shares storage with no browser tab, so there the code is the only way in.
 -}
 
 import Html.Attributes
@@ -166,10 +164,8 @@ viewReceiving i18n sourceName installHint data =
             , Ui.Font.size Theme.font.sm
             , Ui.Font.family [ Ui.Font.monospace ]
 
-            -- The code is one unbroken 2 KB word: without a break opportunity
-            -- the box sizes itself to the whole string and drags the page
-            -- sideways with it. `anywhere` is the value that also shrinks the
-            -- intrinsic width the grid measures.
+            -- The code is one unbroken 2 KB word; `anywhere` is the wrap value
+            -- that also shrinks the width elm-ui's sizing element measures.
             , Ui.htmlAttribute (Html.Attributes.style "overflow-wrap" "anywhere")
             , Ui.htmlAttribute (Html.Attributes.style "overflow-y" "auto")
             ]

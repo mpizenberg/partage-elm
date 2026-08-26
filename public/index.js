@@ -191,12 +191,9 @@ app.ports.openFeedback.subscribe(({ projectId, email, copyText }) => {
 });
 
 // Domain-migration handoff. The payload carries the private signing key, so it
-// only travels via postMessage between the two apps' windows — never in a URL,
-// which would land it in history and logs. Sender: open the destination's
-// /migrate page and wait for it to announce itself; a destination that never
-// answers (popup blocked, page closed early) costs nothing — the paste code
-// remains on screen as the fallback transport. Receiver: only messages from
-// the origin the deployment's config names are forwarded to Elm.
+// travels only by postMessage — never in a URL, which lands in history and
+// logs. Both directions check the origin against the deployment's config. A
+// destination that never answers costs nothing: the paste code stays on screen.
 var handoff = { win: null, payload: null, targetOrigin: null, listening: null };
 
 app.ports.handoffOut.subscribe((cmd) => {

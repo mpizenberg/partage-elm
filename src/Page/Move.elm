@@ -11,14 +11,9 @@ module Page.Move exposing
     , view
     )
 
-{-| The source side of a domain migration: pick which groups move, seed the
-target deployment's relay with each one's full history, then hand the profile
-over. Seeding runs one group at a time — each group costs a proof-of-work and
-its own upload, and a sequential run gives one honest progress line per group.
-Once every group is seeded, the host builds the handoff payload (identity +
-group keys) and this page offers both transports: a one-tap open of the
-destination (postMessage) and a copyable code to paste there — the only path
-that reaches an installed iOS app, whose storage the browser cannot touch.
+{-| The source side of a domain migration: pick the groups, seed the target's
+relay with them, then hand the profile over. Groups seed one at a time — each
+costs a proof-of-work, and a sequential run keeps per-group progress honest.
 -}
 
 import Dict exposing (Dict)
@@ -335,13 +330,9 @@ viewDone i18n targetName installHint data selectedGroups =
     ]
 
 
-{-| The last step: get the profile (identity + keys) into the destination app.
-The one-tap button covers browsers where the destination's tab and installed
-app share storage; the code covers everything else, iOS above all — its Home
-Screen apps have isolated storage, so the code must be pasted _inside_ the
-installed app. On iOS the button is worse than useless: it would land the
-profile in a Safari tab the installed app can never read, and look like it
-worked, so only the code is offered there.
+{-| The one-tap button needs the destination's tab and installed app to share
+storage. iOS Home Screen apps don't, and there the button would look like it
+worked while stranding the profile in Safari — so iOS gets the code alone.
 -}
 handoffSection : I18n -> String -> Pwa.InstallHint -> Bool -> String -> Ui.Element Msg
 handoffSection i18n targetName installHint delivered payload =

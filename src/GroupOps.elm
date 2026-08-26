@@ -116,22 +116,11 @@ addUnpushedId eventId loaded =
     { loaded | unpushedIds = Set.insert eventId loaded.unpushedIds }
 
 
-{-| Seed another relay with a group's local log: create the group's row there,
-then push what that relay is missing. Creating the row proves it empty, so
-everything owes a push. A conflict means another member seeded the group
-already, and only what their log lacked is sent — a member migrating after
-the rest usually sends nothing at all.
-
-The diff is worth its extra pull: a chunk's record id hashes the event ids
-inside it, so two members' chunks only deduplicate when their logs match
-exactly. One extra local entry shifts every boundary, and the relay then
-stores the whole shared history once per member — bytes no compaction
-reclaims (it triggers on record count) and which the group's rate window
-must fit.
-
-The local push states are untouched: they track this deployment's relay, not
-the one being seeded.
-
+{-| Seed another relay with a group's local log: creating the row proves it
+empty, so everything goes; on a conflict another member seeded it and only the
+complement is sent. Chunks deduplicate only between identical logs, so that
+diff is what keeps one copy of the history per group rather than per member.
+Local push states track this deployment's relay and stay untouched.
 -}
 seedGroup : Idb.Db -> { serverUrl : String, actorId : String } -> Group.Id -> ConcurrentTask Server.Error ()
 seedGroup db { serverUrl, actorId } groupId =
@@ -174,11 +163,9 @@ seedGroup db { serverUrl, actorId } groupId =
             )
 
 
-{-| Re-queue the entire local log for pushing. For right after this client
-created the group's row on the relay: a freshly created row holds no events,
-so every local event owes a push — regardless of any push state recorded
-against a previous relay or incarnation — and a stored cursor would refer to
-a row that no longer exists.
+{-| Re-queue the entire local log, for right after this client created the
+group's row: the row holds no events, whatever push state a previous relay or
+incarnation left behind, and a stored cursor points at a row that is gone.
 -}
 requeueFullLog : Idb.Db -> LoadedGroup -> ( LoadedGroup, ConcurrentTask Idb.Error () )
 requeueFullLog db loaded =

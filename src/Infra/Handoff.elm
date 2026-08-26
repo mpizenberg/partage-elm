@@ -8,15 +8,10 @@ module Infra.Handoff exposing
     , merge
     )
 
-{-| The profile one Partage installation hands to another: what cannot be
-rebuilt from a relay (the identity and the group keys) plus the light state
-that makes the destination feel like home. Event history is deliberately
-absent — the destination pulls it from its own relay.
-
-Today's transport is the domain migration (source app → destination app);
-the payload and merge rules are transport-agnostic so a future
-device-to-device transfer reuses them as-is.
-
+{-| The profile one Partage installation hands to another: what no relay can
+rebuild (identity, group keys) plus light settings. History stays out — the
+destination pulls it from its own relay. Transport-agnostic, so a future
+device-to-device transfer reuses it as-is.
 -}
 
 import Domain.Group as Group
@@ -114,12 +109,9 @@ type alias Destination =
     }
 
 
-{-| The resolved outcome of receiving a payload. `identity` is what the
-destination must store. `adopted` means the incoming identity replaced the
-local one, so the incoming profile and settings apply too (`selfProfile`
-is `Just` exactly then); otherwise the destination keeps its own identity —
-extended with the incoming device ids so imported groups suggest the right
-member to re-link as — and its own profile and settings.
+{-| What the destination must store. `adopted` means the incoming identity
+replaced the local one, and the incoming profile and settings come with it
+(`selfProfile` is `Just` exactly then).
 -}
 type alias Plan =
     { identity : Identity
@@ -132,12 +124,10 @@ type alias Plan =
     }
 
 
-{-| Merge rules. A destination with zero groups adopts the incoming identity
-outright: an identity that never touched a group is referenced nowhere, so
-replacing it loses nothing. A destination with groups is an installation in
-its own right — it keeps its identity and only gains the groups it lacks.
-Running the same payload twice converges: the second run skips every group
-and appends no new device ids.
+{-| A destination with zero groups adopts the incoming identity: its own is
+referenced nowhere, so replacing it loses nothing. One with groups is an
+installation in its own right and only gains the groups it lacks. Re-running
+the same payload converges.
 -}
 merge : Payload -> Destination -> Plan
 merge payload destination =
