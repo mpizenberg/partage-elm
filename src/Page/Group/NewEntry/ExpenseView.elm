@@ -108,9 +108,9 @@ payerField i18n activeMembers data =
         ([ Ui.row [ Ui.spacing Theme.spacing.sm, Ui.wrap ]
             (List.map
                 (\member ->
-                    UI.Components.toggleMemberBtn
-                        { name = member.name
-                        , initials = String.left 2 (String.toUpper member.name)
+                    UI.Components.togglePill
+                        { label = member.name
+                        , icon = Nothing
                         , selected = Dict.member member.rootId data.payerAmounts
                         , onPress = TogglePayer member.rootId
                         }

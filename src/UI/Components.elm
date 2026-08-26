@@ -4,7 +4,7 @@ module UI.Components exposing
     , btnPrimary, btnOutline, btnOutlineAttrs, btnDark, btnDanger, btnSuccess
     , iconButton
     , spaLinkAttrs
-    , chip, toggle, expandTrigger, toggleMemberBtn
+    , chip, toggle, expandTrigger, togglePill
     , linkItem
     , filterToggleButton, filterSection, filterSummaryChip, clearAllFiltersButton
     , avatar, AvatarColor(..)
@@ -33,7 +33,7 @@ module UI.Components exposing
 
 # Interactive
 
-@docs chip, toggle, expandTrigger, toggleMemberBtn
+@docs chip, toggle, expandTrigger, togglePill
 @docs linkItem
 @docs filterToggleButton, filterSection, filterSummaryChip, clearAllFiltersButton
 
@@ -591,17 +591,18 @@ expandTrigger config =
         ]
 
 
-{-| Pill-shaped member toggle button with avatar and name.
-Selected state uses primary colors, unselected uses neutral.
+{-| Pill-shaped toggle button: a circular badge followed by a label. The badge
+holds `icon`, or the label's initials when there is none, and becomes a check
+once selected.
 -}
-toggleMemberBtn :
-    { name : String
-    , initials : String
+togglePill :
+    { label : String
+    , icon : Maybe FeatherIcons.Icon
     , selected : Bool
     , onPress : msg
     }
     -> Ui.Element msg
-toggleMemberBtn config =
+togglePill config =
     let
         ( borderClr, backgroundColor, avatarColor ) =
             if config.selected then
@@ -616,7 +617,12 @@ toggleMemberBtn config =
                 avatarIcon avatarColor FeatherIcons.check
 
             else
-                avatar avatarColor config.initials
+                case config.icon of
+                    Just icon ->
+                        avatarIcon avatarColor icon
+
+                    Nothing ->
+                        avatar avatarColor (String.left 2 (String.toUpper config.label))
     in
     Ui.row
         [ Ui.Input.button config.onPress
@@ -634,7 +640,7 @@ toggleMemberBtn config =
         ]
         [ avatarContent
         , Ui.el [ Ui.Font.weight Theme.fontWeight.medium ]
-            (Ui.text config.name)
+            (Ui.text config.label)
         ]
 
 

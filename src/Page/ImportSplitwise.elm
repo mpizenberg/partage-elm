@@ -17,6 +17,7 @@ into a new group (see `GroupOps.importSplitwiseGroup`).
 
 import Dict exposing (Dict)
 import Domain.Currency as Currency exposing (Currency)
+import FeatherIcons
 import Infra.ExchangeRate as ExchangeRate
 import SplitwiseImport exposing (Parsed)
 import Translations as T exposing (I18n)
@@ -369,16 +370,16 @@ identitySection i18n data =
         isNew =
             data.identity == NewMember
     in
-    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+    Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
         [ Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
             [ UI.Components.sectionLabel (T.joinGroupClaimMember i18n)
             , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.sm ]
                 (List.indexedMap (memberToggle data.identity) data.parsed.memberNames)
             ]
         , Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-            [ UI.Components.sectionLabel (T.joinGroupJoinAsNew i18n)
-            , UI.Components.chip
+            [ UI.Components.togglePill
                 { label = T.joinGroupJoinAsNew i18n
+                , icon = Just FeatherIcons.plus
                 , selected = isNew
                 , onPress = SelectNewMember
                 }
@@ -426,9 +427,9 @@ identitySection i18n data =
 
 memberToggle : IdentityChoice -> Int -> String -> Ui.Element Msg
 memberToggle identity index name =
-    UI.Components.toggleMemberBtn
-        { name = name
-        , initials = String.left 2 (String.toUpper name)
+    UI.Components.togglePill
+        { label = name
+        , icon = Nothing
         , selected = identity == ClaimMember index
         , onPress = SelectClaim index
         }

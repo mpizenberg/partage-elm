@@ -9,6 +9,7 @@ import Domain.Event as Event
 import Domain.Group as Group
 import Domain.GroupState exposing (GroupState)
 import Domain.Member as Member
+import FeatherIcons
 import Set exposing (Set)
 import Translations as T exposing (I18n, Language)
 import UI.Components
@@ -302,9 +303,9 @@ viewPreview i18n preview =
       else
         Ui.none
     , Ui.column []
-        [ UI.Components.sectionLabel (T.joinGroupJoinAsNew i18n)
-        , UI.Components.chip
+        [ UI.Components.togglePill
             { label = T.joinGroupJoinAsNew i18n
+            , icon = Just FeatherIcons.plus
             , selected = isJoinAsNew
             , onPress = SelectJoinAsNew
             }
@@ -380,9 +381,9 @@ viewMemberToggle selectedAction member =
                 _ ->
                     False
     in
-    UI.Components.toggleMemberBtn
-        { name = member.name
-        , initials = String.left 2 (String.toUpper member.name)
+    UI.Components.togglePill
+        { label = member.name
+        , icon = Nothing
         , selected = isSelected
         , onPress = SelectMember member.rootId
         }

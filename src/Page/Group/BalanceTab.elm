@@ -572,9 +572,9 @@ preferencesContent currentUserRootId onSavePreferences state =
         [ Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.xs ]
             (List.map
                 (\( creditorId, creditorName ) ->
-                    UI.Components.toggleMemberBtn
-                        { name = creditorName
-                        , initials = String.left 2 (String.toUpper creditorName)
+                    UI.Components.togglePill
+                        { label = creditorName
+                        , icon = Nothing
                         , selected = List.member creditorId preferredRecipients
                         , onPress = selectCreditor creditorId
                         }

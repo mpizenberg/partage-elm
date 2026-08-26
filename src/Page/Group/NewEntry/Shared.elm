@@ -485,9 +485,9 @@ beneficiaryRow i18n data member =
                         Ui.none
     in
     Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
-        [ UI.Components.toggleMemberBtn
-            { name = member.name
-            , initials = String.left 2 (String.toUpper member.name)
+        [ UI.Components.togglePill
+            { label = member.name
+            , icon = Nothing
             , selected = isSelected
             , onPress = ToggleBeneficiary member.rootId
             }
