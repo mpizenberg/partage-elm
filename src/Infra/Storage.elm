@@ -2,6 +2,7 @@ module Infra.Storage exposing
     ( InitData
     , PushState(..)
     , clearActivityMarker
+    , clearSyncCursor
     , deleteExchangeRates
     , deleteGroup
     , deleteNotifyTopic
@@ -484,6 +485,13 @@ saveSyncCursor db groupId cursor =
         syncCursorsStore
         (Idb.StringKey groupId)
         (Encode.object [ ( "seq", Encode.int cursor.seq ), ( "epoch", Encode.string cursor.epoch ) ])
+
+
+{-| Forget a group's sync cursor, returning it to "never synced".
+-}
+clearSyncCursor : Idb.Db -> Group.Id -> ConcurrentTask Idb.Error ()
+clearSyncCursor db groupId =
+    Idb.delete db syncCursorsStore (Idb.StringKey groupId)
 
 
 {-| Load the sync cursor for a group, if it exists.

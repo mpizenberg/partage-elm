@@ -24,6 +24,7 @@ module GroupOps exposing
     , newEntry
     , newGroup
     , postSyncTasks
+    , requeueFullLog
     , restoreEntry
     )
 
@@ -112,6 +113,23 @@ appendEvent envelope loaded =
 addUnpushedId : String -> LoadedGroup -> LoadedGroup
 addUnpushedId eventId loaded =
     { loaded | unpushedIds = Set.insert eventId loaded.unpushedIds }
+
+
+{-| Re-queue the entire local log for pushing. For right after this client
+created the group's row on the relay: a freshly created row holds no events,
+so every local event owes a push — regardless of any push state recorded
+against a previous relay or incarnation — and a stored cursor would refer to
+a row that no longer exists.
+-}
+requeueFullLog : Idb.Db -> LoadedGroup -> ( LoadedGroup, ConcurrentTask Idb.Error () )
+requeueFullLog db loaded =
+    ( { loaded
+        | unpushedIds = Set.fromList (List.map .id loaded.events)
+        , syncCursor = Nothing
+      }
+    , Storage.saveEvents db loaded.summary.id Storage.Unpushed loaded.events
+        |> ConcurrentTask.andThen (\_ -> Storage.clearSyncCursor db loaded.summary.id)
+    )
 
 
 {-| Build a LoadedGroup from raw events, a summary, and the group key, applying all events to compute state.

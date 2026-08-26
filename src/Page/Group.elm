@@ -312,6 +312,7 @@ type
     | OnGroupEventsLoaded Group.Id (ConcurrentTask.Response Idb.Error { events : List Event.Envelope, groupKey : Symmetric.Key, syncCursor : Maybe Group.SyncCursor, unpushedIds : Set String, tamperSignals : TamperSignals, suspicionDismissals : Set String })
     | OnGroupSynced Group.Id (Set String) (ConcurrentTask.Response Server.Error Server.SyncResult)
     | OnServerGroupCreated Group.Id (ConcurrentTask.Response Server.Error ())
+    | OnFullLogRequeued Group.Id (ConcurrentTask.Response Idb.Error ())
     | OnCompactionStep Group.Id (ConcurrentTask.Response Server.Error GroupOps.CompactionOutcome)
     | OnCompactionEventSaved Group.Id (ConcurrentTask.Response Idb.Error Event.Envelope)
     | PostSyncTasksDone (ConcurrentTask.Response Idb.Error ())
@@ -1123,20 +1124,53 @@ update config msg model =
                 finishStaleConnectivity config model
 
         OnServerGroupCreated groupId (ConcurrentTask.Success _) ->
+            case model.workspace of
+                WorkspaceLoaded loaded ->
+                    if loaded.summary.id == groupId then
+                        -- The row we just created holds nothing, whatever the
+                        -- stored push states claim (e.g. a `.partage` import
+                        -- records its events as pushed): the full log must go
+                        -- up, and only then does the sync run.
+                        let
+                            ( requeuedLoaded, persistTask ) =
+                                GroupOps.requeueFullLog config.db loaded
+
+                            ( runner, persistCmd ) =
+                                ( model.runner, Cmd.none )
+                                    |> Runner.andRun (OnFullLogRequeued groupId) persistTask
+                        in
+                        ( { model | runner = runner, workspace = WorkspaceLoaded requeuedLoaded, syncState = SyncIdle }
+                        , persistCmd
+                        , []
+                        )
+
+                    else
+                        finishStaleConnectivity config model
+
+                _ ->
+                    finishStaleConnectivity config model
+
+        OnFullLogRequeued groupId result ->
             let
-                idleModel : Model
-                idleModel =
-                    { model | syncState = SyncIdle }
+                outputs : List Output
+                outputs =
+                    case result of
+                        ConcurrentTask.Success () ->
+                            []
+
+                        _ ->
+                            [ LogError ErrorLog.StorageSource ErrorLog.Err "Failed to persist the re-queued log after relay group creation" ]
             in
-            if hasLoadedGroup groupId idleModel then
+            if hasLoadedGroup groupId model then
                 let
                     ( syncModel, syncCmd ) =
-                        triggerSyncInternal config groupId idleModel
+                        triggerSyncInternal config groupId model
                 in
-                ( syncModel, syncCmd, [] )
+                ( syncModel, syncCmd, outputs )
 
             else
                 finishStaleConnectivity config model
+                    |> (\( m, c, o ) -> ( m, c, outputs ++ o ))
 
         OnServerGroupCreated groupId (ConcurrentTask.Error err) ->
             if hasLoadedGroup groupId model then
