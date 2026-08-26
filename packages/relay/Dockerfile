@@ -2,7 +2,9 @@
 # Build from the repo root, after building the frontend for same-origin use:
 #   SERVER_URL= pnpm build:optimize
 #   docker build -t partage-relay -f packages/relay/Dockerfile .
-FROM node:24-alpine
+# Digest-pinned (multi-arch index) so builds are reproducible; re-pin
+# deliberately when bumping Node, since the pin also freezes security patches.
+FROM node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43
 WORKDIR /app
 COPY packages/relay/package.json packages/relay/pnpm-lock.yaml ./
 RUN corepack enable pnpm && pnpm install --frozen-lockfile --prod

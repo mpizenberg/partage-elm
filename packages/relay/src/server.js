@@ -55,18 +55,23 @@ const storage = openStorage(dbPath);
 
 // Runs at startup and once a day: purge groups idle past the retention window,
 // then snapshot the fleet's current levels so the operator dashboard can trend
-// state that the live tables only ever hold for the present.
+// state that the live tables only ever hold for the present. A failed sweep
+// must not take the relay down with it; the next run retries.
 function dailyMaintenance() {
   const now = Date.now();
   const day = new Date(now).toISOString().slice(0, 10);
 
-  const purged = storage.purgeIdleGroups(new Date(now - RETENTION_MS).toISOString());
-  if (purged > 0) {
-    storage.bumpMetric('groups_purged', day, purged);
-    console.log(`Purged ${purged} idle group(s)`);
-  }
+  try {
+    const purged = storage.purgeIdleGroups(new Date(now - RETENTION_MS).toISOString());
+    if (purged > 0) {
+      storage.bumpMetric('groups_purged', day, purged);
+      console.log(`Purged ${purged} idle group(s)`);
+    }
 
-  storage.recordDailyLevels(day, storage.getFleetLevels(fleetLevelParams(now)));
+    storage.recordDailyLevels(day, storage.getFleetLevels(fleetLevelParams(now)));
+  } catch (err) {
+    console.error('Daily maintenance failed', err);
+  }
 }
 
 const { url, close } = await startServer({
