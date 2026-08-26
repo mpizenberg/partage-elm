@@ -969,14 +969,14 @@ update config msg model =
                         ( initializedModel, initCmd ) =
                             initPagesIfNeeded config (routeToGroupView config.route) loadedModel
 
-                        ( migratedModel, migrateCmd ) =
-                            migrateLegacyNotifyTopic config initializedModel
+                        ( notifiedModel, notifyCmd ) =
+                            registerNotifyTopic config initializedModel
 
                         ( syncModel, syncCmd ) =
-                            triggerSyncInternal config groupId migratedModel
+                            triggerSyncInternal config groupId notifiedModel
                     in
                     ( syncModel
-                    , Cmd.batch [ syncCmd, initCmd, migrateCmd ]
+                    , Cmd.batch [ syncCmd, initCmd, notifyCmd ]
                     , feedbackOutputs config False syncModel
                     )
 
@@ -2666,22 +2666,21 @@ finishGroupDeletion config groupId keyAndRoot model =
     )
 
 
-{-| One-shot migration to blinded topics: a subscribed group with no stored
-topic still holds a legacy `groupId-memberRootId` subscription on the push
-server. Derive and register the blinded topic, drop the legacy one, and record
-the topic so a fresh push subscription can re-register it. Best-effort and
-retried on every group load until it lands. Delete this in the release after
-blinded topics ship.
+{-| A subscription lives in two places: this device's summary flag and the topic
+registered with the push server. Opening a group is where they are reconciled —
+a group new to this device starts subscribed with no topic yet, and deriving one
+needs the group key and the member's root id, which only a loaded group has.
+Best-effort and idempotent, retried on every load until it lands.
 -}
-migrateLegacyNotifyTopic : UpdateConfig -> Model -> ( Model, Cmd Msg )
-migrateLegacyNotifyTopic config model =
+registerNotifyTopic : UpdateConfig -> Model -> ( Model, Cmd Msg )
+registerNotifyTopic config model =
     case ( model.workspace, config.pushServerUrl, config.pushSubscription ) of
         ( WorkspaceLoaded loaded, Just pushServerUrl, Just pushSubscription ) ->
             case ( loaded.summary.isSubscribed, currentUserRootId model loaded ) of
                 ( True, Just rootId ) ->
                     let
-                        registerBlinded : ConcurrentTask () ()
-                        registerBlinded =
+                        register : ConcurrentTask () ()
+                        register =
                             Crypto.deriveNotifyTopic loaded.groupKey rootId
                                 |> ConcurrentTask.mapError (\_ -> ())
                                 |> ConcurrentTask.andThen
@@ -2692,24 +2691,16 @@ migrateLegacyNotifyTopic config model =
                                             , subscription = pushSubscription
                                             , isSubscribed = True
                                             }
-                                            |> ConcurrentTask.andThenDo
-                                                (PushServer.setGroupNotification
-                                                    { pushServerUrl = pushServerUrl
-                                                    , topic = loaded.summary.id ++ "-" ++ rootId
-                                                    , subscription = pushSubscription
-                                                    , isSubscribed = False
-                                                    }
-                                                )
                                             |> ConcurrentTask.mapError (\_ -> ())
                                             |> ConcurrentTask.andThenDo
                                                 (Storage.saveNotifyTopic config.db loaded.summary.id topic
                                                     |> ConcurrentTask.mapError (\_ -> ())
                                                 )
                                     )
-
-                        migrationTask : ConcurrentTask x ()
-                        migrationTask =
-                            Storage.loadNotifyTopic config.db loaded.summary.id
+                    in
+                    ( model.runner, Cmd.none )
+                        |> Runner.andRun (\_ -> NoOp)
+                            (Storage.loadNotifyTopic config.db loaded.summary.id
                                 |> ConcurrentTask.mapError (\_ -> ())
                                 |> ConcurrentTask.andThen
                                     (\existing ->
@@ -2718,12 +2709,10 @@ migrateLegacyNotifyTopic config model =
                                                 ConcurrentTask.succeed ()
 
                                             Nothing ->
-                                                registerBlinded
+                                                register
                                     )
                                 |> ConcurrentTask.onError (\() -> ConcurrentTask.succeed ())
-                    in
-                    ( model.runner, Cmd.none )
-                        |> Runner.andRun (\_ -> NoOp) migrationTask
+                            )
                         |> Tuple.mapFirst (\runner -> { model | runner = runner })
 
                 _ ->

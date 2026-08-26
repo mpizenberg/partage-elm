@@ -83,9 +83,10 @@ real.
 - [ ] **In-visit markers.** While a group is open, another member's new entry
       arrives with a left-border mark in the entries tab and a marked feed item
       under a "new activity" delimiter; the viewer's own events never mark.
-- [ ] **Legacy topic migration.** Opening a group that was subscribed before
-      the blinded-topic release re-registers it silently; a subsequent action by
-      another member still delivers a notification.
+- [ ] **New groups notify by default.** With notifications enabled, a group
+      created or joined on this device is subscribed on its first open without
+      touching the toggle, and another member's action delivers a notification.
+      Turning the toggle off keeps it off across reopens.
 - [ ] **Unavailable state.** With the push server unreachable, enabling shows the
       unavailable message instead of doing nothing (RR-006).
 - [ ] **Push disabled deployment.** With `PUSH_SERVER_URL` unset on the relay, the

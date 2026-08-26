@@ -126,12 +126,16 @@ empty =
     }
 
 
+{-| Build the summary of a group new to this device — joined, imported, or
+re-keyed. Subscription is a device preference rather than group history, so it
+takes the default a new group gets: notify me.
+-}
 summarize : Member.Id -> Group.Id -> Time.Posix -> GroupState -> Group.Summary
 summarize memberId groupId lastSyncedAt state =
     { id = groupId
     , name = state.groupMeta.name
     , defaultCurrency = state.groupMeta.defaultCurrency
-    , isSubscribed = False
+    , isSubscribed = True
     , isArchived = False
     , createdAt = state.groupMeta.createdAt
     , memberCount =

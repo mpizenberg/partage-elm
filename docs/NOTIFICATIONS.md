@@ -72,6 +72,21 @@ clear on open rather than exit, since `visibilitychange` and tab close are
 unreliable on mobile PWAs and a killed app would stay marked forever; that is
 honest only because a marked card opens the activity tab.
 
+## Subscription state
+
+A subscription lives in two places: the flag on `Group.Summary` this device
+stores, and the topic registered with the push server. A group new to this
+device starts subscribed — the group you just created or joined is the one you
+want to hear about — and the toggle records a departure from that default, so
+turning it off stays off.
+
+Opening a group is where the two are reconciled. A group born subscribed has no
+registered topic yet, and nothing outside the group can derive one: the topic
+needs the group key and the member's root id, which means replaying the group.
+So neither the home screen nor an arriving push subscription can register it —
+they can only re-register topics already stored. Best-effort and idempotent,
+retried on every open until it lands.
+
 ## Runtime configuration
 
 - **The relay serves the push URL but does not proxy push traffic.** A proxy
