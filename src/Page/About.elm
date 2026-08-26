@@ -110,7 +110,10 @@ view i18n config model =
         , Ui.map config.toMsg (usageSection i18n model)
         , devModeSection i18n config
         , if config.devMode then
-            Ui.map config.toMsg (deviceSecuritySection i18n config.deviceId model.confirmingRekey)
+            Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill ]
+                [ feedbackPromptsSection i18n config
+                , Ui.map config.toMsg (deviceSecuritySection i18n config.deviceId model.confirmingRekey)
+                ]
 
           else
             Ui.none
@@ -327,7 +330,7 @@ costRow label value =
 
 devModeSection :
     I18n
-    -> { r | devMode : Bool, onToggleDevMode : msg, onResetFeedbackPrompts : msg }
+    -> { r | devMode : Bool, onToggleDevMode : msg }
     -> Ui.Element msg
 devModeSection i18n config =
     Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
@@ -340,15 +343,24 @@ devModeSection i18n config =
                 (Ui.text (T.aboutDevModeHint i18n))
             , UI.Components.toggle { isOn = config.devMode, onPress = config.onToggleDevMode }
             ]
-        , if config.devMode then
-            UI.Components.btnOutline []
-                { label = T.aboutResetFeedbackPrompts i18n
-                , icon = Just (UI.Components.featherIcon 16 FeatherIcons.refreshCw)
-                , onPress = config.onResetFeedbackPrompts
-                }
+        ]
 
-          else
-            Ui.none
+
+
+-- FEEDBACK PROMPTS
+
+
+feedbackPromptsSection : I18n -> { r | onResetFeedbackPrompts : msg } -> Ui.Element msg
+feedbackPromptsSection i18n config =
+    Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+        [ UI.Components.sectionLabel (T.aboutFeedbackPromptsLabel i18n)
+        , Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle ]
+            (Ui.text (T.aboutFeedbackPromptsHint i18n))
+        , UI.Components.btnOutline []
+            { label = T.aboutResetFeedbackPrompts i18n
+            , icon = Just (UI.Components.featherIcon 16 FeatherIcons.refreshCw)
+            , onPress = config.onResetFeedbackPrompts
+            }
         ]
 
 
