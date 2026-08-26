@@ -287,14 +287,19 @@ export function createApp({
   // is known to load or address: elm-ui injects inline styles, exchange rates
   // come from Frankfurter, live updates dial ws(s) on the app's own host
   // (spelled out because not every engine lets 'self' cover WebSockets), and
-  // the feedback form is a remote iframe. /admin sets its own CSP: that page
-  // is one self-contained document of inline script and style.
+  // the feedback form is a remote iframe. Group creation solves its
+  // proof-of-work in a worker built from a blob, which needs naming twice:
+  // engines without worker-src resolve workers through child-src, and both
+  // fall back to script-src, which would refuse it. /admin sets its own CSP:
+  // that page is one self-contained document of inline script and style.
   const pushServer = usableAbsoluteUrl('PUSH_SERVER_URL', pushServerUrl);
   const migrateTo = usableAbsoluteUrl('MIGRATION_TARGET', migrationTarget);
   const migrateFrom = usableAbsoluteUrl('MIGRATION_SOURCE', migrationSource);
   const cspParts = [
     "default-src 'self'",
     "script-src 'self'",
+    "worker-src 'self' blob:",
+    "child-src 'self' blob:",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data:",
     feedbackProjectId ? 'frame-src https://form.feedback.one' : "frame-src 'none'",

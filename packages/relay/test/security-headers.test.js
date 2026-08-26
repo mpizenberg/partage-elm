@@ -13,6 +13,12 @@ describe('security headers', () => {
     assert.match(csp, /style-src 'self' 'unsafe-inline'/);
   });
 
+  it("lets group creation run its proof-of-work in a blob worker", async () => {
+    const csp = (await makeApp().app.request('/health')).headers.get('content-security-policy');
+    assert.match(csp, /worker-src 'self' blob:/);
+    assert.match(csp, /child-src 'self' blob:/);
+  });
+
   it('lets the page dial its own host over WebSocket', async () => {
     const res = await makeApp().app.request('/health', { headers: { host: 'relay.example:8090' } });
     assert.match(
