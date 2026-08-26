@@ -116,12 +116,22 @@ addUnpushedId eventId loaded =
     { loaded | unpushedIds = Set.insert eventId loaded.unpushedIds }
 
 
-{-| Seed another relay with a group's full local log: create the group's row
-there (a row another member already created is fine — same key, same
-verifier), then push every local event. Chunk record ids derive from event
-ids, so re-running after a partial failure re-sends only what the relay
-deduplicates for free. The local push states are untouched: they track this
-deployment's relay, not the one being seeded.
+{-| Seed another relay with a group's local log: create the group's row there,
+then push what that relay is missing. Creating the row proves it empty, so
+everything owes a push. A conflict means another member seeded the group
+already, and only what their log lacked is sent — a member migrating after
+the rest usually sends nothing at all.
+
+The diff is worth its extra pull: a chunk's record id hashes the event ids
+inside it, so two members' chunks only deduplicate when their logs match
+exactly. One extra local entry shifts every boundary, and the relay then
+stores the whole shared history once per member — bytes no compaction
+reclaims (it triggers on record count) and which the group's rate window
+must fit.
+
+The local push states are untouched: they track this deployment's relay, not
+the one being seeded.
+
 -}
 seedGroup : Idb.Db -> { serverUrl : String, actorId : String } -> Group.Id -> ConcurrentTask Server.Error ()
 seedGroup db { serverUrl, actorId } groupId =
@@ -133,21 +143,34 @@ seedGroup db { serverUrl, actorId } groupId =
                     ctx : Server.ServerContext
                     ctx =
                         { serverUrl = serverUrl, groupId = groupId, groupKey = loaded.groupKey }
+
+                    push : List Event.Envelope -> ConcurrentTask Server.Error ()
+                    push envelopes =
+                        if List.isEmpty envelopes then
+                            ConcurrentTask.succeed ()
+
+                        else
+                            Crypto.deriveRelaySecret loaded.groupKey
+                                |> ConcurrentTask.mapError Server.CryptoError
+                                |> ConcurrentTask.andThen
+                                    (\secret -> Server.pushEvents ctx secret actorId (Event.sortEvents envelopes))
                 in
                 Server.createGroupOnServer
                     { serverUrl = serverUrl, groupId = groupId, groupKey = loaded.groupKey, createdBy = actorId }
+                    |> ConcurrentTask.map (\_ -> loaded.events)
                     |> ConcurrentTask.onError
                         (\err ->
                             if Server.isConflict err then
-                                ConcurrentTask.succeed ()
+                                Server.fetchEventOrder ctx
+                                    |> ConcurrentTask.map
+                                        (\known ->
+                                            List.filter (\e -> not (Dict.member e.id known)) loaded.events
+                                        )
 
                             else
                                 ConcurrentTask.fail err
                         )
-                    |> ConcurrentTask.andThenDo
-                        (Crypto.deriveRelaySecret loaded.groupKey |> ConcurrentTask.mapError Server.CryptoError)
-                    |> ConcurrentTask.andThen
-                        (\secret -> Server.pushEvents ctx secret actorId (Event.sortEvents loaded.events))
+                    |> ConcurrentTask.andThen push
             )
 
 
