@@ -26,6 +26,7 @@ module GroupOps exposing
     , postSyncTasks
     , requeueFullLog
     , restoreEntry
+    , seedGroup
     )
 
 import ConcurrentTask exposing (ConcurrentTask)
@@ -113,6 +114,41 @@ appendEvent envelope loaded =
 addUnpushedId : String -> LoadedGroup -> LoadedGroup
 addUnpushedId eventId loaded =
     { loaded | unpushedIds = Set.insert eventId loaded.unpushedIds }
+
+
+{-| Seed another relay with a group's full local log: create the group's row
+there (a row another member already created is fine — same key, same
+verifier), then push every local event. Chunk record ids derive from event
+ids, so re-running after a partial failure re-sends only what the relay
+deduplicates for free. The local push states are untouched: they track this
+deployment's relay, not the one being seeded.
+-}
+seedGroup : Idb.Db -> { serverUrl : String, actorId : String } -> Group.Id -> ConcurrentTask Server.Error ()
+seedGroup db { serverUrl, actorId } groupId =
+    Storage.loadGroup db groupId
+        |> ConcurrentTask.mapError (\e -> Server.InternalError ("Storage: " ++ Storage.errorToString e))
+        |> ConcurrentTask.andThen
+            (\loaded ->
+                let
+                    ctx : Server.ServerContext
+                    ctx =
+                        { serverUrl = serverUrl, groupId = groupId, groupKey = loaded.groupKey }
+                in
+                Server.createGroupOnServer
+                    { serverUrl = serverUrl, groupId = groupId, groupKey = loaded.groupKey, createdBy = actorId }
+                    |> ConcurrentTask.onError
+                        (\err ->
+                            if Server.isConflict err then
+                                ConcurrentTask.succeed ()
+
+                            else
+                                ConcurrentTask.fail err
+                        )
+                    |> ConcurrentTask.andThenDo
+                        (Crypto.deriveRelaySecret loaded.groupKey |> ConcurrentTask.mapError Server.CryptoError)
+                    |> ConcurrentTask.andThen
+                        (\secret -> Server.pushEvents ctx secret actorId (Event.sortEvents loaded.events))
+            )
 
 
 {-| Re-queue the entire local log for pushing. For right after this client

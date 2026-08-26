@@ -10,11 +10,13 @@ module Infra.Server exposing
     , errorToString
     , errorToText
     , fetchEventOrder
+    , isConflict
     , isNetworkError
     , isNotFound
     , isQuotaExceeded
     , isRateLimited
     , isUnauthorized
+    , pushEvents
     , serverEventDecoder
     , subscribeToGroup
     , sync
@@ -201,6 +203,14 @@ rate limit. Transient — syncing resumes once the window rolls.
 isRateLimited : Error -> Bool
 isRateLimited =
     isStatus 429
+
+
+{-| True when the server reports the resource already exists (e.g. creating a
+group another member already created).
+-}
+isConflict : Error -> Bool
+isConflict =
+    isStatus 409
 
 
 isStatus : Int -> Error -> Bool
@@ -752,7 +762,7 @@ postCompact ctx secret { uptoSeq, expectedCount } records =
         |> ConcurrentTask.map Compacted
         |> ConcurrentTask.onError
             (\err ->
-                if isStatus 409 err then
+                if isConflict err then
                     ConcurrentTask.succeed CompactRaced
 
                 else

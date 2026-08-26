@@ -32,6 +32,7 @@ type alias Context msg =
     , onEnableNotifications : msg
     , currentTime : Time.Posix
     , activityMarkers : Set Group.Id
+    , migration : Maybe { targetName : String, onOpen : msg }
     }
 
 
@@ -216,6 +217,14 @@ view i18n ctx toMsg (Model data) groups =
         , Ui.height Ui.fill
         ]
         [ homeHeader i18n
+
+        -- Domain migration
+        , case ctx.migration of
+            Just migration ->
+                migrationBanner i18n migration
+
+            Nothing ->
+                Ui.none
 
         -- Notifications
         , notifSection i18n ctx
@@ -543,6 +552,29 @@ formatYear posix =
 
 
 -- ERROR BANNER
+
+
+{-| The deployment is moving: point every visit at the migration flow until
+the user has moved (the flow itself explains what moving means).
+-}
+migrationBanner : I18n -> { targetName : String, onOpen : msg } -> Ui.Element msg
+migrationBanner i18n migration =
+    Ui.column
+        [ Ui.spacing Theme.spacing.md
+        , Ui.background Theme.primary.tint
+        , Ui.paddingXY Theme.spacing.lg Theme.spacing.md
+        , Ui.rounded Theme.radius.md
+        , Ui.border Theme.border
+        , Ui.borderColor Theme.primary.accent
+        , Ui.width Ui.fill
+        ]
+        [ Ui.el [ Ui.Font.size Theme.font.md, Ui.Font.color Theme.base.text ]
+            (Ui.text (T.homeMigrationBanner migration.targetName i18n))
+        , UI.Components.btnPrimary [ Ui.width Ui.shrink ]
+            { label = T.homeMigrationBannerCta i18n
+            , onPress = migration.onOpen
+            }
+        ]
 
 
 errorBanner : String -> Ui.Element msg

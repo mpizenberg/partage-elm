@@ -22,6 +22,8 @@ type alias Error =
 type alias Config =
     { pushServerUrl : Maybe String
     , feedbackProjectId : Maybe String
+    , migrationTarget : Maybe String
+    , migrationSource : Maybe String
     }
 
 
@@ -32,9 +34,11 @@ fetch serverUrl =
         , headers = []
         , expect =
             Http.expectJson
-                (Decode.map2 Config
+                (Decode.map4 Config
                     (configured "pushServerUrl")
                     (configured "feedbackProjectId")
+                    (configured "migrationTarget")
+                    (configured "migrationSource")
                 )
         , timeout = Nothing
         }

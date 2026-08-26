@@ -21,6 +21,9 @@ type Route
     | NotificationLanding String
     | NewGroup
     | ImportSplitwise
+      -- The source side of a domain migration: pick groups, seed the target
+      -- relay, hand the profile over.
+    | Move
     | GroupRoute Group.Id GroupView
     | About
     | Changelog
@@ -82,6 +85,9 @@ fromAppUrl appUrl =
 
         [ "groups", "import-splitwise" ] ->
             ImportSplitwise
+
+        [ "move" ] ->
+            Move
 
         [ "join", groupId ] ->
             -- The fragment grammar is `key[.tail]`: everything before the
@@ -212,6 +218,9 @@ toPathSegments route =
         ImportSplitwise ->
             [ "groups", "import-splitwise" ]
 
+        Move ->
+            [ "move" ]
+
         GroupRoute groupId (Join _) ->
             [ "join", groupId ]
 
@@ -296,6 +305,9 @@ toPath route =
 
         ImportSplitwise ->
             "/groups/import-splitwise"
+
+        Move ->
+            "/move"
 
         GroupRoute groupId (Join invite) ->
             "/join/" ++ groupId ++ "#" ++ joinFragment invite

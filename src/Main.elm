@@ -47,6 +47,7 @@ import Page.ImportSplitwise
 import Page.InitError
 import Page.JoinGroup
 import Page.Loading
+import Page.Move
 import Page.NewGroup
 import Page.NotFound
 import Page.Welcome
@@ -141,6 +142,7 @@ type alias Model =
     , timeZone : Time.Zone
     , newGroupModel : Page.NewGroup.Model
     , importSplitwiseModel : Maybe Page.ImportSplitwise.Model
+    , moveModel : Page.Move.Model
     , groupModel : Page.Group.Model
     , homeModel : Page.Home.Model
     , aboutModel : Page.About.Model
@@ -153,6 +155,8 @@ type alias Model =
     , errorLog : ErrorLog.Model
     , feedbackProjectId : Maybe String
     , feedbackPrompt : Maybe { groupId : Group.Id, trigger : FeedbackMoment.Trigger }
+    , migrationTarget : Maybe String
+    , migrationSource : Maybe String
     }
 
 
@@ -180,6 +184,8 @@ type Msg
     | NewGroupMsg Page.NewGroup.Msg
     | ImportSplitwiseMsg Page.ImportSplitwise.Msg
     | OnImportSplitwiseRate Currency (ConcurrentTask.Response Http.Error Float)
+    | MoveMsg Page.Move.Msg
+    | OnMoveGroupSeeded Group.Id (ConcurrentTask.Response Server.Error ())
     | GroupMsg Page.Group.Msg
     | JoinGroupMsg Page.JoinGroup.Msg
       -- Join flow
@@ -302,6 +308,7 @@ init flags =
       , timeZone = Time.utc
       , newGroupModel = Page.NewGroup.init
       , importSplitwiseModel = Nothing
+      , moveModel = Page.Move.init []
       , groupModel =
             Page.Group.init
                 { pool = ConcurrentTask.pool
@@ -320,6 +327,8 @@ init flags =
       , errorLog = ErrorLog.empty
       , feedbackProjectId = Nothing
       , feedbackPrompt = Nothing
+      , migrationTarget = Nothing
+      , migrationSource = Nothing
       }
     , Cmd.batch
         [ initCmds
@@ -620,6 +629,11 @@ update msg model =
                                 NotificationLanding topic ->
                                     resolveNotificationTopic topic model
 
+                                Move ->
+                                    ( { model | moveModel = Page.Move.refresh (currentGroups model) model.moveModel }
+                                    , Cmd.none
+                                    )
+
                                 _ ->
                                     ( model, Cmd.none )
                     in
@@ -876,6 +890,35 @@ update msg model =
 
                 _ ->
                     ( model, Cmd.none )
+
+        MoveMsg subMsg ->
+            let
+                ( moveModel, effect ) =
+                    Page.Move.update subMsg model.moveModel
+            in
+            runMoveEffect effect { model | moveModel = moveModel }
+
+        OnMoveGroupSeeded groupId response ->
+            let
+                ( result, failedModel ) =
+                    case response of
+                        ConcurrentTask.Success () ->
+                            ( Ok (), model )
+
+                        ConcurrentTask.Error err ->
+                            ( Err (Server.errorToText model.i18n err)
+                            , logError ErrorLog.ServerSource ErrorLog.Err ("Seeding: " ++ Server.errorToString err) model
+                            )
+
+                        ConcurrentTask.UnexpectedError _ ->
+                            ( Err (T.errorUnexpected model.i18n)
+                            , logError ErrorLog.ServerSource ErrorLog.Err "Seeding: unexpected error" model
+                            )
+
+                ( moveModel, effect ) =
+                    Page.Move.groupSeeded groupId result failedModel.moveModel
+            in
+            runMoveEffect effect { failedModel | moveModel = moveModel }
 
         OnImportSplitwiseRate currency response ->
             case model.importSplitwiseModel of
@@ -1569,6 +1612,63 @@ navScrollCmd route =
             Task.perform (\_ -> NoOp) (Browser.Dom.setViewport 0 0)
 
 
+currentGroups : Model -> List Group.Summary
+currentGroups model =
+    case model.appState of
+        Ready readyData ->
+            Dict.values readyData.groups
+
+        _ ->
+            []
+
+
+{-| A migration endpoint as users should read it: the bare host, not the URL.
+-}
+displayDomain : String -> String
+displayDomain url =
+    Url.fromString url
+        |> Maybe.map .host
+        |> Maybe.withDefault url
+
+
+runMoveEffect : Page.Move.Effect -> Model -> ( Model, Cmd Msg )
+runMoveEffect effect model =
+    case effect of
+        Page.Move.NoEffect ->
+            ( model, Cmd.none )
+
+        Page.Move.Seed groupId ->
+            case ( model.appState, model.migrationTarget ) of
+                ( Ready readyData, Just target ) ->
+                    case readyData.identity of
+                        Just identity ->
+                            ( model.runner, Cmd.none )
+                                |> Runner.andRun (OnMoveGroupSeeded groupId)
+                                    (GroupOps.seedGroup readyData.db
+                                        { serverUrl = target, actorId = identity.publicKeyHash }
+                                        groupId
+                                    )
+                                |> Tuple.mapFirst (\r -> { model | runner = r })
+
+                        Nothing ->
+                            failSeed groupId model
+
+                _ ->
+                    failSeed groupId model
+
+
+{-| A seed request that cannot even start (no target configured, no identity)
+must still resolve, or its group stays "uploading" forever.
+-}
+failSeed : Group.Id -> Model -> ( Model, Cmd Msg )
+failSeed groupId model =
+    let
+        ( moveModel, effect ) =
+            Page.Move.groupSeeded groupId (Err (T.errorUnexpected model.i18n)) model.moveModel
+    in
+    runMoveEffect effect { model | moveModel = moveModel }
+
+
 applyRouteGuard : Maybe Identity -> Route -> ( Route, Cmd Msg )
 applyRouteGuard identity route =
     case identity of
@@ -1879,6 +1979,9 @@ processPwaOutMsgs model pwaCmd outMsgs =
 
                         PwaState.FeedbackProjectIdResolved projectId ->
                             ( { m | feedbackProjectId = projectId }, cmds )
+
+                        PwaState.MigrationConfigResolved { target, source } ->
+                            ( { m | migrationTarget = target, migrationSource = source }, cmds )
 
                         PwaState.PushServerUrlResolved url ->
                             case m.appState of
@@ -2270,6 +2373,14 @@ viewReady model readyData =
                     , onEnableNotifications = PwaStateMsg PwaState.enableNotificationsMsg
                     , currentTime = model.currentTime
                     , activityMarkers = readyData.activityMarkers
+                    , migration =
+                        model.migrationTarget
+                            |> Maybe.map
+                                (\target ->
+                                    { targetName = displayDomain target
+                                    , onOpen = NavigateTo Route.Move
+                                    }
+                                )
                     }
                     HomeMsg
                     model.homeModel
@@ -2289,6 +2400,22 @@ viewReady model readyData =
 
                         Nothing ->
                             Ui.none
+                    )
+
+        Route.Move ->
+            noOverlay <|
+                UI.Shell.pageShell { title = T.moveTitle i18n, onBack = NavigateTo Home }
+                    (case model.migrationTarget of
+                        Just target ->
+                            Page.Move.view i18n
+                                { targetName = displayDomain target
+                                , groups = Dict.values readyData.groups
+                                }
+                                MoveMsg
+                                model.moveModel
+
+                        Nothing ->
+                            Ui.el [ Ui.Font.size Theme.font.md ] (Ui.text (T.moveNoTarget i18n))
                     )
 
         GroupRoute _ (Join _) ->

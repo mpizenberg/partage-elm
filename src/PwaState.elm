@@ -54,6 +54,8 @@ type PushSetup
 type alias DeploymentConfig =
     { push : PushSetup
     , feedbackProjectId : Maybe String
+    , migrationTarget : Maybe String
+    , migrationSource : Maybe String
     }
 
 
@@ -135,14 +137,22 @@ configureTask { serverUrl, cachedPushServerUrl } toMsg =
             |> ConcurrentTask.onError
                 (\_ ->
                     ConcurrentTask.succeed
-                        { pushServerUrl = cachedPushServerUrl, feedbackProjectId = Nothing }
+                        { pushServerUrl = cachedPushServerUrl
+                        , feedbackProjectId = Nothing
+                        , migrationTarget = Nothing
+                        , migrationSource = Nothing
+                        }
                 )
             |> ConcurrentTask.andThen
                 (\config ->
                     resolvePush config.pushServerUrl
                         |> ConcurrentTask.map
                             (\push ->
-                                { push = push, feedbackProjectId = config.feedbackProjectId }
+                                { push = push
+                                , feedbackProjectId = config.feedbackProjectId
+                                , migrationTarget = config.migrationTarget
+                                , migrationSource = config.migrationSource
+                                }
                             )
                 )
         )
@@ -191,6 +201,7 @@ type OutMsg
     | RegisterPushTopics { pushServerUrl : String, subscription : Json.Encode.Value }
     | PushServerUrlResolved (Maybe String)
     | FeedbackProjectIdResolved (Maybe String)
+    | MigrationConfigResolved { target : Maybe String, source : Maybe String }
     | LogError ErrorLog.Source ErrorLog.Severity String
 
 
@@ -292,6 +303,7 @@ update pwaOut msg model =
                     Cmd.none
             , PushServerUrlResolved (pushServerUrl newModel)
                 :: FeedbackProjectIdResolved config.feedbackProjectId
+                :: MigrationConfigResolved { target = config.migrationTarget, source = config.migrationSource }
                 :: registerTopics newModel
             )
 
