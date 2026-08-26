@@ -325,17 +325,10 @@ decimalInputAttr =
 {-| Switches the underlying input to `type="date"` so the browser shows a native
 calendar picker and locale-formatted display. The input's value stays in
 `YYYY-MM-DD` regardless of locale, which is what `dateFromString` parses.
-
-`display` undoes the `flex` elm-ui puts on every element, which would otherwise
-make the date control's internals flex items that refuse to shrink and spill
-past the field's right border on a narrow screen.
-
 -}
-dateInputAttrs : List (Ui.Attribute msg)
-dateInputAttrs =
-    [ Ui.htmlAttribute (Html.Attributes.type_ "date")
-    , Ui.htmlAttribute (Html.Attributes.style "display" "block")
-    ]
+dateInputAttr : Ui.Attribute msg
+dateInputAttr =
+    Ui.htmlAttribute (Html.Attributes.type_ "date")
 
 
 {-| Locale- and currency-aware placeholder for an empty amount input
@@ -681,7 +674,7 @@ dateField i18n data =
             Form.get .date data.form
     in
     formField { label = T.newEntryDateLabel i18n, required = True }
-        [ Ui.Input.text (Ui.width Ui.fill :: dateInputAttrs)
+        [ Ui.Input.text [ Ui.width Ui.fill, dateInputAttr ]
             { onChange = InputDate
             , text = Field.toRawString field
             , placeholder = Nothing

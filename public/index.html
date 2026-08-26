@@ -42,6 +42,23 @@
             #app {
                 height: 100%;
             }
+
+            /* Safari sizes and paints a date field from the native control
+               rather than from the box the layout gives it, so the value can
+               grow past the field's right edge on a phone. Reaching the
+               control's shadow content needs a stylesheet, which is why this
+               lives here and not with the field's other attributes. */
+            input[type="date"] {
+                max-width: 100%;
+                overflow: hidden;
+                -webkit-appearance: none;
+                appearance: none;
+            }
+
+            input[type="date"]::-webkit-date-and-time-value {
+                margin: 0;
+                text-align: left;
+            }
         </style>
     </head>
     <body>
