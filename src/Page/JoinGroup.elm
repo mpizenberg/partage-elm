@@ -284,24 +284,6 @@ viewPreview i18n preview =
 
       else
         Ui.none
-    , if not (List.isEmpty virtualMembers) then
-        Ui.column []
-            [ UI.Components.sectionLabel (T.joinGroupClaimMember i18n)
-            , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.sm ]
-                (List.map (viewMemberToggle preview.selectedAction) virtualMembers)
-            ]
-
-      else
-        Ui.none
-    , if not (List.isEmpty realMembers) then
-        Ui.column []
-            [ UI.Components.sectionLabel (T.joinGroupRecoverMember i18n)
-            , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.sm ]
-                (List.map (viewMemberToggle preview.selectedAction) realMembers)
-            ]
-
-      else
-        Ui.none
     , Ui.column []
         [ UI.Components.togglePill
             { label = T.joinGroupJoinAsNew i18n
@@ -335,6 +317,24 @@ viewPreview i18n preview =
           else
             Ui.none
         ]
+    , if not (List.isEmpty virtualMembers) then
+        Ui.column []
+            [ UI.Components.sectionLabel (T.joinGroupClaimMember i18n)
+            , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.sm ]
+                (List.map (viewMemberToggle preview.selectedAction) virtualMembers)
+            ]
+
+      else
+        Ui.none
+    , if not (List.isEmpty realMembers) then
+        Ui.column []
+            [ UI.Components.sectionLabel (T.joinGroupRecoverMember i18n)
+            , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.sm ]
+                (List.map (viewMemberToggle preview.selectedAction) realMembers)
+            ]
+
+      else
+        Ui.none
     , if canConfirm then
         let
             confirmLabel : String
