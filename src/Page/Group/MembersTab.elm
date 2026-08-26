@@ -728,35 +728,31 @@ memberDetail i18n zone identityHash deviceLinks toMsg isCurrentUser maybeUserRoo
         devicesSection : Ui.Element msg
         devicesSection =
             let
-                linked : List ( Member.Id, Member.DeviceLink )
-                linked =
-                    Dict.toList deviceLinks
-                        |> List.filter (\( _, link ) -> link.rootId == member.rootId)
-                        |> List.sortBy (\( _, link ) -> Time.posixToMillis link.timestamp)
-
-                ownIsListed : Bool
-                ownIsListed =
-                    List.any (\( deviceId, _ ) -> deviceId == identityHash) linked
-
-                primaryRow : List (Ui.Element msg)
-                primaryRow =
-                    if isCurrentUser && not ownIsListed && identityHash /= "" then
-                        [ deviceRow subtleColor textColor i18n zone identityHash Nothing True ]
+                -- A root with a public key was created by its own device (the
+                -- group creator, or a device that joined as a new member), so
+                -- that device belongs to the member without any entry in the
+                -- link map — unless it has since linked elsewhere.
+                selfRow : List (Ui.Element msg)
+                selfRow =
+                    if member.publicKey /= "" && not (Dict.member member.rootId deviceLinks) then
+                        [ deviceRow subtleColor textColor i18n zone member.rootId member.joinedAt (member.rootId == identityHash) ]
 
                     else
                         []
 
                 linkedRows : List (Ui.Element msg)
                 linkedRows =
-                    List.map
-                        (\( deviceId, link ) ->
-                            deviceRow subtleColor textColor i18n zone deviceId (Just link.timestamp) (deviceId == identityHash)
-                        )
-                        linked
+                    Dict.toList deviceLinks
+                        |> List.filter (\( _, link ) -> link.rootId == member.rootId)
+                        |> List.sortBy (\( _, link ) -> Time.posixToMillis link.timestamp)
+                        |> List.map
+                            (\( deviceId, link ) ->
+                                deviceRow subtleColor textColor i18n zone deviceId link.timestamp (deviceId == identityHash)
+                            )
 
                 rows : List (Ui.Element msg)
                 rows =
-                    primaryRow ++ linkedRows
+                    selfRow ++ linkedRows
             in
             if List.isEmpty rows then
                 Ui.none
@@ -821,7 +817,7 @@ infoRow subtle icon label value maybeUrl =
         ]
 
 
-deviceRow : Ui.Color -> Ui.Color -> I18n -> Time.Zone -> String -> Maybe Time.Posix -> Bool -> Ui.Element msg
+deviceRow : Ui.Color -> Ui.Color -> I18n -> Time.Zone -> String -> Time.Posix -> Bool -> Ui.Element msg
 deviceRow subtle strong i18n zone deviceId linkedAt isThis =
     Ui.row [ Ui.spacing Theme.spacing.sm, Ui.contentCenterY, Ui.width Ui.fill ]
         [ Ui.el [ Ui.Font.color subtle, Ui.width Ui.shrink ] (UI.Components.featherIcon 16 FeatherIcons.smartphone)
@@ -835,13 +831,8 @@ deviceRow subtle strong i18n zone deviceId linkedAt isThis =
                             []
                        )
                 )
-            , case linkedAt of
-                Just ts ->
-                    Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.color subtle ]
-                        (Ui.text (T.memberDeviceLinkedDate (Date.toString (Date.posixToDate zone ts)) i18n))
-
-                Nothing ->
-                    Ui.none
+            , Ui.el [ Ui.Font.size Theme.font.xs, Ui.Font.color subtle ]
+                (Ui.text (T.memberDeviceLinkedDate (Date.toString (Date.posixToDate zone linkedAt)) i18n))
             ]
         , copyButton deviceId
         ]
