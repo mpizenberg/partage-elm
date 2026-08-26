@@ -15,7 +15,7 @@ module Page.Receive exposing
 handoff — over `postMessage` from the source app's window, or as a pasted
 code — and apply it. The paste path is the primary one on iOS: an installed
 Home Screen app has storage isolated from every browser tab, so the handoff
-must be brought *inside* the installed app by hand.
+must be brought _inside_ the installed app by hand.
 -}
 
 import Infra.Handoff as Handoff

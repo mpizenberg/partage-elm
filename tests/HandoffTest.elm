@@ -78,7 +78,7 @@ mergeTests =
         \_ ->
             Handoff.merge payload
                 { identity = Just (makeIdentity "dest-device" [])
-                , existingGroupIds = Set.fromList [ "g-1" ]
+                , existingGroupIds = Set.singleton "g-1"
                 }
                 |> Expect.all
                     [ \plan -> List.map (.summary >> .id) plan.groupsToAdd |> Expect.equal [ "g-2" ]

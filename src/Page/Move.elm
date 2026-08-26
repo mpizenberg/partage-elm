@@ -135,7 +135,7 @@ update msg (Model data) =
                             | phase = Working
                             , statuses =
                                 Dict.fromList
-                                    ((first, InFlight) :: List.map (\id -> ( id, Queued )) rest)
+                                    (( first, InFlight ) :: List.map (\id -> ( id, Queued )) rest)
                         }
                     , Seed first
                     )
@@ -328,7 +328,7 @@ viewDone i18n targetName data selectedGroups =
 {-| The last step: get the profile (identity + keys) into the destination app.
 The one-tap button covers browsers where the destination's tab and installed
 app share storage; the code covers everything else, iOS above all — its Home
-Screen apps have isolated storage, so the code must be pasted *inside* the
+Screen apps have isolated storage, so the code must be pasted _inside_ the
 installed app.
 -}
 handoffSection : I18n -> String -> Bool -> String -> Ui.Element Msg

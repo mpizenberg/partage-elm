@@ -28,6 +28,7 @@ import IndexedDb as Idb
 import Infra.ConcurrentTaskExtra as Runner exposing (TaskRunner)
 import Infra.EventVerification as EventVerification
 import Infra.ExchangeRate as ExchangeRate
+import Infra.Handoff as Handoff
 import Infra.IdGen as IdGen
 import Infra.Identity as Identity exposing (Identity)
 import Infra.PushServer as PushServer
@@ -46,12 +47,11 @@ import Page.Home
 import Page.ImportSplitwise
 import Page.InitError
 import Page.JoinGroup
-import Infra.Handoff as Handoff
 import Page.Loading
 import Page.Move
 import Page.NewGroup
-import Page.Receive
 import Page.NotFound
+import Page.Receive
 import Page.Welcome
 import Process
 import Pwa
@@ -953,7 +953,7 @@ update msg model =
 
         OnHandoffEvent value ->
             case Json.Decode.decodeValue handoffEventDecoder value of
-                Ok (HandoffDelivered) ->
+                Ok HandoffDelivered ->
                     ( { model | moveModel = Page.Move.handoffDelivered model.moveModel }, Cmd.none )
 
                 Ok (HandoffReceived payload) ->

@@ -3,7 +3,6 @@ module Infra.Handoff exposing
     , GroupHandoff
     , Payload
     , Plan
-    , decoder
     , encode
     , fromString
     , merge
