@@ -190,6 +190,54 @@ app.ports.openFeedback.subscribe(({ projectId, email, copyText }) => {
     .catch(() => {});
 });
 
+// Domain-migration handoff. The payload carries the private signing key, so it
+// only travels via postMessage between the two apps' windows — never in a URL,
+// which would land it in history and logs. Sender: open the destination's
+// /migrate page and wait for it to announce itself; a destination that never
+// answers (popup blocked, page closed early) costs nothing — the paste code
+// remains on screen as the fallback transport. Receiver: only messages from
+// the origin the deployment's config names are forwarded to Elm.
+var handoff = { win: null, payload: null, targetOrigin: null, listening: null };
+
+app.ports.handoffOut.subscribe((cmd) => {
+  if (cmd.action === "send") {
+    handoff.payload = cmd.payload;
+    handoff.targetOrigin = new URL(cmd.targetOrigin).origin;
+    handoff.win = window.open(cmd.targetOrigin + "/migrate", "_blank");
+  } else if (cmd.action === "listen") {
+    var sourceOrigin = new URL(cmd.sourceOrigin).origin;
+    if (handoff.listening === null) {
+      handoff.listening = sourceOrigin;
+      window.addEventListener("message", (event) => {
+        if (
+          event.origin === handoff.listening &&
+          typeof event.data === "string" &&
+          event.data !== "partage-handoff-ready"
+        ) {
+          app.ports.handoffIn.send({ event: "received", payload: event.data });
+        }
+      });
+    } else {
+      handoff.listening = sourceOrigin;
+    }
+    if (window.opener) {
+      window.opener.postMessage("partage-handoff-ready", sourceOrigin);
+    }
+  }
+});
+
+window.addEventListener("message", (event) => {
+  if (
+    handoff.payload !== null &&
+    handoff.win !== null &&
+    event.origin === handoff.targetOrigin &&
+    event.data === "partage-handoff-ready"
+  ) {
+    handoff.win.postMessage(handoff.payload, handoff.targetOrigin);
+    app.ports.handoffIn.send({ event: "delivered" });
+  }
+});
+
 // Live-update WebSockets: one connection per group, auto-reconnecting with
 // capped backoff. Incoming messages only signal "something new" — the Elm side
 // reacts with a normal authenticated pull.

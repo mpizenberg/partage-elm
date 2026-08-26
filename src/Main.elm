@@ -46,9 +46,11 @@ import Page.Home
 import Page.ImportSplitwise
 import Page.InitError
 import Page.JoinGroup
+import Infra.Handoff as Handoff
 import Page.Loading
 import Page.Move
 import Page.NewGroup
+import Page.Receive
 import Page.NotFound
 import Page.Welcome
 import Process
@@ -118,6 +120,17 @@ port setDocumentLang : String -> Cmd msg
 port openFeedback : { projectId : String, email : String, copyText : String } -> Cmd msg
 
 
+
+-- The migration handoff payload carries the private signing key, so it only
+-- ever travels via postMessage between the two apps' windows — never in a URL.
+
+
+port handoffOut : Json.Encode.Value -> Cmd msg
+
+
+port handoffIn : (Json.Decode.Value -> msg) -> Sub msg
+
+
 type alias Flags =
     { initialUrl : String
     , language : String
@@ -143,6 +156,7 @@ type alias Model =
     , newGroupModel : Page.NewGroup.Model
     , importSplitwiseModel : Maybe Page.ImportSplitwise.Model
     , moveModel : Page.Move.Model
+    , receiveModel : Page.Receive.Model
     , groupModel : Page.Group.Model
     , homeModel : Page.Home.Model
     , aboutModel : Page.About.Model
@@ -186,6 +200,10 @@ type Msg
     | OnImportSplitwiseRate Currency (ConcurrentTask.Response Http.Error Float)
     | MoveMsg Page.Move.Msg
     | OnMoveGroupSeeded Group.Id (ConcurrentTask.Response Server.Error ())
+    | OnHandoffBuilt (ConcurrentTask.Response Idb.Error String)
+    | OnHandoffEvent Json.Decode.Value
+    | ReceiveMsg Page.Receive.Msg
+    | OnHandoffApplied Handoff.Plan (ConcurrentTask.Response Idb.Error ())
     | GroupMsg Page.Group.Msg
     | JoinGroupMsg Page.JoinGroup.Msg
       -- Join flow
@@ -227,6 +245,7 @@ subscriptions model =
         , Runner.subscription model.runner
         , Page.Group.subscription model.groupModel |> Sub.map GroupMsg
         , onClipboardCopy (\() -> ClipboardCopied)
+        , handoffIn OnHandoffEvent
         , onServerEvent (GroupMsg << Page.Group.serverEventMsg)
         , PwaState.subscription pwaIn PwaStateMsg
         , Time.every clockIntervalMs GotCurrentTime
@@ -309,6 +328,7 @@ init flags =
       , newGroupModel = Page.NewGroup.init
       , importSplitwiseModel = Nothing
       , moveModel = Page.Move.init []
+      , receiveModel = Page.Receive.init
       , groupModel =
             Page.Group.init
                 { pool = ConcurrentTask.pool
@@ -634,6 +654,9 @@ update msg model =
                                     , Cmd.none
                                     )
 
+                                Receive ->
+                                    ( model, armHandoffReceiver { model | route = route } )
+
                                 _ ->
                                     ( model, Cmd.none )
                     in
@@ -919,6 +942,116 @@ update msg model =
                     Page.Move.groupSeeded groupId result failedModel.moveModel
             in
             runMoveEffect effect { failedModel | moveModel = moveModel }
+
+        OnHandoffBuilt (ConcurrentTask.Success payload) ->
+            ( { model | moveModel = Page.Move.payloadReady payload model.moveModel }, Cmd.none )
+
+        OnHandoffBuilt _ ->
+            addToast Toast.Error
+                (T.errorUnexpected model.i18n)
+                (logError ErrorLog.StorageSource ErrorLog.Err "Failed to build the handoff payload" model)
+
+        OnHandoffEvent value ->
+            case Json.Decode.decodeValue handoffEventDecoder value of
+                Ok (HandoffDelivered) ->
+                    ( { model | moveModel = Page.Move.handoffDelivered model.moveModel }, Cmd.none )
+
+                Ok (HandoffReceived payload) ->
+                    if model.route == Route.Receive then
+                        let
+                            ( receiveModel, effect ) =
+                                Page.Receive.payloadArrived payload model.receiveModel
+                        in
+                        runReceiveEffect effect { model | receiveModel = receiveModel }
+
+                    else
+                        ( model, Cmd.none )
+
+                Err _ ->
+                    ( model, Cmd.none )
+
+        ReceiveMsg subMsg ->
+            let
+                ( receiveModel, effect ) =
+                    Page.Receive.update subMsg model.receiveModel
+            in
+            runReceiveEffect effect { model | receiveModel = receiveModel }
+
+        OnHandoffApplied plan (ConcurrentTask.Success ()) ->
+            case model.appState of
+                Ready readyData ->
+                    let
+                        newGroups : Dict.Dict Group.Id Group.Summary
+                        newGroups =
+                            List.foldl (\g acc -> Dict.insert g.summary.id g.summary acc)
+                                readyData.groups
+                                plan.groupsToAdd
+
+                        appliedModel : Model
+                        appliedModel =
+                            { model
+                                | appState =
+                                    Ready
+                                        { readyData
+                                            | identity = Just plan.identity
+                                            , groups = newGroups
+                                            , selfProfile = Maybe.withDefault readyData.selfProfile plan.selfProfile
+                                            , savedLanguage =
+                                                case plan.language of
+                                                    Just lang ->
+                                                        Just lang
+
+                                                    Nothing ->
+                                                        readyData.savedLanguage
+                                            , lastSeenChangelog =
+                                                case plan.lastSeenChangelog of
+                                                    Just seen ->
+                                                        Just seen
+
+                                                    Nothing ->
+                                                        readyData.lastSeenChangelog
+                                        }
+                                , groupModel =
+                                    Page.Group.setIdentity plan.identity.publicKeyHash
+                                        plan.identity.previousDeviceIds
+                                        model.groupModel
+                                , receiveModel =
+                                    Page.Receive.applied
+                                        { adopted = plan.adopted
+                                        , added = List.length plan.groupsToAdd
+                                        , skipped = List.length plan.skippedGroupIds
+                                        }
+                                        model.receiveModel
+                            }
+
+                        ( languagedModel, langCmd ) =
+                            case plan.language |> Maybe.andThen T.languageFromString of
+                                Just lang ->
+                                    applyLanguage lang appliedModel
+
+                                Nothing ->
+                                    ( appliedModel, Cmd.none )
+                    in
+                    ( languagedModel, langCmd )
+                        |> requestPersistOnFirstGroup readyData.groups
+
+                _ ->
+                    ( model, Cmd.none )
+
+        OnHandoffApplied _ response ->
+            let
+                reason : String
+                reason =
+                    case response of
+                        ConcurrentTask.Error err ->
+                            Storage.errorToText model.i18n err
+
+                        _ ->
+                            T.errorUnexpected model.i18n
+            in
+            ( logError ErrorLog.StorageSource ErrorLog.Err "Failed to apply the migration handoff" { model | receiveModel = Page.Receive.applyFailed reason model.receiveModel }
+            , Cmd.none
+            )
 
         OnImportSplitwiseRate currency response ->
             case model.importSplitwiseModel of
@@ -1612,6 +1745,28 @@ navScrollCmd route =
             Task.perform (\_ -> NoOp) (Browser.Dom.setViewport 0 0)
 
 
+type HandoffEvent
+    = HandoffDelivered
+    | HandoffReceived String
+
+
+handoffEventDecoder : Json.Decode.Decoder HandoffEvent
+handoffEventDecoder =
+    Json.Decode.field "event" Json.Decode.string
+        |> Json.Decode.andThen
+            (\event ->
+                case event of
+                    "delivered" ->
+                        Json.Decode.succeed HandoffDelivered
+
+                    "received" ->
+                        Json.Decode.map HandoffReceived (Json.Decode.field "payload" Json.Decode.string)
+
+                    _ ->
+                        Json.Decode.fail ("Unknown handoff event: " ++ event)
+            )
+
+
 currentGroups : Model -> List Group.Summary
 currentGroups model =
     case model.appState of
@@ -1636,6 +1791,37 @@ runMoveEffect effect model =
     case effect of
         Page.Move.NoEffect ->
             ( model, Cmd.none )
+
+        Page.Move.AllSeeded groupIds ->
+            case model.appState of
+                Ready readyData ->
+                    case readyData.identity of
+                        Just identity ->
+                            ( model.runner, Cmd.none )
+                                |> Runner.andRun OnHandoffBuilt (buildHandoff readyData identity groupIds)
+                                |> Tuple.mapFirst (\r -> { model | runner = r })
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        Page.Move.SendHandoff payload ->
+            case model.migrationTarget of
+                Just target ->
+                    ( model
+                    , handoffOut
+                        (Json.Encode.object
+                            [ ( "action", Json.Encode.string "send" )
+                            , ( "targetOrigin", Json.Encode.string target )
+                            , ( "payload", Json.Encode.string payload )
+                            ]
+                        )
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         Page.Move.Seed groupId ->
             case ( model.appState, model.migrationTarget ) of
@@ -1669,6 +1855,111 @@ failSeed groupId model =
     runMoveEffect effect { model | moveModel = moveModel }
 
 
+{-| Everything the destination cannot rebuild from its relay, as one JSON
+string — the transports (postMessage, paste code) carry it opaquely.
+-}
+buildHandoff : Storage.InitData -> Identity -> List Group.Id -> ConcurrentTask Idb.Error String
+buildHandoff readyData identity groupIds =
+    groupIds
+        |> List.filterMap (\groupId -> Dict.get groupId readyData.groups)
+        |> List.map
+            (\summary ->
+                Storage.loadGroupKey readyData.db summary.id
+                    |> ConcurrentTask.map (Maybe.map (\key -> { summary = summary, key = key }))
+            )
+        |> ConcurrentTask.batch
+        |> ConcurrentTask.map
+            (\groups ->
+                Handoff.encode
+                    { identity = identity
+                    , groups = List.filterMap (\g -> g) groups
+                    , selfProfile = readyData.selfProfile
+                    , language = readyData.savedLanguage
+                    , lastSeenChangelog = readyData.lastSeenChangelog
+                    }
+                    |> Json.Encode.encode 0
+            )
+
+
+runReceiveEffect : Page.Receive.Effect -> Model -> ( Model, Cmd Msg )
+runReceiveEffect effect model =
+    case effect of
+        Page.Receive.NoEffect ->
+            ( model, Cmd.none )
+
+        Page.Receive.Apply payload ->
+            case model.appState of
+                Ready readyData ->
+                    let
+                        plan : Handoff.Plan
+                        plan =
+                            Handoff.merge payload
+                                { identity = readyData.identity
+                                , existingGroupIds = Set.fromList (Dict.keys readyData.groups)
+                                }
+                    in
+                    ( model.runner, Cmd.none )
+                        |> Runner.andRun (OnHandoffApplied plan) (applyHandoffPlan readyData.db plan)
+                        |> Tuple.mapFirst (\r -> { model | runner = r })
+
+                _ ->
+                    ( { model | receiveModel = Page.Receive.applyFailed (T.errorUnexpected model.i18n) model.receiveModel }
+                    , Cmd.none
+                    )
+
+
+{-| Persist a merge plan. The identity lands first: a crash mid-way leaves a
+partial move that re-pasting the same code completes (the merge converges).
+-}
+applyHandoffPlan : Idb.Db -> Handoff.Plan -> ConcurrentTask Idb.Error ()
+applyHandoffPlan db plan =
+    let
+        saveMaybe : (Idb.Db -> a -> ConcurrentTask Idb.Error ()) -> Maybe a -> ConcurrentTask Idb.Error ()
+        saveMaybe save maybeValue =
+            case maybeValue of
+                Just value ->
+                    save db value
+
+                Nothing ->
+                    ConcurrentTask.succeed ()
+    in
+    Storage.saveIdentity db plan.identity
+        |> ConcurrentTask.andThen
+            (\_ ->
+                plan.groupsToAdd
+                    |> List.map (\g -> Storage.saveGroup db g.summary (Just g.key) Storage.Pushed [] Nothing)
+                    |> ConcurrentTask.batch
+            )
+        |> ConcurrentTask.andThen
+            (\_ ->
+                ConcurrentTask.batch
+                    [ saveMaybe Storage.saveSelfProfile plan.selfProfile
+                    , saveMaybe Storage.saveLanguage plan.language
+                    , saveMaybe Storage.saveLastSeenChangelog plan.lastSeenChangelog
+                    ]
+            )
+        |> ConcurrentTask.map (\_ -> ())
+
+
+{-| Tell the JS side to accept handoff messages — only ever from the
+configured source origin. Config resolution and navigation race, so this is
+called from both: whichever completes the pair arms the listener.
+-}
+armHandoffReceiver : Model -> Cmd Msg
+armHandoffReceiver model =
+    case ( model.route, model.migrationSource ) of
+        ( Route.Receive, Just source ) ->
+            handoffOut
+                (Json.Encode.object
+                    [ ( "action", Json.Encode.string "listen" )
+                    , ( "sourceOrigin", Json.Encode.string source )
+                    ]
+                )
+
+        _ ->
+            Cmd.none
+
+
 applyRouteGuard : Maybe Identity -> Route -> ( Route, Cmd Msg )
 applyRouteGuard identity route =
     case identity of
@@ -1684,6 +1975,10 @@ applyRouteGuard identity route =
                     ( route, Cmd.none )
 
                 GroupRoute _ (Join _) ->
+                    ( route, Cmd.none )
+
+                -- The handoff is how a fresh install *gets* its identity.
+                Receive ->
                     ( route, Cmd.none )
 
                 _ ->
@@ -1981,7 +2276,12 @@ processPwaOutMsgs model pwaCmd outMsgs =
                             ( { m | feedbackProjectId = projectId }, cmds )
 
                         PwaState.MigrationConfigResolved { target, source } ->
-                            ( { m | migrationTarget = target, migrationSource = source }, cmds )
+                            let
+                                resolved : Model
+                                resolved =
+                                    { m | migrationTarget = target, migrationSource = source }
+                            in
+                            ( resolved, armHandoffReceiver resolved :: cmds )
 
                         PwaState.PushServerUrlResolved url ->
                             case m.appState of
@@ -2358,6 +2658,7 @@ viewReady model readyData =
                     , onNavigate = NavigateTo
                     , isGenerating = model.generatingIdentity
                     , hasIdentity = readyData.identity /= Nothing
+                    , migrationSourceName = Maybe.map displayDomain model.migrationSource
                     }
 
         Home ->
@@ -2416,6 +2717,18 @@ viewReady model readyData =
 
                         Nothing ->
                             Ui.el [ Ui.Font.size Theme.font.md ] (Ui.text (T.moveNoTarget i18n))
+                    )
+
+        Route.Receive ->
+            noOverlay <|
+                UI.Shell.pageShell { title = T.receiveTitle i18n, onBack = NavigateTo Home }
+                    (Page.Receive.view i18n
+                        { sourceName = Maybe.map displayDomain model.migrationSource
+                        , installHint = model.pwaState.installHint
+                        , onGoHome = NavigateTo Home
+                        }
+                        ReceiveMsg
+                        model.receiveModel
                     )
 
         GroupRoute _ (Join _) ->

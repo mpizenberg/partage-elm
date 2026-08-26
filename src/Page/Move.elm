@@ -3,7 +3,9 @@ module Page.Move exposing
     , Model
     , Msg
     , groupSeeded
+    , handoffDelivered
     , init
+    , payloadReady
     , refresh
     , update
     , view
@@ -13,11 +15,17 @@ module Page.Move exposing
 target deployment's relay with each one's full history, then hand the profile
 over. Seeding runs one group at a time — each group costs a proof-of-work and
 its own upload, and a sequential run gives one honest progress line per group.
+Once every group is seeded, the host builds the handoff payload (identity +
+group keys) and this page offers both transports: a one-tap open of the
+destination (postMessage) and a copyable code to paste there — the only path
+that reaches an installed iOS app, whose storage the browser cannot touch.
 -}
 
 import Dict exposing (Dict)
 import Domain.Group as Group
 import FeatherIcons
+import Html
+import Html.Attributes
 import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
@@ -33,6 +41,8 @@ type alias Data =
     { selected : List Group.Id
     , statuses : Dict Group.Id Status
     , phase : Phase
+    , payload : Maybe String
+    , delivered : Bool
     }
 
 
@@ -53,14 +63,19 @@ type Msg
     = ToggleGroup Group.Id
     | Start
     | RetryFailed
+    | OpenTarget
 
 
 {-| `Seed` asks the host to run the seeding task for one group and feed the
-result back through `groupSeeded`.
+result back through `groupSeeded`. `AllSeeded` asks it to build the handoff
+payload for the seeded groups and feed it back through `payloadReady`.
+`SendHandoff` asks it to open the destination and post the payload there.
 -}
 type Effect
     = NoEffect
     | Seed Group.Id
+    | AllSeeded (List Group.Id)
+    | SendHandoff String
 
 
 init : List Group.Summary -> Model
@@ -72,6 +87,8 @@ init groups =
                 |> List.map .id
         , statuses = Dict.empty
         , phase = Choosing
+        , payload = Nothing
+        , delivered = False
         }
 
 
@@ -124,6 +141,14 @@ update msg (Model data) =
                     )
 
                 _ ->
+                    ( Model data, NoEffect )
+
+        OpenTarget ->
+            case data.payload of
+                Just payload ->
+                    ( Model data, SendHandoff payload )
+
+                Nothing ->
                     ( Model data, NoEffect )
 
         RetryFailed ->
@@ -183,10 +208,20 @@ launchNext data =
                 ( Model data, NoEffect )
 
             else if List.all (\id -> statusOf id == Just Seeded) data.selected then
-                ( Model { data | phase = Done }, NoEffect )
+                ( Model { data | phase = Done }, AllSeeded data.selected )
 
             else
                 ( Model data, NoEffect )
+
+
+payloadReady : String -> Model -> Model
+payloadReady payload (Model data) =
+    Model { data | payload = Just payload }
+
+
+handoffDelivered : Model -> Model
+handoffDelivered (Model data) =
+    Model { data | delivered = True }
 
 
 
@@ -281,7 +316,82 @@ viewDone i18n targetName data selectedGroups =
     , UI.Components.card [ Ui.padding Theme.spacing.lg ]
         [ Ui.el [ Ui.Font.size Theme.font.md ] (Ui.text (T.moveAllSeeded targetName i18n))
         ]
+    , case data.payload of
+        Nothing ->
+            hint (T.moveBuildingHandoff i18n)
+
+        Just payload ->
+            handoffSection i18n targetName data.delivered payload
     ]
+
+
+{-| The last step: get the profile (identity + keys) into the destination app.
+The one-tap button covers browsers where the destination's tab and installed
+app share storage; the code covers everything else, iOS above all — its Home
+Screen apps have isolated storage, so the code must be pasted *inside* the
+installed app.
+-}
+handoffSection : I18n -> String -> Bool -> String -> Ui.Element Msg
+handoffSection i18n targetName delivered payload =
+    Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
+        [ hint (T.moveHandoffIntro targetName i18n)
+        , UI.Components.btnPrimary [ Ui.width Ui.shrink ]
+            { label = T.moveHandoffOpen targetName i18n
+            , onPress = OpenTarget
+            }
+        , if delivered then
+            Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.success.text ]
+                (Ui.text (T.moveHandoffDelivered i18n))
+
+          else
+            Ui.none
+        , hint (T.moveHandoffCodeHint i18n)
+        , codeBlock payload
+        , copyBtn payload (T.moveHandoffCopy i18n)
+        ]
+
+
+codeBlock : String -> Ui.Element Msg
+codeBlock payload =
+    Ui.el
+        [ Ui.Font.size Theme.font.xs
+        , Ui.Font.family [ Ui.Font.monospace ]
+        , Ui.Font.color Theme.base.textSubtle
+        , Ui.background Theme.base.tint
+        , Ui.padding Theme.spacing.md
+        , Ui.rounded Theme.radius.sm
+        , Ui.border Theme.border
+        , Ui.borderColor Theme.base.accent
+        , Ui.width Ui.fill
+        , Ui.height (Ui.px 120)
+        , Ui.clip
+        ]
+        (Ui.text payload)
+
+
+copyBtn : String -> String -> Ui.Element Msg
+copyBtn copyText label =
+    Ui.row
+        (Ui.width Ui.shrink
+            :: Ui.inFront
+                (Ui.el [ Ui.width Ui.fill, Ui.height Ui.fill ]
+                    (Ui.html
+                        (Html.node "copy-button"
+                            [ Html.Attributes.attribute "data-copy" copyText
+                            , Html.Attributes.style "display" "block"
+                            , Html.Attributes.style "width" "100%"
+                            , Html.Attributes.style "height" "100%"
+                            , Html.Attributes.style "cursor" "pointer"
+                            ]
+                            []
+                        )
+                    )
+                )
+            :: UI.Components.btnOutlineAttrs
+        )
+        [ UI.Components.featherIcon 16 FeatherIcons.copy
+        , Ui.text label
+        ]
 
 
 isFailed : Maybe Status -> Bool

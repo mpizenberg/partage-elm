@@ -24,12 +24,14 @@ view :
         , onNavigate : Route -> msg
         , isGenerating : Bool
         , hasIdentity : Bool
+        , migrationSourceName : Maybe String
         }
     -> Ui.Element msg
 view i18n config =
     Ui.column [ Ui.spacing Theme.spacing.xxl, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.xl ]
         [ heroSection i18n
         , primaryCta i18n config
+        , migrationLink i18n config
         , languageSection i18n config.onSwitchLanguage
         , whySection i18n
         , featuresSection i18n
@@ -105,6 +107,28 @@ primaryCta i18n config =
             { label = T.welcomeGenerateButton i18n
             , onPress = config.onGenerate
             }
+
+
+{-| When this deployment is a migration destination, a newcomer's most likely
+reason to be here is the move — surface the receiver next to the main call to
+action.
+-}
+migrationLink :
+    I18n
+    -> { a | onNavigate : Route -> msg, migrationSourceName : Maybe String }
+    -> Ui.Element msg
+migrationLink i18n config =
+    case config.migrationSourceName of
+        Just sourceName ->
+            Ui.el [ Ui.centerX ] <|
+                UI.Components.btnOutline []
+                    { label = T.welcomeMigrateFrom sourceName i18n
+                    , icon = Nothing
+                    , onPress = config.onNavigate Route.Receive
+                    }
+
+        Nothing ->
+            Ui.none
 
 
 

@@ -24,6 +24,9 @@ type Route
       -- The source side of a domain migration: pick groups, seed the target
       -- relay, hand the profile over.
     | Move
+      -- The destination side: receive the profile handoff (postMessage or
+      -- pasted code) from the configured source deployment.
+    | Receive
     | GroupRoute Group.Id GroupView
     | About
     | Changelog
@@ -88,6 +91,9 @@ fromAppUrl appUrl =
 
         [ "move" ] ->
             Move
+
+        [ "migrate" ] ->
+            Receive
 
         [ "join", groupId ] ->
             -- The fragment grammar is `key[.tail]`: everything before the
@@ -221,6 +227,9 @@ toPathSegments route =
         Move ->
             [ "move" ]
 
+        Receive ->
+            [ "migrate" ]
+
         GroupRoute groupId (Join _) ->
             [ "join", groupId ]
 
@@ -308,6 +317,9 @@ toPath route =
 
         Move ->
             "/move"
+
+        Receive ->
+            "/migrate"
 
         GroupRoute groupId (Join invite) ->
             "/join/" ++ groupId ++ "#" ++ joinFragment invite

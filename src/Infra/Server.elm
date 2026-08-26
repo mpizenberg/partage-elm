@@ -99,6 +99,9 @@ errorToString err =
                         429 ->
                             "Data rate limit exceeded (429)"
 
+                        403 ->
+                            "Relay is read-only (403)"
+
                         code ->
                             "Server error (" ++ String.fromInt code ++ ")"
 
@@ -144,6 +147,9 @@ errorToText i18n err =
 
                         429 ->
                             T.errorServerRateLimited i18n
+
+                        403 ->
+                            T.errorServerFrozen i18n
 
                         code ->
                             T.errorServerStatus (String.fromInt code) i18n
