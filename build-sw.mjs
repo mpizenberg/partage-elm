@@ -31,7 +31,14 @@ for (const url of precacheUrls) {
   digest.update(url + "\n");
   digest.update(readFileSync(file));
 }
-const cacheName = "partage-" + digest.digest("hex").slice(0, 16);
+// Content alone does not identify what a client caches: the shell is stored
+// with its response headers, and the relay computes the CSP among them from
+// settings that change without a rebuild. So the serving relay appends a digest
+// of that configuration, and turning a setting on reaches clients as an
+// ordinary update instead of stranding them on a CSP that predates it. A static
+// host leaves the placeholder standing, which is right there — nothing rewrites
+// headers per deployment.
+const cacheName = "partage-" + digest.digest("hex").slice(0, 16) + "-__CONFIG_DIGEST__";
 
 writeFileSync(
   "dist/sw.js",

@@ -10,12 +10,13 @@
  * first message instead was judged not worth holding unauthenticated sockets.
  */
 
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { createNodeWebSocket } from '@hono/node-ws';
-import { createApp, verifyGroupSecret } from './app.js';
+import { contentSecurityPolicy, createApp, verifyGroupSecret } from './app.js';
 
 export function startServer({ storage, powSecret, port = 8090, staticDir, adminSecret, adminStorageBudgetBytes, pushServerUrl, feedbackProjectId, version, migrationTarget, migrationSource, readOnly }) {
   const topics = new Map();
@@ -110,6 +111,21 @@ export function startServer({ storage, powSecret, port = 8090, staticDir, adminS
     };
     app.get('/', shell);
     app.get('/index.html', shell);
+    // The service worker precaches the shell with its response headers, so a
+    // client keeps enforcing the CSP that was live when it installed. Stamping
+    // the cache name with a digest of the settings that CSP is built from makes
+    // a config change a script change, which is the one thing browsers already
+    // watch for: they notice on the next update check and the app offers it as
+    // an ordinary update.
+    const swDigest = createHash('sha256')
+      .update(contentSecurityPolicy({ pushServerUrl, feedbackProjectId, migrationTarget }))
+      .digest('hex')
+      .slice(0, 16);
+    const swSource = readFileSync(join(staticDir, 'sw.js'), 'utf8').replaceAll(
+      '__CONFIG_DIGEST__',
+      swDigest,
+    );
+    app.get('/sw.js', (c) => c.body(swSource, 200, { 'Content-Type': 'text/javascript; charset=utf-8' }));
     app.use('/*', serveStatic({ root: staticDir }));
     // SPA fallback: client-side routes like /join/<id> must serve the app.
     app.get('*', (c, next) => (c.req.path.startsWith('/api/') ? c.notFound() : next()));

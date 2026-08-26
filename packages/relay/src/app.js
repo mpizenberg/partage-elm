@@ -251,12 +251,60 @@ function usableAbsoluteUrl(name, configured) {
   if (configured === '') {
     return '';
   }
-  const parsed = URL.parse(configured);
-  if (parsed === null || (parsed.protocol !== 'https:' && parsed.protocol !== 'http:')) {
+  if (absoluteHttpUrl(configured) === null) {
     console.error(`${name} must be an absolute http(s) URL, got "${configured}" - ignoring it`);
     return '';
   }
   return configured.replace(/\/+$/, '');
+}
+
+function absoluteHttpUrl(configured) {
+  const parsed = URL.parse(configured);
+  return parsed !== null && (parsed.protocol === 'https:' || parsed.protocol === 'http:') ? parsed : null;
+}
+
+/**
+ * Baseline hardening for a public origin. The CSP names everything the app is
+ * known to load or address: elm-ui injects inline styles, exchange rates come
+ * from Frankfurter, the migration flow seeds the target deployment's relay from
+ * this app's pages, and the feedback form is a remote iframe. Group creation's
+ * proof-of-work runs in a blob worker, named twice because engines without
+ * worker-src resolve workers through child-src. /admin sets its own CSP: that
+ * page is one self-contained document of inline script and style.
+ *
+ * `connect-src` comes last so a caller can extend it with the sources only a
+ * request knows — the app's own host, which live updates dial over ws(s) and
+ * which has to be spelled out because not every engine lets 'self' cover
+ * WebSockets.
+ *
+ * Exported because the frontend caches this: the service worker precaches the
+ * shell *with its response headers*, so a client goes on enforcing whatever CSP
+ * was live when it installed. Its cache name has to cover configuration too, or
+ * turning a setting on leaves every existing client unable to reach what the
+ * setting just allowed.
+ */
+export function contentSecurityPolicy({ pushServerUrl = '', feedbackProjectId = '', migrationTarget = '' }) {
+  const connectSources = ["'self'", 'https://api.frankfurter.dev'];
+  for (const configured of [pushServerUrl, migrationTarget]) {
+    const url = absoluteHttpUrl(configured);
+    if (url !== null) {
+      connectSources.push(url.origin);
+    }
+  }
+  return [
+    "default-src 'self'",
+    "script-src 'self'",
+    "worker-src 'self' blob:",
+    "child-src 'self' blob:",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    feedbackProjectId ? 'frame-src https://form.feedback.one' : "frame-src 'none'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    `connect-src ${connectSources.join(' ')}`,
+  ].join('; ');
 }
 
 export function createApp({
@@ -283,39 +331,14 @@ export function createApp({
       allowHeaders: ['Authorization', 'Content-Type'],
     }),
   );
-  // Baseline hardening for a public origin. The CSP names everything the app
-  // is known to load or address: elm-ui injects inline styles, exchange rates
-  // come from Frankfurter, live updates dial ws(s) on the app's own host
-  // (spelled out because not every engine lets 'self' cover WebSockets), and
-  // the feedback form is a remote iframe. Group creation's proof-of-work runs
-  // in a blob worker, named twice because engines without worker-src resolve
-  // workers through child-src. /admin sets its own CSP: that page is one
-  // self-contained document of inline script and style.
   const pushServer = usableAbsoluteUrl('PUSH_SERVER_URL', pushServerUrl);
   const migrateTo = usableAbsoluteUrl('MIGRATION_TARGET', migrationTarget);
   const migrateFrom = usableAbsoluteUrl('MIGRATION_SOURCE', migrationSource);
-  const cspParts = [
-    "default-src 'self'",
-    "script-src 'self'",
-    "worker-src 'self' blob:",
-    "child-src 'self' blob:",
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data:",
-    feedbackProjectId ? 'frame-src https://form.feedback.one' : "frame-src 'none'",
-    "object-src 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-  ];
-  const connectSources = ["'self'", 'https://api.frankfurter.dev'];
-  if (pushServer !== '') {
-    connectSources.push(new URL(pushServer).origin);
-  }
-  // The migration flow seeds the target deployment's relay from this app's
-  // pages, so the target origin must be fetchable.
-  if (migrateTo !== '') {
-    connectSources.push(new URL(migrateTo).origin);
-  }
+  const csp = contentSecurityPolicy({
+    pushServerUrl: pushServer,
+    feedbackProjectId,
+    migrationTarget: migrateTo,
+  });
   app.use(async (c, next) => {
     await next();
     c.header('Timing-Allow-Origin', '*');
@@ -323,11 +346,7 @@ export function createApp({
     c.header('Referrer-Policy', 'same-origin');
     if (!c.res.headers.has('Content-Security-Policy')) {
       const host = c.req.header('host');
-      const ws = host ? ` ws://${host} wss://${host}` : '';
-      c.header(
-        'Content-Security-Policy',
-        [...cspParts, `connect-src ${connectSources.join(' ')}${ws}`].join('; '),
-      );
+      c.header('Content-Security-Policy', host ? `${csp} ws://${host} wss://${host}` : csp);
     }
   });
 

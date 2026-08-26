@@ -92,8 +92,12 @@ real.
 - [ ] **Push disabled deployment.** With `PUSH_SERVER_URL` unset on the relay, the
       home control and the per-group toggles are absent everywhere.
 - [ ] **Repointed push server.** Change `PUSH_SERVER_URL` and restart the relay:
-      a client that had notifications enabled re-subscribes on its next start and
-      still receives another member's action, without clearing site data.
+      an already-open client offers the update — the new URL rewrites the CSP,
+      and with it the service worker's cache name — and once applied, a client
+      that had notifications enabled re-subscribes and still receives another
+      member's action, without clearing site data. Run this one on an
+      **installed PWA**, the only client with no hard-reload escape hatch from a
+      stale cached shell.
 
 ## Feedback (only if the relay is run with `FEEDBACK_PROJECT_ID` set)
 
