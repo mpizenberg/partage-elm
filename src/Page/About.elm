@@ -108,8 +108,12 @@ view i18n config model =
         , languageSection i18n config.onSwitchLanguage
         , notificationsSection i18n config
         , Ui.map config.toMsg (usageSection i18n model)
-        , Ui.map config.toMsg (deviceSecuritySection i18n config.deviceId model.confirmingRekey)
         , devModeSection i18n config
+        , if config.devMode then
+            Ui.map config.toMsg (deviceSecuritySection i18n config.deviceId model.confirmingRekey)
+
+          else
+            Ui.none
         , sourceSection i18n config.gitSha
         ]
 
@@ -172,7 +176,13 @@ this a misconfigured deployment looks exactly like one that ships without push.
 -}
 notificationsSection :
     I18n
-    -> { r | pushServerUrl : Maybe String, pushUnreachable : Bool, pushActive : Bool }
+    ->
+        { r
+            | pushServerUrl : Maybe String
+            , pushUnreachable : Bool
+            , pushActive : Bool
+            , devMode : Bool
+        }
     -> Ui.Element msg
 notificationsSection i18n config =
     let
@@ -199,15 +209,15 @@ notificationsSection i18n config =
             , Ui.Font.color Theme.base.textSubtle
             ]
             (Ui.text status)
-        , case config.pushServerUrl of
-            Just url ->
+        , case ( config.devMode, config.pushServerUrl ) of
+            ( True, Just url ) ->
                 Ui.el
                     [ Ui.Font.size Theme.font.xs
                     , Ui.Font.color Theme.base.textSubtle
                     ]
                     (Ui.text (T.aboutNotificationsServer url i18n))
 
-            Nothing ->
+            _ ->
                 Ui.none
         ]
 
