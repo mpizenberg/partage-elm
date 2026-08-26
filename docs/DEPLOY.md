@@ -59,7 +59,7 @@ Configuration (all optional except `POW_SECRET`):
 
 The relay also reads a `.env` file in its working directory, which is how a local run configures itself without exported variables. Anything set in the environment wins over that file, so a container's own configuration always stands.
 
-Put the container behind your TLS-terminating reverse proxy as usual. WebSocket upgrades on `/api/groups/*/ws` must be allowed. The relay sets its own security headers (CSP, `nosniff`, referrer policy); HSTS is the proxy's job — dokku's nginx sends it once TLS is enabled, other setups should add it.
+Put the container behind your TLS-terminating reverse proxy as usual. WebSocket upgrades on `/api/groups/*/ws` must be allowed; their URLs carry the group's relay secret (`?auth=`), so the proxy's access logs grant relay access — never decryption — to whoever reads them. The relay sets its own security headers (CSP, `nosniff`, referrer policy); HSTS is the proxy's job — dokku's nginx sends it once TLS is enabled, other setups should add it.
 
 ### Operator dashboard
 

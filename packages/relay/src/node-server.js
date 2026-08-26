@@ -5,7 +5,9 @@
  * WebSocket auth uses an `?auth=<secret>` query parameter because the browser
  * WebSocket API cannot set an Authorization header. The secret only grants
  * relay access (it is a hash of the group key, not the key itself), so a
- * leaked URL never compromises encrypted content.
+ * leaked URL never compromises encrypted content. Accepted tradeoff: the URL,
+ * secret included, lands in reverse-proxy access logs; authenticating via a
+ * first message instead was judged not worth holding unauthenticated sockets.
  */
 
 import { readFileSync } from 'node:fs';
