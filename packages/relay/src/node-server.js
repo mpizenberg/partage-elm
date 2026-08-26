@@ -80,6 +80,16 @@ export function startServer({ storage, powSecret, port = 8090, staticDir, adminS
   );
 
   if (staticDir) {
+    // The service worker and the HTML shell live at fixed names, so browsers
+    // must revalidate them on every load or a deploy leaves clients on the
+    // old build until heuristic caches expire. Extensionless paths are the
+    // SPA fallback, which also serves the shell.
+    app.use('/*', async (c, next) => {
+      await next();
+      if (c.req.path === '/sw.js' || c.req.path === '/index.html' || !/\.[^/]*$/.test(c.req.path)) {
+        c.header('Cache-Control', 'no-cache');
+      }
+    });
     app.use('/*', serveStatic({ root: staticDir }));
     // SPA fallback: client-side routes like /join/<id> must serve the app.
     app.get('*', (c, next) => (c.req.path.startsWith('/api/') ? c.notFound() : next()));

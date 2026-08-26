@@ -15,6 +15,7 @@ describe('static frontend serving', () => {
     staticDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-static-'));
     fs.writeFileSync(path.join(staticDir, 'index.html'), '<html>app shell</html>');
     fs.writeFileSync(path.join(staticDir, 'main.js'), 'console.log("js")');
+    fs.writeFileSync(path.join(staticDir, 'sw.js'), 'self.skipWaiting()');
     relay = await startServer({
       storage: openStorage(':memory:'),
       powSecret: TEST_SECRET,
@@ -43,5 +44,14 @@ describe('static frontend serving', () => {
   it('does not shadow unknown API paths', async () => {
     const res = await fetch(`${relay.url}/api/nope`);
     assert.equal(res.status, 404);
+  });
+
+  it('makes the service worker and shell revalidate, other files default', async () => {
+    for (const path of ['/sw.js', '/', '/join/zryq1q3a58m535p']) {
+      const res = await fetch(`${relay.url}${path}`);
+      assert.equal(res.headers.get('cache-control'), 'no-cache', path);
+    }
+    const asset = await fetch(`${relay.url}/main.js`);
+    assert.equal(asset.headers.get('cache-control'), null);
   });
 });
