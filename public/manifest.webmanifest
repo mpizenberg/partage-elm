@@ -1,6 +1,7 @@
 {
   "name": "Partage - Bill Splitting",
   "short_name": "Partage",
+  "id": "/",
   "start_url": "/groups?source=pwa",
   "display": "standalone",
   "orientation": "portrait",
