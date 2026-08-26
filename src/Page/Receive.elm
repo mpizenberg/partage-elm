@@ -16,7 +16,6 @@ handoff, over `postMessage` or as a pasted code, and apply it. An installed
 iOS app shares storage with no browser tab, so there the code is the only way in.
 -}
 
-import Html.Attributes
 import Infra.Handoff as Handoff
 import Pwa
 import Translations as T exposing (I18n)
@@ -154,26 +153,24 @@ viewReceiving i18n sourceName installHint data =
 
             _ ->
                 Ui.none
-        , Ui.Input.multiline
+        , -- One line, not a box: the code is a single unbroken 2 KB word, which
+          -- a text area would size itself to and spill across the layout.
+          Ui.Input.text
             [ Ui.width Ui.fill
-            , Ui.height (Ui.px 120)
             , Ui.padding Theme.spacing.sm
             , Ui.rounded Theme.radius.sm
             , Ui.border Theme.border
             , Ui.borderColor Theme.base.accent
-            , Ui.Font.size Theme.font.sm
-            , Ui.Font.family [ Ui.Font.monospace ]
 
-            -- The code is one unbroken 2 KB word; `anywhere` is the wrap value
-            -- that also shrinks the width elm-ui's sizing element measures.
-            , Ui.htmlAttribute (Html.Attributes.style "overflow-wrap" "anywhere")
-            , Ui.htmlAttribute (Html.Attributes.style "overflow-y" "auto")
+            -- Below 16px, iOS Safari zooms into a focused field — and iOS is
+            -- what this page exists for.
+            , Ui.Font.size Theme.font.md
+            , Ui.Font.family [ Ui.Font.monospace ]
             ]
             { onChange = InputCode
             , text = data.pasted
             , placeholder = Just (T.receiveCodePlaceholder i18n)
             , label = Ui.Input.labelHidden (T.receiveCodePlaceholder i18n)
-            , spellcheck = False
             }
         , if data.invalid then
             errorText (T.receiveCodeInvalid i18n)

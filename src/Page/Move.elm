@@ -27,6 +27,7 @@ import UI.Components
 import UI.Theme as Theme
 import Ui
 import Ui.Font
+import Ui.Prose
 
 
 type Model
@@ -377,9 +378,12 @@ handoffSection i18n targetName installHint delivered payload =
         ]
 
 
+{-| A paragraph, not an `el`: the code is one unbroken 2 KB word, and only
+paragraph layout breaks it across lines instead of past the border.
+-}
 codeBlock : String -> Ui.Element Msg
 codeBlock payload =
-    Ui.el
+    Ui.Prose.paragraph
         [ Ui.Font.size Theme.font.xs
         , Ui.Font.family [ Ui.Font.monospace ]
         , Ui.Font.color Theme.base.textSubtle
@@ -388,12 +392,10 @@ codeBlock payload =
         , Ui.rounded Theme.radius.sm
         , Ui.border Theme.border
         , Ui.borderColor Theme.base.accent
-        , Ui.width Ui.fill
         , Ui.height (Ui.px 120)
         , Ui.clip
-        , Ui.htmlAttribute (Html.Attributes.style "overflow-wrap" "anywhere")
         ]
-        (Ui.text payload)
+        [ Ui.text payload ]
 
 
 copyBtn : String -> String -> Ui.Element Msg
