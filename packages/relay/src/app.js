@@ -281,9 +281,41 @@ export function createApp({
       allowHeaders: ['Authorization', 'Content-Type'],
     }),
   );
+  // Baseline hardening for a public origin. The CSP names everything the app
+  // is known to load or address: elm-ui injects inline styles, exchange rates
+  // come from Frankfurter, live updates dial ws(s) on the app's own host
+  // (spelled out because not every engine lets 'self' cover WebSockets), and
+  // the feedback form is a remote iframe. /admin sets its own CSP: that page
+  // is one self-contained document of inline script and style.
+  const pushServer = usablePushServerUrl(pushServerUrl);
+  const cspParts = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    feedbackProjectId ? 'frame-src https://form.feedback.one' : "frame-src 'none'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ];
+  const connectSources = ["'self'", 'https://api.frankfurter.dev'];
+  if (pushServer !== '') {
+    connectSources.push(new URL(pushServer).origin);
+  }
   app.use(async (c, next) => {
     await next();
     c.header('Timing-Allow-Origin', '*');
+    c.header('X-Content-Type-Options', 'nosniff');
+    c.header('Referrer-Policy', 'same-origin');
+    if (!c.res.headers.has('Content-Security-Policy')) {
+      const host = c.req.header('host');
+      const ws = host ? ` ws://${host} wss://${host}` : '';
+      c.header(
+        'Content-Security-Policy',
+        [...cspParts, `connect-src ${connectSources.join(' ')}${ws}`].join('; '),
+      );
+    }
   });
 
   // Liveness probe for orchestration and the Docker HEALTHCHECK. The relay is a
@@ -298,7 +330,6 @@ export function createApp({
   // feedback project id means it ships without the feedback form. The version
   // identifies the running build (the image build stamps the git commit); empty
   // means an unstamped build.
-  const pushServer = usablePushServerUrl(pushServerUrl);
   app.get('/api/config', (c) => c.json({ pushServerUrl: pushServer, feedbackProjectId, version }));
 
   app.get('/api/pow/challenge', async (c) => {
@@ -562,7 +593,12 @@ export function createApp({
     const tooManyAttempts = (c, waitMs) =>
       c.json({ error: 'Too many failed attempts' }, 429, { 'Retry-After': String(Math.ceil(waitMs / 1000)) });
 
-    app.get('/admin', (c) => c.html(ADMIN_PAGE));
+    app.get('/admin', (c) =>
+      c.html(ADMIN_PAGE, 200, {
+        'Content-Security-Policy':
+          "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+      }),
+    );
 
     app.get('/api/admin/summary', async (c) => {
       const ip = clientIp(c);
