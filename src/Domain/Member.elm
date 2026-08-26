@@ -47,8 +47,11 @@ type alias State =
     }
 
 
-{-| A device's claim on a member root. The group state keeps one per device:
-its winning link, resolved by `pickLink`.
+{-| A device's claim on a member root. The group state keeps one entry per
+device in the group — its winning link, resolved by `pickLink` — making the
+map a complete registry of devices: a device that created its own member
+(the group creator, or joined as a new member) gets an entry at seq -1,
+which any authored link outranks.
 -}
 type alias DeviceLink =
     { rootId : Id

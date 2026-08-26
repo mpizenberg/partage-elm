@@ -436,9 +436,57 @@ memberLinkTests =
                 , Dict.member "bob-device" state.members
                 )
                     |> Expect.equal ( Just "alice", True )
+        , test "a self-created member registers as its own device" <|
+            \_ ->
+                let
+                    state =
+                        GroupState.applyEvents [ adminBootstrap ] GroupState.empty
+                in
+                Dict.get "admin" state.deviceLinks
+                    |> Maybe.map (\link -> ( link.rootId, link.seq ))
+                    |> Expect.equal (Just ( "admin", -1 ))
+        , test "a member created for someone else registers no device" <|
+            \_ ->
+                let
+                    state =
+                        GroupState.applyEvents createAliceEvents GroupState.empty
+                in
+                Dict.member "alice" state.deviceLinks
+                    |> Expect.equal False
+        , test "an authored link survives replaying before the self registration" <|
+            \_ ->
+                let
+                    -- Sorted by timestamp, bob-device's link to alice replays
+                    -- before the event creating bob-device's own root.
+                    events =
+                        [ adminBootstrap
+                        , createVirtualMember "e1" "Alice" 1000
+                        , makeEnvelope "e2"
+                            2000
+                            "bob-device"
+                            (MemberLinked { rootId = "alice", deviceId = "bob-device", seq = 0 })
+                        , makeEnvelope "e3"
+                            3000
+                            "bob-device"
+                            (MemberCreated { memberId = "bob-device", name = "Bob", memberType = Member.Real, addedBy = "bob-device" })
+                        ]
+
+                    state =
+                        GroupState.applyEvents events GroupState.empty
+                in
+                GroupState.resolveMemberRootId state "bob-device"
+                    |> Expect.equal (Just "alice")
         , test "nextLinkSeq starts at 0 for an unlinked device" <|
             \_ ->
                 GroupState.nextLinkSeq GroupState.empty "bob-device"
+                    |> Expect.equal 0
+        , test "nextLinkSeq starts at 0 for a self-created member's device" <|
+            \_ ->
+                let
+                    state =
+                        GroupState.applyEvents [ adminBootstrap ] GroupState.empty
+                in
+                GroupState.nextLinkSeq state "admin"
                     |> Expect.equal 0
         , test "nextLinkSeq increments past the winning link" <|
             \_ ->

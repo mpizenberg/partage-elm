@@ -728,20 +728,8 @@ memberDetail i18n zone identityHash deviceLinks toMsg isCurrentUser maybeUserRoo
         devicesSection : Ui.Element msg
         devicesSection =
             let
-                -- A root with a public key was created by its own device (the
-                -- group creator, or a device that joined as a new member), so
-                -- that device belongs to the member without any entry in the
-                -- link map — unless it has since linked elsewhere.
-                selfRow : List (Ui.Element msg)
-                selfRow =
-                    if member.publicKey /= "" && not (Dict.member member.rootId deviceLinks) then
-                        [ deviceRow subtleColor textColor i18n zone member.rootId member.joinedAt (member.rootId == identityHash) ]
-
-                    else
-                        []
-
-                linkedRows : List (Ui.Element msg)
-                linkedRows =
+                rows : List (Ui.Element msg)
+                rows =
                     Dict.toList deviceLinks
                         |> List.filter (\( _, link ) -> link.rootId == member.rootId)
                         |> List.sortBy (\( _, link ) -> Time.posixToMillis link.timestamp)
@@ -749,10 +737,6 @@ memberDetail i18n zone identityHash deviceLinks toMsg isCurrentUser maybeUserRoo
                             (\( deviceId, link ) ->
                                 deviceRow subtleColor textColor i18n zone deviceId link.timestamp (deviceId == identityHash)
                             )
-
-                rows : List (Ui.Element msg)
-                rows =
-                    selfRow ++ linkedRows
             in
             if List.isEmpty rows then
                 Ui.none

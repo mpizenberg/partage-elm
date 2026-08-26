@@ -17,10 +17,11 @@ are caught here instead, recomputed from the current history:
     entries or payment info. `MemberLinked` needs no root consent (it is the
     device-recovery path), so this is the signature of a device linked to tamper.
 
-Presence is read from **authorship**, never from `deviceLinks` alone: a group
-creator authors under their root id with no self-link, so counting device links
-would miss them as a victim. Authorship order is irrelevant to both rules, so a
-back-dated `clientTimestamp` cannot hide a finding.
+Presence is read from **authorship**, never from `deviceLinks`: a link only
+claims a root, so a claimed-but-idle member still reads as a placeholder
+whose payment info others may legitimately fill in. Authorship order is
+irrelevant to both rules, so a back-dated `clientTimestamp` cannot hide a
+finding.
 
 A finding is suppressed on the very device it implicates (`culprit`, matched
 against the viewer's own author id) so an attacker running the app sees no sign

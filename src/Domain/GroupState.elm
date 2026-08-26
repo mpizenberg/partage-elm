@@ -342,7 +342,7 @@ applyPayload envelope state =
             state
 
         MemberCreated data ->
-            applyMemberCreated timestamp (introducedKey data.memberId envelope) data state
+            applyMemberCreated envelope data state
 
         MemberRenamed data ->
             applyMemberRenamed data state
@@ -404,8 +404,8 @@ introducedKey holderId envelope =
         ""
 
 
-applyMemberCreated : Time.Posix -> String -> { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id } -> GroupState -> GroupState
-applyMemberCreated timestamp publicKey data state =
+applyMemberCreated : Envelope -> { memberId : Member.Id, name : String, memberType : Member.Type, addedBy : Member.Id } -> GroupState -> GroupState
+applyMemberCreated envelope data state =
     if Dict.member data.memberId state.members then
         -- Member with this rootId already exists, ignore
         state
@@ -417,13 +417,39 @@ applyMemberCreated timestamp publicKey data state =
                 { rootId = data.memberId
                 , name = data.name
                 , memberType = data.memberType
-                , publicKey = publicKey
+                , publicKey = introducedKey data.memberId envelope
                 , isRetired = False
-                , joinedAt = timestamp
+                , joinedAt = envelope.clientTimestamp
                 , metadata = Member.emptyMetadata
                 }
+
+            -- A member created by its own device (the group creator, or a
+            -- device joining as a new member) registers that device, keeping
+            -- the link map a complete registry of the group's devices. seq -1
+            -- loses to any authored link (their seq is never negative), so a
+            -- later re-link elsewhere takes the device over and `nextLinkSeq`
+            -- still hands out 0 first.
+            deviceLinks : Dict Member.Id Member.DeviceLink
+            deviceLinks =
+                if data.memberId == envelope.triggeredBy then
+                    let
+                        selfLink : Member.DeviceLink
+                        selfLink =
+                            { rootId = data.memberId
+                            , publicKey = member.publicKey
+                            , seq = -1
+                            , timestamp = envelope.clientTimestamp
+                            , eventId = envelope.id
+                            }
+                    in
+                    Dict.update data.memberId
+                        (Maybe.map (Member.pickLink selfLink) >> Maybe.withDefault selfLink >> Just)
+                        state.deviceLinks
+
+                else
+                    state.deviceLinks
         in
-        { state | members = Dict.insert data.memberId member state.members }
+        { state | members = Dict.insert data.memberId member state.members, deviceLinks = deviceLinks }
 
 
 applyMemberRenamed : { rootId : Member.Id, oldName : String, newName : String } -> GroupState -> GroupState
