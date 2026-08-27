@@ -242,6 +242,9 @@ window.addEventListener("message", (event) => {
   ) {
     handoff.win.postMessage(handoff.payload, handoff.targetOrigin);
     app.ports.handoffIn.send({ event: "delivered" });
+    handoff.payload = null;
+    handoff.win = null;
+    handoff.targetOrigin = null;
   }
 });
 
