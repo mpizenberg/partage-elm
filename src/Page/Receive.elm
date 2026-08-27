@@ -78,12 +78,16 @@ update msg (Model data) =
             ( Model { data | pasted = text, invalid = False }, NoEffect )
 
         SubmitCode ->
-            case Handoff.fromString data.pasted of
-                Ok payload ->
-                    ( Model { data | invalid = False, applying = True }, Apply payload )
+            if canApply data then
+                case Handoff.fromString data.pasted of
+                    Ok payload ->
+                        ( Model { data | invalid = False, applying = True }, Apply payload )
 
-                Err _ ->
-                    ( Model { data | invalid = not (String.isEmpty (String.trim data.pasted)) }, NoEffect )
+                    Err _ ->
+                        ( Model { data | invalid = not (String.isEmpty (String.trim data.pasted)) }, NoEffect )
+
+            else
+                ( Model data, NoEffect )
 
 
 {-| A payload arrived over `postMessage` (already origin-checked by the JS
@@ -92,12 +96,21 @@ box remains and nothing was promised.
 -}
 payloadArrived : String -> Model -> ( Model, Effect )
 payloadArrived raw ((Model data) as model) =
-    case ( data.result, Handoff.fromString raw ) of
-        ( Nothing, Ok payload ) ->
-            ( Model { data | applying = True }, Apply payload )
+    if canApply data then
+        case Handoff.fromString raw of
+            Ok payload ->
+                ( Model { data | applying = True }, Apply payload )
 
-        _ ->
-            ( model, NoEffect )
+            Err _ ->
+                ( model, NoEffect )
+
+    else
+        ( model, NoEffect )
+
+
+canApply : Data -> Bool
+canApply data =
+    not data.applying && data.result == Nothing
 
 
 applied : Applied -> Model -> Model
