@@ -16,6 +16,7 @@ module Infra.Storage exposing
     , loadGroup
     , loadGroupEvents
     , loadGroupKey
+    , loadGroupKeyRequired
     , loadNotifyTopic
     , loadUsageStats
     , open

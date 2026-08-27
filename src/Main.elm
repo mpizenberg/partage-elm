@@ -1866,19 +1866,30 @@ string — the transports (postMessage, paste code) carry it opaquely.
 -}
 buildHandoff : Storage.InitData -> Identity -> List Group.Id -> ConcurrentTask Idb.Error String
 buildHandoff readyData identity groupIds =
+    let
+        loadGroup : Group.Id -> ConcurrentTask Idb.Error Handoff.GroupHandoff
+        loadGroup groupId =
+            case Dict.get groupId readyData.groups of
+                Just summary ->
+                    Storage.loadGroupKeyRequired readyData.db groupId
+                        |> ConcurrentTask.map
+                            (\key ->
+                                { summary = summary
+                                , key = Symmetric.exportKey key
+                                }
+                            )
+
+                Nothing ->
+                    ConcurrentTask.fail (Idb.DatabaseError ("Missing summary for group " ++ groupId))
+    in
     groupIds
-        |> List.filterMap (\groupId -> Dict.get groupId readyData.groups)
-        |> List.map
-            (\summary ->
-                Storage.loadGroupKey readyData.db summary.id
-                    |> ConcurrentTask.map (Maybe.map (\key -> { summary = summary, key = key }))
-            )
+        |> List.map loadGroup
         |> ConcurrentTask.batch
         |> ConcurrentTask.map
             (\groups ->
                 Handoff.encode
                     { identity = identity
-                    , groups = List.filterMap (\g -> g) groups
+                    , groups = groups
                     , selfProfile = readyData.selfProfile
                     , language = readyData.savedLanguage
                     , lastSeenChangelog = readyData.lastSeenChangelog
