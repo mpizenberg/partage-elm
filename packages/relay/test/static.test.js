@@ -35,6 +35,29 @@ describe('static frontend serving', () => {
     fs.rmSync(staticDir, { recursive: true });
   });
 
+  it('refuses to start from a build without its service worker', async () => {
+    const incompleteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-incomplete-static-'));
+    fs.writeFileSync(path.join(incompleteDir, 'index.html'), 'app shell');
+    let unexpectedlyStarted;
+
+    try {
+      await assert.rejects(
+        async () => {
+          unexpectedlyStarted = await startServer({
+            storage: openStorage(':memory:'),
+            powSecret: TEST_SECRET,
+            port: 0,
+            staticDir: incompleteDir,
+          });
+        },
+        /sw\.js/,
+      );
+    } finally {
+      await unexpectedlyStarted?.close();
+      fs.rmSync(incompleteDir, { recursive: true });
+    }
+  });
+
   it('serves existing files', async () => {
     const res = await fetch(`${relay.url}/main.js`);
     assert.equal(res.status, 200);

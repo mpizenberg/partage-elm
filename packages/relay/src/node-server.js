@@ -88,6 +88,8 @@ export function startServer({ storage, powSecret, port = 8090, staticDir, adminS
   );
 
   if (staticDir) {
+    // STATIC_DIR is one complete, immutable frontend deployment. Reading both
+    // entry points during startup intentionally aborts an incomplete deploy.
     // The service worker and the HTML shell live at fixed names, so browsers
     // must revalidate them on every load or a deploy leaves clients on the
     // old build until heuristic caches expire. Extensionless paths are the
