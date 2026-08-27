@@ -92,19 +92,20 @@ errorToString err =
                 Http.NetworkError ->
                     "Network error"
 
-                Http.BadStatus meta _ ->
-                    case meta.statusCode of
-                        507 ->
-                            "Group storage limit reached (507)"
+                Http.BadStatus meta body ->
+                    if isReadOnlyResponse meta body then
+                        "Relay is read-only (403)"
 
-                        429 ->
-                            "Data rate limit exceeded (429)"
+                    else
+                        case meta.statusCode of
+                            507 ->
+                                "Group storage limit reached (507)"
 
-                        403 ->
-                            "Relay is read-only (403)"
+                            429 ->
+                                "Data rate limit exceeded (429)"
 
-                        code ->
-                            "Server error (" ++ String.fromInt code ++ ")"
+                            code ->
+                                "Server error (" ++ String.fromInt code ++ ")"
 
                 Http.BadBody _ _ _ ->
                     "Invalid server response"
@@ -141,19 +142,20 @@ errorToText i18n err =
                 Http.NetworkError ->
                     T.errorNetwork i18n
 
-                Http.BadStatus meta _ ->
-                    case meta.statusCode of
-                        507 ->
-                            T.errorServerStorageFull i18n
+                Http.BadStatus meta body ->
+                    if isReadOnlyResponse meta body then
+                        T.errorServerFrozen i18n
 
-                        429 ->
-                            T.errorServerRateLimited i18n
+                    else
+                        case meta.statusCode of
+                            507 ->
+                                T.errorServerStorageFull i18n
 
-                        403 ->
-                            T.errorServerFrozen i18n
+                            429 ->
+                                T.errorServerRateLimited i18n
 
-                        code ->
-                            T.errorServerStatus (String.fromInt code) i18n
+                            code ->
+                                T.errorServerStatus (String.fromInt code) i18n
 
                 Http.BadBody _ _ _ ->
                     T.errorServerResponse i18n
@@ -224,8 +226,22 @@ isConflict =
 and announced by its own banner, so a refusal is a state rather than a failure.
 -}
 isFrozen : Error -> Bool
-isFrozen =
-    isStatus 403
+isFrozen err =
+    case err of
+        HttpError (Http.BadStatus meta body) ->
+            isReadOnlyResponse meta body
+
+        _ ->
+            False
+
+
+isReadOnlyResponse : Http.Metadata -> Decode.Value -> Bool
+isReadOnlyResponse meta body =
+    meta.statusCode
+        == 403
+        && (Decode.decodeValue (Decode.field "code" Decode.string) body
+                == Ok "relay_read_only"
+           )
 
 
 isStatus : Int -> Error -> Bool
