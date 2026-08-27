@@ -145,6 +145,8 @@ view :
     ->
         { sourceName : Maybe String
         , requiresInstall : Bool
+        , inHostAppWindow : Bool
+        , destinationName : String
         , onGoHome : msg
         }
     -> (Msg -> msg)
@@ -158,7 +160,7 @@ view i18n ctx toMsg (Model data) =
         Just sourceName ->
             case data.result of
                 Just result ->
-                    viewApplied i18n ctx.onGoHome result
+                    viewApplied i18n ctx result
 
                 Nothing ->
                     viewReceiving i18n sourceName ctx.requiresInstall data
@@ -219,8 +221,12 @@ viewReceiving i18n sourceName requiresInstall data =
         )
 
 
-viewApplied : I18n -> msg -> Applied -> Ui.Element msg
-viewApplied i18n onGoHome result =
+viewApplied :
+    I18n
+    -> { c | inHostAppWindow : Bool, destinationName : String, onGoHome : msg }
+    -> Applied
+    -> Ui.Element msg
+viewApplied i18n ctx result =
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
         [ UI.Components.card [ Ui.padding Theme.spacing.lg ]
             [ Ui.el [ Ui.Font.size Theme.font.md ]
@@ -238,10 +244,17 @@ viewApplied i18n onGoHome result =
                 Ui.el [ Ui.Font.size Theme.font.sm, Ui.Font.color Theme.base.textSubtle, Ui.paddingTop Theme.spacing.xs ]
                     (Ui.text (T.receiveKeptIdentity i18n))
             ]
+        , if ctx.inHostAppWindow then
+            -- The move landed, but in a window belonging to the app being left
+            -- behind: nothing here can install the destination.
+            hint (T.receiveInstallHere ctx.destinationName i18n)
+
+          else
+            Ui.none
         , hint (T.receiveNextSteps i18n)
         , UI.Components.btnPrimary [ Ui.width Ui.shrink ]
             { label = T.receiveOpenGroups i18n
-            , onPress = onGoHome
+            , onPress = ctx.onGoHome
             }
         ]
 

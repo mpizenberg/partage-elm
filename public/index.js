@@ -125,6 +125,10 @@ var app = Elm.Main.init({
     installHint: evaluateInstallHint(installHintOptions),
     isIos: isIosFamily(),
     isStandalone: isStandalone(),
+    // A chrome-less window another app opened for us. An installed PWA that
+    // opens an out-of-scope address keeps it inside itself, and that window
+    // offers no address bar and no way to install what it is showing.
+    inHostAppWindow: isStandalone() && window.opener !== null,
   },
 });
 

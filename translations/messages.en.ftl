@@ -663,6 +663,7 @@ receiveSubmit = Move in
 receiveDone = Welcome home — { $count } group(s) are ready.
 receiveSkipped = { $count } group(s) were already here and were left untouched.
 receiveKeptIdentity = This device already had a profile of its own, so the arriving groups are read-only for now — open one and use "I am…" to re-link yourself.
+receiveInstallHere = The old app opened this page in a window of its own, which has no way to install anything. To put Partage back on your home screen, open { $destination } in your browser and install it from there.
 receiveNextSteps = One thing doesn't survive a move: notifications. Enable them again from the home screen — the old permission belonged to the old address.
 receiveOpenGroups = Open my groups
 welcomeMigrateFrom = Migrating from { $source }?

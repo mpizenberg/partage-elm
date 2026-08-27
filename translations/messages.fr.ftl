@@ -666,6 +666,7 @@ receiveSubmit = Emménager
 receiveDone = Bienvenue chez toi — { $count } groupe(s) prêts.
 receiveSkipped = { $count } groupe(s) étaient déjà là et n'ont pas été touchés.
 receiveKeptIdentity = Cet appareil avait déjà son propre profil, donc les groupes arrivés sont en lecture seule pour l'instant — ouvre-en un et utilise « Je suis… » pour te relier.
+receiveInstallHere = L’ancienne app a ouvert cette page dans une fenêtre à elle, qui ne peut rien installer. Pour remettre Partage sur ton écran d’accueil, ouvre { $destination } dans ton navigateur et installe-la depuis là.
 receiveNextSteps = Une chose ne survit pas au déménagement : les notifications. Réactive-les depuis l'écran d'accueil — l'ancienne permission appartenait à l'ancienne adresse.
 receiveOpenGroups = Ouvrir mes groupes
 welcomeMigrateFrom = Tu migres depuis { $source } ?

@@ -143,6 +143,7 @@ type alias Flags =
     , installHint : String
     , isIos : Bool
     , isStandalone : Bool
+    , inHostAppWindow : Bool
     }
 
 
@@ -175,6 +176,7 @@ type alias Model =
     , migrationSource : Maybe String
     , isIos : Bool
     , isStandalone : Bool
+    , inHostAppWindow : Bool
     }
 
 
@@ -355,6 +357,7 @@ init flags =
       , migrationSource = Nothing
       , isIos = flags.isIos
       , isStandalone = flags.isStandalone
+      , inHostAppWindow = flags.inHostAppWindow
       }
     , Cmd.batch
         [ initCmds
@@ -2805,6 +2808,8 @@ viewReady model readyData =
                     (Page.Receive.view i18n
                         { sourceName = Maybe.map displayDomain model.migrationSource
                         , requiresInstall = not (canReceiveHandoff model)
+                        , inHostAppWindow = model.inHostAppWindow
+                        , destinationName = displayDomain model.origin
                         , onGoHome = NavigateTo Home
                         }
                         ReceiveMsg
