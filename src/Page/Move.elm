@@ -228,13 +228,14 @@ view :
     I18n
     ->
         { targetName : String
+        , targetUrl : String
         , groups : List Group.Summary
         , codeOnly : Bool
         }
     -> (Msg -> msg)
     -> Model
     -> Ui.Element msg
-view i18n { targetName, groups, codeOnly } toMsg (Model data) =
+view i18n { targetName, targetUrl, groups, codeOnly } toMsg (Model data) =
     let
         selectedGroups : List Group.Summary
         selectedGroups =
@@ -249,7 +250,7 @@ view i18n { targetName, groups, codeOnly } toMsg (Model data) =
                 viewProgress i18n targetName data selectedGroups
 
             Done ->
-                viewDone i18n targetName codeOnly data selectedGroups
+                viewDone i18n targetName targetUrl codeOnly data selectedGroups
         )
         |> Ui.map toMsg
 
@@ -315,8 +316,8 @@ viewProgress i18n targetName data selectedGroups =
     ]
 
 
-viewDone : I18n -> String -> Bool -> Data -> List Group.Summary -> List (Ui.Element Msg)
-viewDone i18n targetName codeOnly data selectedGroups =
+viewDone : I18n -> String -> String -> Bool -> Data -> List Group.Summary -> List (Ui.Element Msg)
+viewDone i18n targetName targetUrl codeOnly data selectedGroups =
     [ statusList i18n data selectedGroups
     , UI.Components.card [ Ui.padding Theme.spacing.lg ]
         [ Ui.el [ Ui.Font.size Theme.font.md ] (Ui.text (T.moveAllSeeded targetName i18n))
@@ -326,7 +327,7 @@ viewDone i18n targetName codeOnly data selectedGroups =
             hint (T.moveBuildingHandoff i18n)
 
         Just payload ->
-            handoffSection i18n targetName codeOnly data.delivered payload
+            handoffSection i18n targetName targetUrl codeOnly data.delivered payload
     ]
 
 
@@ -334,8 +335,8 @@ viewDone i18n targetName codeOnly data selectedGroups =
 share storage. iOS never guarantees that, regardless of which install hint its
 current browser reports, so every iOS source uses the code.
 -}
-handoffSection : I18n -> String -> Bool -> Bool -> String -> Ui.Element Msg
-handoffSection i18n targetName codeOnly delivered payload =
+handoffSection : I18n -> String -> String -> Bool -> Bool -> String -> Ui.Element Msg
+handoffSection i18n targetName targetUrl codeOnly delivered payload =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         [ hint (T.moveHandoffIntro targetName i18n)
         , if codeOnly then
@@ -361,6 +362,23 @@ handoffSection i18n targetName codeOnly delivered payload =
             )
         , codeBlock payload
         , copyBtn payload (T.moveHandoffCopy i18n)
+        , if codeOnly then
+            targetLink targetUrl (T.moveHandoffInstall targetName i18n)
+
+          else
+            Ui.none
+        ]
+
+
+targetLink : String -> String -> Ui.Element msg
+targetLink targetUrl label =
+    Ui.row
+        (Ui.linkNewTab targetUrl
+            :: Ui.width Ui.shrink
+            :: UI.Components.btnOutlineAttrs
+        )
+        [ UI.Components.featherIcon 16 FeatherIcons.externalLink
+        , Ui.text label
         ]
 
 

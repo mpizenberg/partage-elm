@@ -2736,6 +2736,7 @@ viewReady model readyData =
                         Just target ->
                             Page.Move.view i18n
                                 { targetName = displayDomain target
+                                , targetUrl = target
                                 , groups = Dict.values readyData.groups
                                 , codeOnly = model.isIos
                                 }
