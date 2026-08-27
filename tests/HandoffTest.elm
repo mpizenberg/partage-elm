@@ -49,10 +49,9 @@ mergeTests =
                 { identity = Just (makeIdentity "dest-device" []), existingGroupIds = Set.empty }
                 |> Expect.all
                     [ \plan -> plan.identity |> Expect.equal payload.identity
-                    , \plan -> plan.adopted |> Expect.equal True
+                    , \plan -> plan.adoption |> Maybe.map .selfProfile |> Expect.equal (Just payload.selfProfile)
                     , \plan -> List.map (.summary >> .id) plan.groupsToAdd |> Expect.equal [ "g-1", "g-2" ]
-                    , \plan -> plan.selfProfile |> Expect.equal (Just payload.selfProfile)
-                    , \plan -> plan.language |> Expect.equal (Just "fr")
+                    , \plan -> plan.adoption |> Maybe.andThen .language |> Expect.equal (Just "fr")
                     ]
     , test "a destination with no identity at all adopts too" <|
         \_ ->
@@ -70,9 +69,7 @@ mergeTests =
                     , \plan ->
                         plan.identity.previousDeviceIds
                             |> Expect.equal [ "dest-old", "src-device", "src-old" ]
-                    , \plan -> plan.adopted |> Expect.equal False
-                    , \plan -> plan.selfProfile |> Expect.equal Nothing
-                    , \plan -> plan.language |> Expect.equal Nothing
+                    , \plan -> plan.adoption |> Expect.equal Nothing
                     ]
     , test "groups already present are skipped, the rest are added" <|
         \_ ->
@@ -101,6 +98,7 @@ mergeTests =
             afterSecond
                 |> Expect.all
                     [ \plan -> plan.identity |> Expect.equal payload.identity
+                    , \plan -> plan.adoption |> Expect.equal Nothing
                     , \plan -> plan.groupsToAdd |> Expect.equal []
                     , \plan -> plan.skippedGroupIds |> Expect.equal [ "g-1", "g-2" ]
                     ]

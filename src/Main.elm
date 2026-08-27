@@ -1000,6 +1000,14 @@ update msg model =
                                 readyData.groups
                                 plan.groupsToAdd
 
+                        adoptedLanguage : Maybe String
+                        adoptedLanguage =
+                            plan.adoption |> Maybe.andThen .language
+
+                        adoptedChangelog : Maybe String
+                        adoptedChangelog =
+                            plan.adoption |> Maybe.andThen .lastSeenChangelog
+
                         appliedModel : Model
                         appliedModel =
                             { model
@@ -1008,16 +1016,19 @@ update msg model =
                                         { readyData
                                             | identity = Just plan.identity
                                             , groups = newGroups
-                                            , selfProfile = Maybe.withDefault readyData.selfProfile plan.selfProfile
+                                            , selfProfile =
+                                                plan.adoption
+                                                    |> Maybe.map .selfProfile
+                                                    |> Maybe.withDefault readyData.selfProfile
                                             , savedLanguage =
-                                                case plan.language of
+                                                case adoptedLanguage of
                                                     Just lang ->
                                                         Just lang
 
                                                     Nothing ->
                                                         readyData.savedLanguage
                                             , lastSeenChangelog =
-                                                case plan.lastSeenChangelog of
+                                                case adoptedChangelog of
                                                     Just seen ->
                                                         Just seen
 
@@ -1030,7 +1041,7 @@ update msg model =
                                         model.groupModel
                                 , receiveModel =
                                     Page.Receive.applied
-                                        { adopted = plan.adopted
+                                        { adopted = plan.adoption /= Nothing
                                         , added = List.length plan.groupsToAdd
                                         , skipped = List.length plan.skippedGroupIds
                                         }
@@ -1038,7 +1049,7 @@ update msg model =
                             }
 
                         ( languagedModel, langCmd ) =
-                            case plan.language |> Maybe.andThen T.languageFromString of
+                            case adoptedLanguage |> Maybe.andThen T.languageFromString of
                                 Just lang ->
                                     applyLanguage lang appliedModel
 
@@ -1951,6 +1962,20 @@ applyHandoffPlan db plan =
 
                 Nothing ->
                     ConcurrentTask.succeed ()
+
+        saveAdoption : ConcurrentTask Idb.Error ()
+        saveAdoption =
+            case plan.adoption of
+                Just adoption ->
+                    ConcurrentTask.batch
+                        [ Storage.saveSelfProfile db adoption.selfProfile
+                        , saveMaybe Storage.saveLanguage adoption.language
+                        , saveMaybe Storage.saveLastSeenChangelog adoption.lastSeenChangelog
+                        ]
+                        |> ConcurrentTask.map (\_ -> ())
+
+                Nothing ->
+                    ConcurrentTask.succeed ()
     in
     Storage.saveIdentity db plan.identity
         |> ConcurrentTask.andThen
@@ -1959,14 +1984,7 @@ applyHandoffPlan db plan =
                     |> List.map (\g -> Storage.saveGroup db g.summary (Just g.key) Storage.Pushed [] Nothing)
                     |> ConcurrentTask.batch
             )
-        |> ConcurrentTask.andThen
-            (\_ ->
-                ConcurrentTask.batch
-                    [ saveMaybe Storage.saveSelfProfile plan.selfProfile
-                    , saveMaybe Storage.saveLanguage plan.language
-                    , saveMaybe Storage.saveLastSeenChangelog plan.lastSeenChangelog
-                    ]
-            )
+        |> ConcurrentTask.andThen (\_ -> saveAdoption)
         |> ConcurrentTask.map (\_ -> ())
 
 

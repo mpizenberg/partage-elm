@@ -109,18 +109,20 @@ type alias Destination =
     }
 
 
-{-| What the destination must store. `adopted` means the incoming identity
-replaced the local one, and the incoming profile and settings come with it
-(`selfProfile` is `Just` exactly then).
+{-| What the destination must store. Adoption carries everything that belongs
+to replacing the local identity; keeping the local identity has no adoption
+data.
 -}
 type alias Plan =
     { identity : Identity
-    , adopted : Bool
+    , adoption :
+        Maybe
+            { selfProfile : Member.Metadata
+            , language : Maybe String
+            , lastSeenChangelog : Maybe String
+            }
     , groupsToAdd : List GroupHandoff
     , skippedGroupIds : List Group.Id
-    , selfProfile : Maybe Member.Metadata
-    , language : Maybe String
-    , lastSeenChangelog : Maybe String
     }
 
 
@@ -153,22 +155,21 @@ merge payload destination =
                         appendNewDeviceIds own
                             (payload.identity.publicKeyHash :: payload.identity.previousDeviceIds)
                 }
-            , adopted = False
+            , adoption = Nothing
             , groupsToAdd = groupsToAdd
             , skippedGroupIds = skippedGroupIds
-            , selfProfile = Nothing
-            , language = Nothing
-            , lastSeenChangelog = Nothing
             }
 
         _ ->
             { identity = payload.identity
-            , adopted = True
+            , adoption =
+                Just
+                    { selfProfile = payload.selfProfile
+                    , language = payload.language
+                    , lastSeenChangelog = payload.lastSeenChangelog
+                    }
             , groupsToAdd = groupsToAdd
             , skippedGroupIds = skippedGroupIds
-            , selfProfile = Just payload.selfProfile
-            , language = payload.language
-            , lastSeenChangelog = payload.lastSeenChangelog
             }
 
 
