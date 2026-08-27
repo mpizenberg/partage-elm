@@ -141,6 +141,8 @@ type alias Flags =
     , gitSha : String
     , isOnline : Bool
     , installHint : String
+    , isIos : Bool
+    , isStandalone : Bool
     }
 
 
@@ -171,6 +173,8 @@ type alias Model =
     , feedbackPrompt : Maybe { groupId : Group.Id, trigger : FeedbackMoment.Trigger }
     , migrationTarget : Maybe String
     , migrationSource : Maybe String
+    , isIos : Bool
+    , isStandalone : Bool
     }
 
 
@@ -349,6 +353,8 @@ init flags =
       , feedbackPrompt = Nothing
       , migrationTarget = Nothing
       , migrationSource = Nothing
+      , isIos = flags.isIos
+      , isStandalone = flags.isStandalone
       }
     , Cmd.batch
         [ initCmds
@@ -1888,8 +1894,8 @@ runReceiveEffect effect model =
             ( model, Cmd.none )
 
         Page.Receive.Apply payload ->
-            case model.appState of
-                Ready readyData ->
+            case ( canReceiveHandoff model, model.appState ) of
+                ( True, Ready readyData ) ->
                     let
                         plan : Handoff.Plan
                         plan =
@@ -1906,6 +1912,11 @@ runReceiveEffect effect model =
                     ( { model | receiveModel = Page.Receive.applyFailed (T.errorUnexpected model.i18n) model.receiveModel }
                     , Cmd.none
                     )
+
+
+canReceiveHandoff : Model -> Bool
+canReceiveHandoff model =
+    not model.isIos || model.isStandalone
 
 
 {-| Persist a merge plan. The identity lands first: a crash mid-way leaves a
@@ -1947,8 +1958,8 @@ called from both: whichever completes the pair arms the listener.
 -}
 armHandoffReceiver : Model -> Cmd Msg
 armHandoffReceiver model =
-    case ( model.route, model.migrationSource ) of
-        ( Route.Receive, Just source ) ->
+    case ( canReceiveHandoff model, model.route, model.migrationSource ) of
+        ( True, Route.Receive, Just source ) ->
             handoffOut
                 (Json.Encode.object
                     [ ( "action", Json.Encode.string "listen" )
@@ -2711,7 +2722,7 @@ viewReady model readyData =
                             Page.Move.view i18n
                                 { targetName = displayDomain target
                                 , groups = Dict.values readyData.groups
-                                , installHint = model.pwaState.installHint
+                                , codeOnly = model.isIos
                                 }
                                 MoveMsg
                                 model.moveModel
@@ -2725,7 +2736,7 @@ viewReady model readyData =
                 UI.Shell.pageShell { title = T.receiveTitle i18n, onBack = NavigateTo Home }
                     (Page.Receive.view i18n
                         { sourceName = Maybe.map displayDomain model.migrationSource
-                        , installHint = model.pwaState.installHint
+                        , requiresInstall = not (canReceiveHandoff model)
                         , onGoHome = NavigateTo Home
                         }
                         ReceiveMsg

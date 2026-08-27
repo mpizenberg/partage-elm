@@ -17,7 +17,6 @@ iOS app shares storage with no browser tab, so there the code is the only way in
 -}
 
 import Infra.Handoff as Handoff
-import Pwa
 import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
@@ -119,7 +118,7 @@ view :
     I18n
     ->
         { sourceName : Maybe String
-        , installHint : Pwa.InstallHint
+        , requiresInstall : Bool
         , onGoHome : msg
         }
     -> (Msg -> msg)
@@ -136,63 +135,64 @@ view i18n ctx toMsg (Model data) =
                     viewApplied i18n ctx.onGoHome result
 
                 Nothing ->
-                    viewReceiving i18n sourceName ctx.installHint data
+                    viewReceiving i18n sourceName ctx.requiresInstall data
                         |> Ui.map toMsg
 
 
-viewReceiving : I18n -> String -> Pwa.InstallHint -> Data -> Ui.Element Msg
-viewReceiving i18n sourceName installHint data =
+viewReceiving : I18n -> String -> Bool -> Data -> Ui.Element Msg
+viewReceiving i18n sourceName requiresInstall data =
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
-        [ hint (T.receiveIntro sourceName i18n)
-        , case installHint of
-            -- An iOS Safari tab is the wrong destination: whatever it
-            -- receives never reaches the installed app's isolated storage.
-            Pwa.ManualIosSafari ->
-                UI.Components.card [ Ui.padding Theme.spacing.lg ]
-                    [ Ui.el [ Ui.Font.size Theme.font.sm ] (Ui.text (T.receiveIosInstallFirst i18n)) ]
-
-            _ ->
-                Ui.none
-        , -- One line, not a box: the code is a single unbroken 2 KB word, which
-          -- a text area would size itself to and spill across the layout.
-          Ui.Input.text
-            [ Ui.width Ui.fill
-            , Ui.padding Theme.spacing.sm
-            , Ui.rounded Theme.radius.sm
-            , Ui.border Theme.border
-            , Ui.borderColor Theme.base.accent
-
-            -- Below 16px, iOS Safari zooms into a focused field — and iOS is
-            -- what this page exists for.
-            , Ui.Font.size Theme.font.md
-            , Ui.Font.family [ Ui.Font.monospace ]
-            ]
-            { onChange = InputCode
-            , text = data.pasted
-            , placeholder = Just (T.receiveCodePlaceholder i18n)
-            , label = Ui.Input.labelHidden (T.receiveCodePlaceholder i18n)
-            }
-        , if data.invalid then
-            errorText (T.receiveCodeInvalid i18n)
-
-          else
-            Ui.none
-        , case data.error of
-            Just reason ->
-                errorText reason
-
-            Nothing ->
-                Ui.none
-        , UI.Components.btnPrimary [ Ui.width Ui.shrink ]
-            { label =
-                if data.applying then
-                    T.receiveApplying i18n
+        (hint (T.receiveIntro sourceName i18n)
+            :: (if requiresInstall then
+                    -- An iOS browser tab is the wrong destination: whatever it
+                    -- stores never reaches the installed app's isolated storage.
+                    [ UI.Components.card [ Ui.padding Theme.spacing.lg ]
+                        [ Ui.el [ Ui.Font.size Theme.font.sm ] (Ui.text (T.receiveIosInstallFirst i18n)) ]
+                    ]
 
                 else
-                    T.receiveSubmit i18n
-            , onPress = SubmitCode
-            }
-        ]
+                    [ -- One line, not a box: the code is a single unbroken 2 KB
+                      -- word, which a text area would size itself to and spill
+                      -- across the layout.
+                      Ui.Input.text
+                        [ Ui.width Ui.fill
+                        , Ui.padding Theme.spacing.sm
+                        , Ui.rounded Theme.radius.sm
+                        , Ui.border Theme.border
+                        , Ui.borderColor Theme.base.accent
+
+                        -- Below 16px, iOS Safari zooms into a focused field.
+                        , Ui.Font.size Theme.font.md
+                        , Ui.Font.family [ Ui.Font.monospace ]
+                        ]
+                        { onChange = InputCode
+                        , text = data.pasted
+                        , placeholder = Just (T.receiveCodePlaceholder i18n)
+                        , label = Ui.Input.labelHidden (T.receiveCodePlaceholder i18n)
+                        }
+                    , if data.invalid then
+                        errorText (T.receiveCodeInvalid i18n)
+
+                      else
+                        Ui.none
+                    , case data.error of
+                        Just reason ->
+                            errorText reason
+
+                        Nothing ->
+                            Ui.none
+                    , UI.Components.btnPrimary [ Ui.width Ui.shrink ]
+                        { label =
+                            if data.applying then
+                                T.receiveApplying i18n
+
+                            else
+                                T.receiveSubmit i18n
+                        , onPress = SubmitCode
+                        }
+                    ]
+               )
+        )
 
 
 viewApplied : I18n -> msg -> Applied -> Ui.Element msg

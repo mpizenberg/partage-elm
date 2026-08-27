@@ -4,7 +4,15 @@ import { createTasks as createIndexedDbTasks } from "../vendor/elm-indexeddb/js/
 import {
   init as initPwa,
   evaluateInstallHint,
+  isStandalone,
 } from "../vendor/elm-pwa/js/src/index.js";
+
+function isIosFamily() {
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
 
 // Keep these options identical to the ones passed to `initPwa` below so the
 // initial flag and the runtime `installHintChanged` events agree.
@@ -115,6 +123,8 @@ var app = Elm.Main.init({
     origin: location.origin,
     isOnline: navigator.onLine,
     installHint: evaluateInstallHint(installHintOptions),
+    isIos: isIosFamily(),
+    isStandalone: isStandalone(),
   },
 });
 

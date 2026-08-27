@@ -21,7 +21,6 @@ import Domain.Group as Group
 import FeatherIcons
 import Html
 import Html.Attributes
-import Pwa
 import Translations as T exposing (I18n)
 import UI.Components
 import UI.Theme as Theme
@@ -230,12 +229,12 @@ view :
     ->
         { targetName : String
         , groups : List Group.Summary
-        , installHint : Pwa.InstallHint
+        , codeOnly : Bool
         }
     -> (Msg -> msg)
     -> Model
     -> Ui.Element msg
-view i18n { targetName, groups, installHint } toMsg (Model data) =
+view i18n { targetName, groups, codeOnly } toMsg (Model data) =
     let
         selectedGroups : List Group.Summary
         selectedGroups =
@@ -250,7 +249,7 @@ view i18n { targetName, groups, installHint } toMsg (Model data) =
                 viewProgress i18n targetName data selectedGroups
 
             Done ->
-                viewDone i18n targetName installHint data selectedGroups
+                viewDone i18n targetName codeOnly data selectedGroups
         )
         |> Ui.map toMsg
 
@@ -316,8 +315,8 @@ viewProgress i18n targetName data selectedGroups =
     ]
 
 
-viewDone : I18n -> String -> Pwa.InstallHint -> Data -> List Group.Summary -> List (Ui.Element Msg)
-viewDone i18n targetName installHint data selectedGroups =
+viewDone : I18n -> String -> Bool -> Data -> List Group.Summary -> List (Ui.Element Msg)
+viewDone i18n targetName codeOnly data selectedGroups =
     [ statusList i18n data selectedGroups
     , UI.Components.card [ Ui.padding Theme.spacing.lg ]
         [ Ui.el [ Ui.Font.size Theme.font.md ] (Ui.text (T.moveAllSeeded targetName i18n))
@@ -327,29 +326,16 @@ viewDone i18n targetName installHint data selectedGroups =
             hint (T.moveBuildingHandoff i18n)
 
         Just payload ->
-            handoffSection i18n targetName installHint data.delivered payload
+            handoffSection i18n targetName codeOnly data.delivered payload
     ]
 
 
-{-| The one-tap button needs the destination's tab and installed app to share
-storage. iOS Home Screen apps don't, and there the button would look like it
-worked while stranding the profile in Safari — so iOS gets the code alone.
+{-| The one-tap button needs the destination's browser tab and installed app to
+share storage. iOS never guarantees that, regardless of which install hint its
+current browser reports, so every iOS source uses the code.
 -}
-handoffSection : I18n -> String -> Pwa.InstallHint -> Bool -> String -> Ui.Element Msg
-handoffSection i18n targetName installHint delivered payload =
-    let
-        codeOnly : Bool
-        codeOnly =
-            case installHint of
-                Pwa.ManualIosSafari ->
-                    True
-
-                Pwa.IosInAppBrowser ->
-                    True
-
-                _ ->
-                    False
-    in
+handoffSection : I18n -> String -> Bool -> Bool -> String -> Ui.Element Msg
+handoffSection i18n targetName codeOnly delivered payload =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         [ hint (T.moveHandoffIntro targetName i18n)
         , if codeOnly then
