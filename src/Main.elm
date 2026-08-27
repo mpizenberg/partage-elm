@@ -781,6 +781,13 @@ update msg model =
                         NotificationLanding topic ->
                             resolveNotificationTopic topic modelWithReadyData
 
+                        Route.Move ->
+                            ( { modelWithReadyData
+                                | moveModel = Page.Move.refresh (currentGroups modelWithReadyData) modelWithReadyData.moveModel
+                              }
+                            , Cmd.none
+                            )
+
                         _ ->
                             ( modelWithReadyData, Cmd.none )
 
