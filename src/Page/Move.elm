@@ -36,7 +36,6 @@ type Model
 type alias Data =
     { selected : List Group.Id
     , statuses : Dict Group.Id Status
-    , phase : Phase
     , payload : Maybe String
     , delivered : Bool
     }
@@ -82,7 +81,6 @@ init groups =
                 |> List.filter (\g -> not g.isArchived)
                 |> List.map .id
         , statuses = Dict.empty
-        , phase = Choosing
         , payload = Nothing
         , delivered = False
         }
@@ -94,7 +92,7 @@ back.
 -}
 refresh : List Group.Summary -> Model -> Model
 refresh groups ((Model data) as model) =
-    case data.phase of
+    case phase data of
         Choosing ->
             init groups
 
@@ -106,7 +104,7 @@ update : Msg -> Model -> ( Model, Effect )
 update msg (Model data) =
     case msg of
         ToggleGroup groupId ->
-            case data.phase of
+            case phase data of
                 Choosing ->
                     ( Model
                         { data
@@ -124,12 +122,11 @@ update msg (Model data) =
                     ( Model data, NoEffect )
 
         Start ->
-            case ( data.phase, data.selected ) of
+            case ( phase data, data.selected ) of
                 ( Choosing, first :: rest ) ->
                     ( Model
                         { data
-                            | phase = Working
-                            , statuses =
+                            | statuses =
                                 Dict.fromList
                                     (( first, InFlight ) :: List.map (\id -> ( id, Queued )) rest)
                         }
@@ -195,7 +192,7 @@ launchNext data =
     in
     case nextQueued of
         Just groupId ->
-            ( Model { data | phase = Working, statuses = Dict.insert groupId InFlight data.statuses }
+            ( Model { data | statuses = Dict.insert groupId InFlight data.statuses }
             , Seed groupId
             )
 
@@ -204,7 +201,7 @@ launchNext data =
                 ( Model data, NoEffect )
 
             else if List.all (\id -> statusOf id == Just Seeded) data.selected then
-                ( Model { data | phase = Done }, AllSeeded data.selected )
+                ( Model data, AllSeeded data.selected )
 
             else
                 ( Model data, NoEffect )
@@ -218,6 +215,18 @@ payloadReady payload (Model data) =
 handoffDelivered : Model -> Model
 handoffDelivered (Model data) =
     Model { data | delivered = True }
+
+
+phase : Data -> Phase
+phase data =
+    if Dict.isEmpty data.statuses then
+        Choosing
+
+    else if List.all (\id -> Dict.get id data.statuses == Just Seeded) data.selected then
+        Done
+
+    else
+        Working
 
 
 
@@ -242,7 +251,7 @@ view i18n { targetName, targetUrl, groups, codeOnly } toMsg (Model data) =
             List.filterMap (\id -> List.filter (\g -> g.id == id) groups |> List.head) data.selected
     in
     Ui.column [ Ui.spacing Theme.spacing.lg, Ui.width Ui.fill ]
-        (case data.phase of
+        (case phase data of
             Choosing ->
                 viewChoosing i18n groups data
 
