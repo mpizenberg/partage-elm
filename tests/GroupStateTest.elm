@@ -2,19 +2,22 @@ module GroupStateTest exposing (suite)
 
 import Dict
 import Domain.Currency exposing (Currency(..))
+import Domain.Entry exposing (Beneficiary(..))
 import Domain.Event exposing (Envelope, Payload(..))
 import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Expect
 import Fuzz
 import Test exposing (Test, describe, fuzz, test)
-import TestHelpers exposing (makeEnvelope)
+import TestHelpers exposing (defaultExpenseData, makeEnvelope, makeExpenseEntry)
+import Time
 
 
 suite : Test
 suite =
     describe "GroupState"
-        [ memberCreationTests
+        [ summaryTests
+        , memberCreationTests
         , memberRenameTests
         , memberRetireTests
         , memberUnretireTests
@@ -23,6 +26,48 @@ suite =
         , eventOrderingTests
         , compactionEventTests
         ]
+
+
+summaryTests : Test
+summaryTests =
+    test "a new-device summary derives defaults and balance from replayed history" <|
+        \_ ->
+            let
+                events : List Envelope
+                events =
+                    [ makeEnvelope "e0" 0 "admin" (GroupCreated { name = "Trip", defaultCurrency = EUR })
+                    , makeEnvelope "e1" 1 "admin" (MemberCreated { memberId = "admin", name = "Admin", memberType = Member.Real, addedBy = "admin" })
+                    , makeEnvelope "e2" 2 "admin" (MemberCreated { memberId = "bob", name = "Bob", memberType = Member.Virtual, addedBy = "admin" })
+                    , makeEnvelope "e3"
+                        3
+                        "admin"
+                        (EntryAdded
+                            (makeExpenseEntry "expense"
+                                3
+                                { defaultExpenseData
+                                    | payers = [ { memberId = "admin", amount = 1000 } ]
+                                    , beneficiaries =
+                                        [ ShareBeneficiary { memberId = "admin", shares = 1 }
+                                        , ShareBeneficiary { memberId = "bob", shares = 1 }
+                                        ]
+                                }
+                            )
+                        )
+                    ]
+
+                summary =
+                    GroupState.applyEvents events GroupState.empty
+                        |> GroupState.summarize "admin" "group-id" (Time.millisToPosix 10)
+            in
+            summary
+                |> Expect.all
+                    [ .name >> Expect.equal "Trip"
+                    , .isSubscribed >> Expect.equal True
+                    , .isArchived >> Expect.equal False
+                    , .memberCount >> Expect.equal 2
+                    , .myBalanceCents >> Expect.equal 500
+                    , .lastSyncedAt >> Expect.equal (Time.millisToPosix 10)
+                    ]
 
 
 compactionEventTests : Test

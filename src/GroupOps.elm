@@ -391,6 +391,24 @@ acceptInvitation ctx onComplete input =
 -- New Group
 
 
+saveNewGroup : Context msg -> Group.Id -> List Event.Envelope -> ConcurrentTask Idb.Error Group.Summary
+saveNewGroup ctx groupId events =
+    let
+        summary : Group.Summary
+        summary =
+            GroupState.summarize ctx.identity.publicKeyHash
+                groupId
+                ctx.currentTime
+                (GroupState.applyEvents events GroupState.empty)
+    in
+    Crypto.generateGroupKey
+        |> ConcurrentTask.andThen
+            (\key ->
+                Storage.saveGroup ctx.db summary (Just (Symmetric.exportKey key)) Storage.Unpushed events Nothing
+                    |> ConcurrentTask.map (\_ -> summary)
+            )
+
+
 {-| Submit a new group creation with its initial members and events.
 -}
 newGroup : Context msg -> (ConcurrentTask.Response Idb.Error Group.Summary -> msg) -> Form.NewGroup.Output -> ( State msg, Cmd msg )
@@ -414,19 +432,6 @@ newGroup ctx onComplete output =
                 , virtualMembers = List.map2 Tuple.pair virtualMemberIds output.virtualMembers
                 }
 
-        summary : Group.Summary
-        summary =
-            { id = groupId
-            , name = output.name
-            , defaultCurrency = output.currency
-            , isSubscribed = True
-            , isArchived = False
-            , createdAt = ctx.currentTime
-            , memberCount = 1 + List.length output.virtualMembers
-            , myBalanceCents = 0
-            , lastSyncedAt = ctx.currentTime
-            }
-
         signingKeyPair : Signature.SigningKeyPair
         signingKeyPair =
             Signature.importSigningKeyPair ctx.identity.signingKeyPair
@@ -445,18 +450,9 @@ newGroup ctx onComplete output =
                         List.map (signEnvelope signingKeyPair) unsignedEnvelopes
                             |> ConcurrentTask.batch
                     )
-
-        allTasks : List Event.Envelope -> ConcurrentTask Idb.Error Group.Summary
-        allTasks allEvents =
-            Crypto.generateGroupKey
-                |> ConcurrentTask.andThen
-                    (\key ->
-                        Storage.saveGroup ctx.db summary (Just (Symmetric.exportKey key)) Storage.Unpushed allEvents Nothing
-                            |> ConcurrentTask.map (\_ -> summary)
-                    )
     in
     ( ctx.runner, Cmd.none )
-        |> Runner.andRun onComplete (generateEnvelopes |> ConcurrentTask.andThen allTasks)
+        |> Runner.andRun onComplete (generateEnvelopes |> ConcurrentTask.andThen (saveNewGroup ctx groupId))
         |> Tuple.mapFirst
             (\r ->
                 { runner = r
@@ -629,19 +625,6 @@ importSplitwiseGroup ctx onComplete cfg =
                     entryIds
                     kinds
 
-        summary : Group.Summary
-        summary =
-            { id = groupId
-            , name = cfg.groupName
-            , defaultCurrency = cfg.defaultCurrency
-            , isSubscribed = True
-            , isArchived = False
-            , createdAt = ctx.currentTime
-            , memberCount = 1 + List.length virtualMembers
-            , myBalanceCents = 0
-            , lastSyncedAt = ctx.currentTime
-            }
-
         signingKeyPair : Signature.SigningKeyPair
         signingKeyPair =
             Signature.importSigningKeyPair ctx.identity.signingKeyPair
@@ -660,18 +643,9 @@ importSplitwiseGroup ctx onComplete cfg =
                         List.map (signEnvelope signingKeyPair) unsignedEnvelopes
                             |> ConcurrentTask.batch
                     )
-
-        allTasks : List Event.Envelope -> ConcurrentTask Idb.Error Group.Summary
-        allTasks allEvents =
-            Crypto.generateGroupKey
-                |> ConcurrentTask.andThen
-                    (\key ->
-                        Storage.saveGroup ctx.db summary (Just (Symmetric.exportKey key)) Storage.Unpushed allEvents Nothing
-                            |> ConcurrentTask.map (\_ -> summary)
-                    )
     in
     ( ctx.runner, Cmd.none )
-        |> Runner.andRun onComplete (generateEnvelopes |> ConcurrentTask.andThen allTasks)
+        |> Runner.andRun onComplete (generateEnvelopes |> ConcurrentTask.andThen (saveNewGroup ctx groupId))
         |> Tuple.mapFirst
             (\r ->
                 { runner = r
