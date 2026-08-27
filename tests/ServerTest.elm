@@ -11,41 +11,30 @@ import Test exposing (Test, describe, test)
 suite : Test
 suite =
     describe "Infra.Server"
-        [ test "recognizes the relay's structured read-only response" <|
+        [ test "recognizes the relay's read-only refusal" <|
             \_ ->
                 frozenError
                     |> Server.isFrozen
                     |> Expect.equal True
-        , test "does not classify an unrelated 403 as read-only" <|
-            \_ ->
-                forbiddenError
-                    |> Server.isFrozen
-                    |> Expect.equal False
-        , test "renders an unrelated 403 as a generic server error" <|
-            \_ ->
-                forbiddenError
-                    |> Server.errorToString
-                    |> Expect.equal "Server error (403)"
-        , test "renders the structured read-only response distinctly" <|
+        , test "renders the read-only refusal distinctly" <|
             \_ ->
                 frozenError
                     |> Server.errorToString
                     |> Expect.equal "Relay is read-only (403)"
+        , test "does not classify another rejection as read-only" <|
+            \_ ->
+                badStatus 401 Encode.null
+                    |> Server.isFrozen
+                    |> Expect.equal False
         ]
 
 
+{-| A refusal as it reaches Elm: `BadStatus` carries whatever the HTTP runtime
+put in `body`, and a request that expected no body gets `null`.
+-}
 frozenError : Server.Error
 frozenError =
-    badStatus 403 <|
-        Encode.object
-            [ ( "code", Encode.string "relay_read_only" ) ]
-
-
-forbiddenError : Server.Error
-forbiddenError =
-    badStatus 403 <|
-        Encode.object
-            [ ( "code", Encode.string "forbidden" ) ]
+    badStatus 403 Encode.null
 
 
 badStatus : Int -> Encode.Value -> Server.Error

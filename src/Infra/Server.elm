@@ -92,20 +92,19 @@ errorToString err =
                 Http.NetworkError ->
                     "Network error"
 
-                Http.BadStatus meta body ->
-                    if isReadOnlyResponse meta body then
-                        "Relay is read-only (403)"
+                Http.BadStatus meta _ ->
+                    case meta.statusCode of
+                        507 ->
+                            "Group storage limit reached (507)"
 
-                    else
-                        case meta.statusCode of
-                            507 ->
-                                "Group storage limit reached (507)"
+                        429 ->
+                            "Data rate limit exceeded (429)"
 
-                            429 ->
-                                "Data rate limit exceeded (429)"
+                        403 ->
+                            "Relay is read-only (403)"
 
-                            code ->
-                                "Server error (" ++ String.fromInt code ++ ")"
+                        code ->
+                            "Server error (" ++ String.fromInt code ++ ")"
 
                 Http.BadBody _ _ _ ->
                     "Invalid server response"
@@ -142,20 +141,19 @@ errorToText i18n err =
                 Http.NetworkError ->
                     T.errorNetwork i18n
 
-                Http.BadStatus meta body ->
-                    if isReadOnlyResponse meta body then
-                        T.errorServerFrozen i18n
+                Http.BadStatus meta _ ->
+                    case meta.statusCode of
+                        507 ->
+                            T.errorServerStorageFull i18n
 
-                    else
-                        case meta.statusCode of
-                            507 ->
-                                T.errorServerStorageFull i18n
+                        429 ->
+                            T.errorServerRateLimited i18n
 
-                            429 ->
-                                T.errorServerRateLimited i18n
+                        403 ->
+                            T.errorServerFrozen i18n
 
-                            code ->
-                                T.errorServerStatus (String.fromInt code) i18n
+                        code ->
+                            T.errorServerStatus (String.fromInt code) i18n
 
                 Http.BadBody _ _ _ ->
                     T.errorServerResponse i18n
@@ -224,24 +222,15 @@ isConflict =
 
 {-| True when the deployment has stopped accepting writes for good. Permanent,
 and announced by its own banner, so a refusal is a state rather than a failure.
+
+Read-only is the relay's only 403, and the status is the only part of the
+refusal the app can read: `BadStatus` carries the body exactly as the HTTP
+runtime produced it, which is `null` whenever the request expected no body.
+
 -}
 isFrozen : Error -> Bool
-isFrozen err =
-    case err of
-        HttpError (Http.BadStatus meta body) ->
-            isReadOnlyResponse meta body
-
-        _ ->
-            False
-
-
-isReadOnlyResponse : Http.Metadata -> Decode.Value -> Bool
-isReadOnlyResponse meta body =
-    meta.statusCode
-        == 403
-        && (Decode.decodeValue (Decode.field "code" Decode.string) body
-                == Ok "relay_read_only"
-           )
+isFrozen =
+    isStatus 403
 
 
 isStatus : Int -> Error -> Bool
