@@ -2736,7 +2736,7 @@ viewReady model readyData =
                     , onEnableNotifications = PwaStateMsg PwaState.enableNotificationsMsg
                     , currentTime = model.currentTime
                     , activityMarkers = readyData.activityMarkers
-                    , migration =
+                    , movingOut =
                         model.migrationTarget
                             |> Maybe.map
                                 (\target ->
@@ -2744,6 +2744,22 @@ viewReady model readyData =
                                     , onOpen = NavigateTo Route.Move
                                     }
                                 )
+
+                    -- A device that has moved in has groups; one that has not
+                    -- needs the invitation to keep standing after the welcome
+                    -- screen, which it leaves for good once it has an identity.
+                    , movingIn =
+                        if Dict.isEmpty readyData.groups then
+                            model.migrationSource
+                                |> Maybe.map
+                                    (\source ->
+                                        { sourceName = displayDomain source
+                                        , onOpen = NavigateTo Route.Receive
+                                        }
+                                    )
+
+                        else
+                            Nothing
                     }
                     HomeMsg
                     model.homeModel

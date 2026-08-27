@@ -32,7 +32,8 @@ type alias Context msg =
     , onEnableNotifications : msg
     , currentTime : Time.Posix
     , activityMarkers : Set Group.Id
-    , migration : Maybe { targetName : String, onOpen : msg }
+    , movingOut : Maybe { targetName : String, onOpen : msg }
+    , movingIn : Maybe { sourceName : String, onOpen : msg }
     }
 
 
@@ -217,11 +218,23 @@ view i18n ctx toMsg (Model data) groups =
         , Ui.height Ui.fill
         ]
         [ homeHeader i18n
+        , case ctx.movingOut of
+            Just { targetName, onOpen } ->
+                migrationBanner
+                    { message = T.homeMigrationBanner targetName i18n
+                    , cta = T.homeMigrationBannerCta i18n
+                    , onPress = onOpen
+                    }
 
-        -- Domain migration
-        , case ctx.migration of
-            Just migration ->
-                migrationBanner i18n migration
+            Nothing ->
+                Ui.none
+        , case ctx.movingIn of
+            Just { sourceName, onOpen } ->
+                migrationBanner
+                    { message = T.homeMovingInBanner sourceName i18n
+                    , cta = T.homeMovingInBannerCta i18n
+                    , onPress = onOpen
+                    }
 
             Nothing ->
                 Ui.none
@@ -554,11 +567,11 @@ formatYear posix =
 -- ERROR BANNER
 
 
-{-| The deployment is moving: point every visit at the migration flow until
-the user has moved (the flow itself explains what moving means).
+{-| This deployment is one end of a migration: point every visit at the flow
+until the device has moved (the flow itself explains what moving means).
 -}
-migrationBanner : I18n -> { targetName : String, onOpen : msg } -> Ui.Element msg
-migrationBanner i18n migration =
+migrationBanner : { message : String, cta : String, onPress : msg } -> Ui.Element msg
+migrationBanner banner =
     Ui.column
         [ Ui.spacing Theme.spacing.md
         , Ui.background Theme.primary.tint
@@ -569,10 +582,10 @@ migrationBanner i18n migration =
         , Ui.width Ui.fill
         ]
         [ Ui.el [ Ui.Font.size Theme.font.md, Ui.Font.color Theme.base.text ]
-            (Ui.text (T.homeMigrationBanner migration.targetName i18n))
+            (Ui.text banner.message)
         , UI.Components.btnPrimary [ Ui.width Ui.shrink ]
-            { label = T.homeMigrationBannerCta i18n
-            , onPress = migration.onOpen
+            { label = banner.cta
+            , onPress = banner.onPress
             }
         ]
 
