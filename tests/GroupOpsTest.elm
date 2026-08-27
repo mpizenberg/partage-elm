@@ -21,6 +21,7 @@ suite : Test
 suite =
     describe "GroupOps"
         [ describe "clampAfterLatest" clampTests
+        , describe "migration hydration" hydrationTests
         , describe "joinPayload" joinPayloadTests
         , describe "applySyncResult with late arrivals" lateArrivalTests
         , describe "applySyncResult after a cursor reset" cursorResetTests
@@ -179,6 +180,35 @@ tamperSignalTests =
         \_ ->
             (syncWithForged []).updatedGroup.tamperSignals
                 |> TamperSignals.isClean
+                |> Expect.equal True
+    ]
+
+
+hydrationTests : List Test
+hydrationTests =
+    let
+        loaded : Group.Summary -> List Event.Envelope -> Maybe Group.SyncCursor -> GroupOps.LoadedGroup
+        loaded summary events cursor =
+            GroupOps.initLoadedGroup events summary (Symmetric.importKey "test-key") cursor Set.empty TamperSignals.empty Set.empty
+
+        archived : Group.Summary
+        archived =
+            { testSummary | isArchived = True }
+    in
+    [ test "an archived handoff with no local history hydrates once" <|
+        \_ ->
+            loaded archived [] Nothing
+                |> GroupOps.needsRelaySync
+                |> Expect.equal True
+    , test "a hydrated archive stays off the network" <|
+        \_ ->
+            loaded archived bootstrapMembers (Just { seq = 2, epoch = "target" })
+                |> GroupOps.needsRelaySync
+                |> Expect.equal False
+    , test "an active group still syncs normally" <|
+        \_ ->
+            loaded testSummary bootstrapMembers Nothing
+                |> GroupOps.needsRelaySync
                 |> Expect.equal True
     ]
 

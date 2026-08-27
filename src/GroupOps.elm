@@ -21,6 +21,7 @@ module GroupOps exposing
     , initLoadedGroup
     , joinPayload
     , migrateGroup
+    , needsRelaySync
     , newEntry
     , newGroup
     , postSyncTasks
@@ -114,6 +115,17 @@ appendEvent envelope loaded =
 addUnpushedId : String -> LoadedGroup -> LoadedGroup
 addUnpushedId eventId loaded =
     { loaded | unpushedIds = Set.insert eventId loaded.unpushedIds }
+
+
+{-| Active groups always sync. An archived group normally does not, except when
+its transferred summary and key have arrived without any local history yet.
+The first successful pull persists both events and a cursor, restoring the
+ordinary no-network archive behavior.
+-}
+needsRelaySync : LoadedGroup -> Bool
+needsRelaySync loaded =
+    not loaded.summary.isArchived
+        || (List.isEmpty loaded.events && loaded.syncCursor == Nothing)
 
 
 {-| Seed another relay with a group's local log: creating the row proves it

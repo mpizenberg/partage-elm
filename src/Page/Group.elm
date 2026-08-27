@@ -1007,8 +1007,8 @@ update config msg model =
                                             result
                                         )
                                     |> Runner.andRun (OnCompactionStep groupId)
-                                        (case currentUserRootId model result.updatedGroup of
-                                            Just myRoot ->
+                                        (case ( loaded.summary.isArchived, currentUserRootId model result.updatedGroup ) of
+                                            ( False, Just myRoot ) ->
                                                 GroupOps.compactionStep
                                                     { serverCtx = { serverUrl = config.serverUrl, groupId = groupId, groupKey = loaded.groupKey }
                                                     , actorId = model.identityHash
@@ -1018,7 +1018,7 @@ update config msg model =
                                                     }
                                                     result.updatedGroup
 
-                                            Nothing ->
+                                            _ ->
                                                 ConcurrentTask.succeed { step = GroupOps.NoCompactionStep, manifestMismatch = False }
                                         )
 
@@ -2080,7 +2080,7 @@ startSync : UpdateConfig -> Group.Id -> Model -> ( Model, Cmd Msg )
 startSync config groupId model =
     case model.workspace of
         WorkspaceLoaded loaded ->
-            if loaded.summary.id == groupId && not loaded.summary.isArchived then
+            if loaded.summary.id == groupId && GroupOps.needsRelaySync loaded then
                 let
                     unpushedEvents : List Event.Envelope
                     unpushedEvents =
