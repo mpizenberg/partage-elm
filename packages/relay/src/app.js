@@ -248,14 +248,22 @@ function computeCost({ levels, history, nowMs }) {
  * with it.
  */
 function usableAbsoluteUrl(name, configured) {
+  return configuredAbsoluteUrl(name, configured) === null ? '' : configured.replace(/\/+$/, '');
+}
+
+function usableOrigin(name, configured) {
+  return configuredAbsoluteUrl(name, configured)?.origin ?? '';
+}
+
+function configuredAbsoluteUrl(name, configured) {
   if (configured === '') {
-    return '';
+    return null;
   }
-  if (absoluteHttpUrl(configured) === null) {
+  const parsed = absoluteHttpUrl(configured);
+  if (parsed === null) {
     console.error(`${name} must be an absolute http(s) URL, got "${configured}" - ignoring it`);
-    return '';
   }
-  return configured.replace(/\/+$/, '');
+  return parsed;
 }
 
 function absoluteHttpUrl(configured) {
@@ -332,8 +340,8 @@ export function createApp({
     }),
   );
   const pushServer = usableAbsoluteUrl('PUSH_SERVER_URL', pushServerUrl);
-  const migrateTo = usableAbsoluteUrl('MIGRATION_TARGET', migrationTarget);
-  const migrateFrom = usableAbsoluteUrl('MIGRATION_SOURCE', migrationSource);
+  const migrateTo = usableOrigin('MIGRATION_TARGET', migrationTarget);
+  const migrateFrom = usableOrigin('MIGRATION_SOURCE', migrationSource);
   const csp = contentSecurityPolicy({
     pushServerUrl: pushServer,
     feedbackProjectId,

@@ -26,9 +26,17 @@ describe('migration configuration', () => {
     assert.equal(config.migrationTarget, '');
   });
 
-  it('lets pages address the migration target origin', async () => {
-    const res = await makeApp({ migrationTarget: 'https://new.example.com/some/path' }).app.request('/health');
-    assert.match(res.headers.get('content-security-policy'), /connect-src [^;]*https:\/\/new\.example\.com/);
+  it('normalizes migration endpoints to origins', async () => {
+    const { app } = makeApp({
+      migrationTarget: 'https://new.example.com/some/path?step=1#handoff',
+      migrationSource: 'http://old.example.com:8080/legacy/?step=2#move',
+    });
+    const config = await (await app.request('/api/config')).json();
+    assert.equal(config.migrationTarget, 'https://new.example.com');
+    assert.equal(config.migrationSource, 'http://old.example.com:8080');
+
+    const health = await app.request('/health');
+    assert.match(health.headers.get('content-security-policy'), /connect-src [^;]*https:\/\/new\.example\.com/);
   });
 });
 
