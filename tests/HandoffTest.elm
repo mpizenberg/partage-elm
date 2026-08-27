@@ -71,6 +71,18 @@ mergeTests =
                             |> Expect.equal [ "dest-old", "src-device", "src-old" ]
                     , \plan -> plan.adoption |> Expect.equal Nothing
                     ]
+    , test "incoming device ids stay ordered and unique" <|
+        \_ ->
+            Handoff.merge
+                { payload
+                    | identity = makeIdentity "src-device" [ "src-old", "src-device", "src-old" ]
+                }
+                { identity = Just (makeIdentity "dest-device" [ "dest-old" ])
+                , existingGroupIds = Set.singleton "g-other"
+                }
+                |> .identity
+                |> .previousDeviceIds
+                |> Expect.equal [ "dest-old", "src-device", "src-old" ]
     , test "groups already present are skipped, the rest are added" <|
         \_ ->
             Handoff.merge payload

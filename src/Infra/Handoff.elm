@@ -19,6 +19,7 @@ import Domain.Member as Member
 import Infra.Identity as Identity exposing (Identity)
 import Json.Decode as Decode
 import Json.Encode as Encode
+import List.Extra
 import Set exposing (Set)
 
 
@@ -184,23 +185,7 @@ appendNewDeviceIds own incoming =
             Set.fromList (own.publicKeyHash :: own.previousDeviceIds)
     in
     own.previousDeviceIds
-        ++ List.filter (\id -> not (Set.member id known)) (dedupe incoming)
-
-
-dedupe : List String -> List String
-dedupe ids =
-    List.foldl
-        (\id ( seen, acc ) ->
-            if Set.member id seen then
-                ( seen, acc )
-
-            else
-                ( Set.insert id seen, id :: acc )
-        )
-        ( Set.empty, [] )
-        ids
-        |> Tuple.second
-        |> List.reverse
+        ++ List.filter (\id -> not (Set.member id known)) (List.Extra.unique incoming)
 
 
 maybeEncode : (a -> Encode.Value) -> Maybe a -> Encode.Value
