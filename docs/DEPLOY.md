@@ -56,13 +56,26 @@ Configuration (all optional except `POW_SECRET`):
 | `ADMIN_STORAGE_BUDGET_BYTES` | — (unset) | Optional. When set, the dashboard's storage-over-budget flag fires once total stored bytes exceed it. |
 | `PUSH_SERVER_URL` | — (unset) | Web-push service the frontend addresses, served to it over `GET /api/config`. Must be **absolute** (`https://push.example.com`) — a scheme-less value is refused with a log line and the deployment starts without push. Unset ⇒ the app ships without push. Clients pick up a change on their next start. |
 | `FEEDBACK_PROJECT_ID` | — (unset) | [Feedback.one](https://feedback.one) project the in-app feedback form posts to, served to the frontend over `GET /api/config`. Unset ⇒ the app ships without the feedback button. It is configuration rather than a secret: any page carrying the widget discloses it. Clients pick up a change on their next start. |
-| `MIGRATION_TARGET` | — (unset) | Deployment this one migrates *to* (absolute URL). Enables the frontend's migration flow and lets its pages address that origin (CSP `connect-src`). Served over `GET /api/config`. |
-| `MIGRATION_SOURCE` | — (unset) | Deployment users migrate *from* (absolute URL). Enables the frontend's `/migrate` receiver, which only trusts messages from that origin. Served over `GET /api/config`. |
-| `RELAY_READ_ONLY` | — (unset) | `true` or `1` freezes writes: group creation, appends and compactions are refused with `403 {"code":"relay_read_only"}` while pulls and live updates keep working. Clients queue refused entries locally and carry them along when they migrate. |
+| `MIGRATION_TARGET` | — (unset) | Deployment this one migrates *to* (absolute HTTP(S) URL, normalized to its origin). Enables the frontend's migration flow and lets its pages address that origin (CSP `connect-src`). Served over `GET /api/config`. |
+| `MIGRATION_SOURCE` | — (unset) | Deployment users migrate *from* (absolute HTTP(S) URL, normalized to its origin). Enables the frontend's `/migrate` receiver, which only trusts messages from that origin. Served over `GET /api/config`. |
+| `RELAY_READ_ONLY` | — (unset) | `true` or `1` freezes writes: every mutating `/api/*` method is refused with `403 {"code":"relay_read_only"}` while GET, HEAD, OPTIONS, pulls and live updates keep working. Clients queue refused entries locally and carry them along when they migrate. |
 
 `STATIC_DIR` is a complete, immutable deployment unit, not a directory to populate or rebuild while the relay runs. Its `index.html` and `sw.js` are both required at startup; the relay stops immediately if either is missing rather than serve an app without its update mechanism. Deploy a replacement build by restarting the relay with the new directory/image.
 
 **A setting that changes the CSP reaches clients as an app update.** The frontend runs behind a service worker that precaches the shell *with its response headers*, so a client goes on enforcing whatever CSP was live when it installed — a config change alone would never reach it, and it would be unable to reach the very origin the change just allowed. The relay therefore stamps the service worker's cache name with a digest of the settings the CSP is built from (`PUSH_SERVER_URL`, `FEEDBACK_PROJECT_ID`, `MIGRATION_TARGET`), which turns a config change into a script change — the one thing browsers already watch for. They notice at their next update check and the app offers it like any other update. Settings that no cached header carries (`MIGRATION_SOURCE`, `RELAY_READ_ONLY`) arrive over `GET /api/config` and cost no re-download.
+
+### Cross-domain deployment move
+
+A move between two Partage deployments does not copy relay databases. The source client seeds each selected group into the target relay, sending only events that target does not already hold, then transfers identity, group keys, summaries, profile, language, and changelog position to the destination client. Event history reaches the destination through ordinary synchronization. The complete client behavior and identity merge rules are specified in [SPECIFICATION.md](SPECIFICATION.md#cross-domain-deployment-move).
+
+Roll out in this order:
+
+1. Deploy the destination with `MIGRATION_SOURCE=<source-origin>` and verify `/api/config` before freezing anything.
+2. Make the source's **first migration-capable response** carry both `MIGRATION_TARGET=<destination-origin>` and `RELAY_READ_ONLY=true`. If upgrading from code that ignores these variables, set them before deploying the migration-capable image. Otherwise set both in one restart. Do not serve the migration build first and add the target later: installed clients may keep the old cached CSP until they accept an update.
+3. Verify both deployments' `/api/config` versions and settings, then run the cross-domain section of [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) before announcing the move.
+4. Keep the frozen source deployment alive while clients remain there; its app is the only holder of keys trapped in old browser storage. After traffic dies, back up its relay, unset `MIGRATION_SOURCE` on the destination, and retire the source domain.
+
+Push permission is per origin and must be granted again at the destination. Simultaneous members normally diff against history already seeded by others, but two inspect-before-push operations can still race and store duplicate shared history; this accepted one-off cost spends group rate budget, so monitor destination bytes and rate-limit failures during a large rollout.
 
 The relay also reads a `.env` file in its working directory, which is how a local run configures itself without exported variables. Anything set in the environment wins over that file, so a container's own configuration always stands.
 

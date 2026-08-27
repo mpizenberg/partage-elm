@@ -180,6 +180,14 @@ A one-way CSV export contains one row per active expense, transfer, or income wi
 
 Partage imports English-language Splitwise group CSV exports into a new group. The user chooses the group identity/default currency and can provide conversion rates for other currencies. Payments become transfers. Because Splitwise exports member net amounts rather than every original allocation, Partage reconstructs splits while preserving each row's balance effect and reports skipped malformed rows.
 
+### Cross-domain deployment move
+
+A source deployment configured with a migration target offers a Move screen. Active groups are selected by default and archived groups are opt-in. The source creates or inspects each group on the target relay, pushes only target-missing events, and does not reveal the handoff until every selected group has seeded successfully. A frozen source relay refuses writes, but changes authored locally remain queued and are included in seeding.
+
+The versioned handoff contains identity, selected group keys and summaries, profile, language, and changelog position—not event history. It travels through a one-shot, origin-checked `postMessage` handshake or a copyable code. The destination rebuilds history by normal relay synchronization. Existing group identifiers are skipped and applying the same handoff again converges.
+
+A destination with no groups adopts the incoming identity and its profile/settings. A destination that already has groups keeps its identity, adds the incoming identity chain as predecessor devices, and requires the user to re-link inside imported groups. iOS sources always use the code; an iOS destination accepts it only in the installed app because browser-tab storage is isolated. A transferred archive performs one hydration sync when first opened, then returns to ordinary archive no-network behavior.
+
 ## Offline operation and synchronization
 
 ### Local durability

@@ -93,11 +93,29 @@ retried on every open until it lands.
   would make push pure server-side config, but it collapses two parties into
   one: the relay already sees group traffic, and correlating that with blinded
   topics is exactly what blinding buys.
-- **Over `/api/config`, not injected into `index.html`**, because the shell is
-  precached under a `cacheName` digest of its own bytes, so an env-var change
-  without a rebuild would never reach clients.
+- **Over `/api/config`, not injected into `index.html`**, so online clients can
+  refresh runtime settings without rebuilding the frontend. Because the shell
+  is precached with its CSP headers, the relay also stamps CSP-affecting config
+  into the served service worker's cache identity; changing the push origin
+  therefore arrives as an ordinary app update instead of leaving an installed
+  client enforcing the old CSP.
 - **The last known URL is cached locally**, or the push surfaces pop in late on
   every launch and are absent when the app starts offline.
+- **Configuration is re-fetched whenever connectivity returns.** The fetch must
+  remain: a long-lived client has to discover a changed migration/freeze state
+  and a VAPID rotation. An offline fallback may resolve cached push only; it
+  cannot clear known deployment-wide settings. If the resolved push setup is
+  unchanged, the client does not persist the URL, subscribe again, read every
+  topic, or re-register them.
+
+## Legacy-topic residual
+
+Before blinded topics shipped, registrations used the plaintext group id and
+member root id. The client no longer publishes to those addresses and no longer
+carries a cleanup path, so a device that stayed dormant through the transition
+may leave one registered until the external push service prunes it. This is an
+accepted metadata residual, not an active notification channel; push-service
+retention is outside this repository.
 
 ## Rejected
 

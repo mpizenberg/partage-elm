@@ -62,6 +62,30 @@ real.
       offline; the shell loads and shows the offline state rather than a browser
       error.
 
+## Cross-domain deployment move (only when migration is configured)
+
+- [ ] **Configuration order.** The destination serves the expected
+      `MIGRATION_SOURCE` before the source is frozen; the source serves
+      `MIGRATION_TARGET` and `readOnly:true` together. Both `/api/config`
+      responses report the image commit being tested.
+- [ ] **Installed-PWA CSP.** Install/open the source PWA before the migration
+      configuration is live, then apply the offered update and seed successfully
+      without clearing site data. This proves the target-origin CSP reached the
+      cached shell.
+- [ ] **Active, archived, and post-freeze history.** Move an active group and an
+      opted-in archive after creating one local entry on the frozen source. The
+      destination receives the complete history; the archive hydrates once when
+      opened and then remains network-idle.
+- [ ] **Two members and repeat application.** Migrate a second member with a
+      different local tail, then reload the destination and apply the first
+      handoff code again. Both histories converge, existing destination groups
+      are skipped, and destination relay growth reflects only missing events
+      rather than another full shared log.
+- [ ] **Transport boundaries.** Exercise one-tap `postMessage` from
+      desktop/Android and the code path on iOS when available. The iOS browser
+      refuses application until the destination is opened as its installed app.
+      Push is absent until granted again on the destination origin.
+
 ## Notifications (only if the relay is run with `PUSH_SERVER_URL` set)
 
 - [ ] **Enable.** The home notification control appears; enabling prompts for
@@ -151,8 +175,13 @@ real.
 - [ ] **Toast feedback.** A toast (e.g. "copied", or a sync error) is announced by
       the screen reader and does not block clicking the tab bar underneath it.
 
-## Metadata
+## Metadata and browser security
 
+- [ ] **CSP console pass.** Keep the browser console open while creating a
+      group (blob proof-of-work worker), opening an invite QR, fetching an
+      exchange rate, importing/exporting, enabling push, and opening feedback.
+      No required worker, connection, frame, image, or download is blocked by
+      CSP.
 - [ ] **Canonical / social tags.** In the *served* `index.html` (view source on
       the deployed origin), the canonical and Open Graph URLs point at the
       deploy's own host — the relay substitutes them per request; a static-host
