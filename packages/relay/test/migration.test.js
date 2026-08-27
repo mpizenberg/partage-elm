@@ -49,6 +49,31 @@ describe('read-only relay', () => {
     return { frozen, writable: app, groupId, secret };
   }
 
+  it('refuses every mutating API method before route dispatch', async () => {
+    const { app } = makeApp({ readOnly: true });
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+      const res = await app.request('/api/future-write', { method });
+      assert.equal(res.status, 403, method);
+      assert.equal((await res.json()).code, 'relay_read_only', method);
+    }
+  });
+
+  it('leaves safe methods and writable unknown routes to normal dispatch', async () => {
+    const frozen = makeApp({ readOnly: true }).app;
+    assert.equal((await frozen.request('/api/nope')).status, 404);
+    assert.equal((await frozen.request('/api/nope', { method: 'HEAD' })).status, 404);
+    assert.equal(
+      (
+        await frozen.request('/api/nope', {
+          method: 'OPTIONS',
+          headers: { Origin: 'https://app.example.com', 'Access-Control-Request-Method': 'POST' },
+        })
+      ).status,
+      204,
+    );
+    assert.equal((await makeApp().app.request('/api/nope', { method: 'PUT' })).status, 404);
+  });
+
   it('refuses group creation with the distinctive code', async () => {
     const { frozen } = await frozenAppWithGroup();
     const { res } = await createGroup(frozen, { groupId: 'g-new' });

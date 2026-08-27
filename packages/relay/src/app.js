@@ -387,10 +387,12 @@ export function createApp({
   // can be lost. The app announces the freeze from the flag above rather than
   // from a refusal, so it can say so before anyone writes anything.
   if (readOnly) {
-    const frozen = (c) => c.json({ error: 'This relay is read-only', code: 'relay_read_only' }, 403);
-    app.post('/api/groups', frozen);
-    app.post('/api/groups/:id/events', frozen);
-    app.post('/api/groups/:id/compact', frozen);
+    app.use('/api/*', (c, next) => {
+      if (c.req.method === 'GET' || c.req.method === 'HEAD' || c.req.method === 'OPTIONS') {
+        return next();
+      }
+      return c.json({ error: 'This relay is read-only', code: 'relay_read_only' }, 403);
+    });
   }
 
   app.get('/api/pow/challenge', async (c) => {
