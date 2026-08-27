@@ -104,7 +104,8 @@ view :
 view i18n config model =
     Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.md ]
         [ descriptionSection i18n
-        , whatsNewLink i18n config.onNavigate
+        , pageLink config.onNavigate FeatherIcons.helpCircle (T.aboutWelcomeLink i18n) Route.Welcome
+        , pageLink config.onNavigate FeatherIcons.gift (T.changelogTitle i18n) Route.Changelog
         , languageSection i18n config.onSwitchLanguage
         , notificationsSection i18n config
         , Ui.map config.toMsg (usageSection i18n model)
@@ -137,11 +138,14 @@ descriptionSection i18n =
 
 
 
--- WHAT'S NEW
+-- ELSEWHERE IN THE APP
 
 
-whatsNewLink : I18n -> (Route -> msg) -> Ui.Element msg
-whatsNewLink i18n onNavigate =
+{-| An installed app has no address bar, so every page this one introduces has
+to be reachable from here.
+-}
+pageLink : (Route -> msg) -> FeatherIcons.Icon -> String -> Route -> Ui.Element msg
+pageLink onNavigate icon label route =
     Ui.row
         (Ui.centerX
             :: Ui.spacing Theme.spacing.xs
@@ -150,10 +154,10 @@ whatsNewLink i18n onNavigate =
             :: Ui.Font.color Theme.primary.text
             :: Ui.contentCenterY
             :: Ui.pointer
-            :: UI.Components.spaLinkAttrs (Route.toPath Route.Changelog) (onNavigate Route.Changelog)
+            :: UI.Components.spaLinkAttrs (Route.toPath route) (onNavigate route)
         )
-        [ UI.Components.featherIcon 16 FeatherIcons.gift
-        , Ui.text (T.changelogTitle i18n)
+        [ UI.Components.featherIcon 16 icon
+        , Ui.text label
         ]
 
 

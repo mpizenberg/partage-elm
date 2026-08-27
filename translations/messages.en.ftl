@@ -50,6 +50,7 @@ notFoundCode = 404
 notFoundMessage = The page you are looking for does not exist.
 notFoundTitle = Not found
 aboutTitle = About Partage
+aboutWelcomeLink = How Partage works
 aboutDescription = A fully encrypted, local-first bill-splitting application for trusted groups.
 balanceTabTitle = Balances
 balanceYourBalance = YOUR BALANCE

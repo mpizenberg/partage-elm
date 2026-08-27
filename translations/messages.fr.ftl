@@ -50,6 +50,7 @@ notFoundCode = 404
 notFoundMessage = La page que tu cherches n'existe pas.
 notFoundTitle = Introuvable
 aboutTitle = À propos de Partage
+aboutWelcomeLink = Comment fonctionne Partage
 aboutDescription = Une application libre de partage de frais, chiffrée de bout en bout, pour gérer tes dépenses de groupe sans prise de tête.
 balanceTabTitle = Soldes
 balanceYourBalance = TON SOLDE
