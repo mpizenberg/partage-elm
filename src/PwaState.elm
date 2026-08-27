@@ -58,6 +58,7 @@ type alias DeploymentConfig =
     , migrationTarget : Maybe String
     , migrationSource : Maybe String
     , readOnly : Bool
+    , resolved : Bool
     }
 
 
@@ -137,18 +138,24 @@ configureTask :
 configureTask { serverUrl, cachedPushServerUrl } toMsg =
     Runner.andRun (toMsg << OnDeploymentConfig)
         (RelayConfig.fetch serverUrl
+            |> ConcurrentTask.map (Tuple.pair True)
             |> ConcurrentTask.onError
                 (\_ ->
+                    -- Cached push remains useful offline, but it says nothing
+                    -- about deployment-wide settings. Keep those unresolved so
+                    -- this fallback cannot erase a known migration or freeze.
                     ConcurrentTask.succeed
-                        { pushServerUrl = cachedPushServerUrl
-                        , feedbackProjectId = Nothing
-                        , migrationTarget = Nothing
-                        , migrationSource = Nothing
-                        , readOnly = False
-                        }
+                        ( False
+                        , { pushServerUrl = cachedPushServerUrl
+                          , feedbackProjectId = Nothing
+                          , migrationTarget = Nothing
+                          , migrationSource = Nothing
+                          , readOnly = False
+                          }
+                        )
                 )
             |> ConcurrentTask.andThen
-                (\config ->
+                (\( resolved, config ) ->
                     resolvePush config.pushServerUrl
                         |> ConcurrentTask.map
                             (\push ->
@@ -157,6 +164,7 @@ configureTask { serverUrl, cachedPushServerUrl } toMsg =
                                 , migrationTarget = config.migrationTarget
                                 , migrationSource = config.migrationSource
                                 , readOnly = config.readOnly
+                                , resolved = resolved
                                 }
                             )
                 )
@@ -298,7 +306,25 @@ update pwaOut msg model =
             let
                 newModel : Model
                 newModel =
-                    { model | pushSetup = config.push, serverReadOnly = config.readOnly }
+                    { model
+                        | pushSetup = config.push
+                        , serverReadOnly =
+                            if config.resolved then
+                                config.readOnly
+
+                            else
+                                model.serverReadOnly
+                    }
+
+                deploymentOut : List OutMsg
+                deploymentOut =
+                    if config.resolved then
+                        [ FeedbackProjectIdResolved config.feedbackProjectId
+                        , MigrationConfigResolved { target = config.migrationTarget, source = config.migrationSource }
+                        ]
+
+                    else
+                        []
             in
             ( newModel
             , case ( config.push, model.notificationPermission ) of
@@ -308,9 +334,7 @@ update pwaOut msg model =
                 _ ->
                     Cmd.none
             , PushServerUrlResolved (pushServerUrl newModel)
-                :: FeedbackProjectIdResolved config.feedbackProjectId
-                :: MigrationConfigResolved { target = config.migrationTarget, source = config.migrationSource }
-                :: registerTopics newModel
+                :: (deploymentOut ++ registerTopics newModel)
             )
 
         OnDeploymentConfig _ ->

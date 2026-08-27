@@ -2305,14 +2305,29 @@ processPwaOutMsgs model pwaCmd outMsgs =
                                     ( m, cmds )
 
                         PwaState.CameOnline ->
-                            case buildGroupConfig m of
-                                Just config ->
-                                    Page.Group.connectivityRestored config m.groupModel
-                                        |> Update.wrap GroupMsg (\gm -> { m | groupModel = gm })
-                                        |> Tuple.mapSecond (\cmd -> cmd :: cmds)
+                            let
+                                ( connectedModel, connectionCmds ) =
+                                    case buildGroupConfig m of
+                                        Just config ->
+                                            Page.Group.connectivityRestored config m.groupModel
+                                                |> Update.wrap GroupMsg (\gm -> { m | groupModel = gm })
+                                                |> Tuple.mapSecond (\cmd -> cmd :: cmds)
 
-                                Nothing ->
-                                    ( m, cmds )
+                                        Nothing ->
+                                            ( m, cmds )
+                            in
+                            case connectedModel.appState of
+                                Ready _ ->
+                                    ( connectedModel.runner, Cmd.none )
+                                        |> PwaState.configureTask
+                                            { serverUrl = connectedModel.serverUrl
+                                            , cachedPushServerUrl = PwaState.pushServerUrl connectedModel.pwaState
+                                            }
+                                            PwaStateMsg
+                                        |> (\( runner, cmd ) -> ( { connectedModel | runner = runner }, cmd :: connectionCmds ))
+
+                                _ ->
+                                    ( connectedModel, connectionCmds )
                 )
                 ( model, [] )
                 outMsgs
