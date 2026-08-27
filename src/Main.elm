@@ -2021,6 +2021,9 @@ applyRouteGuard identity route =
                 About ->
                     ( route, Cmd.none )
 
+                Changelog ->
+                    ( route, Cmd.none )
+
                 ErrorLog ->
                     ( route, Cmd.none )
 
