@@ -31,11 +31,15 @@ type Model
 
 type alias Data =
     { pasted : String
-    , invalid : Bool
     , applying : Bool
-    , error : Maybe String
+    , error : Maybe ReceiveError
     , result : Maybe Applied
     }
+
+
+type ReceiveError
+    = InvalidCode
+    | ApplyFailed String
 
 
 {-| What a successful application did, for the closing screen.
@@ -64,7 +68,6 @@ init : Model
 init =
     Model
         { pasted = ""
-        , invalid = False
         , applying = False
         , error = Nothing
         , result = Nothing
@@ -75,16 +78,26 @@ update : Msg -> Model -> ( Model, Effect )
 update msg (Model data) =
     case msg of
         InputCode text ->
-            ( Model { data | pasted = text, invalid = False }, NoEffect )
+            ( Model { data | pasted = text, error = Nothing }, NoEffect )
 
         SubmitCode ->
             if canApply data then
                 case Handoff.fromString data.pasted of
                     Ok payload ->
-                        ( Model { data | invalid = False, applying = True }, Apply payload )
+                        ( Model { data | applying = True, error = Nothing }, Apply payload )
 
                     Err _ ->
-                        ( Model { data | invalid = not (String.isEmpty (String.trim data.pasted)) }, NoEffect )
+                        ( Model
+                            { data
+                                | error =
+                                    if String.isEmpty (String.trim data.pasted) then
+                                        Nothing
+
+                                    else
+                                        Just InvalidCode
+                            }
+                        , NoEffect
+                        )
 
             else
                 ( Model data, NoEffect )
@@ -99,7 +112,7 @@ payloadArrived raw ((Model data) as model) =
     if canApply data then
         case Handoff.fromString raw of
             Ok payload ->
-                ( Model { data | applying = True }, Apply payload )
+                ( Model { data | applying = True, error = Nothing }, Apply payload )
 
             Err _ ->
                 ( model, NoEffect )
@@ -120,7 +133,7 @@ applied result (Model data) =
 
 applyFailed : String -> Model -> Model
 applyFailed reason (Model data) =
-    Model { data | applying = False, error = Just reason }
+    Model { data | applying = False, error = Just (ApplyFailed reason) }
 
 
 
@@ -183,13 +196,11 @@ viewReceiving i18n sourceName requiresInstall data =
                         , placeholder = Just (T.receiveCodePlaceholder i18n)
                         , label = Ui.Input.labelHidden (T.receiveCodePlaceholder i18n)
                         }
-                    , if data.invalid then
-                        errorText (T.receiveCodeInvalid i18n)
-
-                      else
-                        Ui.none
                     , case data.error of
-                        Just reason ->
+                        Just InvalidCode ->
+                            errorText (T.receiveCodeInvalid i18n)
+
+                        Just (ApplyFailed reason) ->
                             errorText reason
 
                         Nothing ->
