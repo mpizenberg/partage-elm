@@ -49,17 +49,18 @@ type PushSetup
     | PushReady String String
 
 
-{-| The deployment configuration once resolved: the push half turned into a
-`PushSetup`, the rest passed on to whoever owns it.
+{-| A fetched deployment owns every setting. The offline fallback owns only the
+cached push setup, so it cannot erase migration or freeze state.
 -}
-type alias DeploymentConfig =
-    { push : PushSetup
-    , feedbackProjectId : Maybe String
-    , migrationTarget : Maybe String
-    , migrationSource : Maybe String
-    , readOnly : Bool
-    , resolved : Bool
-    }
+type DeploymentConfig
+    = FetchedDeployment
+        { push : PushSetup
+        , feedbackProjectId : Maybe String
+        , migrationTarget : Maybe String
+        , migrationSource : Maybe String
+        , readOnly : Bool
+        }
+    | OfflineFallback PushSetup
 
 
 init : { isOnline : Bool, installHint : String } -> Model
@@ -138,35 +139,26 @@ configureTask :
 configureTask { serverUrl, cachedPushServerUrl } toMsg =
     Runner.andRun (toMsg << OnDeploymentConfig)
         (RelayConfig.fetch serverUrl
-            |> ConcurrentTask.map (Tuple.pair True)
-            |> ConcurrentTask.onError
-                (\_ ->
-                    -- Cached push remains useful offline, but it says nothing
-                    -- about deployment-wide settings. Keep those unresolved so
-                    -- this fallback cannot erase a known migration or freeze.
-                    ConcurrentTask.succeed
-                        ( False
-                        , { pushServerUrl = cachedPushServerUrl
-                          , feedbackProjectId = Nothing
-                          , migrationTarget = Nothing
-                          , migrationSource = Nothing
-                          , readOnly = False
-                          }
-                        )
-                )
             |> ConcurrentTask.andThen
-                (\( resolved, config ) ->
+                (\config ->
                     resolvePush config.pushServerUrl
                         |> ConcurrentTask.map
                             (\push ->
-                                { push = push
-                                , feedbackProjectId = config.feedbackProjectId
-                                , migrationTarget = config.migrationTarget
-                                , migrationSource = config.migrationSource
-                                , readOnly = config.readOnly
-                                , resolved = resolved
-                                }
+                                FetchedDeployment
+                                    { push = push
+                                    , feedbackProjectId = config.feedbackProjectId
+                                    , migrationTarget = config.migrationTarget
+                                    , migrationSource = config.migrationSource
+                                    , readOnly = config.readOnly
+                                    }
                             )
+                )
+            |> ConcurrentTask.onError
+                (\_ ->
+                    -- Cached push remains useful offline, but it says nothing
+                    -- about deployment-wide settings.
+                    resolvePush cachedPushServerUrl
+                        |> ConcurrentTask.map OfflineFallback
                 )
         )
 
@@ -302,39 +294,52 @@ update pwaOut msg model =
                 _ ->
                     ( model, Pwa.requestNotificationPermission pwaOut, [] )
 
-        OnDeploymentConfig (ConcurrentTask.Success config) ->
+        OnDeploymentConfig (ConcurrentTask.Success deployment) ->
             let
+                ( push, serverReadOnly, deploymentOut ) =
+                    case deployment of
+                        FetchedDeployment config ->
+                            ( config.push
+                            , config.readOnly
+                            , [ FeedbackProjectIdResolved config.feedbackProjectId
+                              , MigrationConfigResolved { target = config.migrationTarget, source = config.migrationSource }
+                              ]
+                            )
+
+                        OfflineFallback cachedPush ->
+                            ( cachedPush, model.serverReadOnly, [] )
+
                 newModel : Model
                 newModel =
-                    { model
-                        | pushSetup = config.push
-                        , serverReadOnly =
-                            if config.resolved then
-                                config.readOnly
+                    { model | pushSetup = push, serverReadOnly = serverReadOnly }
 
-                            else
-                                model.serverReadOnly
-                    }
+                pushChanged : Bool
+                pushChanged =
+                    push /= model.pushSetup
 
-                deploymentOut : List OutMsg
-                deploymentOut =
-                    if config.resolved then
-                        [ FeedbackProjectIdResolved config.feedbackProjectId
-                        , MigrationConfigResolved { target = config.migrationTarget, source = config.migrationSource }
-                        ]
+                pushUrlOut : List OutMsg
+                pushUrlOut =
+                    if pushServerUrl newModel /= pushServerUrl model then
+                        [ PushServerUrlResolved (pushServerUrl newModel) ]
 
                     else
                         []
             in
             ( newModel
-            , case ( config.push, model.notificationPermission ) of
-                ( PushReady _ key, Just Pwa.Granted ) ->
+            , case ( pushChanged, push, model.notificationPermission ) of
+                ( True, PushReady _ key, Just Pwa.Granted ) ->
                     Pwa.subscribePush pwaOut key
 
                 _ ->
                     Cmd.none
-            , PushServerUrlResolved (pushServerUrl newModel)
-                :: (deploymentOut ++ registerTopics newModel)
+            , pushUrlOut
+                ++ deploymentOut
+                ++ (if pushChanged then
+                        registerTopics newModel
+
+                    else
+                        []
+                   )
             )
 
         OnDeploymentConfig _ ->
