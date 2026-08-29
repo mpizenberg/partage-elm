@@ -1,5 +1,6 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
+const marketingCss = readFileSync("public/marketing.css", "utf8");
 const origin = (process.env.CANONICAL_ORIGIN || "__CANONICAL_ORIGIN__").replace(/\/$/, "");
 const fundingUrl = "https://github.com/sponsors/mpizenberg";
 const sourceUrl = "https://github.com/mpizenberg/partage-elm";
@@ -143,7 +144,9 @@ function render(language, page) {
         <meta name="twitter:description" content="${page.description}" />
         <meta name="twitter:image" content="${origin}/icon-512.png" />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-        <link rel="stylesheet" href="/marketing.css" />
+        <style>
+${marketingCss}
+        </style>
     </head>
     <body>
         <main class="page">

@@ -2,10 +2,11 @@
 
 Partage is a static frontend plus a minimal Node.js relay backend ([`packages/relay`](../packages/relay)), shipped together as one container with one SQLite volume.
 
-The frontend and the API share one origin, so build the frontend with an **empty** `SERVER_URL` (the client then talks to its own origin):
+The frontend and the API share one origin, which is the build default: an empty
+`SERVER_URL` makes the client talk to the origin that served it.
 
 ```sh
-SERVER_URL= pnpm build:optimize
+pnpm build:optimize
 ```
 
 **Push notifications are opt-in and separate.** They rely on an external web-push
@@ -37,7 +38,7 @@ origin gets a dialog with an empty, CSP-blocked iframe.
 One container, one volume. Works on any container host (Dokploy, Fly.io, a VPS with Docker).
 
 ```sh
-SERVER_URL= GIT_SHA=$(git rev-parse HEAD) pnpm build:optimize
+GIT_SHA=$(git rev-parse HEAD) pnpm build:optimize
 docker build -t partage-relay -f packages/relay/Dockerfile --build-arg GIT_SHA=$(git rev-parse HEAD) .
 docker run -d -p 8090:8090 -v partage-data:/data -e POW_SECRET="$(openssl rand -base64 32)" partage-relay
 ```
@@ -139,7 +140,7 @@ dokku proxy:build-config partage
 Without a registry, stream a locally built image over SSH instead:
 
 ```sh
-SERVER_URL= pnpm build:optimize
+pnpm build:optimize
 docker build -t partage-relay:latest -f packages/relay/Dockerfile .
 docker image save partage-relay:latest | ssh dokku@your-vps git:load-image partage partage-relay:latest
 ```

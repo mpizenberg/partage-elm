@@ -67,9 +67,6 @@ fromAppUrl appUrl =
         [] ->
             NotFound
 
-        [ "welcome" ] ->
-            NotFound
-
         [ "groups" ] ->
             case Maybe.withDefault "" appUrl.fragment of
                 "" ->

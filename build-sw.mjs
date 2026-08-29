@@ -52,9 +52,9 @@ const generated = generateSW({
   ),
 });
 
-const navigationMarker =
+const navigationFallbackMarker =
   "  // Navigation requests: serve the cached app shell (Elm handles routing)";
-if (!generated.includes(navigationMarker)) {
+if (!generated.includes(navigationFallbackMarker)) {
   throw new Error("elm-pwa service-worker navigation marker changed");
 }
 
@@ -68,5 +68,8 @@ const rootNavigation = `  if (event.request.mode === "navigate" && pathname === 
 `;
 writeFileSync(
   "dist/sw.js",
-  generated.replace(navigationMarker, rootNavigation + navigationMarker),
+  generated.replace(
+    navigationFallbackMarker,
+    rootNavigation + navigationFallbackMarker,
+  ),
 );

@@ -192,7 +192,6 @@ export function startServer({
     // that already baked an origin passes through unchanged.
     const withRequestOrigin = (template, c) =>
       template.replaceAll('__CANONICAL_ORIGIN__', requestOrigin(c));
-    readFileSync(join(staticDir, 'index.html'), 'utf8');
     const shellTemplate = readFileSync(join(staticDir, 'app.html'), 'utf8');
     const homeTemplates = Object.fromEntries(
       ['en', 'fr'].map((language) => [

@@ -2,8 +2,12 @@ module Changelog exposing (Entry, entries, hasUnseen, latest)
 
 {-| The user-facing history of the app.
 
-One entry per shipped batch of user-visible work: a change nobody would notice
-does not belong here, and neither does one entry per commit. The date labels the
+This is in-app release communication, not a record of every visible project
+change. An entry must help an existing user understand a changed app workflow,
+feature, behaviour, or handling of their data. Public-site marketing, discovery,
+operator tooling, deployment, and internal changes do not belong here.
+
+One entry per shipped batch, never one entry per commit. The date labels the
 entry and identifies it, so no two entries share one.
 
 One or two sentences, never more: the whole list is read in a single pass, and
@@ -28,11 +32,7 @@ type alias Entry =
 -}
 entries : List Entry
 entries =
-    [ { date = "2026-08-29"
-      , title = T.changelogStaticHomeTitle
-      , body = T.changelogStaticHomeBody
-      }
-    , { date = "2026-08-27"
+    [ { date = "2026-08-27"
       , title = T.changelogMigrationTitle
       , body = T.changelogMigrationBody
       }

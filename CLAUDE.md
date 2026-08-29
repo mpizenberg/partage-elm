@@ -19,6 +19,19 @@ Some choices you make while working are worth surfacing even though they didn't 
 - Append entries to a **Decisions** section in the plan document as they occur, and repeat them in the increment's commit message or summary so they surface without opening the file.
 - Flag anything you are uncertain about explicitly rather than presenting it as settled; if a decision materially changes scope or architecture, raise it in the chat at the increment boundary instead of only logging it.
 
+## In-app changelog boundary
+
+The changelog is release communication for people using the Elm application,
+not a project activity log and not a list of everything publicly visible.
+
+- Add an entry only when it helps an existing user understand a changed app
+  workflow, feature, behaviour, or handling of their local/group data.
+- Do not add entries for the public marketing site, SEO or crawler discovery,
+  aggregate/operator metrics, deployment or build changes, or internal refactors.
+- “A user could notice it” is not sufficient. Ask whether the entry helps someone
+  use the application or understand what changed inside it; if not, omit it.
+- A mixed batch gets one concise entry about its relevant in-app changes only.
+
 ## Keep the codebase lean
 
 Every diff should leave the repo simpler, or at least no more complex. Removing is as valuable as adding.

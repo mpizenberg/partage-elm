@@ -1,6 +1,6 @@
 # Self-host image: relay API + built frontend in one container, one volume.
 # Build from the repo root, after building the frontend for same-origin use:
-#   SERVER_URL= pnpm build:optimize
+#   pnpm build:optimize
 #   docker build -t partage-relay -f packages/relay/Dockerfile .
 # Digest-pinned (multi-arch index) so builds are reproducible; re-pin
 # deliberately when bumping Node, since the pin also freezes security patches.

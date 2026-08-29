@@ -13,13 +13,14 @@ real.
 
 ## Before the deploy
 
-- [ ] **Changelog entry.** Anything a user would notice — a new feature, a
-      changed flow, a misbehaviour they had been living with — gets one entry in
-      `src/Changelog.elm` plus its title and body in
-      `translations/messages.{en,fr}.ftl`, dated the day it ships. One entry per
-      batch of work, not per commit, and a date is never reused. One or two
-      sentences per entry, never more. A batch with nothing user-visible in it
-      gets no entry. It is the only changelog; there is no `CHANGELOG.md`.
+- [ ] **In-app changelog entry.** Add one only when it helps an existing user
+      understand a changed app workflow, feature, behaviour, or handling of
+      their local/group data. Public marketing pages, SEO/discovery,
+      operator metrics, deployment/build work, and internal changes get no
+      entry even when publicly visible. Relevant entries live in
+      `src/Changelog.elm` plus `translations/messages.{en,fr}.ftl`, dated the
+      day they ship; use one or two sentences, one entry per batch, and never
+      reuse a date. It is the only changelog; there is no `CHANGELOG.md`.
 
 ## Core flows
 
