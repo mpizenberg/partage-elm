@@ -152,7 +152,7 @@ export function startServer({
     app.use('/*', async (c, next) => {
       await next();
       if (
-        ['/sw.js', '/app.html', '/index.html', '/robots.txt', '/sitemap.xml'].includes(
+        ['/sw.js', '/app.html', '/robots.txt', '/sitemap.xml'].includes(
           c.req.path,
         ) ||
         !/\.[^/]*$/.test(c.req.path)
@@ -210,7 +210,6 @@ export function startServer({
       c.header('Vary', 'Accept-Language');
       return c.redirect(`/${preferredLanguage(c.req.header('accept-language'))}/`, 302);
     });
-    app.get('/index.html', (c) => c.redirect('/', 302));
     app.get('/app.html', shell);
     for (const language of ['en', 'fr']) {
       app.get(`/${language}`, (c) => c.redirect(`/${language}/`, 301));
@@ -240,7 +239,9 @@ export function startServer({
     app.get('/sw.js', (c) => c.body(swSource, 200, { 'Content-Type': 'text/javascript; charset=utf-8' }));
     app.use('/*', serveStatic({ root: staticDir }));
     // SPA fallback: client-side routes like /join/<id> must serve the app.
-    app.get('*', (c, next) => (c.req.path.startsWith('/api/') ? c.notFound() : next()));
+    app.get('*', (c, next) =>
+      c.req.path.startsWith('/api/') || /\.[^/]*$/.test(c.req.path) ? c.notFound() : next(),
+    );
     app.get('*', shell);
   }
 

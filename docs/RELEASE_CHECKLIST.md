@@ -207,7 +207,7 @@ real.
 - [ ] **Static home and metadata.** `/` negotiates to `/en/` or `/fr/`; both
       localized homes work without Elm, link to each other, and enter the app at
       `/groups`. In their served source, canonical, language-alternate, and Open
-      Graph URLs point at the deployed host. The relay substitutes them per request;
-      a static-host build must bake them via `CANONICAL_ORIGIN` (RR-012).
+      Graph URLs point at the deployed host. The relay substitutes them per request,
+      including behind the deployment’s reverse proxy (RR-012).
 - [ ] **Manifest.** `dist/manifest.webmanifest` installs cleanly and includes
       `categories` and portrait `orientation`.

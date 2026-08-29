@@ -12,7 +12,6 @@ function writeEntryFiles(dir) {
     path.join(dir, 'app.html'),
     '<html><meta property="og:url" content="__CANONICAL_ORIGIN__/" />app shell</html>',
   );
-  fs.writeFileSync(path.join(dir, 'index.html'), 'language chooser');
   for (const language of ['en', 'fr']) {
     const languageDir = path.join(dir, language);
     fs.mkdirSync(languageDir);
@@ -143,6 +142,9 @@ describe('static frontend serving', () => {
       redirect: 'manual',
     });
     assert.equal(fallback.headers.get('location'), '/en/');
+
+    const removedIndex = await fetch(`${relay.url}/index.html`);
+    assert.equal(removedIndex.status, 404);
   });
 
   it('does not shadow unknown API paths', async () => {

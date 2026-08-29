@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const marketingCss = readFileSync("public/marketing.css", "utf8");
-const origin = (process.env.CANONICAL_ORIGIN || "__CANONICAL_ORIGIN__").replace(/\/$/, "");
+const origin = "__CANONICAL_ORIGIN__";
 const fundingUrl = "https://github.com/sponsors/mpizenberg";
 const sourceUrl = "https://github.com/mpizenberg/partage-elm";
 
