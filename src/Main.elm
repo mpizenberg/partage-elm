@@ -69,6 +69,7 @@ import UI.Toast as Toast
 import Ui
 import Ui.Accessibility
 import Ui.Font
+import Ui.Gradient
 import Ui.Input
 import Ui.Responsive
 import Update
@@ -2490,7 +2491,7 @@ view model =
                         edgeTab
                             { onPress = NavigateTo Route.ErrorLog
                             , label = T.errorLogOpenLabel model.i18n
-                            , background = Theme.danger.solid
+                            , background = Ui.background Theme.danger.solid
                             , icon = FeatherIcons.alertTriangle
                             }
 
@@ -2500,7 +2501,13 @@ view model =
                         edgeTab
                             { onPress = OpenFeedback
                             , label = T.feedbackOpenLabel model.i18n
-                            , background = Theme.base.solid
+                            , background =
+                                Ui.backgroundGradient
+                                    [ Ui.Gradient.linear (Ui.turns 0.25)
+                                        [ Ui.Gradient.percent 0 (Ui.rgba 122 117 112 0.8)
+                                        , Ui.Gradient.percent 100 Theme.base.solid
+                                        ]
+                                    ]
                             , icon = FeatherIcons.messageSquare
                             }
 
@@ -2551,13 +2558,13 @@ view model =
 {-| A tab flush against the right edge of the viewport, outside any page's
 layout, so it reaches every route.
 -}
-edgeTab : { onPress : Msg, label : String, background : Ui.Color, icon : FeatherIcons.Icon } -> Ui.Element Msg
+edgeTab : { onPress : Msg, label : String, background : Ui.Attribute Msg, icon : FeatherIcons.Icon } -> Ui.Element Msg
 edgeTab config =
     Ui.el
         [ Ui.Input.button config.onPress
         , Ui.Accessibility.description config.label
         , Ui.pointer
-        , Ui.background config.background
+        , config.background
         , Ui.rounded Theme.radius.md
         , Ui.padding Theme.spacing.md
         , Ui.htmlAttribute (Html.Attributes.style "border-top-right-radius" "0")

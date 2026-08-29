@@ -126,7 +126,9 @@ real.
 ## Feedback (only if the relay is run with `FEEDBACK_PROJECT_ID` set)
 
 - [ ] **Feedback tab.** The grey tab on the right edge is present on the home
-      screen, inside a group, and on the About page; it opens the form in the
+      screen, inside a group, and on the About page. Its background fades from
+      60% opacity on the left to opaque at the edge, leaving covered content
+      faintly visible while its white icon stays clear; it opens the form in the
       app's language, both after switching language in this session and after a
       reload that restored the saved one — the widget takes its locale from
       `<html lang>`, so a language that stops at the Elm side shows an English
