@@ -2,7 +2,6 @@ module Page.About exposing (Model, Msg, Output(..), Stats, init, statsLoaded, up
 
 import FeatherIcons
 import Infra.UsageStats as UsageStats exposing (CostBreakdown)
-import Page.Welcome
 import Route exposing (Route)
 import Translations as T exposing (I18n, Language)
 import UI.Components
@@ -43,6 +42,11 @@ type Output
 sourceUrl : String
 sourceUrl =
     "https://github.com/mpizenberg/partage-elm"
+
+
+fundingUrl : String
+fundingUrl =
+    "https://github.com/sponsors/mpizenberg"
 
 
 init : Model
@@ -92,7 +96,7 @@ view :
         , devMode : Bool
         , onToggleDevMode : msg
         , onResetFeedbackPrompts : msg
-        , deviceId : String
+        , deviceId : Maybe String
         , gitSha : String
         , onNavigate : Route -> msg
         , pushServerUrl : Maybe String
@@ -104,7 +108,7 @@ view :
 view i18n config model =
     Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.md ]
         [ descriptionSection i18n
-        , pageLink config.onNavigate FeatherIcons.helpCircle (T.aboutWelcomeLink i18n) Route.Welcome
+        , marketingHomeLink i18n
         , pageLink config.onNavigate FeatherIcons.gift (T.changelogTitle i18n) Route.Changelog
         , languageSection i18n config.onSwitchLanguage
         , notificationsSection i18n config
@@ -113,7 +117,12 @@ view i18n config model =
         , if config.devMode then
             Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill ]
                 [ feedbackPromptsSection i18n config
-                , Ui.map config.toMsg (deviceSecuritySection i18n config.deviceId model.confirmingRekey)
+                , case config.deviceId of
+                    Just deviceId ->
+                        Ui.map config.toMsg (deviceSecuritySection i18n deviceId model.confirmingRekey)
+
+                    Nothing ->
+                        Ui.none
                 ]
 
           else
@@ -144,6 +153,23 @@ descriptionSection i18n =
 {-| An installed app has no address bar, so every page this one introduces has
 to be reachable from here.
 -}
+marketingHomeLink : I18n -> Ui.Element msg
+marketingHomeLink i18n =
+    Ui.row
+        [ Ui.centerX
+        , Ui.spacing Theme.spacing.xs
+        , Ui.Font.size Theme.font.sm
+        , Ui.Font.weight Theme.fontWeight.semibold
+        , Ui.Font.color Theme.primary.text
+        , Ui.contentCenterY
+        , Ui.pointer
+        , Ui.link ("/" ++ T.languageToString (T.currentLanguage i18n) ++ "/")
+        ]
+        [ UI.Components.featherIcon 16 FeatherIcons.helpCircle
+        , Ui.text (T.aboutWelcomeLink i18n)
+        ]
+
+
 pageLink : (Route -> msg) -> FeatherIcons.Icon -> String -> Route -> Ui.Element msg
 pageLink onNavigate icon label route =
     Ui.row
@@ -393,7 +419,7 @@ fundingSection i18n =
                 , Ui.Font.weight Theme.fontWeight.semibold
                 , Ui.Font.color Theme.primary.text
                 , Ui.contentCenterY
-                , Ui.linkNewTab Page.Welcome.fundingUrl
+                , Ui.linkNewTab fundingUrl
                 , Ui.pointer
                 ]
                 [ UI.Components.featherIcon 16 FeatherIcons.heart

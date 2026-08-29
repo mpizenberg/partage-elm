@@ -18,7 +18,7 @@ This document is the contract for the shipped product: user-visible behavior, le
 
 ### Browser identity
 
-On first use, Partage creates an ECDSA P-256 keypair with the Web Crypto API. The SHA-256 hash of the public key is the device identifier used to author events. No name, email address, password, or centralized registration is required.
+On first entry to the app at `/groups` (or when opening an invite), Partage creates an ECDSA P-256 keypair with the Web Crypto API and persists it before showing identity-dependent controls. Static marketing visits create no key. The SHA-256 hash of the public key is the device identifier used to author events. No name, email address, password, or centralized registration is required.
 
 One current identity is stored in IndexedDB per browser profile. It survives normal sessions but is lost when browser storage is cleared. There is no password recovery. A user with a new identity can still recover access by opening an invite, importing a group backup, or linking the new device to an existing member.
 

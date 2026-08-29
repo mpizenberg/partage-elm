@@ -93,7 +93,7 @@ retried on every open until it lands.
   would make push pure server-side config, but it collapses two parties into
   one: the relay already sees group traffic, and correlating that with blinded
   topics is exactly what blinding buys.
-- **Over `/api/config`, not injected into `index.html`**, so online clients can
+- **Over `/api/config`, not injected into `app.html`**, so online clients can
   refresh runtime settings without rebuilding the frontend. Because the shell
   is precached with its CSP headers, the relay also stamps CSP-affecting config
   into the served service worker's cache identity; changing the push origin

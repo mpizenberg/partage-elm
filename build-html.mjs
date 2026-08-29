@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 // template's own "/" wins.
 const origin = (process.env.CANONICAL_ORIGIN || "").replace(/\/$/, "");
 
-for (const filename of ["index.html", "robots.txt", "sitemap.xml"]) {
+for (const filename of ["app.html", "index.html", "robots.txt", "sitemap.xml"]) {
   const template = readFileSync(`public/${filename}`, "utf8");
   writeFileSync(
     `dist/${filename}`,

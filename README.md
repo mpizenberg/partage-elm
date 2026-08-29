@@ -83,7 +83,7 @@ See [`docs/DEPLOY.md`](docs/DEPLOY.md) for container deployment.
 src/              Elm source (Domain, Page, Infra, ...)
 vendor/           Vendored Elm packages
 packages/relay/   Minimal relay backend (Apache-2.0)
-public/           index.html, manifest, icons, JS glue
+public/           app shell, static-home assets, manifest, icons, JS glue
 translations/     travelm-agency translation files
 tests/            elm-test suites
 review/           elm-review configuration

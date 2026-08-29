@@ -28,7 +28,11 @@ type alias Entry =
 -}
 entries : List Entry
 entries =
-    [ { date = "2026-08-27"
+    [ { date = "2026-08-29"
+      , title = T.changelogStaticHomeTitle
+      , body = T.changelogStaticHomeBody
+      }
+    , { date = "2026-08-27"
       , title = T.changelogMigrationTitle
       , body = T.changelogMigrationBody
       }

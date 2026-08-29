@@ -13,8 +13,7 @@ import Domain.Member as Member
 {-| Top-level application routes.
 -}
 type Route
-    = Welcome
-    | Home
+    = Home
       -- A fallback notification click: the blinded topic travels in the URL
       -- fragment (never sent to the origin) and is resolved locally to the
       -- group it belongs to, or falls back to the home list.
@@ -66,10 +65,10 @@ fromAppUrl : AppUrl -> Route
 fromAppUrl appUrl =
     case appUrl.path of
         [] ->
-            Welcome
+            NotFound
 
         [ "welcome" ] ->
-            Welcome
+            NotFound
 
         [ "groups" ] ->
             case Maybe.withDefault "" appUrl.fragment of
@@ -209,9 +208,6 @@ toAppUrl route =
 toPathSegments : Route -> List String
 toPathSegments route =
     case route of
-        Welcome ->
-            []
-
         Home ->
             [ "groups" ]
 
@@ -292,17 +288,10 @@ toPathSegments route =
 
 
 {-| Serialize a Route to a URL path string.
-
-Note: `Welcome` always serializes to `/`. The `/welcome` URL is
-accepted as an alias only at parse time (in `fromAppUrl`).
-
 -}
 toPath : Route -> String
 toPath route =
     case route of
-        Welcome ->
-            "/"
-
         Home ->
             "/groups"
 

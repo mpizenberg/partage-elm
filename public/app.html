@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="theme-color" content="#E8725C" />
+        <meta name="robots" content="noindex" />
+        <title>Partage — Private, local-first bill splitting</title>
+        <meta
+            name="description"
+            content="Partage is a free, open-source bill-splitting app. End-to-end encrypted, works offline, no account needed."
+        />
+        <meta property="og:type" content="website" />
+        <meta
+            property="og:title"
+            content="Partage — Private, local-first bill splitting"
+        />
+        <meta
+            property="og:description"
+            content="Free, open-source, end-to-end encrypted bill splitting for trusted groups. Works offline. No account needed."
+        />
+        <meta property="og:image" content="__CANONICAL_ORIGIN__/icon-512.png" />
+        <meta property="og:url" content="__CANONICAL_ORIGIN__/" />
+        <meta name="twitter:card" content="summary" />
+        <meta
+            name="twitter:title"
+            content="Partage — Private, local-first bill splitting"
+        />
+        <meta
+            name="twitter:description"
+            content="Free, open-source, end-to-end encrypted bill splitting for trusted groups."
+        />
+        <meta name="twitter:image" content="__CANONICAL_ORIGIN__/icon-512.png" />
+        <link rel="manifest" href="/manifest.webmanifest" />
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <link
+            rel="apple-touch-icon"
+            sizes="180x180"
+            href="/icon-maskable-180.png"
+        />
+        <style>
+            #app {
+                height: 100%;
+            }
+
+            /* Safari sizes and paints a date field from the native control
+               rather than from the box the layout gives it, so the value can
+               grow past the field's right edge on a phone. Reaching the
+               control's shadow content needs a stylesheet, which is why this
+               lives here and not with the field's other attributes. */
+            input[type="date"] {
+                max-width: 100%;
+                overflow: hidden;
+                -webkit-appearance: none;
+                appearance: none;
+            }
+
+            input[type="date"]::-webkit-date-and-time-value {
+                margin: 0;
+                text-align: left;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="app"></div>
+        <script src="/elm.js"></script>
+        <script src="/index.js"></script>
+    </body>
+</html>

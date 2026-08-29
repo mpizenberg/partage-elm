@@ -9,7 +9,12 @@ import Test exposing (Test, describe, test)
 suite : Test
 suite =
     describe "Route"
-        [ describe "join fragment grammar key[.tail]"
+        [ test "the static root is not an app route" <|
+            \_ ->
+                Route.fromAppUrl
+                    { path = [], queryParameters = Dict.empty, fragment = Nothing }
+                    |> Expect.equal NotFound
+        , describe "join fragment grammar key[.tail]"
             [ test "a bare key is taken whole" <|
                 \_ ->
                     Route.fromAppUrl

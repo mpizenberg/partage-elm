@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 
 const precacheUrls = [
-  "/",
+  "/app.html",
   // Elm and JS compilation targets
   "/elm.js",
   "/index.js",
@@ -27,7 +27,7 @@ const precacheUrls = [
 // new SW installs fresh copies. dist is fully built before this step runs.
 const digest = createHash("sha256");
 for (const url of precacheUrls) {
-  const file = url === "/" ? "dist/index.html" : "dist" + url;
+  const file = "dist" + url;
   digest.update(url + "\n");
   digest.update(readFileSync(file));
 }
@@ -40,17 +40,33 @@ for (const url of precacheUrls) {
 // headers per deployment.
 const cacheName = "partage-" + digest.digest("hex").slice(0, 16) + "-__CONFIG_DIGEST__";
 
+const generated = generateSW({
+  cacheName,
+  precacheUrls,
+  navigationFallback: "/app.html",
+  networkFirstPrefixes: ["/en", "/fr"],
+  networkOnlyPrefixes: ["/api/", "/admin"],
+  transformNotification: readFileSync(
+    "public/sw-transform-notification.js",
+    "utf-8",
+  ),
+});
+
+const navigationMarker =
+  "  // Navigation requests: serve the cached app shell (Elm handles routing)";
+if (!generated.includes(navigationMarker)) {
+  throw new Error("elm-pwa service-worker navigation marker changed");
+}
+
+// The language-negotiating root is not an SPA route. Prefix routing cannot
+// express that exact path without also swallowing every offline app route.
+const rootNavigation = `  if (event.request.mode === "navigate" && pathname === "/") {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
+`;
 writeFileSync(
   "dist/sw.js",
-  generateSW({
-    cacheName,
-    precacheUrls,
-    navigationFallback: "/",
-    networkFirstPrefixes: [],
-    networkOnlyPrefixes: ["/api/", "/admin"],
-    transformNotification: readFileSync(
-      "public/sw-transform-notification.js",
-      "utf-8",
-    ),
-  }),
+  generated.replace(navigationMarker, rootNavigation + navigationMarker),
 );

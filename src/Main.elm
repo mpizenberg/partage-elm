@@ -1,4 +1,4 @@
-port module Main exposing (AppState, Flags, Model, Msg, main)
+port module Main exposing (AppState, Flags, IdentityTask, Model, Msg, main)
 
 import AppUrl
 import Browser
@@ -52,7 +52,6 @@ import Page.Move
 import Page.NewGroup
 import Page.NotFound
 import Page.Receive
-import Page.Welcome
 import Process
 import Pwa
 import PwaState
@@ -151,7 +150,7 @@ type alias Flags =
 type alias Model =
     { route : Route
     , appState : AppState
-    , generatingIdentity : Bool
+    , identityTask : IdentityTask
     , i18n : I18n
     , runner : TaskRunner Msg
     , idState : IdGen.State
@@ -185,6 +184,12 @@ type AppState
     = Loading
     | Ready Storage.InitData
     | InitError String
+
+
+type IdentityTask
+    = IdentityIdle
+    | IdentityRunning
+    | IdentityFailed String
 
 
 type Msg
@@ -326,7 +331,7 @@ init flags =
     in
     ( { route = route
       , appState = Loading
-      , generatingIdentity = False
+      , identityTask = IdentityIdle
       , i18n = T.init language
       , runner = runner
       , idState = mainIdState
@@ -389,6 +394,33 @@ addToast level message model =
 logError : ErrorLog.Source -> ErrorLog.Severity -> String -> Model -> Model
 logError source severity message model =
     { model | errorLog = ErrorLog.log model.currentTime source severity message model.errorLog }
+
+
+startIdentityTask : ConcurrentTask WebCrypto.Error Identity -> Model -> ( Model, Cmd Msg )
+startIdentityTask task model =
+    case model.identityTask of
+        IdentityRunning ->
+            ( model, Cmd.none )
+
+        _ ->
+            ( model.runner, Cmd.none )
+                |> Runner.andRun OnIdentityGenerated task
+                |> Tuple.mapFirst (\runner -> { model | runner = runner, identityTask = IdentityRunning })
+
+
+ensureHomeIdentity : Model -> ( Model, Cmd Msg )
+ensureHomeIdentity model =
+    case ( model.route, model.appState ) of
+        ( Home, Ready { identity } ) ->
+            case identity of
+                Nothing ->
+                    startIdentityTask Identity.generate model
+
+                Just _ ->
+                    ( model, Cmd.none )
+
+        _ ->
+            ( model, Cmd.none )
 
 
 {-| Build a Page.Group.UpdateConfig from current model state.
@@ -669,8 +701,11 @@ update msg model =
 
                                 _ ->
                                     ( model, Cmd.none )
+
+                        ( identityModel, identityCmd ) =
+                            ensureHomeIdentity { refreshedModel | route = route }
                     in
-                    ( { refreshedModel | route = route }, Cmd.batch [ guardCmd, navScrollCmd route, refreshCmd ] )
+                    ( identityModel, Cmd.batch [ guardCmd, navScrollCmd route, refreshCmd, identityCmd ] )
 
         NavigateTo route ->
             ( model, Navigation.pushUrl navCmd (Route.toAppUrl route) )
@@ -701,9 +736,7 @@ update msg model =
                     ( updatedModel, langCmd )
 
         GenerateIdentity ->
-            ( model.runner, Cmd.none )
-                |> Runner.andRun OnIdentityGenerated Identity.generate
-                |> Tuple.mapFirst (\r -> { model | runner = r, generatingIdentity = True })
+            startIdentityTask Identity.generate model
 
         OnTaskProgress ( runner, cmd ) ->
             ( { model | runner = runner }, cmd )
@@ -720,15 +753,21 @@ update msg model =
                         |> Tuple.mapFirst (\r -> { model | runner = r })
 
                 _ ->
-                    ( { model | generatingIdentity = False }, Cmd.none )
+                    ( { model | identityTask = IdentityIdle }, Cmd.none )
 
         OnIdentityGenerated _ ->
-            ( logError ErrorLog.IdentitySource
-                ErrorLog.Err
-                "Unexpected error generating identity"
-                { model | generatingIdentity = False }
-            , Cmd.none
-            )
+            let
+                message : String
+                message =
+                    T.errorUnexpected model.i18n
+            in
+            addToast Toast.Error
+                message
+                (logError ErrorLog.IdentitySource
+                    ErrorLog.Err
+                    "Unexpected error generating identity"
+                    { model | identityTask = IdentityFailed message }
+                )
 
         OnInitComplete (ConcurrentTask.Success readyData) ->
             let
@@ -795,16 +834,19 @@ update msg model =
                         _ ->
                             ( modelWithReadyData, Cmd.none )
 
+                ( modelAfterIdentity, identityCmd ) =
+                    ensureHomeIdentity modelAfterNav
+
                 -- An install that has never seen the app change must not be shown
                 -- a changelog for one; landing on the page reads it outright.
                 ( modelAfterChangelog, changelogCmd ) =
                     if readyData.lastSeenChangelog == Nothing || guardedRoute == Changelog then
-                        markChangelogSeen modelAfterNav
+                        markChangelogSeen modelAfterIdentity
 
                     else
-                        ( modelAfterNav, Cmd.none )
+                        ( modelAfterIdentity, Cmd.none )
             in
-            ( modelAfterChangelog.runner, Cmd.batch [ languageCmd, guardCmd, navCmd_, changelogCmd, rescheduleStorageCheckTomorrow ] )
+            ( modelAfterChangelog.runner, Cmd.batch [ languageCmd, guardCmd, navCmd_, identityCmd, changelogCmd, rescheduleStorageCheckTomorrow ] )
                 |> Runner.andRun OnStorageCheckComplete
                     (storageCheckTask readyData.db)
                 |> PwaState.configureTask
@@ -836,7 +878,7 @@ update msg model =
                         modelWithIdentity =
                             { model
                                 | appState = Ready { readyData | identity = Just identity }
-                                , generatingIdentity = False
+                                , identityTask = IdentityIdle
                                 , route = guardedRoute
                                 , groupModel = Page.Group.setIdentity identity.publicKeyHash identity.previousDeviceIds model.groupModel
                             }
@@ -847,21 +889,21 @@ update msg model =
                             handleJoinRoute modelWithIdentity model.route (Just identity)
                                 |> Update.addCmd navCmd_
 
-                        Welcome ->
-                            ( modelWithIdentity
-                            , Cmd.batch [ navCmd_, Navigation.pushUrl navCmd (Route.toAppUrl Home) ]
-                            )
-
                         _ ->
                             ( modelWithIdentity, navCmd_ )
 
                 _ ->
-                    ( { model | generatingIdentity = False }, Cmd.none )
+                    ( { model | identityTask = IdentityIdle }, Cmd.none )
 
         OnIdentitySaved _ _ ->
+            let
+                message : String
+                message =
+                    T.toastIdentitySaveError model.i18n
+            in
             addToast Toast.Error
-                (T.toastIdentitySaveError model.i18n)
-                (logError ErrorLog.IdentitySource ErrorLog.Err "Failed to save identity" { model | generatingIdentity = False })
+                message
+                (logError ErrorLog.IdentitySource ErrorLog.Err "Failed to save identity" { model | identityTask = IdentityFailed message })
 
         -- Page form messages
         NewGroupMsg subMsg ->
@@ -1192,14 +1234,14 @@ update msg model =
                             groupState =
                                 GroupState.applyEvents groupData.events GroupState.empty
 
-                            identityHash : String
-                            identityHash =
-                                Maybe.map .publicKeyHash readyData.identity
-                                    |> Maybe.withDefault ""
-
                             isMember : Bool
                             isMember =
-                                GroupState.resolveMemberRootId groupState identityHash /= Nothing
+                                readyData.identity
+                                    |> Maybe.andThen
+                                        (\identity ->
+                                            GroupState.resolveMemberRootId groupState identity.publicKeyHash
+                                        )
+                                    |> (/=) Nothing
                         in
                         if isMember then
                             let
@@ -1375,21 +1417,26 @@ update msg model =
         ImportExportMsg ieMsg ->
             case model.appState of
                 Ready readyData ->
-                    let
-                        config : ImportExport.Config Msg
-                        config =
-                            { toMsg = ImportExportMsg
-                            , db = readyData.db
-                            , groups = readyData.groups
-                            , currentTime = model.currentTime
-                            , i18n = model.i18n
-                            , identityHash = Maybe.map .publicKeyHash readyData.identity |> Maybe.withDefault ""
-                            }
+                    case readyData.identity of
+                        Just identity ->
+                            let
+                                config : ImportExport.Config Msg
+                                config =
+                                    { toMsg = ImportExportMsg
+                                    , db = readyData.db
+                                    , groups = readyData.groups
+                                    , currentTime = model.currentTime
+                                    , i18n = model.i18n
+                                    , identityHash = identity.publicKeyHash
+                                    }
 
-                        ( ( runner, cmd ), maybeOutMsg ) =
-                            ImportExport.update config ieMsg ( model.runner, Cmd.none )
-                    in
-                    processImportExportOutMsg { model | runner = runner } cmd maybeOutMsg
+                                ( ( runner, cmd ), maybeOutMsg ) =
+                                    ImportExport.update config ieMsg ( model.runner, Cmd.none )
+                            in
+                            processImportExportOutMsg { model | runner = runner } cmd maybeOutMsg
+
+                        Nothing ->
+                            ( model, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
@@ -1490,9 +1537,7 @@ update msg model =
                         Ready { identity } ->
                             case identity of
                                 Just current ->
-                                    ( model.runner, Cmd.none )
-                                        |> Runner.andRun OnIdentityGenerated (Identity.rekey current)
-                                        |> Tuple.mapFirst (\r -> { model | aboutModel = aboutModel, runner = r, generatingIdentity = True })
+                                    startIdentityTask (Identity.rekey current) { model | aboutModel = aboutModel }
 
                                 Nothing ->
                                     ( { model | aboutModel = aboutModel }, Cmd.none )
@@ -2016,9 +2061,6 @@ applyRouteGuard identity route =
     case identity of
         Nothing ->
             case route of
-                Welcome ->
-                    ( route, Cmd.none )
-
                 About ->
                     ( route, Cmd.none )
 
@@ -2035,8 +2077,11 @@ applyRouteGuard identity route =
                 Receive ->
                     ( route, Cmd.none )
 
+                NotFound ->
+                    ( route, Cmd.none )
+
                 _ ->
-                    ( Welcome, Navigation.replaceUrl navCmd (AppUrl.fromPath []) )
+                    ( Home, Navigation.replaceUrl navCmd (Route.toAppUrl Home) )
 
         Just _ ->
             ( route, Cmd.none )
@@ -2105,9 +2150,8 @@ handleJoinRoute model route maybeIdentity =
         ( Ready readyData, GroupRoute groupId (Join invite) ) ->
             case maybeIdentity of
                 Nothing ->
-                    ( model.runner, Cmd.none )
-                        |> Runner.andRun OnIdentityGenerated Identity.generate
-                        |> Tuple.mapFirst (\runner -> { model | route = route, joinGroupModel = Page.JoinGroup.init, runner = runner, generatingIdentity = True })
+                    startIdentityTask Identity.generate
+                        { model | route = route, joinGroupModel = Page.JoinGroup.init }
 
                 Just _ ->
                     if Dict.member groupId readyData.groups then
@@ -2710,6 +2754,23 @@ viewPage model =
                     viewReady model readyData
 
 
+identityBootstrapView : I18n -> IdentityTask -> Ui.Element Msg
+identityBootstrapView i18n identityTask =
+    case identityTask of
+        IdentityFailed message ->
+            Ui.column [ Ui.centerX, Ui.spacing Theme.spacing.lg, Ui.paddingXY 0 Theme.spacing.xxl ]
+                [ UI.Components.card [ Ui.padding Theme.spacing.lg ]
+                    [ Ui.el [ Ui.Font.size Theme.font.md, Ui.Font.color Theme.danger.text ]
+                        (Ui.text message)
+                    ]
+                , UI.Components.btnPrimary [ Ui.centerX ]
+                    { label = T.joinGroupRetry i18n, onPress = GenerateIdentity }
+                ]
+
+        _ ->
+            Page.Loading.view i18n
+
+
 viewReady : Model -> Storage.InitData -> Page.Group.ViewResult Msg
 viewReady model readyData =
     let
@@ -2725,58 +2786,51 @@ viewReady model readyData =
         NotificationLanding _ ->
             noOverlay (Page.Loading.view model.i18n)
 
-        Welcome ->
-            noOverlay <|
-                Page.Welcome.view i18n
-                    { onGenerate = GenerateIdentity
-                    , onSwitchLanguage = SwitchLanguage
-                    , onNavigate = NavigateTo
-                    , isGenerating = model.generatingIdentity
-                    , hasIdentity = readyData.identity /= Nothing
-                    , migrationSourceName = Maybe.map displayDomain model.migrationSource
-                    }
-
         Home ->
             noOverlay <|
-                Page.Home.view i18n
-                    { onNavigate = NavigateTo
-                    , onExport = ImportExportMsg << ImportExport.exportMsg
-                    , onExportCsv = ImportExportMsg << ImportExport.exportCsvMsg
-                    , notificationPermission = model.pwaState.notificationPermission
-                    , pushConfigured = PwaState.pushServerUrl model.pwaState /= Nothing
-                    , notificationUnavailable = PwaState.notificationUnavailable model.pwaState
-                    , pushActive = PwaState.pushIsActive model.pwaState
-                    , onEnableNotifications = PwaStateMsg PwaState.enableNotificationsMsg
-                    , currentTime = model.currentTime
-                    , activityMarkers = readyData.activityMarkers
-                    , movingOut =
-                        model.migrationTarget
-                            |> Maybe.map
-                                (\target ->
-                                    { targetName = displayDomain target
-                                    , onOpen = NavigateTo Route.Move
-                                    }
-                                )
+                case readyData.identity of
+                    Nothing ->
+                        identityBootstrapView i18n model.identityTask
 
-                    -- A device that has moved in has groups; one that has not
-                    -- needs the invitation to keep standing after the welcome
-                    -- screen, which it leaves for good once it has an identity.
-                    , movingIn =
-                        if Dict.isEmpty readyData.groups then
-                            model.migrationSource
-                                |> Maybe.map
-                                    (\source ->
-                                        { sourceName = displayDomain source
-                                        , onOpen = NavigateTo Route.Receive
-                                        }
-                                    )
+                    Just _ ->
+                        Page.Home.view i18n
+                            { onNavigate = NavigateTo
+                            , onExport = ImportExportMsg << ImportExport.exportMsg
+                            , onExportCsv = ImportExportMsg << ImportExport.exportCsvMsg
+                            , notificationPermission = model.pwaState.notificationPermission
+                            , pushConfigured = PwaState.pushServerUrl model.pwaState /= Nothing
+                            , notificationUnavailable = PwaState.notificationUnavailable model.pwaState
+                            , pushActive = PwaState.pushIsActive model.pwaState
+                            , onEnableNotifications = PwaStateMsg PwaState.enableNotificationsMsg
+                            , currentTime = model.currentTime
+                            , activityMarkers = readyData.activityMarkers
+                            , movingOut =
+                                model.migrationTarget
+                                    |> Maybe.map
+                                        (\target ->
+                                            { targetName = displayDomain target
+                                            , onOpen = NavigateTo Route.Move
+                                            }
+                                        )
 
-                        else
-                            Nothing
-                    }
-                    HomeMsg
-                    model.homeModel
-                    (Dict.values readyData.groups)
+                            -- A device that has moved in has groups; one that has not
+                            -- keeps the migration invitation available from Home.
+                            , movingIn =
+                                if Dict.isEmpty readyData.groups then
+                                    model.migrationSource
+                                        |> Maybe.map
+                                            (\source ->
+                                                { sourceName = displayDomain source
+                                                , onOpen = NavigateTo Route.Receive
+                                                }
+                                            )
+
+                                else
+                                    Nothing
+                            }
+                            HomeMsg
+                            model.homeModel
+                            (Dict.values readyData.groups)
 
         NewGroup ->
             noOverlay <|
@@ -2865,7 +2919,7 @@ viewReady model readyData =
                         , devMode = readyData.devMode
                         , onToggleDevMode = ToggleDevMode
                         , onResetFeedbackPrompts = ResetFeedbackPrompts
-                        , deviceId = readyData.identity |> Maybe.map .publicKeyHash |> Maybe.withDefault ""
+                        , deviceId = readyData.identity |> Maybe.map .publicKeyHash
                         , gitSha = model.gitSha
                         , onNavigate = NavigateTo
                         , pushServerUrl = PwaState.pushServerUrl model.pwaState

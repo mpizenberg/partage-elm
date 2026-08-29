@@ -23,9 +23,10 @@ real.
 
 ## Core flows
 
-- [ ] **First use.** Fresh profile → open the app → the welcome screen generates
-      an identity, then create a group. Reload: the identity and group are still
-      there (no re-generation, no empty home).
+- [ ] **First use.** Fresh profile → open the localized home, then enter the app.
+      `/groups` generates and persists an identity before showing its controls;
+      create a group and reload. The identity and group remain, with no regeneration
+      or empty home.
 - [ ] **Add each entry kind.** Add an expense, a transfer, and an income; confirm
       the balance and activity log update and survive a reload.
 - [ ] **Persistence across reload.** Add a few entries, hard-reload mid-session;
@@ -202,9 +203,10 @@ real.
       exchange rate, importing/exporting, enabling push, and opening feedback.
       No required worker, connection, frame, image, or download is blocked by
       CSP.
-- [ ] **Canonical / social tags.** In the *served* `index.html` (view source on
-      the deployed origin), the canonical and Open Graph URLs point at the
-      deploy's own host — the relay substitutes them per request; a static-host
-      build must bake them via `CANONICAL_ORIGIN` (RR-012).
+- [ ] **Static home and metadata.** `/` negotiates to `/en/` or `/fr/`; both
+      localized homes work without Elm, link to each other, and enter the app at
+      `/groups`. In their served source, canonical, language-alternate, and Open
+      Graph URLs point at the deployed host. The relay substitutes them per request;
+      a static-host build must bake them via `CANONICAL_ORIGIN` (RR-012).
 - [ ] **Manifest.** `dist/manifest.webmanifest` installs cleanly and includes
       `categories` and portrait `orientation`.

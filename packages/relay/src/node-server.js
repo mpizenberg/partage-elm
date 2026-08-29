@@ -29,6 +29,20 @@ function requestOrigin(c) {
   }
 }
 
+function preferredLanguage(header = '') {
+  const supported = new Set(['en', 'fr']);
+  return header
+    .split(',')
+    .map((part, index) => {
+      const [tag, ...parameters] = part.trim().toLowerCase().split(';');
+      const qualityParameter = parameters.find((parameter) => parameter.trim().startsWith('q='));
+      const quality = qualityParameter ? Number(qualityParameter.trim().slice(2)) : 1;
+      return { language: tag.split('-')[0], quality, index };
+    })
+    .filter(({ language, quality }) => supported.has(language) && Number.isFinite(quality) && quality > 0)
+    .sort((a, b) => b.quality - a.quality || a.index - b.index)[0]?.language ?? 'en';
+}
+
 function externalReferrerHostname(c) {
   const referrer = c.req.header('referer');
   if (!referrer) {
@@ -133,12 +147,14 @@ export function startServer({
     // deploy.
     // The service worker and the HTML shell live at fixed names, so browsers
     // must revalidate them on every load or a deploy leaves clients on the
-    // old build until heuristic caches expire. Extensionless paths are the
-    // SPA fallback, which also serves the shell.
+    // old build until heuristic caches expire. Extensionless responses include
+    // both localized documents and SPA fallbacks, so they revalidate too.
     app.use('/*', async (c, next) => {
       await next();
       if (
-        ['/sw.js', '/index.html', '/robots.txt', '/sitemap.xml'].includes(c.req.path) ||
+        ['/sw.js', '/app.html', '/index.html', '/robots.txt', '/sitemap.xml'].includes(
+          c.req.path,
+        ) ||
         !/\.[^/]*$/.test(c.req.path)
       ) {
         c.header('Cache-Control', 'no-cache');
@@ -176,12 +192,32 @@ export function startServer({
     // that already baked an origin passes through unchanged.
     const withRequestOrigin = (template, c) =>
       template.replaceAll('__CANONICAL_ORIGIN__', requestOrigin(c));
-    const shellTemplate = readFileSync(join(staticDir, 'index.html'), 'utf8');
+    readFileSync(join(staticDir, 'index.html'), 'utf8');
+    const shellTemplate = readFileSync(join(staticDir, 'app.html'), 'utf8');
+    const homeTemplates = Object.fromEntries(
+      ['en', 'fr'].map((language) => [
+        language,
+        readFileSync(join(staticDir, language, 'index.html'), 'utf8'),
+      ]),
+    );
     const robotsTemplate = readFileSync(join(staticDir, 'robots.txt'), 'utf8');
     const sitemapTemplate = readFileSync(join(staticDir, 'sitemap.xml'), 'utf8');
     const shell = (c) => c.html(withRequestOrigin(shellTemplate, c));
-    app.get('/', shell);
-    app.get('/index.html', shell);
+    const home = (language) => (c) => {
+      c.header('Content-Language', language);
+      return c.html(withRequestOrigin(homeTemplates[language], c));
+    };
+    app.get('/', (c) => {
+      c.header('Vary', 'Accept-Language');
+      return c.redirect(`/${preferredLanguage(c.req.header('accept-language'))}/`, 302);
+    });
+    app.get('/index.html', (c) => c.redirect('/', 302));
+    app.get('/app.html', shell);
+    for (const language of ['en', 'fr']) {
+      app.get(`/${language}`, (c) => c.redirect(`/${language}/`, 301));
+      app.get(`/${language}/index.html`, (c) => c.redirect(`/${language}/`, 301));
+      app.get(`/${language}/`, home(language));
+    }
     app.get('/robots.txt', (c) => c.text(withRequestOrigin(robotsTemplate, c)));
     app.get('/sitemap.xml', (c) =>
       c.body(withRequestOrigin(sitemapTemplate, c), 200, {

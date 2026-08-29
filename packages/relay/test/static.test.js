@@ -7,6 +7,22 @@ import { startServer } from '../src/node-server.js';
 import { openStorage } from '../src/storage.js';
 import { TEST_SECRET } from '../test-support/helpers.js';
 
+function writeEntryFiles(dir) {
+  fs.writeFileSync(
+    path.join(dir, 'app.html'),
+    '<html><meta property="og:url" content="__CANONICAL_ORIGIN__/" />app shell</html>',
+  );
+  fs.writeFileSync(path.join(dir, 'index.html'), 'language chooser');
+  for (const language of ['en', 'fr']) {
+    const languageDir = path.join(dir, language);
+    fs.mkdirSync(languageDir);
+    fs.writeFileSync(
+      path.join(languageDir, 'index.html'),
+      `<html lang="${language}"><link rel="canonical" href="__CANONICAL_ORIGIN__/${language}/" />${language} home</html>`,
+    );
+  }
+}
+
 function writeDiscoveryFiles(dir) {
   fs.writeFileSync(
     path.join(dir, 'robots.txt'),
@@ -14,7 +30,7 @@ function writeDiscoveryFiles(dir) {
   );
   fs.writeFileSync(
     path.join(dir, 'sitemap.xml'),
-    '<urlset><url><loc>__CANONICAL_ORIGIN__/</loc></url></urlset>',
+    '<urlset><url><loc>__CANONICAL_ORIGIN__/en/</loc></url><url><loc>__CANONICAL_ORIGIN__/fr/</loc></url></urlset>',
   );
 }
 
@@ -25,10 +41,7 @@ describe('static frontend serving', () => {
 
   before(async () => {
     staticDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-static-'));
-    fs.writeFileSync(
-      path.join(staticDir, 'index.html'),
-      '<html><link rel="canonical" href="__CANONICAL_ORIGIN__/" />app shell</html>',
-    );
+    writeEntryFiles(staticDir);
     fs.writeFileSync(path.join(staticDir, 'main.js'), 'console.log("js")');
     fs.writeFileSync(
       path.join(staticDir, 'sw.js'),
@@ -52,7 +65,7 @@ describe('static frontend serving', () => {
 
   it('refuses to start from a build without its service worker', async () => {
     const incompleteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-incomplete-static-'));
-    fs.writeFileSync(path.join(incompleteDir, 'index.html'), 'app shell');
+    writeEntryFiles(incompleteDir);
     writeDiscoveryFiles(incompleteDir);
     let unexpectedlyStarted;
 
@@ -80,23 +93,27 @@ describe('static frontend serving', () => {
     assert.equal(await res.text(), 'console.log("js")');
   });
 
-  it('falls back to index.html for client-side routes', async () => {
+  it('falls back to app.html for client-side routes', async () => {
     const res = await fetch(`${relay.url}/join/zryq1q3a58m535p`);
     assert.equal(res.status, 200);
     assert.equal(
       await res.text(),
-      `<html><link rel="canonical" href="${relay.url}/" />app shell</html>`,
+      `<html><meta property="og:url" content="${relay.url}/" />app shell</html>`,
     );
   });
 
-  it('substitutes the canonical origin in the shell and crawler files', async () => {
-    const plain = await fetch(`${relay.url}/`);
-    assert.ok((await plain.text()).includes(`href="${relay.url}/"`));
+  it('substitutes the canonical origin in the shell, home, and crawler files', async () => {
+    const plain = await fetch(`${relay.url}/app.html`);
+    assert.ok((await plain.text()).includes(`content="${relay.url}/"`));
 
     const proxiedHeaders = { 'x-forwarded-proto': 'https' };
-    const proxied = await fetch(`${relay.url}/`, { headers: proxiedHeaders });
+    const proxied = await fetch(`${relay.url}/app.html`, { headers: proxiedHeaders });
     const expectedOrigin = relay.url.replace('http:', 'https:');
-    assert.ok((await proxied.text()).includes(`href="${expectedOrigin}/"`));
+    assert.ok((await proxied.text()).includes(`content="${expectedOrigin}/"`));
+
+    const home = await fetch(`${relay.url}/fr/`, { headers: proxiedHeaders });
+    assert.equal(home.headers.get('content-language'), 'fr');
+    assert.ok((await home.text()).includes(`href="${expectedOrigin}/fr/"`));
 
     const robots = await fetch(`${relay.url}/robots.txt`, { headers: proxiedHeaders });
     assert.equal(
@@ -106,7 +123,26 @@ describe('static frontend serving', () => {
 
     const sitemap = await fetch(`${relay.url}/sitemap.xml`, { headers: proxiedHeaders });
     assert.equal(sitemap.headers.get('content-type'), 'application/xml; charset=utf-8');
-    assert.equal(await sitemap.text(), `<urlset><url><loc>${expectedOrigin}/</loc></url></urlset>`);
+    assert.equal(
+      await sitemap.text(),
+      `<urlset><url><loc>${expectedOrigin}/en/</loc></url><url><loc>${expectedOrigin}/fr/</loc></url></urlset>`,
+    );
+  });
+
+  it('negotiates the static home language', async () => {
+    const french = await fetch(`${relay.url}/`, {
+      headers: { 'accept-language': 'en;q=0.5, fr-FR;q=0.9' },
+      redirect: 'manual',
+    });
+    assert.equal(french.status, 302);
+    assert.equal(french.headers.get('location'), '/fr/');
+    assert.match(french.headers.get('vary'), /Accept-Language/);
+
+    const fallback = await fetch(`${relay.url}/`, {
+      headers: { 'accept-language': 'de-DE' },
+      redirect: 'manual',
+    });
+    assert.equal(fallback.headers.get('location'), '/en/');
   });
 
   it('does not shadow unknown API paths', async () => {
@@ -115,7 +151,15 @@ describe('static frontend serving', () => {
   });
 
   it('makes the service worker and shell revalidate, other files default', async () => {
-    for (const path of ['/sw.js', '/robots.txt', '/sitemap.xml', '/', '/join/zryq1q3a58m535p']) {
+    for (const path of [
+      '/sw.js',
+      '/app.html',
+      '/robots.txt',
+      '/sitemap.xml',
+      '/',
+      '/en/',
+      '/join/zryq1q3a58m535p',
+    ]) {
       const res = await fetch(`${relay.url}${path}`);
       assert.equal(res.headers.get('cache-control'), 'no-cache', path);
     }
@@ -126,24 +170,24 @@ describe('static frontend serving', () => {
   it('counts only external or no-referrer HTML landings', async () => {
     const day = new Date().toISOString().slice(0, 10);
     const before = storage.getLandingWindow({ firstDay: day, lastDay: day, limit: 10 });
-    await fetch(`${relay.url}/`, { headers: { 'sec-fetch-dest': 'document' } });
-    await fetch(`${relay.url}/`, {
+    await fetch(`${relay.url}/en/`, { headers: { 'sec-fetch-dest': 'document' } });
+    await fetch(`${relay.url}/en/`, {
       headers: { 'sec-fetch-dest': 'document', referer: 'https://news.ycombinator.com/item?id=1' },
     });
-    await fetch(`${relay.url}/`, {
+    await fetch(`${relay.url}/en/`, {
       headers: { 'sec-fetch-dest': 'document', referer: `${relay.url}/groups` },
     });
-    await fetch(`${relay.url}/`, {
+    await fetch(`${relay.url}/en/`, {
       headers: { 'sec-fetch-dest': 'document', referer: 'http://127.0.0.1:1/source' },
     });
-    await fetch(`${relay.url}/`, {
+    await fetch(`${relay.url}/en/`, {
       headers: {
         'sec-fetch-dest': 'document',
         'x-forwarded-proto': 'https',
         referer: `${relay.url.replace('http:', 'https:')}/groups`,
       },
     });
-    await fetch(`${relay.url}/`, { headers: { 'sec-fetch-mode': 'cors', 'sec-fetch-dest': 'empty' } });
+    await fetch(`${relay.url}/en/`, { headers: { 'sec-fetch-mode': 'cors', 'sec-fetch-dest': 'empty' } });
     await fetch(`${relay.url}/main.js`, { headers: { referer: 'https://www.reddit.com/r/opensource/' } });
     await fetch(`${relay.url}/api/config`, { headers: { referer: 'https://www.reddit.com/r/opensource/' } });
 
@@ -163,7 +207,7 @@ describe('static frontend serving', () => {
 describe('service worker cache identity', () => {
   const serveSw = async (config) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-sw-'));
-    fs.writeFileSync(path.join(dir, 'index.html'), 'app shell');
+    writeEntryFiles(dir);
     fs.writeFileSync(path.join(dir, 'sw.js'), 'var CACHE = "partage-abc-__CONFIG_DIGEST__";');
     writeDiscoveryFiles(dir);
     const relay = await startServer({
