@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: __CANONICAL_ORIGIN__/sitemap.xml

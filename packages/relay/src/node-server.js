@@ -128,15 +128,19 @@ export function startServer({
   );
 
   if (staticDir) {
-    // STATIC_DIR is one complete, immutable frontend deployment. Reading both
-    // entry points during startup intentionally aborts an incomplete deploy.
+    // STATIC_DIR is one complete, immutable frontend deployment. Reading its
+    // required entry and discovery files during startup aborts an incomplete
+    // deploy.
     // The service worker and the HTML shell live at fixed names, so browsers
     // must revalidate them on every load or a deploy leaves clients on the
     // old build until heuristic caches expire. Extensionless paths are the
     // SPA fallback, which also serves the shell.
     app.use('/*', async (c, next) => {
       await next();
-      if (c.req.path === '/sw.js' || c.req.path === '/index.html' || !/\.[^/]*$/.test(c.req.path)) {
+      if (
+        ['/sw.js', '/index.html', '/robots.txt', '/sitemap.xml'].includes(c.req.path) ||
+        !/\.[^/]*$/.test(c.req.path)
+      ) {
         c.header('Cache-Control', 'no-cache');
       }
     });
@@ -167,15 +171,23 @@ export function startServer({
         console.error('Failed to record landing', err);
       }
     });
-    // The shell's canonical/Open Graph tags must carry the deployment's own
-    // origin, which only the serving process knows: substitute the build-time
-    // placeholder with each request's origin (the proxy's forwarded proto,
-    // else plain http). A build that already baked an origin passes through
-    // unchanged.
+    // Canonical, Open Graph, and crawler-discovery URLs must carry the
+    // deployment's own origin, which only the serving process knows. A build
+    // that already baked an origin passes through unchanged.
+    const withRequestOrigin = (template, c) =>
+      template.replaceAll('__CANONICAL_ORIGIN__', requestOrigin(c));
     const shellTemplate = readFileSync(join(staticDir, 'index.html'), 'utf8');
-    const shell = (c) => c.html(shellTemplate.replaceAll('__CANONICAL_ORIGIN__', requestOrigin(c)));
+    const robotsTemplate = readFileSync(join(staticDir, 'robots.txt'), 'utf8');
+    const sitemapTemplate = readFileSync(join(staticDir, 'sitemap.xml'), 'utf8');
+    const shell = (c) => c.html(withRequestOrigin(shellTemplate, c));
     app.get('/', shell);
     app.get('/index.html', shell);
+    app.get('/robots.txt', (c) => c.text(withRequestOrigin(robotsTemplate, c)));
+    app.get('/sitemap.xml', (c) =>
+      c.body(withRequestOrigin(sitemapTemplate, c), 200, {
+        'Content-Type': 'application/xml; charset=utf-8',
+      }),
+    );
     // The service worker precaches the shell with its response headers, so a
     // client keeps enforcing the CSP that was live when it installed. Stamping
     // the cache name with a digest of the settings that CSP is built from makes

@@ -7,6 +7,17 @@ import { startServer } from '../src/node-server.js';
 import { openStorage } from '../src/storage.js';
 import { TEST_SECRET } from '../test-support/helpers.js';
 
+function writeDiscoveryFiles(dir) {
+  fs.writeFileSync(
+    path.join(dir, 'robots.txt'),
+    'User-agent: *\nAllow: /\nSitemap: __CANONICAL_ORIGIN__/sitemap.xml\n',
+  );
+  fs.writeFileSync(
+    path.join(dir, 'sitemap.xml'),
+    '<urlset><url><loc>__CANONICAL_ORIGIN__/</loc></url></urlset>',
+  );
+}
+
 describe('static frontend serving', () => {
   let relay;
   let staticDir;
@@ -23,6 +34,7 @@ describe('static frontend serving', () => {
       path.join(staticDir, 'sw.js'),
       'var CACHE = "partage-abc-__CONFIG_DIGEST__";',
     );
+    writeDiscoveryFiles(staticDir);
     storage = openStorage(':memory:');
     relay = await startServer({
       storage,
@@ -41,6 +53,7 @@ describe('static frontend serving', () => {
   it('refuses to start from a build without its service worker', async () => {
     const incompleteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-incomplete-static-'));
     fs.writeFileSync(path.join(incompleteDir, 'index.html'), 'app shell');
+    writeDiscoveryFiles(incompleteDir);
     let unexpectedlyStarted;
 
     try {
@@ -76,12 +89,24 @@ describe('static frontend serving', () => {
     );
   });
 
-  it('substitutes the canonical origin from the request', async () => {
+  it('substitutes the canonical origin in the shell and crawler files', async () => {
     const plain = await fetch(`${relay.url}/`);
     assert.ok((await plain.text()).includes(`href="${relay.url}/"`));
 
-    const proxied = await fetch(`${relay.url}/`, { headers: { 'x-forwarded-proto': 'https' } });
-    assert.match(await proxied.text(), /href="https:\/\/127\.0\.0\.1:\d+\/"/);
+    const proxiedHeaders = { 'x-forwarded-proto': 'https' };
+    const proxied = await fetch(`${relay.url}/`, { headers: proxiedHeaders });
+    const expectedOrigin = relay.url.replace('http:', 'https:');
+    assert.ok((await proxied.text()).includes(`href="${expectedOrigin}/"`));
+
+    const robots = await fetch(`${relay.url}/robots.txt`, { headers: proxiedHeaders });
+    assert.equal(
+      await robots.text(),
+      `User-agent: *\nAllow: /\nSitemap: ${expectedOrigin}/sitemap.xml\n`,
+    );
+
+    const sitemap = await fetch(`${relay.url}/sitemap.xml`, { headers: proxiedHeaders });
+    assert.equal(sitemap.headers.get('content-type'), 'application/xml; charset=utf-8');
+    assert.equal(await sitemap.text(), `<urlset><url><loc>${expectedOrigin}/</loc></url></urlset>`);
   });
 
   it('does not shadow unknown API paths', async () => {
@@ -90,7 +115,7 @@ describe('static frontend serving', () => {
   });
 
   it('makes the service worker and shell revalidate, other files default', async () => {
-    for (const path of ['/sw.js', '/', '/join/zryq1q3a58m535p']) {
+    for (const path of ['/sw.js', '/robots.txt', '/sitemap.xml', '/', '/join/zryq1q3a58m535p']) {
       const res = await fetch(`${relay.url}${path}`);
       assert.equal(res.headers.get('cache-control'), 'no-cache', path);
     }
@@ -140,6 +165,7 @@ describe('service worker cache identity', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-sw-'));
     fs.writeFileSync(path.join(dir, 'index.html'), 'app shell');
     fs.writeFileSync(path.join(dir, 'sw.js'), 'var CACHE = "partage-abc-__CONFIG_DIGEST__";');
+    writeDiscoveryFiles(dir);
     const relay = await startServer({
       storage: openStorage(':memory:'),
       powSecret: TEST_SECRET,
