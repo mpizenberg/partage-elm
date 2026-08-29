@@ -108,7 +108,6 @@ view :
 view i18n config model =
     Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.md ]
         [ descriptionSection i18n
-        , marketingHomeLink i18n
         , pageLink config.onNavigate FeatherIcons.gift (T.changelogTitle i18n) Route.Changelog
         , languageSection i18n config.onSwitchLanguage
         , notificationsSection i18n config
@@ -148,26 +147,6 @@ descriptionSection i18n =
 
 
 -- ELSEWHERE IN THE APP
-
-
-{-| An installed app has no address bar, so every page this one introduces has
-to be reachable from here.
--}
-marketingHomeLink : I18n -> Ui.Element msg
-marketingHomeLink i18n =
-    Ui.row
-        [ Ui.centerX
-        , Ui.spacing Theme.spacing.xs
-        , Ui.Font.size Theme.font.sm
-        , Ui.Font.weight Theme.fontWeight.semibold
-        , Ui.Font.color Theme.primary.text
-        , Ui.contentCenterY
-        , Ui.pointer
-        , Ui.link ("/" ++ T.languageToString (T.currentLanguage i18n) ++ "/")
-        ]
-        [ UI.Components.featherIcon 16 FeatherIcons.helpCircle
-        , Ui.text (T.aboutWelcomeLink i18n)
-        ]
 
 
 pageLink : (Route -> msg) -> FeatherIcons.Icon -> String -> Route -> Ui.Element msg

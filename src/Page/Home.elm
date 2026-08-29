@@ -321,6 +321,8 @@ homeHeader i18n =
         , Ui.Font.letterSpacing Theme.letterSpacing.tight
         , Ui.spacing Theme.spacing.sm
         , Ui.contentCenterY
+        , Ui.pointer
+        , Ui.link "/"
         ]
         [ UI.Components.appLogo 32
         , Ui.text (T.shellPartage i18n)
