@@ -95,6 +95,48 @@ describe('daily table', () => {
     storage.close();
   });
 
+  it('retains daily landing totals and only each completed day’s top referrers', () => {
+    const storage = openStorage(':memory:');
+    storage.recordLanding('2030-01-01');
+    for (let rank = 1; rank <= 12; rank++) {
+      for (let request = 0; request < rank; request++) {
+        storage.recordLanding('2030-01-01', `host-${rank}.example`);
+      }
+    }
+    storage.recordLanding('2030-01-02', 'host-1.example');
+
+    storage.finalizeLandingReferrers('2030-01-02', 10);
+    const firstDay = storage.getLandingWindow({
+      firstDay: '2030-01-01',
+      lastDay: '2030-01-01',
+      limit: 10,
+    });
+    assert.equal(firstDay.total, 79);
+    assert.equal(firstDay.referrers.length, 10);
+    assert.deepEqual(firstDay.referrers[0], { hostname: 'host-12.example', requests: 12 });
+    assert.deepEqual(firstDay.referrers.at(-1), { hostname: 'host-3.example', requests: 3 });
+
+    const bothDays = storage.getLandingWindow({
+      firstDay: '2030-01-01',
+      lastDay: '2030-01-02',
+      limit: 10,
+    });
+    assert.equal(bothDays.total, 80);
+    assert.ok(!bothDays.referrers.some((row) => row.hostname === 'host-2.example'));
+
+    for (let i = 0; i < 1001; i++) {
+      storage.recordLanding('2030-01-03', `untrusted-${i}.example`);
+    }
+    const bounded = storage.getLandingWindow({
+      firstDay: '2030-01-03',
+      lastDay: '2030-01-03',
+      limit: 2000,
+    });
+    assert.equal(bounded.total, 1001);
+    assert.equal(bounded.referrers.length, 1000);
+    storage.close();
+  });
+
   it('rolls up the observed-device funnel and weekly creation cohorts', () => {
     const storage = openStorage(':memory:');
     const mk = (id, creator) =>

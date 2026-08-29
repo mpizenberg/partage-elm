@@ -98,6 +98,11 @@ real.
       relay, then confirm the new funnel level snapshots render in the selected
       30/90/365-day growth trends; older dates correctly have no backfilled
       funnel history.
+- [ ] **Landing referrers.** Open the site once directly, once from an external
+      page, and once through a same-origin link. The dashboard total increases
+      twice, only the external hostname appears, and its percentage uses both
+      counted landings as the denominator; assets and API requests change
+      neither number.
 
 ## Notifications (only if the relay is run with `PUSH_SERVER_URL` set)
 

@@ -10,6 +10,7 @@ import { TEST_SECRET } from '../test-support/helpers.js';
 describe('static frontend serving', () => {
   let relay;
   let staticDir;
+  let storage;
 
   before(async () => {
     staticDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-static-'));
@@ -22,8 +23,9 @@ describe('static frontend serving', () => {
       path.join(staticDir, 'sw.js'),
       'var CACHE = "partage-abc-__CONFIG_DIGEST__";',
     );
+    storage = openStorage(':memory:');
     relay = await startServer({
-      storage: openStorage(':memory:'),
+      storage,
       powSecret: TEST_SECRET,
       port: 0,
       staticDir,
@@ -32,6 +34,7 @@ describe('static frontend serving', () => {
 
   after(async () => {
     await relay.close();
+    storage.close();
     fs.rmSync(staticDir, { recursive: true });
   });
 
@@ -93,6 +96,42 @@ describe('static frontend serving', () => {
     }
     const asset = await fetch(`${relay.url}/main.js`);
     assert.equal(asset.headers.get('cache-control'), null);
+  });
+
+  it('counts only external or no-referrer HTML landings', async () => {
+    const day = new Date().toISOString().slice(0, 10);
+    const before = storage.getLandingWindow({ firstDay: day, lastDay: day, limit: 10 });
+    await fetch(`${relay.url}/`, { headers: { 'sec-fetch-dest': 'document' } });
+    await fetch(`${relay.url}/`, {
+      headers: { 'sec-fetch-dest': 'document', referer: 'https://news.ycombinator.com/item?id=1' },
+    });
+    await fetch(`${relay.url}/`, {
+      headers: { 'sec-fetch-dest': 'document', referer: `${relay.url}/groups` },
+    });
+    await fetch(`${relay.url}/`, {
+      headers: { 'sec-fetch-dest': 'document', referer: 'http://127.0.0.1:1/source' },
+    });
+    await fetch(`${relay.url}/`, {
+      headers: {
+        'sec-fetch-dest': 'document',
+        'x-forwarded-proto': 'https',
+        referer: `${relay.url.replace('http:', 'https:')}/groups`,
+      },
+    });
+    await fetch(`${relay.url}/`, { headers: { 'sec-fetch-mode': 'cors', 'sec-fetch-dest': 'empty' } });
+    await fetch(`${relay.url}/main.js`, { headers: { referer: 'https://www.reddit.com/r/opensource/' } });
+    await fetch(`${relay.url}/api/config`, { headers: { referer: 'https://www.reddit.com/r/opensource/' } });
+
+    const after = storage.getLandingWindow({ firstDay: day, lastDay: day, limit: 10 });
+    assert.equal(after.total, before.total + 3);
+    assert.deepEqual(after.referrers.find((row) => row.hostname === 'news.ycombinator.com'), {
+      hostname: 'news.ycombinator.com',
+      requests: 1,
+    });
+    assert.deepEqual(after.referrers.find((row) => row.hostname === '127.0.0.1'), {
+      hostname: '127.0.0.1',
+      requests: 1,
+    });
   });
 });
 

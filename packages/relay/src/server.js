@@ -38,7 +38,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { startServer } from './node-server.js';
 import { openStorage } from './storage.js';
-import { RETENTION_MS, fleetLevelParams } from './app.js';
+import { LANDING_REFERRER_LIMIT, RETENTION_MS, fleetLevelParams } from './app.js';
 
 try {
   process.loadEnvFile();
@@ -62,9 +62,8 @@ mkdirSync(dirname(dbPath), { recursive: true });
 
 const storage = openStorage(dbPath);
 
-// Runs at startup and once a day: purge groups idle past the retention window,
-// then snapshot the fleet's current levels so the operator dashboard can trend
-// state that the live tables only ever hold for the present. A failed sweep
+// Runs at startup and once a day: purge idle groups, finalize completed landing
+// days, and snapshot current fleet levels for dashboard trends. A failed sweep
 // must not take the relay down with it; the next run retries.
 function dailyMaintenance() {
   const now = Date.now();
@@ -77,6 +76,7 @@ function dailyMaintenance() {
       console.log(`Purged ${purged} idle group(s)`);
     }
 
+    storage.finalizeLandingReferrers(day, LANDING_REFERRER_LIMIT);
     storage.recordDailyLevels(day, storage.getFleetLevels(fleetLevelParams(now)));
   } catch (err) {
     console.error('Daily maintenance failed', err);

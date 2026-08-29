@@ -18,7 +18,47 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { createNodeWebSocket } from '@hono/node-ws';
 import { contentSecurityPolicy, createApp, verifyGroupSecret } from './app.js';
 
-export function startServer({ storage, powSecret, port = 8090, staticDir, adminSecret, adminStorageBudgetBytes, pushServerUrl, feedbackProjectId, version, migrationTarget, migrationSource, readOnly }) {
+function requestOrigin(c) {
+  const url = new URL(c.req.url);
+  const proto = (c.req.header('x-forwarded-proto') ?? url.protocol).split(',')[0].trim().replace(/:$/, '');
+  const host = (c.req.header('x-forwarded-host') ?? c.req.header('host') ?? url.host).split(',')[0].trim();
+  try {
+    return new URL(`${proto}://${host}`).origin;
+  } catch {
+    return url.origin;
+  }
+}
+
+function externalReferrerHostname(c) {
+  const referrer = c.req.header('referer');
+  if (!referrer) {
+    return null;
+  }
+  try {
+    const parsed = new URL(referrer);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return null;
+    }
+    return parsed.origin === requestOrigin(c) ? undefined : parsed.hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+export function startServer({
+  storage,
+  powSecret,
+  port = 8090,
+  staticDir,
+  adminSecret,
+  adminStorageBudgetBytes,
+  pushServerUrl,
+  feedbackProjectId,
+  version,
+  migrationTarget,
+  migrationSource,
+  readOnly,
+}) {
   const topics = new Map();
 
   const app = createApp({
@@ -100,17 +140,40 @@ export function startServer({ storage, powSecret, port = 8090, staticDir, adminS
         c.header('Cache-Control', 'no-cache');
       }
     });
+    app.use('/*', async (c, next) => {
+      await next();
+      const contentType = c.res.headers.get('content-type') ?? '';
+      const fetchMode = c.req.header('sec-fetch-mode');
+      const fetchDestination = c.req.header('sec-fetch-dest');
+      const knownSubrequest =
+        (fetchMode || fetchDestination) && fetchMode !== 'navigate' && fetchDestination !== 'document';
+      if (
+        c.req.method !== 'GET' ||
+        c.res.status !== 200 ||
+        !contentType.startsWith('text/html') ||
+        knownSubrequest
+      ) {
+        return;
+      }
+      const hostname = externalReferrerHostname(c);
+      if (hostname === undefined) {
+        return;
+      }
+      const requestDay = new Date().toISOString().slice(0, 10);
+      try {
+        storage.recordLanding(requestDay, hostname);
+      } catch (err) {
+        // Traffic accounting must never make the static site unavailable.
+        console.error('Failed to record landing', err);
+      }
+    });
     // The shell's canonical/Open Graph tags must carry the deployment's own
     // origin, which only the serving process knows: substitute the build-time
     // placeholder with each request's origin (the proxy's forwarded proto,
     // else plain http). A build that already baked an origin passes through
     // unchanged.
     const shellTemplate = readFileSync(join(staticDir, 'index.html'), 'utf8');
-    const shell = (c) => {
-      const proto = (c.req.header('x-forwarded-proto') ?? 'http').split(',')[0].trim();
-      const origin = `${proto}://${c.req.header('host') ?? ''}`;
-      return c.html(shellTemplate.replaceAll('__CANONICAL_ORIGIN__', origin));
-    };
+    const shell = (c) => c.html(shellTemplate.replaceAll('__CANONICAL_ORIGIN__', requestOrigin(c)));
     app.get('/', shell);
     app.get('/index.html', shell);
     // The service worker precaches the shell with its response headers, so a

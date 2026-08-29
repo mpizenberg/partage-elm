@@ -83,12 +83,14 @@ Put the container behind your TLS-terminating reverse proxy as usual. WebSocket 
 
 ### Operator dashboard
 
-Setting `ADMIN_SECRET` turns on a read-only surface for monitoring the deployment — capacity, growth and weekly creation cohorts, relay-observable abuse, per-group hot-lists, a pseudonymous device estimate, and a cost run-rate:
+Setting `ADMIN_SECRET` turns on a read-only surface for monitoring the deployment — capacity, growth and weekly creation cohorts, aggregate landing referrers, relay-observable abuse, per-group hot-lists, a pseudonymous device estimate, and a cost run-rate:
 
 - `GET /admin` — a self-contained page; enter the secret, which stays in the browser tab's session and is never persisted.
 - `GET /api/admin/summary` — the JSON behind it, authenticated with `Authorization: Bearer $ADMIN_SECRET`.
 
-Both are **absent (`404`) until `ADMIN_SECRET` is set** and live outside the per-group auth. They never return group content — only fleet **metadata** (group existence and sizes, opaque `groupId` hot-lists, abuse counters, and device estimates). The growth funnel counts relay-observed actor ids, including each creator, and current stored records; these are deliberately labelled proxies rather than people or decrypted events. Daily funnel history begins when a relay version that records it first runs, while weekly cohorts group server-stamped creation dates and show each cohort's current observed outcome.
+Both are **absent (`404`) until `ADMIN_SECRET` is set** and live outside the per-group auth. They never return group content — only fleet **metadata** (group existence and sizes, opaque `groupId` hot-lists, abuse counters, device estimates, and aggregate traffic counts). The growth funnel counts relay-observed actor ids, including each creator, and current stored records; these are deliberately labelled proxies rather than people or decrypted events. Daily funnel history begins when a relay version that records it first runs, while weekly cohorts group server-stamped creation dates and show each cohort's current observed outcome.
+
+Landing traffic counts successful HTML navigations arriving without a referrer or from an external hostname; same-origin navigation, redirects, API calls, and assets are excluded. Only the external hostname is retained—never a referrer path, query, IP address, user agent, or individual request. Completed UTC days retain their ten most frequent hostnames plus the all-landing denominator. Today, yesterday, and the last seven days are approximate request counts, not visitors or group-creation attribution.
 
 Serving them on the public origin behind TLS is fine **provided `ADMIN_SECRET` is a strong random value** (generate it like `POW_SECRET`). That secret is the primary control — compared in constant time — and the endpoint hardens itself against guessing: after **5 failed attempts an address is locked out for 15 minutes**. The lockout is per-IP and keyed off the reverse proxy's `X-Forwarded-For` (the setups above set it), so an attacker cannot lock the operator out — an address is only ever locked by its own failed attempts. Behind a CDN every visitor shares the CDN's egress addresses, so a stranger's failed guesses could lock the dashboard for everyone at once — if you front the relay with one, restrict the admin paths as below instead.
 

@@ -292,7 +292,9 @@ The interface is mobile-first and responsive. Forms have visible or accessible l
 
 ## Usage and cost information
 
-Usage statistics remain local. Partage tracks estimated storage use, observed transferred bytes, and the tracking start date. The About page derives an informational infrastructure-cost estimate that can be reset. It is not billing and is never uploaded as analytics.
+In-app usage statistics remain local. Partage tracks estimated storage use, observed transferred bytes, and the tracking start date. The About page derives an informational infrastructure-cost estimate that can be reset. It is not billing and is never uploaded as client analytics.
+
+The relay aggregates successful external or no-referrer HTML landings by UTC day. During the open day it counts candidate hostnames; completed days retain only the all-landing count and ten most frequent external hostnames. It never retains referrer paths or queries, IP addresses, user agents, or client identifiers. These request totals are not linked to groups or interpreted as people.
 
 ## Relay implementation contract
 

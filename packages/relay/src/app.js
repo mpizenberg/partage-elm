@@ -48,12 +48,14 @@ export const DEFAULT_APPEND_LIMITS = {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const utcDay = (ms) => new Date(ms).toISOString().slice(0, 10);
 // Groups at or above this fraction of either quota are counted as near-capacity.
 const NEAR_QUOTA_FRACTION = 0.8;
 
 // Operator-dashboard thresholds and hot-list depth (docs/OWNER dashboard). Named
 // so they can be retuned once real traffic is observed.
 const HOTLIST_LIMIT = 10;
+export const LANDING_REFERRER_LIMIT = 10;
 const AUTH_PROBE_THRESHOLD = 50;
 const REJECTION_SPIKE_FLOOR = 50;
 const REJECTION_SPIKE_FACTOR = 3;
@@ -147,7 +149,6 @@ function median(values) {
 }
 
 function evaluateFlags({ levels, history, today, nowMs, adminStorageBudgetBytes }) {
-  const day = (ms) => new Date(ms).toISOString().slice(0, 10);
   const rejectionsByDay = {};
   let authToday = 0;
   for (const row of history) {
@@ -159,7 +160,7 @@ function evaluateFlags({ levels, history, today, nowMs, adminStorageBudgetBytes 
   }
   const trailing = [];
   for (let i = 1; i <= 7; i++) {
-    trailing.push(rejectionsByDay[day(nowMs - i * DAY_MS)] ?? 0);
+    trailing.push(rejectionsByDay[utcDay(nowMs - i * DAY_MS)] ?? 0);
   }
   const rejectionThreshold = Math.max(REJECTION_SPIKE_FLOOR, REJECTION_SPIKE_FACTOR * median(trailing));
   const rejectionsToday = rejectionsByDay[today] ?? 0;
@@ -235,6 +236,9 @@ function computeCost({ levels, history, nowMs }) {
  * - bumpMetric(name, day, amount = 1) — day-bucketed counter, UPSERT-add.
  * - recordDailyLevels(day, {name: value}) — day-bucketed level snapshot, UPSERT-replace.
  * - getDailySince(day) → [{day, name, value}] — the counter+level series from `day` on.
+ * - recordLanding(day, hostname?) — daily all-landing and optional external-host counts.
+ * - finalizeLandingReferrers(beforeDay, limit) — retain only each completed day's top hosts.
+ * - getLandingWindow({firstDay, lastDay, limit}) → total landings and top hosts.
  * - getFleetLevels({idleCutoff, nearQuotaBytes, nearQuotaRecords, actorWindows,
  *     realUseDevices, realUseRecords}) → the current fleet level snapshot object
  *     (keys are metric names), including the relay-observed growth funnel.
@@ -686,7 +690,8 @@ export function createApp({
       throttle.succeed(ip);
 
       const nowMs = Date.now();
-      const today = new Date(nowMs).toISOString().slice(0, 10);
+      const today = utcDay(nowMs);
+      const yesterday = utcDay(nowMs - DAY_MS);
       const params = fleetLevelParams(nowMs, appendLimits);
       const levels = storage.getFleetLevels(params);
 
@@ -709,6 +714,23 @@ export function createApp({
             createdSince: cohortSince.toISOString(),
             realUseDevices: params.realUseDevices,
             realUseRecords: params.realUseRecords,
+          }),
+        },
+        landings: {
+          today: storage.getLandingWindow({
+            firstDay: today,
+            lastDay: today,
+            limit: LANDING_REFERRER_LIMIT,
+          }),
+          yesterday: storage.getLandingWindow({
+            firstDay: yesterday,
+            lastDay: yesterday,
+            limit: LANDING_REFERRER_LIMIT,
+          }),
+          last7Days: storage.getLandingWindow({
+            firstDay: utcDay(nowMs - 6 * DAY_MS),
+            lastDay: today,
+            limit: LANDING_REFERRER_LIMIT,
           }),
         },
         hotlists: storage.getHotlists({

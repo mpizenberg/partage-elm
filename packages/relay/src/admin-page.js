@@ -48,7 +48,8 @@ svg.spark{width:100%;height:40px;display:block}
 .hot-title{color:var(--muted);font-size:12px;margin-bottom:8px}
 .hot table{width:100%;border-collapse:collapse}
 .hot td{padding:4px 0;border-top:1px solid var(--line)}
-.hot .gid{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+.hot .gid,.hot .hostname{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+.hot .hostname{overflow-wrap:anywhere}
 .cohort{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow-x:auto}
 .cohort table{width:100%;border-collapse:collapse;min-width:620px}
 .cohort th,.cohort td{padding:9px 12px;border-top:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -194,6 +195,23 @@ function hotTable(title, rows, valueFn){
   }
   return E('div', {'class':'hot'}, [E('div', {'class':'hot-title', text:title}), E('table', null, [body])]);
 }
+function landingTable(title, period){
+  var body = E('tbody');
+  if (!period.referrers.length){
+    body.appendChild(E('tr', null, [E('td', {'class':'muted', colspan:'2', text:'No external referrers'})]));
+  } else for (var i = 0; i < period.referrers.length; i++){
+    var r = period.referrers[i];
+    body.appendChild(E('tr', null, [
+      E('td', {'class':'hostname', text:r.hostname}),
+      E('td', {'class':'num', text:outcome(r.requests, period.total)}),
+    ]));
+  }
+  var total = fmtInt(period.total) + (period.total === 1 ? ' landing' : ' landings');
+  return E('div', {'class':'hot'}, [
+    E('div', {'class':'hot-title', text:title + ' · ' + total}),
+    E('table', null, [body]),
+  ]);
+}
 function cohortTable(rows, currentWeek){
   var head = E('thead', null, [E('tr', null, [
     E('th', {scope:'col', text:'Creation week'}),
@@ -277,6 +295,14 @@ function render(data){
     fmtInt(previousGroups7d) + ' in the previous 7d',
   ]));
   view.appendChild(growthCards);
+
+  view.appendChild(E('h2', {text:'Landing traffic'}));
+  view.appendChild(E('p', {'class':'section-note', text:'Top external referrer hostnames. Percentages use all server-observed landings, including those without a referrer.'}));
+  var landingTables = E('div', {'class':'hots'});
+  landingTables.appendChild(landingTable('Today', data.landings.today));
+  landingTables.appendChild(landingTable('Yesterday', data.landings.yesterday));
+  landingTables.appendChild(landingTable('Last 7 days', data.landings.last7Days));
+  view.appendChild(landingTables);
 
   view.appendChild(E('h2', {text:'Growth trends'}));
   var growthCharts = E('div', {'class':'charts'});

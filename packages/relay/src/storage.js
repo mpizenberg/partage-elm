@@ -6,6 +6,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { planChange } from './quota.js';
 
+const MAX_LANDING_HOSTNAME_CANDIDATES = 1000;
+
 export function openStorage(path) {
   const db = new DatabaseSync(path);
   db.exec(`
@@ -34,6 +36,12 @@ export function openStorage(path) {
       name  TEXT NOT NULL,
       value INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (day, name)
+    );
+    CREATE TABLE IF NOT EXISTS landing_daily (
+      day      TEXT NOT NULL,
+      hostname TEXT NOT NULL,
+      requests INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (day, hostname)
     );
   `);
   const hasRecordId =
@@ -105,6 +113,39 @@ export function openStorage(path) {
     'INSERT INTO daily (day, name, value) VALUES (?, ?, ?) ON CONFLICT(day, name) DO UPDATE SET value = excluded.value',
   );
   const selectDailySince = db.prepare('SELECT day, name, value FROM daily WHERE day >= ? ORDER BY day, name');
+  // The empty hostname is the all-landings denominator; valid URL hostnames
+  // are never empty, so totals and referrer counts share one compact table.
+  const bumpLandingStmt = db.prepare(`
+    INSERT INTO landing_daily (day, hostname, requests) VALUES (?, ?, 1)
+    ON CONFLICT(day, hostname) DO UPDATE SET requests = requests + 1
+  `);
+  const selectLandingHostname = db.prepare('SELECT 1 FROM landing_daily WHERE day = ? AND hostname = ?');
+  const countLandingHostnames = db.prepare(
+    "SELECT COUNT(*) AS n FROM landing_daily WHERE day = ? AND hostname <> ''",
+  );
+  const selectUntrimmedLandingDays = db.prepare(`
+    SELECT day FROM landing_daily
+    WHERE day < ? AND hostname <> ''
+    GROUP BY day HAVING COUNT(*) > ?
+  `);
+  const selectLandingHostnamesForDay = db.prepare(`
+    SELECT hostname FROM landing_daily
+    WHERE day = ? AND hostname <> ''
+    ORDER BY requests DESC, hostname
+  `);
+  const deleteLandingHostname = db.prepare('DELETE FROM landing_daily WHERE day = ? AND hostname = ?');
+  const selectLandingTotal = db.prepare(`
+    SELECT COALESCE(SUM(requests), 0) AS requests
+    FROM landing_daily WHERE day >= ? AND day <= ? AND hostname = ''
+  `);
+  const selectLandingReferrers = db.prepare(`
+    SELECT hostname, SUM(requests) AS requests
+    FROM landing_daily
+    WHERE day >= ? AND day <= ? AND hostname <> ''
+    GROUP BY hostname
+    ORDER BY requests DESC, hostname
+    LIMIT ?
+  `);
   const selectFleetAgg = db.prepare(`
     SELECT
       COUNT(*) AS total_groups,
@@ -317,6 +358,56 @@ export function openStorage(path) {
 
     getDailySince(sinceDay) {
       return selectDailySince.all(sinceDay).map((row) => ({ day: row.day, name: row.name, value: row.value }));
+    },
+
+    recordLanding(day, hostname = null) {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        bumpLandingStmt.run(day, '');
+        // Referrer is attacker-controlled. Preserve the all-landing total but
+        // bound transient hostname cardinality until the day is trimmed.
+        if (
+          hostname !== null &&
+          (selectLandingHostname.get(day, hostname) !== undefined ||
+            countLandingHostnames.get(day).n < MAX_LANDING_HOSTNAME_CANDIDATES)
+        ) {
+          bumpLandingStmt.run(day, hostname);
+        }
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+
+    finalizeLandingReferrers(beforeDay, limit) {
+      const days = selectUntrimmedLandingDays.all(beforeDay, limit);
+      if (days.length === 0) {
+        return;
+      }
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        for (const { day } of days) {
+          const hostnames = selectLandingHostnamesForDay.all(day).slice(limit);
+          for (const { hostname } of hostnames) {
+            deleteLandingHostname.run(day, hostname);
+          }
+        }
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+
+    getLandingWindow({ firstDay, lastDay, limit }) {
+      return {
+        total: selectLandingTotal.get(firstDay, lastDay).requests,
+        referrers: selectLandingReferrers.all(firstDay, lastDay, limit).map((row) => ({
+          hostname: row.hostname,
+          requests: row.requests,
+        })),
+      };
     },
 
     getFleetLevels({ idleCutoff, nearQuotaBytes, nearQuotaRecords, actorWindows, realUseDevices, realUseRecords }) {
