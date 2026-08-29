@@ -18,6 +18,9 @@ describe('admin dashboard page', () => {
     const html = await res.text();
     assert.match(html, /\/api\/admin\/summary/); // wires to the data endpoint
     assert.match(html, /sessionStorage/); // secret held only in the tab session
+    assert.match(html, /Growth now/);
+    assert.match(html, /Creation cohorts/);
+    assert.match(html, /Writing devices \(est\.\)/);
     assert.doesNotMatch(html, /<script[^>]*\ssrc=/i); // no external scripts
     assert.doesNotMatch(html, /<link\b/i); // no external stylesheets
   });

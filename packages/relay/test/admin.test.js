@@ -85,7 +85,14 @@ describe('admin summary content', () => {
     const body = await (await summary(app)).json();
     assert.equal(body.now.total_groups, 2);
     assert.equal(body.now.total_bytes, 10);
-    assert.equal(body.now.distinct_actors_cumulative, 2);
+    assert.equal(body.now.observed_actors_retained, 2);
+    assert.equal(body.now.groups_one_device, 0);
+    assert.equal(body.now.groups_two_devices, 2);
+    assert.equal(body.now.groups_three_plus_devices, 0);
+    assert.equal(body.now.real_use_candidates, 0);
+    assert.equal(body.growth.realUseDevices, 3);
+    assert.equal(body.growth.realUseRecords, 10);
+    assert.equal(body.growth.cohorts.reduce((sum, cohort) => sum + cohort.groupsCreated, 0), 2);
   });
 
   it('ranks hot-lists by bytes, records and actor count', async () => {
@@ -120,6 +127,15 @@ describe('admin summary content', () => {
     assert.ok(two.has(today) && two.has(dayAgo(1)) && !two.has(dayAgo(10)));
     const all = days(await (await summary(app, { query: '?days=365' })).json());
     assert.ok(all.has(dayAgo(10)));
+  });
+
+  it('windows creation cohorts by their full UTC week', async () => {
+    const { app, storage } = makeApp({ adminSecret: ADMIN });
+    mkGroup(storage, 'recent', `${dayAgo(1)}T00:00:00.000Z`);
+    mkGroup(storage, 'old', `${dayAgo(40)}T00:00:00.000Z`);
+    const groupCount = (body) => body.growth.cohorts.reduce((sum, cohort) => sum + cohort.groupsCreated, 0);
+    assert.equal(groupCount(await (await summary(app, { query: '?days=30' })).json()), 1);
+    assert.equal(groupCount(await (await summary(app, { query: '?days=365' })).json()), 2);
   });
 });
 

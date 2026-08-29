@@ -86,6 +86,19 @@ real.
       refuses application until the destination is opened as its installed app.
       Push is absent until granted again on the destination origin.
 
+## Operator dashboard (only if the relay is run with `ADMIN_SECRET` set)
+
+- [ ] **Growth funnel.** Create one one-device group, one group used from two
+      devices, and one three-device group with at least ten stored records. On
+      `/admin`, the invite-spread buckets and real-use proxy match; actor ids are
+      described as devices and records as a proxy, never as people or decrypted
+      events.
+- [ ] **History and cohorts.** The creation-cohort row counts those groups under
+      their UTC Monday week and marks the current week immature. Restart the
+      relay, then confirm the new funnel level snapshots render in the selected
+      30/90/365-day growth trends; older dates correctly have no backfilled
+      funnel history.
+
 ## Notifications (only if the relay is run with `PUSH_SERVER_URL` set)
 
 - [ ] **Enable.** The home notification control appears; enabling prompts for

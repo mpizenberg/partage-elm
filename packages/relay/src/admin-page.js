@@ -49,6 +49,13 @@ svg.spark{width:100%;height:40px;display:block}
 .hot table{width:100%;border-collapse:collapse}
 .hot td{padding:4px 0;border-top:1px solid var(--line)}
 .hot .gid{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+.cohort{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow-x:auto}
+.cohort table{width:100%;border-collapse:collapse;min-width:620px}
+.cohort th,.cohort td{padding:9px 12px;border-top:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cohort th{color:var(--muted);font-size:12px;font-weight:500;border-top:0}
+.cohort th:first-child,.cohort td:first-child{text-align:left}
+.cohort tr.current td:first-child{color:var(--accent)}
+.section-note{color:var(--muted);font-size:12px;margin:-6px 0 10px}
 .num{text-align:right;font-variant-numeric:tabular-nums}
 </style>
 </head>
@@ -112,6 +119,28 @@ function fmtBytes(n){
 function fmtDollars(cents){ return '$' + (Number(cents) / 100).toFixed(2); }
 function fmtCents(cents){ return Number(cents).toFixed(2) + '¢'; }
 function shortId(id){ return id.length > 12 ? id.slice(0, 12) + '…' : id; }
+function shiftDay(iso, amount){
+  var d = new Date(String(iso).slice(0, 10) + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + amount);
+  return d.toISOString().slice(0, 10);
+}
+function weekStart(iso){
+  var d = new Date(String(iso).slice(0, 10) + 'T00:00:00Z');
+  var sinceMonday = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - sinceMonday);
+  return d.toISOString().slice(0, 10);
+}
+function flowBetween(history, name, firstDay, lastDay){
+  var total = 0;
+  for (var i = 0; i < history.length; i++){
+    var r = history[i];
+    if (r.name === name && r.day >= firstDay && r.day <= lastDay) total += r.value;
+  }
+  return total;
+}
+function outcome(n, total){
+  return fmtInt(n) + ' (' + (total ? Math.round(100 * n / total) : 0) + '%)';
+}
 
 function sparkline(values, color){
   var W = 240, H = 40;
@@ -165,6 +194,29 @@ function hotTable(title, rows, valueFn){
   }
   return E('div', {'class':'hot'}, [E('div', {'class':'hot-title', text:title}), E('table', null, [body])]);
 }
+function cohortTable(rows, currentWeek){
+  var head = E('thead', null, [E('tr', null, [
+    E('th', {scope:'col', text:'Creation week'}),
+    E('th', {scope:'col', text:'Groups'}),
+    E('th', {scope:'col', text:'Reached 2+'}),
+    E('th', {scope:'col', text:'Reached 3+'}),
+    E('th', {scope:'col', text:'Real-use proxy'}),
+  ])]);
+  var body = E('tbody');
+  if (!rows.length){
+    body.appendChild(E('tr', null, [E('td', {'class':'muted', colspan:'5', text:'No groups in this window'})]));
+  } else for (var i = 0; i < rows.length; i++){
+    var r = rows[i], current = r.week === currentWeek;
+    body.appendChild(E('tr', {'class':current ? 'current' : ''}, [
+      E('td', {text:r.week + (current ? ' · current, immature' : '')}),
+      E('td', {text:fmtInt(r.groupsCreated)}),
+      E('td', {text:outcome(r.reachedTwoPlus, r.groupsCreated)}),
+      E('td', {text:outcome(r.reachedThreePlus, r.groupsCreated)}),
+      E('td', {text:outcome(r.realUseCandidates, r.groupsCreated)}),
+    ]));
+  }
+  return E('div', {'class':'cohort'}, [E('table', null, [head, body])]);
+}
 function flagBanners(flags){
   var items = [];
   if (flags.nearCapacity.active)
@@ -184,7 +236,7 @@ function flagBanners(flags){
 // Pivot the flat [{day,name,value}] series into per-metric arrays. Flow counters
 // are zero-filled across every observed day (a day with no event truly had 0);
 // level snapshots are plotted only where a snapshot exists, so a missing sweep
-// shows a gap rather than a false drop to zero.
+// is omitted rather than rendered as a false drop to zero.
 function series(history){
   var days = [], seen = {};
   for (var i = 0; i < history.length; i++){
@@ -204,16 +256,48 @@ function series(history){
 
 function render(data){
   var now = data.now, cost = data.cost, s = series(data.history);
+  var today = String(data.generatedAt).slice(0, 10);
+  var newGroups7d = flowBetween(data.history, 'group_created', shiftDay(today, -6), today);
+  var previousGroups7d = flowBetween(data.history, 'group_created', shiftDay(today, -13), shiftDay(today, -7));
   generated.textContent = 'as of ' + new Date(data.generatedAt).toLocaleString();
   view.textContent = '';
   view.appendChild(flagBanners(data.flags));
 
+  view.appendChild(E('h2', {text:'Growth now'}));
+  var growthCards = E('div', {'class':'cards'});
+  growthCards.appendChild(card('Real-use candidates', fmtInt(now.real_use_candidates), [
+    '≥' + data.growth.realUseDevices + ' observed devices · ≥' + data.growth.realUseRecords + ' stored records',
+    'relay-visible proxy, not decrypted events',
+  ]));
+  growthCards.appendChild(card('Invite spread', fmtInt(now.groups_three_plus_devices) + ' at 3+', [
+    fmtInt(now.groups_two_devices) + ' at 2 devices',
+    fmtInt(now.groups_one_device) + ' at 1 device',
+  ]));
+  growthCards.appendChild(card('New groups', fmtInt(newGroups7d) + ' /7d', [
+    fmtInt(previousGroups7d) + ' in the previous 7d',
+  ]));
+  view.appendChild(growthCards);
+
+  view.appendChild(E('h2', {text:'Growth trends'}));
+  var growthCharts = E('div', {'class':'charts'});
+  growthCharts.appendChild(metric('New groups / day', s.flow('group_created'), '#6cf', fmtInt));
+  growthCharts.appendChild(metric('Groups at 1 device', s.level('groups_one_device'), '#fb8', fmtInt));
+  growthCharts.appendChild(metric('Groups at 2 devices', s.level('groups_two_devices'), '#c9f', fmtInt));
+  growthCharts.appendChild(metric('Groups at 3+ devices', s.level('groups_three_plus_devices'), '#6f8', fmtInt));
+  growthCharts.appendChild(metric('Real-use candidates', s.level('real_use_candidates'), '#6cf', fmtInt));
+  view.appendChild(growthCharts);
+
+  view.appendChild(E('h2', {text:'Creation cohorts'}));
+  view.appendChild(E('p', {'class':'section-note', text:'Outcomes show current observed state; the current week is too young to judge.'}));
+  view.appendChild(cohortTable(data.growth.cohorts, weekStart(today)));
+
+  view.appendChild(E('h2', {text:'Operations'}));
   var cards = E('div', {'class':'cards'});
   cards.appendChild(card('Groups', fmtInt(now.total_groups), [now.active_groups + ' active', now.idle_groups + ' idle']));
   cards.appendChild(card('Storage', fmtBytes(now.total_bytes), [fmtInt(now.total_records) + ' records', 'logical bytes (summed)']));
-  cards.appendChild(card('Active users (est.)', fmtInt(now.active_actors_7d) + ' /7d', [
+  cards.appendChild(card('Writing devices (est.)', fmtInt(now.active_actors_7d) + ' /7d', [
     fmtInt(now.active_actors_1d) + ' /1d · ' + fmtInt(now.active_actors_30d) + ' /30d',
-    fmtInt(now.distinct_actors_cumulative) + ' cumulative',
+    fmtInt(now.observed_actors_retained) + ' observed in retained records',
     'distinct devices, not people',
   ]));
   cards.appendChild(card('Monthly cost', fmtDollars(cost.totalCents), [
@@ -227,12 +311,11 @@ function render(data){
   ]));
   view.appendChild(cards);
 
-  view.appendChild(E('h2', {text:'Trends'}));
+  view.appendChild(E('h2', {text:'Operational trends'}));
   var charts = E('div', {'class':'charts'});
-  charts.appendChild(metric('New groups / day', s.flow('group_created'), '#6cf', fmtInt));
   charts.appendChild(metric('Rejections / day', s.flowSum(['quota_507','rate_429','body_413']), '#f86', fmtInt));
   charts.appendChild(metric('Total storage', s.level('total_bytes'), '#6f8', fmtBytes));
-  charts.appendChild(metric('Active users / 7d', s.level('active_actors_7d'), '#c9f', fmtInt));
+  charts.appendChild(metric('Writing devices / 7d', s.level('active_actors_7d'), '#c9f', fmtInt));
   view.appendChild(charts);
 
   view.appendChild(E('h2', {text:'Hot-lists'}));

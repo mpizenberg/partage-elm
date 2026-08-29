@@ -54,6 +54,8 @@ describe('daily table', () => {
       nearQuotaBytes: 9,
       nearQuotaRecords: 100,
       actorWindows: [{ name: 'active_actors_7d', since: '2030-05-25T00:00:00.000Z' }],
+      realUseDevices: 3,
+      realUseRecords: 10,
     });
     assert.equal(levels.total_groups, 2);
     assert.equal(levels.active_groups, 1);
@@ -63,8 +65,12 @@ describe('daily table', () => {
     assert.equal(levels.max_bytes, 10);
     assert.equal(levels.p50_bytes, 8);
     assert.equal(levels.groups_near_quota, 1);
-    assert.equal(levels.distinct_actors_cumulative, 2);
+    assert.equal(levels.observed_actors_retained, 2);
     assert.equal(levels.active_actors_7d, 1);
+    assert.equal(levels.groups_one_device, 0);
+    assert.equal(levels.groups_two_devices, 2);
+    assert.equal(levels.groups_three_plus_devices, 0);
+    assert.equal(levels.real_use_candidates, 0);
     storage.close();
   });
 
@@ -75,13 +81,79 @@ describe('daily table', () => {
       nearQuotaBytes: 1,
       nearQuotaRecords: 1,
       actorWindows: [{ name: 'active_actors_1d', since: '2030-01-01T00:00:00.000Z' }],
+      realUseDevices: 3,
+      realUseRecords: 10,
     });
     assert.equal(levels.total_groups, 0);
     assert.equal(levels.total_bytes, 0);
     assert.equal(levels.p50_bytes, 0);
     assert.equal(levels.p95_bytes, 0);
-    assert.equal(levels.distinct_actors_cumulative, 0);
+    assert.equal(levels.observed_actors_retained, 0);
     assert.equal(levels.active_actors_1d, 0);
+    assert.equal(levels.groups_one_device, 0);
+    assert.equal(levels.real_use_candidates, 0);
+    storage.close();
+  });
+
+  it('rolls up the observed-device funnel and weekly creation cohorts', () => {
+    const storage = openStorage(':memory:');
+    const mk = (id, creator) =>
+      storage.createGroup({
+        groupId: id,
+        createdBy: creator,
+        authVerifier: 'v',
+        powChallenge: 'p',
+        created: '2030-01-09T12:00:00.000Z',
+      });
+    const push = (id, actor, suffix) =>
+      storage.appendEvent(
+        id,
+        {
+          recordId: suffix,
+          actorId: actor,
+          eventData: suffix,
+          compressed: false,
+          created: '2030-01-10T00:00:00.000Z',
+        },
+        GENEROUS,
+      );
+    mk('solo', 'alice');
+    mk('pair', 'alice');
+    push('pair', 'bob', 'pair-bob');
+    mk('used', 'alice');
+    for (let i = 0; i < 10; i++) {
+      push('used', i === 0 ? 'bob' : i === 1 ? 'carol' : 'alice', `used-${i}`);
+    }
+
+    const levels = storage.getFleetLevels({
+      idleCutoff: '2030-01-01T00:00:00.000Z',
+      nearQuotaBytes: 1000000,
+      nearQuotaRecords: 1000000,
+      actorWindows: [],
+      realUseDevices: 3,
+      realUseRecords: 10,
+    });
+    assert.equal(levels.groups_one_device, 1);
+    assert.equal(levels.groups_two_devices, 1);
+    assert.equal(levels.groups_three_plus_devices, 1);
+    assert.equal(levels.real_use_candidates, 1);
+
+    assert.deepEqual(
+      storage.getGrowthCohorts({
+        createdSince: '2030-01-01T00:00:00.000Z',
+        realUseDevices: 3,
+        realUseRecords: 10,
+      }),
+      [
+        {
+          week: '2030-01-07',
+          groupsCreated: 3,
+          reachedTwoPlus: 2,
+          reachedThreePlus: 1,
+          realUseCandidates: 1,
+        },
+      ],
+    );
     storage.close();
   });
 });

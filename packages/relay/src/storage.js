@@ -118,6 +118,44 @@ export function openStorage(path) {
   const selectByteAtOffset = db.prepare('SELECT total_bytes FROM groups ORDER BY total_bytes LIMIT 1 OFFSET ?');
   const selectDistinctActors = db.prepare('SELECT COUNT(DISTINCT actor_id) AS n FROM events');
   const selectActiveActors = db.prepare('SELECT COUNT(DISTINCT actor_id) AS n FROM events WHERE created >= ?');
+  const selectGrowthLevels = db.prepare(`
+    WITH observed_actors AS (
+      SELECT id AS group_id, created_by AS actor_id FROM groups
+      UNION
+      SELECT group_id, actor_id FROM events
+    ), per_group AS (
+      SELECT g.id, g.record_count, COUNT(a.actor_id) AS observed_devices
+      FROM groups g LEFT JOIN observed_actors a ON a.group_id = g.id
+      GROUP BY g.id
+    )
+    SELECT
+      COALESCE(SUM(CASE WHEN observed_devices = 1 THEN 1 ELSE 0 END), 0) AS groups_one_device,
+      COALESCE(SUM(CASE WHEN observed_devices = 2 THEN 1 ELSE 0 END), 0) AS groups_two_devices,
+      COALESCE(SUM(CASE WHEN observed_devices >= 3 THEN 1 ELSE 0 END), 0) AS groups_three_plus_devices,
+      COALESCE(SUM(CASE WHEN observed_devices >= ? AND record_count >= ? THEN 1 ELSE 0 END), 0) AS real_use_candidates
+    FROM per_group
+  `);
+  const selectGrowthCohorts = db.prepare(`
+    WITH observed_actors AS (
+      SELECT id AS group_id, created_by AS actor_id FROM groups
+      UNION
+      SELECT group_id, actor_id FROM events
+    ), per_group AS (
+      SELECT g.id, g.created, g.record_count, COUNT(a.actor_id) AS observed_devices
+      FROM groups g LEFT JOIN observed_actors a ON a.group_id = g.id
+      GROUP BY g.id
+    )
+    SELECT
+      date(created, '-' || ((CAST(strftime('%w', created) AS INTEGER) + 6) % 7) || ' days') AS week,
+      COUNT(*) AS groups_created,
+      SUM(CASE WHEN observed_devices >= 2 THEN 1 ELSE 0 END) AS reached_two_plus,
+      SUM(CASE WHEN observed_devices >= 3 THEN 1 ELSE 0 END) AS reached_three_plus,
+      SUM(CASE WHEN observed_devices >= ? AND record_count >= ? THEN 1 ELSE 0 END) AS real_use_candidates
+    FROM per_group
+    WHERE created >= ?
+    GROUP BY week
+    ORDER BY week DESC
+  `);
   const selectTopByBytes = db.prepare('SELECT id, total_bytes FROM groups ORDER BY total_bytes DESC, id LIMIT ?');
   const selectTopByRecords = db.prepare('SELECT id, record_count FROM groups ORDER BY record_count DESC, id LIMIT ?');
   const selectOldestActive = db.prepare(
@@ -281,8 +319,9 @@ export function openStorage(path) {
       return selectDailySince.all(sinceDay).map((row) => ({ day: row.day, name: row.name, value: row.value }));
     },
 
-    getFleetLevels({ idleCutoff, nearQuotaBytes, nearQuotaRecords, actorWindows }) {
+    getFleetLevels({ idleCutoff, nearQuotaBytes, nearQuotaRecords, actorWindows, realUseDevices, realUseRecords }) {
       const agg = selectFleetAgg.get(idleCutoff, nearQuotaBytes, nearQuotaRecords);
+      const growth = selectGrowthLevels.get(realUseDevices, realUseRecords);
       const percentileBytes = (q) => {
         if (agg.total_groups === 0) {
           return 0;
@@ -300,12 +339,26 @@ export function openStorage(path) {
         p50_bytes: percentileBytes(0.5),
         p95_bytes: percentileBytes(0.95),
         groups_near_quota: agg.groups_near_quota,
-        distinct_actors_cumulative: selectDistinctActors.get().n,
+        observed_actors_retained: selectDistinctActors.get().n,
+        groups_one_device: growth.groups_one_device,
+        groups_two_devices: growth.groups_two_devices,
+        groups_three_plus_devices: growth.groups_three_plus_devices,
+        real_use_candidates: growth.real_use_candidates,
       };
       for (const window of actorWindows) {
         levels[window.name] = selectActiveActors.get(window.since).n;
       }
       return levels;
+    },
+
+    getGrowthCohorts({ createdSince, realUseDevices, realUseRecords }) {
+      return selectGrowthCohorts.all(realUseDevices, realUseRecords, createdSince).map((row) => ({
+        week: row.week,
+        groupsCreated: row.groups_created,
+        reachedTwoPlus: row.reached_two_plus,
+        reachedThreePlus: row.reached_three_plus,
+        realUseCandidates: row.real_use_candidates,
+      }));
     },
 
     getHotlists({ activeSince, actorSince, limit }) {

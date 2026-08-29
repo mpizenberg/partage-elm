@@ -58,6 +58,10 @@ const AUTH_PROBE_THRESHOLD = 50;
 const REJECTION_SPIKE_FLOOR = 50;
 const REJECTION_SPIKE_FACTOR = 3;
 const REJECTION_METRICS = ['quota_507', 'rate_429', 'body_413'];
+// The relay cannot inspect domain events, so early growth uses stored records
+// and relay-observed actor ids as an explicitly labelled adoption proxy.
+const REAL_USE_DEVICE_THRESHOLD = 3;
+const REAL_USE_RECORD_THRESHOLD = 10;
 
 // Brute-force lockout for the admin bearer check, so a strong ADMIN_SECRET is
 // safe on the public origin: after this many failed attempts an address is
@@ -89,6 +93,8 @@ export function fleetLevelParams(nowMs, appendLimits = DEFAULT_APPEND_LIMITS) {
       { name: 'active_actors_7d', since: iso(nowMs - 7 * DAY_MS) },
       { name: 'active_actors_30d', since: iso(nowMs - 30 * DAY_MS) },
     ],
+    realUseDevices: REAL_USE_DEVICE_THRESHOLD,
+    realUseRecords: REAL_USE_RECORD_THRESHOLD,
   };
 }
 
@@ -229,8 +235,11 @@ function computeCost({ levels, history, nowMs }) {
  * - bumpMetric(name, day, amount = 1) — day-bucketed counter, UPSERT-add.
  * - recordDailyLevels(day, {name: value}) — day-bucketed level snapshot, UPSERT-replace.
  * - getDailySince(day) → [{day, name, value}] — the counter+level series from `day` on.
- * - getFleetLevels({idleCutoff, nearQuotaBytes, nearQuotaRecords, actorWindows})
- *     → the current fleet level snapshot object (keys are metric names).
+ * - getFleetLevels({idleCutoff, nearQuotaBytes, nearQuotaRecords, actorWindows,
+ *     realUseDevices, realUseRecords}) → the current fleet level snapshot object
+ *     (keys are metric names), including the relay-observed growth funnel.
+ * - getGrowthCohorts({createdSince, realUseDevices, realUseRecords})
+ *     → weekly creation cohorts with current 2+/3+/real-use outcomes.
  * - getHotlists({activeSince, actorSince, limit})
  *     → {largestByBytes, largestByRecords, oldestActive, mostActors}, each a
  *       top-`limit` list of {groupId, …} rows for the operator drill-down.
@@ -683,12 +692,25 @@ export function createApp({
 
       const daysRaw = Number(c.req.query('days') ?? '365');
       const days = Number.isInteger(daysRaw) && daysRaw > 0 ? Math.min(daysRaw, 365) : 365;
-      const history = storage.getDailySince(new Date(nowMs - (days - 1) * DAY_MS).toISOString().slice(0, 10));
+      const since = new Date(nowMs - (days - 1) * DAY_MS);
+      const history = storage.getDailySince(since.toISOString().slice(0, 10));
+      const cohortSince = new Date(since);
+      cohortSince.setUTCDate(cohortSince.getUTCDate() - ((cohortSince.getUTCDay() + 6) % 7));
+      cohortSince.setUTCHours(0, 0, 0, 0);
 
       return c.json({
         generatedAt: new Date(nowMs).toISOString(),
         now: levels,
         history,
+        growth: {
+          realUseDevices: params.realUseDevices,
+          realUseRecords: params.realUseRecords,
+          cohorts: storage.getGrowthCohorts({
+            createdSince: cohortSince.toISOString(),
+            realUseDevices: params.realUseDevices,
+            realUseRecords: params.realUseRecords,
+          }),
+        },
         hotlists: storage.getHotlists({
           activeSince: params.idleCutoff,
           actorSince: new Date(nowMs - 30 * DAY_MS).toISOString(),
