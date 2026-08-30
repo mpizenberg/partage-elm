@@ -7,14 +7,27 @@ import { startServer } from '../src/node-server.js';
 import { openStorage } from '../src/storage.js';
 import { TEST_SECRET } from '../test-support/helpers.js';
 
+const TOPIC_SLUGS = { en: 'topic-en', fr: 'sujet-fr' };
+
 function writeEntryFiles(dir) {
   fs.writeFileSync(
     path.join(dir, 'app.html'),
     '<html><meta property="og:url" content="__CANONICAL_ORIGIN__/" />app shell</html>',
   );
+  fs.writeFileSync(
+    path.join(dir, 'pages.json'),
+    JSON.stringify({
+      pages: [
+        { id: 'home', negotiate: '/', paths: { en: '/en/', fr: '/fr/' } },
+        { id: 'changelog', negotiate: '/changelog', paths: { en: '/en/changelog/', fr: '/fr/changelog/' } },
+        { id: 'topic', paths: { en: `/en/${TOPIC_SLUGS.en}/`, fr: `/fr/${TOPIC_SLUGS.fr}/` } },
+      ],
+    }),
+  );
   for (const language of ['en', 'fr']) {
     const languageDir = path.join(dir, language);
     fs.mkdirSync(path.join(languageDir, 'changelog'), { recursive: true });
+    fs.mkdirSync(path.join(languageDir, TOPIC_SLUGS[language]), { recursive: true });
     fs.writeFileSync(
       path.join(languageDir, 'index.html'),
       `<html lang="${language}"><link rel="canonical" href="__CANONICAL_ORIGIN__/${language}/" /><span data-feedback-project="__FEEDBACK_PROJECT_ID__" hidden></span>${language} home</html>`,
@@ -22,6 +35,10 @@ function writeEntryFiles(dir) {
     fs.writeFileSync(
       path.join(languageDir, 'changelog', 'index.html'),
       `<html lang="${language}"><link rel="canonical" href="__CANONICAL_ORIGIN__/${language}/changelog/" /><span data-feedback-project="__FEEDBACK_PROJECT_ID__" hidden></span>${language} changelog</html>`,
+    );
+    fs.writeFileSync(
+      path.join(languageDir, TOPIC_SLUGS[language], 'index.html'),
+      `<html lang="${language}"><link rel="canonical" href="__CANONICAL_ORIGIN__/${language}/${TOPIC_SLUGS[language]}/" /><span data-feedback-project="__FEEDBACK_PROJECT_ID__" hidden></span>${language} topic</html>`,
     );
   }
 }
@@ -178,6 +195,53 @@ describe('static frontend serving', () => {
   it('does not shadow unknown API paths', async () => {
     const res = await fetch(`${relay.url}/api/nope`);
     assert.equal(res.status, 404);
+  });
+
+  it('serves manifest pages whose slug differs per language', async () => {
+    for (const [language, slug] of Object.entries(TOPIC_SLUGS)) {
+      const page = await fetch(`${relay.url}/${language}/${slug}/`);
+      assert.equal(page.status, 200);
+      assert.equal(page.headers.get('content-language'), language);
+      const body = await page.text();
+      assert.ok(body.includes(`href="${relay.url}/${language}/${slug}/"`));
+      assert.ok(!body.includes('__FEEDBACK_PROJECT_ID__'));
+    }
+    const bare = await fetch(`${relay.url}/fr/${TOPIC_SLUGS.fr}`, { redirect: 'manual' });
+    assert.equal(bare.status, 301);
+    assert.equal(bare.headers.get('location'), `/fr/${TOPIC_SLUGS.fr}/`);
+  });
+
+  it('404s localized paths the manifest does not declare instead of serving the shell', async () => {
+    for (const url of ['/en/typo-page/', '/en/typo-page', `/fr/${TOPIC_SLUGS.en}/`]) {
+      const res = await fetch(`${relay.url}${url}`);
+      assert.equal(res.status, 404, url);
+    }
+  });
+
+  it('refuses to start when the manifest declares a page with no file', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-manifest-static-'));
+    writeEntryFiles(dir);
+    fs.writeFileSync(path.join(dir, 'sw.js'), 'var CACHE = "partage-abc-__CONFIG_DIGEST__";');
+    writeDiscoveryFiles(dir);
+    fs.rmSync(path.join(dir, 'en', TOPIC_SLUGS.en), { recursive: true });
+    let unexpectedlyStarted;
+
+    try {
+      await assert.rejects(
+        async () => {
+          unexpectedlyStarted = await startServer({
+            storage: openStorage(':memory:'),
+            powSecret: TEST_SECRET,
+            port: 0,
+            staticDir: dir,
+          });
+        },
+        new RegExp(TOPIC_SLUGS.en),
+      );
+    } finally {
+      await unexpectedlyStarted?.close();
+      fs.rmSync(dir, { recursive: true });
+    }
   });
 
   it('makes the service worker and shell revalidate, other files default', async () => {

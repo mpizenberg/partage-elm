@@ -13,7 +13,7 @@
     "prebuild": "pnpm i18n && pnpm prepare:dist && pnpm bundle:assets && pnpm bundle:html && pnpm bundle:js",
     "build": "pnpm prebuild && elm-watch make && pnpm pwa",
     "build:optimize": "pnpm prebuild && elm-watch make --optimize && pnpm pwa",
-    "watch:html": "watchexec -w build-html.mjs -w build-marketing.mjs -w changelog.json -w public/app.html -w public/marketing.css -w public/robots.txt -- pnpm bundle:html",
+    "watch:html": "watchexec -w build-html.mjs -w build-marketing.mjs -w marketing -w changelog.json -w public/app.html -w public/marketing.css -w public/robots.txt -- pnpm bundle:html",
     "watch:js": "esbuild public/index.js public/marketing.js --bundle --outdir=dist --format=iife --define:__SERVER_URL__=\\\"${SERVER_URL-}\\\" --define:__GIT_SHA__=\\\"${GIT_SHA-}\\\" --watch",
     "watch:i18n": "watchexec -w translations -- pnpm i18n",
     "watch:pwa": "watchexec -w public/*.webmanifest -w build-sw.mjs -- pnpm pwa",

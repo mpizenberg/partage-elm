@@ -1,10 +1,18 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import changelog from "./marketing/changelog.mjs";
+import home from "./marketing/home.mjs";
 
 const marketingCss = readFileSync("public/marketing.css", "utf8");
-const changelog = JSON.parse(readFileSync("changelog.json", "utf8"));
 const origin = "__CANONICAL_ORIGIN__";
 const fundingUrl = "https://github.com/sponsors/mpizenberg";
 const sourceUrl = "https://github.com/mpizenberg/partage-elm";
+
+const pages = [home, changelog];
+
+const languages = {
+  en: { flag: "🇬🇧", name: "English" },
+  fr: { flag: "🇫🇷", name: "Français" },
+};
 
 // Feather icon shapes (MIT), inlined so the pages carry no icon runtime.
 // Same set the app uses through elm-feather.
@@ -52,128 +60,9 @@ function featherIcon(name) {
   return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${shape}</svg>`;
 }
 
-const pages = {
-  en: {
-    flag: "🇬🇧",
-    name: "English",
-    title: "Partage — Private, local-first bill splitting",
-    description:
-      "Partage is a free, open-source bill-splitting app. End-to-end encrypted, works offline, no account needed.",
-    heading: "Welcome to Partage",
-    tagline: "Private, encrypted bill splitting that works offline — no account needed.",
-    open: "Open Partage",
-    whyTitle: "Why Partage",
-    whyBody:
-      "Splitting bills with friends should be simple, and stay between you and your friends. Partage is end-to-end encrypted, works offline, and syncs across devices when you want.",
-    featuresTitle: "Features",
-    features: [
-      ["lock", "End-to-end encrypted"],
-      ["key", "No account or password"],
-      ["wifi-off", "Works offline, syncs when online"],
-      ["git-merge", "Smart settle-up with fewer transactions"],
-      ["globe", "Multiple currencies in one group"],
-      ["clock", "Full activity and edit history"],
-      ["smartphone", "Installable on any device"],
-      ["heart", "Open source, no ads, no user tracking"],
-    ],
-    screenshotsTitle: "A look inside",
-    screenshots: [
-      ["screenshot-balance.webp", "Balances and smart settle-up"],
-      ["screenshot-multicurrency.webp", "Add expenses in any currency"],
-      ["screenshot-activity.webp", "Full activity log with edit history"],
-      ["screenshot-invite.webp", "Invite by link or QR code"],
-    ],
-    detailsTitle: "Details that matter",
-    details: [
-      ["filter", "Filter by person, category, currency, or date"],
-      ["download", "Free CSV export and complete JSON backup"],
-      ["credit-card", "Payment hints for common payment methods"],
-      ["users", "Virtual members, merging, and retirement without lost history"],
-      ["trending-up", "Expenses, transfers, and income"],
-      ["rotate-ccw", "Soft deletion with restore and field-level edit history"],
-      ["user-check", "Per-member settle-up preferences"],
-      ["gift", "No daily limits, caps, or ads"],
-    ],
-    howTitle: "How it works",
-    howBody:
-      "Your expenses stay on your device and are encrypted before syncing. Only group members with the shared key can read them. The relay never receives the key or decrypted content.",
-    fundingTitle: "Open source and funding",
-    fundingBody:
-      "Partage is free, open source, and ad-free. Running the sync relay costs a few cents per active user each month. If Partage helps you, please consider supporting it.",
-    fundingCta: "Support Partage",
-    about: "App information and local usage",
-    source: "Source code",
-    feedback: "Send feedback",
-    whatsNew: "What’s new",
-    changelogTitle: "Partage changelog — What’s new",
-    changelogDescription:
-      "New features and improvements in Partage, the private, offline-capable bill-splitting app — updated with every release.",
-    changelogTagline: "Every new feature and improvement, newest first.",
-    suggestTitle: "What should we build next?",
-    suggestButton: "Send an idea",
-    home: "Home",
-  },
-  fr: {
-    flag: "🇫🇷",
-    name: "Français",
-    title: "Partage — Partage de frais privé et local-first",
-    description:
-      "Partage est une application libre et gratuite de partage de frais. Chiffrée de bout en bout, hors-ligne et sans compte.",
-    heading: "Bienvenue sur Partage",
-    tagline: "Le partage de frais privé et chiffré qui fonctionne hors-ligne — sans compte.",
-    open: "Ouvrir Partage",
-    whyTitle: "Pourquoi Partage",
-    whyBody:
-      "Partager les frais entre amis doit rester simple, et entre vous. Partage est chiffré de bout en bout, fonctionne hors-ligne et se synchronise entre appareils quand vous le souhaitez.",
-    featuresTitle: "Fonctionnalités",
-    features: [
-      ["lock", "Chiffrement de bout en bout"],
-      ["key", "Sans compte ni mot de passe"],
-      ["wifi-off", "Hors-ligne, synchronisé en ligne"],
-      ["git-merge", "Remboursements optimisés"],
-      ["globe", "Plusieurs devises dans un groupe"],
-      ["clock", "Journal complet des modifications"],
-      ["smartphone", "Installable sur tout appareil"],
-      ["heart", "Open source, sans pub ni suivi individuel"],
-    ],
-    screenshotsTitle: "Aperçu de l’application",
-    screenshots: [
-      ["screenshot-balance.webp", "Soldes et remboursements optimisés"],
-      ["screenshot-multicurrency.webp", "Ajouter une dépense dans n’importe quelle devise"],
-      ["screenshot-activity.webp", "Journal complet avec historique des modifications"],
-      ["screenshot-invite.webp", "Inviter par lien ou QR code"],
-    ],
-    detailsTitle: "Les détails qui comptent",
-    details: [
-      ["filter", "Filtrer par personne, catégorie, devise ou date"],
-      ["download", "Export CSV gratuit et sauvegarde JSON complète"],
-      ["credit-card", "Raccourcis pour les moyens de remboursement courants"],
-      ["users", "Membres virtuels, fusion et retrait sans perte d’historique"],
-      ["trending-up", "Dépenses, transferts et revenus"],
-      ["rotate-ccw", "Suppression réversible et historique détaillé"],
-      ["user-check", "Préférences de remboursement par membre"],
-      ["gift", "Sans limite journalière, plafond ni publicité"],
-    ],
-    howTitle: "Comment ça marche",
-    howBody:
-      "Vos dépenses restent sur votre appareil et sont chiffrées avant synchronisation. Seuls les membres ayant la clé du groupe peuvent les lire. Le relais ne reçoit jamais la clé ni le contenu déchiffré.",
-    fundingTitle: "Open source et financement",
-    fundingBody:
-      "Partage est gratuit, open source et sans publicité. Le relais de synchronisation coûte quelques centimes par utilisateur actif chaque mois. Si Partage vous aide, vous pouvez le soutenir.",
-    fundingCta: "Soutenir Partage",
-    about: "Informations sur l’app et usage local",
-    source: "Code source",
-    feedback: "Envoyer un retour",
-    whatsNew: "Nouveautés",
-    changelogTitle: "Changelog de Partage — Nouveautés",
-    changelogDescription:
-      "Nouvelles fonctionnalités et améliorations de Partage, l’application privée de partage de frais — mis à jour à chaque version.",
-    changelogTagline: "Toutes les nouveautés et améliorations, les plus récentes en premier.",
-    suggestTitle: "On construit quoi ensuite ?",
-    suggestButton: "Proposer une idée",
-    home: "Accueil",
-  },
-};
+function pagePath(page, language) {
+  return "/" + [language, page.slug[language]].filter(Boolean).join("/") + "/";
+}
 
 function list(items) {
   return items.map(([icon, label]) => `                    <li>${featherIcon(icon)}${label}</li>`).join("\n");
@@ -198,24 +87,34 @@ function escapeHtml(text) {
     .replaceAll('"', "&quot;");
 }
 
-// The subPath distinguishes the localized homes ("") from deeper localized
-// pages ("changelog/"); x-default points at the language-negotiating URL.
-function head(language, subPath, { title, description }) {
+// x-default belongs to the language-negotiating URL, so only pages declaring
+// one carry it; pointing it at English instead would claim English is the
+// right answer for every unmatched reader.
+function head(page, language) {
+  const { title, description } = page[language];
+  const alternates = Object.keys(page.slug)
+    .map(
+      (alternate) =>
+        `        <link rel="alternate" hreflang="${alternate}" href="${origin}${pagePath(page, alternate)}" />`,
+    )
+    .concat(
+      page.negotiate
+        ? [`        <link rel="alternate" hreflang="x-default" href="${origin}${page.negotiate}" />`]
+        : [],
+    );
   return `    <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <meta name="theme-color" content="#E8725C" />
         <title>${title}</title>
         <meta name="description" content="${description}" />
-        <link rel="canonical" href="${origin}/${language}/${subPath}" />
-        <link rel="alternate" hreflang="en" href="${origin}/en/${subPath}" />
-        <link rel="alternate" hreflang="fr" href="${origin}/fr/${subPath}" />
-        <link rel="alternate" hreflang="x-default" href="${origin}/${subPath.replace(/\/$/, "")}" />
+        <link rel="canonical" href="${origin}${pagePath(page, language)}" />
+${alternates.join("\n")}
         <meta property="og:type" content="website" />
         <meta property="og:title" content="${title}" />
         <meta property="og:description" content="${description}" />
         <meta property="og:image" content="${origin}/icon-512.png" />
-        <meta property="og:url" content="${origin}/${language}/${subPath}" />
+        <meta property="og:url" content="${origin}${pagePath(page, language)}" />
         <meta name="twitter:card" content="summary" />
         <meta name="twitter:title" content="${title}" />
         <meta name="twitter:description" content="${description}" />
@@ -227,69 +126,70 @@ ${marketingCss}
     </head>`;
 }
 
-function languageNav(current, subPath) {
-  const links = Object.entries(pages).map(
-    ([language, page]) =>
-      `<a href="/${language}/${subPath}"${language === current ? ' aria-current="page"' : ""}>` +
-      `<span aria-hidden="true">${page.flag}</span> ${page.name}</a>`,
+function languageNav(page, current) {
+  const links = Object.keys(page.slug).map(
+    (language) =>
+      `<a href="${pagePath(page, language)}"${language === current ? ' aria-current="page"' : ""}>` +
+      `<span aria-hidden="true">${languages[language].flag}</span> ${languages[language].name}</a>`,
   );
   return `<nav class="languages" aria-label="Language · Langue">
                     ${links.join("\n                    ·\n                    ")}
                 </nav>`;
 }
 
-function render(language, page) {
+function renderHome(page, language) {
+  const text = page[language];
   return `<!doctype html>
 <html lang="${language}">
-${head(language, "", page)}
+${head(page, language)}
     <body>
         <main class="page">
             <header class="hero">
                 <img class="logo" src="/icon.svg" width="96" height="96" alt="" />
-                <h1>${page.heading}</h1>
-                <p class="tagline">${page.tagline}</p>
-                <a class="button" href="/groups">${page.open}</a>
-                ${languageNav(language, "")}
+                <h1>${text.heading}</h1>
+                <p class="tagline">${text.tagline}</p>
+                <a class="button" href="/groups">${text.open}</a>
+                ${languageNav(page, language)}
             </header>
             <section aria-labelledby="why">
-                <h2 id="why">${page.whyTitle}</h2>
-                <div class="card"><p>${page.whyBody}</p></div>
+                <h2 id="why">${text.whyTitle}</h2>
+                <div class="card"><p>${text.whyBody}</p></div>
             </section>
             <section aria-labelledby="features">
-                <h2 id="features">${page.featuresTitle}</h2>
+                <h2 id="features">${text.featuresTitle}</h2>
                 <ul class="feature-list">
-${list(page.features)}
+${list(text.features)}
                 </ul>
             </section>
             <section aria-labelledby="screenshots">
-                <h2 id="screenshots">${page.screenshotsTitle}</h2>
+                <h2 id="screenshots">${text.screenshotsTitle}</h2>
                 <div class="screenshots">
-${screenshots(page.screenshots)}
+${screenshots(text.screenshots)}
                 </div>
             </section>
             <section aria-labelledby="details">
-                <h2 id="details">${page.detailsTitle}</h2>
+                <h2 id="details">${text.detailsTitle}</h2>
                 <ul class="feature-list">
-${list(page.details)}
+${list(text.details)}
                 </ul>
             </section>
             <section aria-labelledby="how">
-                <h2 id="how">${page.howTitle}</h2>
-                <div class="card"><p>${page.howBody}</p></div>
+                <h2 id="how">${text.howTitle}</h2>
+                <div class="card"><p>${text.howBody}</p></div>
             </section>
             <section class="card support" aria-labelledby="funding">
-                <h2 id="funding">${page.fundingTitle}</h2>
-                <p>${page.fundingBody}</p>
-                <a class="button" href="${fundingUrl}" rel="noreferrer">${featherIcon("heart")}${page.fundingCta}</a>
+                <h2 id="funding">${text.fundingTitle}</h2>
+                <p>${text.fundingBody}</p>
+                <a class="button" href="${fundingUrl}" rel="noreferrer">${featherIcon("heart")}${text.fundingCta}</a>
             </section>
             <footer>
-                <a href="/${language}/changelog/">${featherIcon("gift")}${page.whatsNew}</a>
+                <a href="/${language}/changelog/">${featherIcon("gift")}${text.whatsNew}</a>
                 ·
-                <a href="/about">${featherIcon("info")}${page.about}</a>
+                <a href="/about">${featherIcon("info")}${text.about}</a>
                 ·
-                <a href="${sourceUrl}" rel="noreferrer">${featherIcon("github")}${page.source}</a>
+                <a href="${sourceUrl}" rel="noreferrer">${featherIcon("github")}${text.source}</a>
                 <span class="feedback" data-feedback-project="__FEEDBACK_PROJECT_ID__" hidden>
-                    <button type="button">${featherIcon("message-square")}${page.feedback}</button>
+                    <button type="button">${featherIcon("message-square")}${text.feedback}</button>
                 </span>
             </footer>
         </main>
@@ -299,9 +199,9 @@ ${list(page.details)}
 `;
 }
 
-function entryArticles(language) {
+function entryArticles(entries, language) {
   const label = new Intl.DateTimeFormat(language, { dateStyle: "long", timeZone: "UTC" });
-  return changelog
+  return entries
     .map(
       (entry) => `                <article class="entry" id="${entry.date}">
                     <h2>${escapeHtml(entry[language].title)}</h2>
@@ -312,30 +212,31 @@ function entryArticles(language) {
     .join("\n");
 }
 
-function renderChangelog(language, page) {
+function renderChangelog(page, language) {
+  const text = page[language];
   return `<!doctype html>
 <html lang="${language}">
-${head(language, "changelog/", { title: page.changelogTitle, description: page.changelogDescription })}
+${head(page, language)}
     <body>
         <main class="page">
             <header class="hero">
                 <img class="logo" src="/icon.svg" width="96" height="96" alt="" />
-                <h1>${page.whatsNew}</h1>
-                <p class="tagline">${page.changelogTagline}</p>
-                <a class="button" href="/groups">${page.open}</a>
-                ${languageNav(language, "changelog/")}
+                <h1>${text.heading}</h1>
+                <p class="tagline">${text.tagline}</p>
+                <a class="button" href="/groups">${text.open}</a>
+                ${languageNav(page, language)}
             </header>
             <section class="card support" data-feedback-project="__FEEDBACK_PROJECT_ID__" hidden>
-                <h2>${page.suggestTitle}</h2>
-                <button type="button" class="button">${page.suggestButton}</button>
+                <h2>${text.suggestTitle}</h2>
+                <button type="button" class="button">${text.suggestButton}</button>
             </section>
             <section class="entries">
-${entryArticles(language)}
+${entryArticles(page.entries, language)}
             </section>
             <footer>
-                <a href="/${language}/">${featherIcon("home")}${page.home}</a>
+                <a href="/${language}/">${featherIcon("home")}${text.home}</a>
                 ·
-                <a href="${sourceUrl}" rel="noreferrer">${featherIcon("github")}${page.source}</a>
+                <a href="${sourceUrl}" rel="noreferrer">${featherIcon("github")}${text.source}</a>
             </footer>
         </main>
         <script src="/marketing.js" defer></script>
@@ -344,22 +245,35 @@ ${entryArticles(language)}
 `;
 }
 
+const templates = { home: renderHome, changelog: renderChangelog };
+
 function sitemap() {
   const url = (path, lastmod) =>
     ["  <url>", `    <loc>${origin}${path}</loc>`]
       .concat(lastmod ? [`    <lastmod>${lastmod}</lastmod>`] : [])
       .concat(["  </url>"])
       .join("\n");
-  const newest = changelog[0].date;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${["/en/", "/fr/"]
-  .map((path) => url(path))
-  .concat(["/en/changelog/", "/fr/changelog/"].map((path) => url(path, newest)))
+${pages
+  .flatMap((page) => Object.keys(page.slug).map((language) => url(pagePath(page, language), page.lastmod)))
   .join("\n")}
 </urlset>
 `;
 }
+
+// The relay registers its static routes from this manifest at startup, so the
+// routes, the sitemap, and the files all derive from the same value and
+// cannot disagree.
+const manifest = {
+  pages: pages.map((page) => ({
+    id: page.id,
+    ...(page.negotiate && { negotiate: page.negotiate }),
+    paths: Object.fromEntries(
+      Object.keys(page.slug).map((language) => [language, pagePath(page, language)]),
+    ),
+  })),
+};
 
 // The app only needs the newest entry's date to raise its "what's new"
 // banner; the entries themselves live on the static pages. Rewriting the
@@ -375,16 +289,18 @@ const latestModule = `module Changelog.Latest exposing (date)
 -}
 date : String
 date =
-    "${changelog[0].date}"
+    "${changelog.entries[0].date}"
 `;
 if (!existsSync("src/Changelog/Latest.elm") || readFileSync("src/Changelog/Latest.elm", "utf8") !== latestModule) {
   mkdirSync("src/Changelog", { recursive: true });
   writeFileSync("src/Changelog/Latest.elm", latestModule);
 }
 
-for (const [language, page] of Object.entries(pages)) {
-  mkdirSync(`dist/${language}/changelog`, { recursive: true });
-  writeFileSync(`dist/${language}/index.html`, render(language, page));
-  writeFileSync(`dist/${language}/changelog/index.html`, renderChangelog(language, page));
+for (const page of pages) {
+  for (const language of Object.keys(page.slug)) {
+    mkdirSync(`dist${pagePath(page, language)}`, { recursive: true });
+    writeFileSync(`dist${pagePath(page, language)}index.html`, templates[page.template](page, language));
+  }
 }
 writeFileSync("dist/sitemap.xml", sitemap());
+writeFileSync("dist/pages.json", JSON.stringify(manifest, null, 2) + "\n");

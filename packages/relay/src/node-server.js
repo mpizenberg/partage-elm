@@ -29,8 +29,8 @@ function requestOrigin(c) {
   }
 }
 
-function preferredLanguage(header = '') {
-  const supported = new Set(['en', 'fr']);
+function preferredLanguage(header = '', supported) {
+  const supportedSet = new Set(supported);
   return header
     .split(',')
     .map((part, index) => {
@@ -39,8 +39,8 @@ function preferredLanguage(header = '') {
       const quality = qualityParameter ? Number(qualityParameter.trim().slice(2)) : 1;
       return { language: tag.split('-')[0], quality, index };
     })
-    .filter(({ language, quality }) => supported.has(language) && Number.isFinite(quality) && quality > 0)
-    .sort((a, b) => b.quality - a.quality || a.index - b.index)[0]?.language ?? 'en';
+    .filter(({ language, quality }) => supportedSet.has(language) && Number.isFinite(quality) && quality > 0)
+    .sort((a, b) => b.quality - a.quality || a.index - b.index)[0]?.language ?? supported[0];
 }
 
 function externalReferrerHostname(c) {
@@ -195,43 +195,39 @@ export function startServer({
     const withRequestOrigin = (template, c) =>
       template.replaceAll('__CANONICAL_ORIGIN__', requestOrigin(c));
     const shellTemplate = readFileSync(join(staticDir, 'app.html'), 'utf8');
+    // The build declares its localized pages in pages.json, so the routes and
+    // the files come from the same build and cannot disagree. Each page reads
+    // at startup: a manifest entry whose file is missing aborts the deploy
+    // here rather than 404ing in production.
     // The feedback project id comes from the process, not the request, so the
     // localized pages carry it from startup. An unset id empties the
     // placeholder, which is what keeps the control hidden on a deployment
     // without the form.
-    const localizedTemplates = (...file) =>
-      Object.fromEntries(
-        ['en', 'fr'].map((language) => [
-          language,
-          readFileSync(join(staticDir, language, ...file), 'utf8').replaceAll(
-            '__FEEDBACK_PROJECT_ID__',
-            feedbackProjectId ?? '',
-          ),
-        ]),
-      );
-    const homeTemplates = localizedTemplates('index.html');
-    const changelogTemplates = localizedTemplates('changelog', 'index.html');
+    const { pages } = JSON.parse(readFileSync(join(staticDir, 'pages.json'), 'utf8'));
     const robotsTemplate = readFileSync(join(staticDir, 'robots.txt'), 'utf8');
     const sitemapTemplate = readFileSync(join(staticDir, 'sitemap.xml'), 'utf8');
     const shell = (c) => c.html(withRequestOrigin(shellTemplate, c));
-    const localized = (templates, language) => (c) => {
-      c.header('Content-Language', language);
-      return c.html(withRequestOrigin(templates[language], c));
-    };
-    const negotiateLanguage = (subPath) => (c) => {
-      c.header('Vary', 'Accept-Language');
-      return c.redirect(`/${preferredLanguage(c.req.header('accept-language'))}/${subPath}`, 302);
-    };
-    app.get('/', negotiateLanguage(''));
-    app.get('/changelog', negotiateLanguage('changelog/'));
     app.get('/app.html', shell);
-    for (const language of ['en', 'fr']) {
-      app.get(`/${language}`, (c) => c.redirect(`/${language}/`, 301));
-      app.get(`/${language}/index.html`, (c) => c.redirect(`/${language}/`, 301));
-      app.get(`/${language}/`, localized(homeTemplates, language));
-      app.get(`/${language}/changelog`, (c) => c.redirect(`/${language}/changelog/`, 301));
-      app.get(`/${language}/changelog/index.html`, (c) => c.redirect(`/${language}/changelog/`, 301));
-      app.get(`/${language}/changelog/`, localized(changelogTemplates, language));
+    for (const page of pages) {
+      if (page.negotiate) {
+        const languages = Object.keys(page.paths);
+        app.get(page.negotiate, (c) => {
+          c.header('Vary', 'Accept-Language');
+          return c.redirect(page.paths[preferredLanguage(c.req.header('accept-language'), languages)], 302);
+        });
+      }
+      for (const [language, pagePath] of Object.entries(page.paths)) {
+        const template = readFileSync(
+          join(staticDir, ...pagePath.split('/').filter(Boolean), 'index.html'),
+          'utf8',
+        ).replaceAll('__FEEDBACK_PROJECT_ID__', feedbackProjectId ?? '');
+        app.get(pagePath.slice(0, -1), (c) => c.redirect(pagePath, 301));
+        app.get(`${pagePath}index.html`, (c) => c.redirect(pagePath, 301));
+        app.get(pagePath, (c) => {
+          c.header('Content-Language', language);
+          return c.html(withRequestOrigin(template, c));
+        });
+      }
     }
     app.get('/robots.txt', (c) => c.text(withRequestOrigin(robotsTemplate, c)));
     app.get('/sitemap.xml', (c) =>
@@ -256,8 +252,17 @@ export function startServer({
     app.get('/sw.js', (c) => c.body(swSource, 200, { 'Content-Type': 'text/javascript; charset=utf-8' }));
     app.use('/*', serveStatic({ root: staticDir }));
     // SPA fallback: client-side routes like /join/<id> must serve the app.
+    // A language-prefixed path the manifest does not declare must 404 instead,
+    // or a mistyped link gets indexed as a status-200 copy of the shell.
+    const languagePrefixes = new Set(
+      pages.flatMap((page) => Object.values(page.paths).map((pagePath) => pagePath.split('/')[1])),
+    );
     app.get('*', (c, next) =>
-      c.req.path.startsWith('/api/') || /\.[^/]*$/.test(c.req.path) ? c.notFound() : next(),
+      c.req.path.startsWith('/api/') ||
+      /\.[^/]*$/.test(c.req.path) ||
+      languagePrefixes.has(c.req.path.split('/')[1])
+        ? c.notFound()
+        : next(),
     );
     app.get('*', shell);
   }
