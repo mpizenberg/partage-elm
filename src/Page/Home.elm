@@ -315,15 +315,15 @@ view i18n ctx toMsg (Model data) groups =
 homeHeader : I18n -> Ui.Element msg
 homeHeader i18n =
     Ui.row
-        [ Ui.paddingWith { top = Theme.spacing.xl, bottom = Theme.spacing.md, left = 0, right = 0 }
-        , Ui.Font.size Theme.font.xxxl
-        , Ui.Font.weight Theme.fontWeight.bold
-        , Ui.Font.letterSpacing Theme.letterSpacing.tight
-        , Ui.spacing Theme.spacing.sm
-        , Ui.contentCenterY
-        , Ui.pointer
-        , Ui.link "/"
-        ]
+        (Ui.paddingWith { top = Theme.spacing.xl, bottom = Theme.spacing.md, left = 0, right = 0 }
+            :: Ui.Font.size Theme.font.xxxl
+            :: Ui.Font.weight Theme.fontWeight.bold
+            :: Ui.Font.letterSpacing Theme.letterSpacing.tight
+            :: Ui.spacing Theme.spacing.sm
+            :: Ui.contentCenterY
+            :: Ui.pointer
+            :: UI.Components.staticPageLinkAttrs "/"
+        )
         [ UI.Components.appLogo 32
         , Ui.text (T.shellPartage i18n)
         ]

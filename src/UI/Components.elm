@@ -3,7 +3,7 @@ module UI.Components exposing
     , card, horizontalSeparator
     , btnPrimary, btnOutline, btnOutlineAttrs, btnDark, btnDanger, btnSuccess
     , iconButton
-    , spaLinkAttrs
+    , spaLinkAttrs, staticPageLinkAttrs
     , chip, toggle, expandTrigger, togglePill
     , linkItem
     , filterToggleButton, filterSection, filterSummaryChip, clearAllFiltersButton
@@ -28,7 +28,7 @@ module UI.Components exposing
 
 @docs btnPrimary, btnOutline, btnOutlineAttrs, btnDark, btnDanger, btnSuccess
 @docs iconButton
-@docs spaLinkAttrs
+@docs spaLinkAttrs, staticPageLinkAttrs
 
 
 # Interactive
@@ -331,6 +331,17 @@ spaLinkAttrs href onPress =
     [ Ui.link href
     , Ui.Events.preventDefaultOn "click"
         (Json.Decode.succeed ( onPress, True ))
+    ]
+
+
+{-| Same-tab link to one of this deployment's static pages. The relay tells
+external landings apart from in-app navigation by referrer, so the referrer is
+kept — but trimmed to the origin, because app paths carry group ids.
+-}
+staticPageLinkAttrs : String -> List (Ui.Attribute msg)
+staticPageLinkAttrs href =
+    [ Ui.linkKeepReferrer href
+    , Ui.htmlAttribute (Html.Attributes.attribute "referrerpolicy" "origin")
     ]
 
 
