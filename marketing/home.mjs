@@ -49,6 +49,7 @@ export default {
     fundingBody:
       "Partage is free, open source, and ad-free. Running the sync relay costs a few cents per active user each month. If Partage helps you, please consider supporting it.",
     fundingCta: "Support Partage",
+    learnMoreTitle: "Learn more",
     about: "App information and local usage",
     source: "Source code",
     feedback: "Send feedback",
@@ -100,6 +101,7 @@ export default {
     fundingBody:
       "Partage est gratuit, open source et sans publicité. Le relais de synchronisation coûte quelques centimes par utilisateur actif chaque mois. Si Partage vous aide, vous pouvez le soutenir.",
     fundingCta: "Soutenir Partage",
+    learnMoreTitle: "Pour aller plus loin",
     about: "Informations sur l’app et usage local",
     source: "Code source",
     feedback: "Envoyer un retour",

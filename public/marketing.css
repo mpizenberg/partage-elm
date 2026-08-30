@@ -205,6 +205,31 @@ figcaption {
     margin: 0.4rem 0 0;
 }
 
+/* Topic pages are running text; every other page is components, so prose
+   rhythm lives under this class rather than on bare elements. */
+.prose p {
+    margin: 0.75rem 0;
+}
+
+.prose ul {
+    margin: 0.75rem 0;
+    padding-left: 1.35rem;
+}
+
+.prose li {
+    margin: 0.35rem 0;
+}
+
+.topic-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.topic-list li {
+    margin: 0.5rem 0;
+}
+
 .support {
     text-align: center;
 }

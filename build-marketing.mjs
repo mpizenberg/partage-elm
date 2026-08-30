@@ -1,13 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import changelog from "./marketing/changelog.mjs";
 import home from "./marketing/home.mjs";
+import encryption from "./marketing/topics/encryption.mjs";
 
 const marketingCss = readFileSync("public/marketing.css", "utf8");
 const origin = "__CANONICAL_ORIGIN__";
 const fundingUrl = "https://github.com/sponsors/mpizenberg";
 const sourceUrl = "https://github.com/mpizenberg/partage-elm";
 
-const pages = [home, changelog];
+const pages = [home, changelog, encryption];
 
 const languages = {
   en: { flag: "🇬🇧", name: "English" },
@@ -182,12 +183,68 @@ ${list(text.details)}
                 <p>${text.fundingBody}</p>
                 <a class="button" href="${fundingUrl}" rel="noreferrer">${featherIcon("heart")}${text.fundingCta}</a>
             </section>
+            <section aria-labelledby="learn-more">
+                <h2 id="learn-more">${text.learnMoreTitle}</h2>
+                <ul class="topic-list">
+${topicLinks(language)}
+                </ul>
+            </section>
             <footer>
                 <a href="/${language}/changelog/">${featherIcon("gift")}${text.whatsNew}</a>
                 ·
                 <a href="/about">${featherIcon("info")}${text.about}</a>
                 ·
                 <a href="${sourceUrl}" rel="noreferrer">${featherIcon("github")}${text.source}</a>
+                <span class="feedback" data-feedback-project="__FEEDBACK_PROJECT_ID__" hidden>
+                    <button type="button">${featherIcon("message-square")}${text.feedback}</button>
+                </span>
+            </footer>
+        </main>
+        <script src="/marketing.js" defer></script>
+    </body>
+</html>
+`;
+}
+
+function topicLinks(language) {
+  return pages
+    .filter((page) => page.template === "topic")
+    .map((page) => `                    <li><a href="${pagePath(page, language)}">${page[language].label}</a></li>`)
+    .join("\n");
+}
+
+function renderTopic(page, language) {
+  const text = page[language];
+  const sections = text.sections
+    .map(
+      (section) => `            <section class="prose" aria-labelledby="${section.id}">
+                <h2 id="${section.id}">${section.title}</h2>
+${section.body}
+            </section>`,
+    )
+    .join("\n");
+  const siblingLinks = pages
+    .filter((other) => other.template === "topic" && other !== page)
+    .map(
+      (sibling) =>
+        `\n                ·\n                <a href="${pagePath(sibling, language)}">${sibling[language].label}</a>`,
+    )
+    .join("");
+  return `<!doctype html>
+<html lang="${language}">
+${head(page, language)}
+    <body>
+        <main class="page">
+            <header class="hero">
+                <img class="logo" src="/icon.svg" width="96" height="96" alt="" />
+                <h1>${text.heading}</h1>
+                <p class="tagline">${text.tagline}</p>
+                <a class="button" href="/groups">${text.open}</a>
+                ${languageNav(page, language)}
+            </header>
+${sections}
+            <footer>
+                <a href="/${language}/">${featherIcon("home")}${text.home}</a>${siblingLinks}
                 <span class="feedback" data-feedback-project="__FEEDBACK_PROJECT_ID__" hidden>
                     <button type="button">${featherIcon("message-square")}${text.feedback}</button>
                 </span>
@@ -245,7 +302,7 @@ ${entryArticles(page.entries, language)}
 `;
 }
 
-const templates = { home: renderHome, changelog: renderChangelog };
+const templates = { home: renderHome, changelog: renderChangelog, topic: renderTopic };
 
 function sitemap() {
   const url = (path, lastmod) =>
