@@ -297,6 +297,39 @@ describe('static frontend serving', () => {
       requests: 1,
     });
   });
+
+  it('buckets landings by served page id, never by request path', async () => {
+    const day = new Date().toISOString().slice(0, 10);
+    const groupId = 'zryq1q3a58m535p';
+    const buckets = () =>
+      Object.fromEntries(
+        storage
+          .getDailySince(day)
+          .filter((row) => row.name.startsWith('landing.page.'))
+          .map((row) => [row.name, row.value]),
+      );
+    const before = buckets();
+
+    const document = { 'sec-fetch-dest': 'document', referer: 'https://news.ycombinator.com/' };
+    await fetch(`${relay.url}/en/`, { headers: document });
+    await fetch(`${relay.url}/fr/${TOPIC_SLUGS.fr}/`, { headers: document });
+    await fetch(`${relay.url}/join/${groupId}`, { headers: document });
+
+    const after = buckets();
+    const delta = (name) => (after[name] ?? 0) - (before[name] ?? 0);
+    assert.equal(delta('landing.page.home.en'), 1);
+    assert.equal(delta('landing.page.topic.fr'), 1);
+    assert.equal(delta('landing.page.app'), 1);
+    assert.ok(storage.getDailySince(day).every((row) => !row.name.includes(groupId)));
+
+    // Every counted landing was served by a handler that names its page, so
+    // the page buckets account for the all-landings total exactly.
+    const window = storage.getLandingWindow({ firstDay: day, lastDay: day, limit: 10 });
+    assert.equal(
+      window.pages.reduce((sum, row) => sum + row.requests, 0),
+      window.total,
+    );
+  });
 });
 
 describe('service worker cache identity', () => {

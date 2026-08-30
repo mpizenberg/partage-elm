@@ -95,6 +95,21 @@ describe('daily table', () => {
     storage.close();
   });
 
+  it('buckets landings by page in the daily table', () => {
+    const storage = openStorage(':memory:');
+    storage.recordLanding('2030-02-01', null, 'home.en');
+    storage.recordLanding('2030-02-01', 'blog.example', 'home.en');
+    storage.recordLanding('2030-02-01', null, 'app');
+    storage.recordLanding('2030-02-01', null);
+    const window = storage.getLandingWindow({ firstDay: '2030-02-01', lastDay: '2030-02-01', limit: 10 });
+    assert.equal(window.total, 4);
+    assert.deepEqual(window.pages, [
+      { page: 'home.en', requests: 2 },
+      { page: 'app', requests: 1 },
+    ]);
+    storage.close();
+  });
+
   it('retains daily landing totals and only each completed day’s top referrers', () => {
     const storage = openStorage(':memory:');
     storage.recordLanding('2030-01-01');

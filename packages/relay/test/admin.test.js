@@ -82,9 +82,9 @@ describe('admin summary content', () => {
     mkGroup(storage, 'b', '2030-01-02T00:00:00.000Z');
     push(storage, 'a', 'alice', 'aaaa');
     push(storage, 'b', 'bob', 'bbbbbb');
-    storage.recordLanding(today);
-    storage.recordLanding(today, 'www.reddit.com');
-    storage.recordLanding(today, 'www.reddit.com');
+    storage.recordLanding(today, null, 'home.en');
+    storage.recordLanding(today, 'www.reddit.com', 'home.en');
+    storage.recordLanding(today, 'www.reddit.com', 'app');
     const body = await (await summary(app)).json();
     assert.equal(body.now.total_groups, 2);
     assert.equal(body.now.total_bytes, 10);
@@ -98,6 +98,10 @@ describe('admin summary content', () => {
     assert.equal(body.growth.cohorts.reduce((sum, cohort) => sum + cohort.groupsCreated, 0), 2);
     assert.equal(body.landings.today.total, 3);
     assert.deepEqual(body.landings.today.referrers, [{ hostname: 'www.reddit.com', requests: 2 }]);
+    assert.deepEqual(body.landings.today.pages, [
+      { page: 'home.en', requests: 2 },
+      { page: 'app', requests: 1 },
+    ]);
     assert.equal(body.landings.yesterday.total, 0);
     assert.equal(body.landings.last7Days.total, 3);
   });

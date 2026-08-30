@@ -195,14 +195,14 @@ function hotTable(title, rows, valueFn){
   }
   return E('div', {'class':'hot'}, [E('div', {'class':'hot-title', text:title}), E('table', null, [body])]);
 }
-function landingTable(title, period){
+function landingTable(title, period, rows, labelFn, emptyText){
   var body = E('tbody');
-  if (!period.referrers.length){
-    body.appendChild(E('tr', null, [E('td', {'class':'muted', colspan:'2', text:'No external referrers'})]));
-  } else for (var i = 0; i < period.referrers.length; i++){
-    var r = period.referrers[i];
+  if (!rows.length){
+    body.appendChild(E('tr', null, [E('td', {'class':'muted', colspan:'2', text:emptyText})]));
+  } else for (var i = 0; i < rows.length; i++){
+    var r = rows[i];
     body.appendChild(E('tr', null, [
-      E('td', {'class':'hostname', text:r.hostname}),
+      E('td', {'class':'hostname', text:labelFn(r)}),
       E('td', {'class':'num', text:outcome(r.requests, period.total)}),
     ]));
   }
@@ -211,6 +211,12 @@ function landingTable(title, period){
     E('div', {'class':'hot-title', text:title + ' · ' + total}),
     E('table', null, [body]),
   ]);
+}
+function referrerTable(title, period){
+  return landingTable(title, period, period.referrers, function(r){ return r.hostname; }, 'No external referrers');
+}
+function pageTable(title, period){
+  return landingTable(title, period, period.pages || [], function(r){ return r.page; }, 'No page landings');
 }
 function cohortTable(rows, currentWeek){
   var head = E('thead', null, [E('tr', null, [
@@ -299,10 +305,18 @@ function render(data){
   view.appendChild(E('h2', {text:'Landing traffic'}));
   view.appendChild(E('p', {'class':'section-note', text:'Top external referrer hostnames. Percentages use all server-observed landings, including those without a referrer.'}));
   var landingTables = E('div', {'class':'hots'});
-  landingTables.appendChild(landingTable('Today', data.landings.today));
-  landingTables.appendChild(landingTable('Yesterday', data.landings.yesterday));
-  landingTables.appendChild(landingTable('Last 7 days', data.landings.last7Days));
+  landingTables.appendChild(referrerTable('Today', data.landings.today));
+  landingTables.appendChild(referrerTable('Yesterday', data.landings.yesterday));
+  landingTables.appendChild(referrerTable('Last 7 days', data.landings.last7Days));
   view.appendChild(landingTables);
+
+  view.appendChild(E('h2', {text:'Pages served'}));
+  view.appendChild(E('p', {'class':'section-note', text:'Landings by served page and language; app is the SPA shell. Only build-declared page ids are recorded, never request paths.'}));
+  var pageTables = E('div', {'class':'hots'});
+  pageTables.appendChild(pageTable('Today', data.landings.today));
+  pageTables.appendChild(pageTable('Yesterday', data.landings.yesterday));
+  pageTables.appendChild(pageTable('Last 7 days', data.landings.last7Days));
+  view.appendChild(pageTables);
 
   view.appendChild(E('h2', {text:'Growth trends'}));
   var growthCharts = E('div', {'class':'charts'});

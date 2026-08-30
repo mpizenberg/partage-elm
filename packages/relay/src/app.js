@@ -236,9 +236,11 @@ function computeCost({ levels, history, nowMs }) {
  * - bumpMetric(name, day, amount = 1) — day-bucketed counter, UPSERT-add.
  * - recordDailyLevels(day, {name: value}) — day-bucketed level snapshot, UPSERT-replace.
  * - getDailySince(day) → [{day, name, value}] — the counter+level series from `day` on.
- * - recordLanding(day, hostname?) — daily all-landing and optional external-host counts.
+ * - recordLanding(day, hostname?, page?) — daily all-landing counts, plus optional
+ *   external-host and served-page buckets.
  * - finalizeLandingReferrers(beforeDay, limit) — retain only each completed day's top hosts.
- * - getLandingWindow({firstDay, lastDay, limit}) → total landings and top hosts.
+ * - getLandingWindow({firstDay, lastDay, limit}) → total landings, top hosts, and
+ *   per-page counts.
  * - getFleetLevels({idleCutoff, nearQuotaBytes, nearQuotaRecords, actorWindows,
  *     realUseDevices, realUseRecords}) → the current fleet level snapshot object
  *     (keys are metric names), including the relay-observed growth funnel.

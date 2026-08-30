@@ -183,7 +183,10 @@ export function startServer({
       }
       const requestDay = new Date().toISOString().slice(0, 10);
       try {
-        storage.recordLanding(requestDay, hostname);
+        // The page bucket is set by the handler that served the document, so
+        // it is always a manifest page id or the shell — never the request
+        // path, which can carry group identifiers.
+        storage.recordLanding(requestDay, hostname, c.get('landingPage') ?? null);
       } catch (err) {
         // Traffic accounting must never make the static site unavailable.
         console.error('Failed to record landing', err);
@@ -206,7 +209,10 @@ export function startServer({
     const { pages } = JSON.parse(readFileSync(join(staticDir, 'pages.json'), 'utf8'));
     const robotsTemplate = readFileSync(join(staticDir, 'robots.txt'), 'utf8');
     const sitemapTemplate = readFileSync(join(staticDir, 'sitemap.xml'), 'utf8');
-    const shell = (c) => c.html(withRequestOrigin(shellTemplate, c));
+    const shell = (c) => {
+      c.set('landingPage', 'app');
+      return c.html(withRequestOrigin(shellTemplate, c));
+    };
     app.get('/app.html', shell);
     for (const page of pages) {
       if (page.negotiate) {
@@ -224,6 +230,7 @@ export function startServer({
         app.get(pagePath.slice(0, -1), (c) => c.redirect(pagePath, 301));
         app.get(`${pagePath}index.html`, (c) => c.redirect(pagePath, 301));
         app.get(pagePath, (c) => {
+          c.set('landingPage', `${page.id}.${language}`);
           c.header('Content-Language', language);
           return c.html(withRequestOrigin(template, c));
         });

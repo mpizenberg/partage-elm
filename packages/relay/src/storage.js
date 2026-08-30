@@ -146,6 +146,16 @@ export function openStorage(path) {
     ORDER BY requests DESC, hostname
     LIMIT ?
   `);
+  // Page landings live in the generic daily table: the page id is a bounded,
+  // build-controlled dimension, so it needs none of the candidate-cap and
+  // trimming machinery the attacker-controlled referrer hostnames require.
+  const selectLandingPages = db.prepare(`
+    SELECT name, SUM(value) AS requests
+    FROM daily
+    WHERE day >= ? AND day <= ? AND name LIKE 'landing.page.%'
+    GROUP BY name
+    ORDER BY requests DESC, name
+  `);
   const selectFleetAgg = db.prepare(`
     SELECT
       COUNT(*) AS total_groups,
@@ -360,10 +370,13 @@ export function openStorage(path) {
       return selectDailySince.all(sinceDay).map((row) => ({ day: row.day, name: row.name, value: row.value }));
     },
 
-    recordLanding(day, hostname = null) {
+    recordLanding(day, hostname = null, page = null) {
       db.exec('BEGIN IMMEDIATE');
       try {
         bumpLandingStmt.run(day, '');
+        if (page !== null) {
+          bumpMetricStmt.run(day, `landing.page.${page}`, 1);
+        }
         // Referrer is attacker-controlled. Preserve the all-landing total but
         // bound transient hostname cardinality until the day is trimmed.
         if (
@@ -405,6 +418,10 @@ export function openStorage(path) {
         total: selectLandingTotal.get(firstDay, lastDay).requests,
         referrers: selectLandingReferrers.all(firstDay, lastDay, limit).map((row) => ({
           hostname: row.hostname,
+          requests: row.requests,
+        })),
+        pages: selectLandingPages.all(firstDay, lastDay).map((row) => ({
+          page: row.name.slice('landing.page.'.length),
           requests: row.requests,
         })),
       };
