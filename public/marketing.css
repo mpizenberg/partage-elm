@@ -178,6 +178,23 @@ footer a {
     margin-inline: 0.35rem;
 }
 
+/* An author-level `display` would override the user agent's `[hidden]` rule and
+   show the control on a deployment that ships without the form. */
+.feedback:not([hidden]) {
+    display: block;
+    margin-top: 0.5rem;
+}
+
+.feedback button {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--primary-dark);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
 @media (max-width: 560px) {
     .feature-list,
     .screenshots {

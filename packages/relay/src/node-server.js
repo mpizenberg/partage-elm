@@ -195,10 +195,16 @@ export function startServer({
     const withRequestOrigin = (template, c) =>
       template.replaceAll('__CANONICAL_ORIGIN__', requestOrigin(c));
     const shellTemplate = readFileSync(join(staticDir, 'app.html'), 'utf8');
+    // The feedback project id comes from the process, not the request, so the
+    // homes carry it from startup. An unset id empties the placeholder, which is
+    // what keeps the control hidden on a deployment without the form.
     const homeTemplates = Object.fromEntries(
       ['en', 'fr'].map((language) => [
         language,
-        readFileSync(join(staticDir, language, 'index.html'), 'utf8'),
+        readFileSync(join(staticDir, language, 'index.html'), 'utf8').replaceAll(
+          '__FEEDBACK_PROJECT_ID__',
+          feedbackProjectId ?? '',
+        ),
       ]),
     );
     const robotsTemplate = readFileSync(join(staticDir, 'robots.txt'), 'utf8');

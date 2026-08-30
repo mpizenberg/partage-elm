@@ -6,6 +6,7 @@ import {
   evaluateInstallHint,
   isStandalone,
 } from "../vendor/elm-pwa/js/src/index.js";
+import { openFeedback } from "./feedback.js";
 
 function isIosFamily() {
   return (
@@ -141,67 +142,16 @@ app.ports.setDocumentLang.subscribe((lang) => {
   document.documentElement.lang = lang;
 });
 
-// The feedback SDK replaces the global custom-element registry with its own
-// implementation as soon as it runs, so it is fetched only once someone opens
-// the form and never at all for the users who don't. It is mounted without its
-// own trigger: Elm owns the button, supplies the project id the relay reported,
-// and keeps it off the routes whose URL fragment carries a secret. The widget
-// outlives no page, so the observer that would re-add it to a wiped <body> is
-// off too.
-var feedbackSdk = null;
-var feedbackMounted = false;
-
-function loadFeedbackSdk() {
-  if (feedbackSdk === null) {
-    feedbackSdk = new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = "/feedback-one.js";
-      script.onload = resolve;
-      script.onerror = reject;
-      document.head.appendChild(script);
-    }).catch((error) => {
-      // Let a later click retry rather than leaving a dead button behind.
-      feedbackSdk = null;
-      throw error;
-    });
-  }
-  return feedbackSdk;
-}
-
+// Elm owns the trigger: it supplies the project id the relay reported and the
+// reporter address from the local profile, and keeps the form off the routes
+// whose URL fragment carries a secret.
 app.ports.openFeedback.subscribe(({ projectId, email, copyText }) => {
-  // The form's protocol carries no description, so a report reaches it through
-  // the clipboard. Write before the dialog opens: the modal takes the top layer
-  // and would hide the confirmation toast.
-  if (copyText) {
-    navigator.clipboard
-      .writeText(copyText)
-      .then(() => {
-        app.ports.onClipboardCopy.send(null);
-      })
-      .catch(() => {});
-  }
-  loadFeedbackSdk()
-    .then(() => {
-      if (!feedbackMounted) {
-        window.FeedbackOne.init({
-          projectId: projectId,
-          showDefaultTrigger: false,
-          persistent: false,
-        });
-        feedbackMounted = true;
-      }
-      // Both calls throw when the form's iframe has no window yet, and an
-      // unusable reporter must not cost the user their report.
-      try {
-        if (email) {
-          window.FeedbackOne.identify({ email: email });
-        } else {
-          window.FeedbackOne.unidentify();
-        }
-      } catch (_) {}
-      window.FeedbackOne.show();
-    })
-    .catch(() => {});
+  openFeedback({
+    projectId: projectId,
+    email: email,
+    copyText: copyText,
+    onCopied: () => app.ports.onClipboardCopy.send(null),
+  });
 });
 
 // Domain-migration handoff. The payload carries the private signing key, so it

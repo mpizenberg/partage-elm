@@ -159,6 +159,9 @@ real.
 - [ ] **Fetched on demand.** With the network panel open, `/feedback-one.js` is
       requested when the form is first opened, not on load, and opening it a
       second time neither re-fetches nor mounts a second widget.
+- [ ] **Static home.** The footer of `/en/` and `/fr/` offers "Send feedback" /
+      "Envoyer un retour", and it opens the form in that page's language. Loading
+      the page requests `/marketing.js` but no `/feedback-one.js` until the click.
 - [ ] **Secret-carrying screens.** Open an invite link (`/join/…#…`) and a
       notification landing: no feedback tab while the fragment is in the
       address bar; it reappears once the join completes.
@@ -183,9 +186,9 @@ real.
 - [ ] **Offline.** With the browser offline, the same moment raises no banner
       (the form is a remote iframe and would open empty).
 - [ ] **Unconfigured deployment.** With `FEEDBACK_PROJECT_ID` unset on the
-      relay, no tab anywhere, no report or idea button, no banner, and no
-      `<feedback-one>` element in the DOM; setting it and restarting the relay
-      brings them back without a rebuild.
+      relay, no tab anywhere, no report or idea button, no banner, no static-home
+      footer button, and no `<feedback-one>` element in the DOM; setting it and
+      restarting the relay brings them back without a rebuild.
 
 ## Accessibility and i18n
 

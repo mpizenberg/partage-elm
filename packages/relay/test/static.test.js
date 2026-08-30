@@ -17,7 +17,7 @@ function writeEntryFiles(dir) {
     fs.mkdirSync(languageDir);
     fs.writeFileSync(
       path.join(languageDir, 'index.html'),
-      `<html lang="${language}"><link rel="canonical" href="__CANONICAL_ORIGIN__/${language}/" />${language} home</html>`,
+      `<html lang="${language}"><link rel="canonical" href="__CANONICAL_ORIGIN__/${language}/" /><span data-feedback-project="__FEEDBACK_PROJECT_ID__" hidden></span>${language} home</html>`,
     );
   }
 }
@@ -245,5 +245,42 @@ describe('service worker cache identity', () => {
     const unset = await serveSw({});
     assert.equal(await serveSw({ readOnly: true }), unset);
     assert.equal(await serveSw({ migrationSource: 'https://old.example.com' }), unset);
+  });
+});
+
+describe('static home feedback control', () => {
+  const serveHome = async (config) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-feedback-'));
+    writeEntryFiles(dir);
+    fs.writeFileSync(path.join(dir, 'sw.js'), 'var CACHE = "partage-abc-__CONFIG_DIGEST__";');
+    writeDiscoveryFiles(dir);
+    const relay = await startServer({
+      storage: openStorage(':memory:'),
+      powSecret: TEST_SECRET,
+      port: 0,
+      staticDir: dir,
+      ...config,
+    });
+    const bodies = await Promise.all(
+      ['en', 'fr'].map(async (language) => (await fetch(`${relay.url}/${language}/`)).text()),
+    );
+    await relay.close();
+    fs.rmSync(dir, { recursive: true });
+    return bodies;
+  };
+
+  it('carries the configured project id into both homes', async () => {
+    for (const body of await serveHome({ feedbackProjectId: 'proj_123' })) {
+      assert.match(body, /data-feedback-project="proj_123"/);
+    }
+  });
+
+  it('empties the placeholder when the deployment ships without the form', async () => {
+    // The page reveals its control only for a non-empty, non-placeholder id, so
+    // an unconfigured deployment must not leave the literal behind.
+    for (const body of await serveHome({})) {
+      assert.match(body, /data-feedback-project=""/);
+      assert.ok(!body.includes('__FEEDBACK_PROJECT_ID__'));
+    }
   });
 });

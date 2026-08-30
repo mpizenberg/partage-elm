@@ -54,6 +54,7 @@ const pages = {
     fundingCta: "Support Partage",
     about: "App information and local usage",
     source: "Source code",
+    feedback: "Send feedback",
   },
   fr: {
     title: "Partage — Partage de frais privé et local-first",
@@ -103,6 +104,7 @@ const pages = {
     fundingCta: "Soutenir Partage",
     about: "Informations sur l’app et usage local",
     source: "Code source",
+    feedback: "Envoyer un retour",
   },
 };
 
@@ -196,8 +198,12 @@ ${list(page.details)}
                 <a href="/about">${page.about}</a>
                 ·
                 <a href="${sourceUrl}" rel="noreferrer">${page.source}</a>
+                <span class="feedback" data-feedback-project="__FEEDBACK_PROJECT_ID__" hidden>
+                    <button type="button">${page.feedback}</button>
+                </span>
             </footer>
         </main>
+        <script src="/marketing.js" defer></script>
     </body>
 </html>
 `;
