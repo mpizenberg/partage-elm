@@ -27,6 +27,19 @@ describe('security headers', () => {
     );
   });
 
+  it('allows elm-watch WebSockets only in development', async () => {
+    const development = await makeApp({ dev: true }).app.request('/health');
+    const production = await makeApp().app.request('/health');
+    assert.match(
+      development.headers.get('content-security-policy'),
+      /connect-src [^;]*ws:\/\/localhost:\*/,
+    );
+    assert.doesNotMatch(
+      production.headers.get('content-security-policy'),
+      /ws:\/\/localhost:\*/,
+    );
+  });
+
   it('allows the push origin and the feedback frame when configured', async () => {
     const res = await makeApp({
       pushServerUrl: 'https://push.example.com/base',

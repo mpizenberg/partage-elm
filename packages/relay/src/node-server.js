@@ -72,6 +72,7 @@ export function startServer({
   migrationTarget,
   migrationSource,
   readOnly,
+  dev = false,
 }) {
   const topics = new Map();
 
@@ -86,6 +87,7 @@ export function startServer({
     migrationTarget,
     migrationSource,
     readOnly,
+    dev,
     onAppend(groupId, seq) {
       const sockets = topics.get(groupId);
       if (sockets) {

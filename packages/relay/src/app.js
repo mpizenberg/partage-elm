@@ -304,8 +304,16 @@ function absoluteHttpUrl(configured) {
  * turning a setting on leaves every existing client unable to reach what the
  * setting just allowed.
  */
-export function contentSecurityPolicy({ pushServerUrl = '', feedbackProjectId = '', migrationTarget = '' }) {
+export function contentSecurityPolicy({
+  pushServerUrl = '',
+  feedbackProjectId = '',
+  migrationTarget = '',
+  dev = false,
+}) {
   const connectSources = ["'self'", 'https://api.frankfurter.dev'];
+  if (dev) {
+    connectSources.push('ws://localhost:*', 'ws://127.0.0.1:*');
+  }
   for (const configured of [pushServerUrl, migrationTarget]) {
     const url = absoluteHttpUrl(configured);
     if (url !== null) {
@@ -342,6 +350,7 @@ export function createApp({
   migrationTarget = '',
   migrationSource = '',
   readOnly = false,
+  dev = false,
 }) {
   const app = new Hono();
   const bump = (name, amount = 1) => storage.bumpMetric(name, new Date().toISOString().slice(0, 10), amount);
@@ -359,6 +368,7 @@ export function createApp({
     pushServerUrl: pushServer,
     feedbackProjectId,
     migrationTarget: migrateTo,
+    dev,
   });
   app.use(async (c, next) => {
     await next();

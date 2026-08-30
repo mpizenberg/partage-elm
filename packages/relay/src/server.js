@@ -98,6 +98,7 @@ const { url, close } = await startServer({
   migrationTarget: process.env.MIGRATION_TARGET ?? '',
   migrationSource: process.env.MIGRATION_SOURCE ?? '',
   readOnly: ['true', '1'].includes(process.env.RELAY_READ_ONLY ?? ''),
+  dev,
 });
 
 dailyMaintenance();
