@@ -2,13 +2,15 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import changelog from "./marketing/changelog.mjs";
 import home from "./marketing/home.mjs";
 import encryption from "./marketing/topics/encryption.mjs";
+import noAccount from "./marketing/topics/no-account.mjs";
+import trips from "./marketing/topics/trips.mjs";
 
 const marketingCss = readFileSync("public/marketing.css", "utf8");
 const origin = "__CANONICAL_ORIGIN__";
 const fundingUrl = "https://github.com/sponsors/mpizenberg";
 const sourceUrl = "https://github.com/mpizenberg/partage-elm";
 
-const pages = [home, changelog, encryption];
+const pages = [home, changelog, trips, noAccount, encryption];
 
 const languages = {
   en: { flag: "🇬🇧", name: "English" },
@@ -353,10 +355,23 @@ if (!existsSync("src/Changelog/Latest.elm") || readFileSync("src/Changelog/Lates
   writeFileSync("src/Changelog/Latest.elm", latestModule);
 }
 
+// Content hand-writes its cross-links, and the relay 404s any localized path
+// outside the manifest — so a slug typo in a link must fail the build here,
+// not a reader in production.
+const knownPaths = new Set(
+  pages.flatMap((page) => Object.keys(page.slug).map((language) => pagePath(page, language))),
+);
+const localizedHref = new RegExp(`href="(/(?:${Object.keys(languages).join("|")})/[^"#]*)`, "g");
 for (const page of pages) {
   for (const language of Object.keys(page.slug)) {
+    const document = templates[page.template](page, language);
+    for (const [, href] of document.matchAll(localizedHref)) {
+      if (!knownPaths.has(href)) {
+        throw new Error(`broken internal link ${href} on ${page.id}.${language}`);
+      }
+    }
     mkdirSync(`dist${pagePath(page, language)}`, { recursive: true });
-    writeFileSync(`dist${pagePath(page, language)}index.html`, templates[page.template](page, language));
+    writeFileSync(`dist${pagePath(page, language)}index.html`, document);
   }
 }
 writeFileSync("dist/sitemap.xml", sitemap());
