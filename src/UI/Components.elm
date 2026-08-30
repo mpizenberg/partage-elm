@@ -337,12 +337,15 @@ spaLinkAttrs href onPress =
 {-| Same-tab link to one of this deployment's static pages. The relay tells
 external landings apart from in-app navigation by referrer, so the referrer is
 kept — but trimmed to the origin, because app paths carry group ids.
+
+`Ui.link` stamps `rel="noopener noreferrer"` on every anchor; the trailing
+`rel` here must come after it, because for duplicate attributes elm's
+virtual-dom keeps the last one. `StaticPageLinkTest` pins that ordering.
+
 -}
 staticPageLinkAttrs : String -> List (Ui.Attribute msg)
 staticPageLinkAttrs href =
-    [ Ui.linkKeepReferrer href
-    , Ui.htmlAttribute (Html.Attributes.attribute "referrerpolicy" "origin")
-    ]
+    Ui.link href :: keepOriginReferrer
 
 
 {-| `staticPageLinkAttrs`, but opening a new tab so the running app keeps its
@@ -350,7 +353,12 @@ in-memory state.
 -}
 staticPageNewTabLinkAttrs : String -> List (Ui.Attribute msg)
 staticPageNewTabLinkAttrs href =
-    [ Ui.linkNewTabKeepReferrer href
+    Ui.linkNewTab href :: keepOriginReferrer
+
+
+keepOriginReferrer : List (Ui.Attribute msg)
+keepOriginReferrer =
+    [ Ui.htmlAttribute (Html.Attributes.rel "noopener")
     , Ui.htmlAttribute (Html.Attributes.attribute "referrerpolicy" "origin")
     ]
 
