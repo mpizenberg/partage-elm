@@ -288,8 +288,26 @@ ${entryArticles(language)}
 `;
 }
 
+function sitemap() {
+  const url = (path, lastmod) =>
+    ["  <url>", `    <loc>${origin}${path}</loc>`]
+      .concat(lastmod ? [`    <lastmod>${lastmod}</lastmod>`] : [])
+      .concat(["  </url>"])
+      .join("\n");
+  const newest = changelog[0].date;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${["/en/", "/fr/"]
+  .map((path) => url(path))
+  .concat(["/en/changelog/", "/fr/changelog/"].map((path) => url(path, newest)))
+  .join("\n")}
+</urlset>
+`;
+}
+
 for (const [language, page] of Object.entries(pages)) {
   mkdirSync(`dist/${language}/changelog`, { recursive: true });
   writeFileSync(`dist/${language}/index.html`, render(language, page));
   writeFileSync(`dist/${language}/changelog/index.html`, renderChangelog(language, page));
 }
+writeFileSync("dist/sitemap.xml", sitemap());
