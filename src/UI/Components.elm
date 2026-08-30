@@ -3,7 +3,7 @@ module UI.Components exposing
     , card, horizontalSeparator
     , btnPrimary, btnOutline, btnOutlineAttrs, btnDark, btnDanger, btnSuccess
     , iconButton
-    , spaLinkAttrs, staticPageLinkAttrs
+    , spaLinkAttrs, staticPageLinkAttrs, staticPageNewTabLinkAttrs, changelogPath
     , chip, toggle, expandTrigger, togglePill
     , linkItem
     , filterToggleButton, filterSection, filterSummaryChip, clearAllFiltersButton
@@ -28,7 +28,7 @@ module UI.Components exposing
 
 @docs btnPrimary, btnOutline, btnOutlineAttrs, btnDark, btnDanger, btnSuccess
 @docs iconButton
-@docs spaLinkAttrs, staticPageLinkAttrs
+@docs spaLinkAttrs, staticPageLinkAttrs, staticPageNewTabLinkAttrs, changelogPath
 
 
 # Interactive
@@ -343,6 +343,23 @@ staticPageLinkAttrs href =
     [ Ui.linkKeepReferrer href
     , Ui.htmlAttribute (Html.Attributes.attribute "referrerpolicy" "origin")
     ]
+
+
+{-| `staticPageLinkAttrs`, but opening a new tab so the running app keeps its
+in-memory state.
+-}
+staticPageNewTabLinkAttrs : String -> List (Ui.Attribute msg)
+staticPageNewTabLinkAttrs href =
+    [ Ui.linkNewTabKeepReferrer href
+    , Ui.htmlAttribute (Html.Attributes.attribute "referrerpolicy" "origin")
+    ]
+
+
+{-| The public changelog page in the app's current language.
+-}
+changelogPath : I18n -> String
+changelogPath i18n =
+    "/" ++ T.languageToString (T.currentLanguage i18n) ++ "/changelog/"
 
 
 {-| Icon-only button (square, rounded, with a single Feather icon).
@@ -938,7 +955,7 @@ pwaBanners i18n config =
                     pwaBanner (T.pwaUpdateAvailable i18n)
                         { bgColor = Theme.warning.tint
                         , textColor = Theme.warning.text
-                        , action = Just ( T.pwaUpdateButton i18n, config.onUpdate )
+                        , action = Just ( T.pwaUpdateButton i18n, [ Ui.Input.button config.onUpdate ] )
                         , dismiss = Nothing
                         }
                 , showIf config.justInstalled <|
@@ -979,7 +996,7 @@ installHintBanner i18n config =
                 pwaBanner (T.pwaInstallPrompt i18n)
                     { bgColor = Theme.warning.tint
                     , textColor = Theme.warning.text
-                    , action = Just ( T.pwaInstallButton i18n, config.onInstall )
+                    , action = Just ( T.pwaInstallButton i18n, [ Ui.Input.button config.onInstall ] )
                     , dismiss = Just config.onDismissInstall
                     }
 
@@ -1010,7 +1027,7 @@ pwaBanner :
     ->
         { bgColor : Ui.Color
         , textColor : Ui.Color
-        , action : Maybe ( String, msg )
+        , action : Maybe ( String, List (Ui.Attribute msg) )
         , dismiss : Maybe msg
         }
     -> Ui.Element msg
@@ -1024,17 +1041,17 @@ pwaBanner message { bgColor, textColor, action, dismiss } =
         ]
         [ Ui.el [ Ui.Font.color textColor, Ui.width Ui.fill ] (Ui.text message)
         , case action of
-            Just ( label, msg ) ->
+            Just ( label, attrs ) ->
                 Ui.el
-                    [ Ui.Input.button msg
-                    , Ui.paddingXY Theme.spacing.md Theme.spacing.sm
-                    , Ui.rounded Theme.radius.sm
-                    , Ui.background textColor
-                    , Ui.Font.color Theme.primary.solidText
-                    , Ui.Font.weight Theme.fontWeight.semibold
-                    , Ui.pointer
-                    , Ui.width Ui.shrink
-                    ]
+                    (Ui.paddingXY Theme.spacing.md Theme.spacing.sm
+                        :: Ui.rounded Theme.radius.sm
+                        :: Ui.background textColor
+                        :: Ui.Font.color Theme.primary.solidText
+                        :: Ui.Font.weight Theme.fontWeight.semibold
+                        :: Ui.pointer
+                        :: Ui.width Ui.shrink
+                        :: attrs
+                    )
                     (Ui.text label)
 
             Nothing ->
@@ -1068,7 +1085,7 @@ readOnlyBanner i18n { onRejoin } =
     pwaBanner (T.readOnlyBanner i18n)
         { bgColor = Theme.warning.tint
         , textColor = Theme.warning.text
-        , action = Just ( T.readOnlyRejoin i18n, onRejoin )
+        , action = Just ( T.readOnlyRejoin i18n, [ Ui.Input.button onRejoin ] )
         , dismiss = Nothing
         }
 
@@ -1081,7 +1098,7 @@ archivedBanner i18n { onUnarchive } =
     pwaBanner (T.groupArchivedBanner i18n)
         { bgColor = Theme.base.tintStrong
         , textColor = Theme.base.text
-        , action = Just ( T.groupArchivedUnarchive i18n, onUnarchive )
+        , action = Just ( T.groupArchivedUnarchive i18n, [ Ui.Input.button onUnarchive ] )
         , dismiss = Nothing
         }
 
@@ -1095,7 +1112,7 @@ recoveryBanner i18n { onRelink } =
     pwaBanner (T.groupRecoveryBanner i18n)
         { bgColor = Theme.primary.tint
         , textColor = Theme.primary.text
-        , action = Just ( T.groupRecoveryRelink i18n, onRelink )
+        , action = Just ( T.groupRecoveryRelink i18n, [ Ui.Input.button onRelink ] )
         , dismiss = Nothing
         }
 
@@ -1109,21 +1126,26 @@ feedbackPromptBanner i18n { question, onAnswer, onDismiss } =
     pwaBanner question
         { bgColor = Theme.success.tint
         , textColor = Theme.success.text
-        , action = Just ( T.feedbackPromptAnswer i18n, onAnswer )
+        , action = Just ( T.feedbackPromptAnswer i18n, [ Ui.Input.button onAnswer ] )
         , dismiss = Just onDismiss
         }
 
 
 {-| Banner raised once an update brings changelog entries the reader has not
-seen. Dismissing it counts as reading them.
+seen. The action opens the public changelog page in a new tab; both that click
+and dismissing count as reading, so `onSeen` fires either way.
 -}
-whatsNewBanner : I18n -> { onOpen : msg, onDismiss : msg } -> Ui.Element msg
-whatsNewBanner i18n { onOpen, onDismiss } =
+whatsNewBanner : I18n -> msg -> Ui.Element msg
+whatsNewBanner i18n onSeen =
     pwaBanner (T.changelogBanner i18n)
         { bgColor = Theme.primary.tint
         , textColor = Theme.primary.text
-        , action = Just ( T.changelogTitle i18n, onOpen )
-        , dismiss = Just onDismiss
+        , action =
+            Just
+                ( T.changelogTitle i18n
+                , Ui.Events.onClick onSeen :: staticPageNewTabLinkAttrs (changelogPath i18n)
+                )
+        , dismiss = Just onSeen
         }
 
 
@@ -1149,7 +1171,7 @@ tamperBanner i18n { onMigrate, onDismiss } =
     pwaBanner (T.groupTamperWarning i18n)
         { bgColor = Theme.danger.tint
         , textColor = Theme.danger.text
-        , action = Just ( T.groupTamperMigrate i18n, onMigrate )
+        , action = Just ( T.groupTamperMigrate i18n, [ Ui.Input.button onMigrate ] )
         , dismiss = Just onDismiss
         }
 
@@ -1163,7 +1185,7 @@ suspicionBanner i18n { onReview } =
     pwaBanner (T.groupSuspicionWarning i18n)
         { bgColor = Theme.danger.tint
         , textColor = Theme.danger.text
-        , action = Just ( T.groupSuspicionReview i18n, onReview )
+        , action = Just ( T.groupSuspicionReview i18n, [ Ui.Input.button onReview ] )
         , dismiss = Nothing
         }
 

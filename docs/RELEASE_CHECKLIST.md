@@ -13,14 +13,19 @@ real.
 
 ## Before the deploy
 
-- [ ] **In-app changelog entry.** Add one only when it helps an existing user
+- [ ] **Changelog entry.** Add one only when it helps an existing user
       understand a changed app workflow, feature, behaviour, or handling of
       their local/group data. Public marketing pages, SEO/discovery,
       operator metrics, deployment/build work, and internal changes get no
-      entry even when publicly visible. Relevant entries live in
-      `src/Changelog.elm` plus `translations/messages.{en,fr}.ftl`, dated the
-      day they ship; use one or two sentences, one entry per batch, and never
-      reuse a date. It is the only changelog; there is no `CHANGELOG.md`.
+      entry even when publicly visible. Entries live in `changelog.json` at
+      the repo root (both languages, newest first) and render on the public
+      `/{en,fr}/changelog/` pages; the app only compares the newest date to
+      raise its what's-new banner, so the entry is what announces the release
+      in-app. Date it the day it ships, one entry per shipped batch, never
+      reuse a date. One or two sentences per language, never more: the list is
+      read in a single pass, and an entry that needs a paragraph is
+      documentation in a changelog's clothes. It is the only changelog; there
+      is no `CHANGELOG.md`.
 
 ## Core flows
 
@@ -63,6 +68,10 @@ real.
 - [ ] **Offline shell.** With the app installed and previously loaded, launch it
       offline; the shell loads and shows the offline state rather than a browser
       error.
+- [ ] **Changelog new-tab return.** On an installed mobile PWA, the what's-new
+      banner opens the public changelog in a browser tab or in-app overlay
+      with its own close control; closing it returns to the app with its
+      in-memory state intact (no reload), and the banner is gone.
 
 ## Cross-domain deployment move (only when migration is configured)
 
@@ -175,8 +184,9 @@ real.
 - [ ] **Report an issue.** On `/error-log`, "Report this issue" copies the debug
       report and opens the form in one gesture — the copied JSON pastes into the
       description. The copy and share buttons beside it still work on their own.
-- [ ] **Idea from the changelog.** `/changelog` opens with the "what should we
-      build next?" card, above the first entry, and its button opens the form.
+- [ ] **Idea from the changelog.** `/en/changelog/` and `/fr/changelog/` open
+      with the "what should we build next?" card above the first entry, and
+      its button opens the form in that page's language.
 - [ ] **A prompt banner.** In a group of five or more claimed members with ten or
       more entries, recording the transfer that clears the settlement plan raises
       a green banner. Its button opens the form; dismissing hides it; leaving the

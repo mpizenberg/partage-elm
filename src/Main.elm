@@ -5,6 +5,7 @@ import Browser
 import Browser.Dom
 import Browser.Events
 import Changelog
+import Changelog.Latest
 import ConcurrentTask exposing (ConcurrentTask)
 import ConcurrentTask.Http as Http
 import Dict
@@ -40,7 +41,6 @@ import Json.Encode
 import Maybe.Extra
 import Navigation
 import Page.About
-import Page.Changelog
 import Page.ErrorLog
 import Page.Group
 import Page.Home
@@ -685,9 +685,6 @@ update msg model =
                                 Home ->
                                     reloadActivityMarkers model
 
-                                Changelog ->
-                                    markChangelogSeen model
-
                                 NotificationLanding topic ->
                                     resolveNotificationTopic topic model
 
@@ -838,9 +835,9 @@ update msg model =
                     ensureHomeIdentity modelAfterNav
 
                 -- An install that has never seen the app change must not be shown
-                -- a changelog for one; landing on the page reads it outright.
+                -- a changelog for one.
                 ( modelAfterChangelog, changelogCmd ) =
-                    if readyData.lastSeenChangelog == Nothing || guardedRoute == Changelog then
+                    if readyData.lastSeenChangelog == Nothing then
                         markChangelogSeen modelAfterIdentity
 
                     else
@@ -2064,9 +2061,6 @@ applyRouteGuard identity route =
                 About ->
                     ( route, Cmd.none )
 
-                Changelog ->
-                    ( route, Cmd.none )
-
                 ErrorLog ->
                     ( route, Cmd.none )
 
@@ -2251,18 +2245,18 @@ markChangelogSeen : Model -> ( Model, Cmd Msg )
 markChangelogSeen model =
     case model.appState of
         Ready readyData ->
-            if readyData.lastSeenChangelog == Just Changelog.latest then
+            if readyData.lastSeenChangelog == Just Changelog.Latest.date then
                 ( model, Cmd.none )
 
             else
                 ( model.runner, Cmd.none )
                     |> Runner.andRun (\_ -> NoOp)
-                        (Storage.saveLastSeenChangelog readyData.db Changelog.latest)
+                        (Storage.saveLastSeenChangelog readyData.db Changelog.Latest.date)
                     |> Tuple.mapFirst
                         (\runner ->
                             { model
                                 | runner = runner
-                                , appState = Ready { readyData | lastSeenChangelog = Just Changelog.latest }
+                                , appState = Ready { readyData | lastSeenChangelog = Just Changelog.Latest.date }
                             }
                         )
 
@@ -2659,10 +2653,7 @@ viewPromptBanner model =
 
         ( Nothing, Ready readyData ) ->
             if Changelog.hasUnseen readyData.lastSeenChangelog then
-                UI.Components.whatsNewBanner model.i18n
-                    { onOpen = NavigateTo Route.Changelog
-                    , onDismiss = MarkChangelogSeen
-                    }
+                UI.Components.whatsNewBanner model.i18n MarkChangelogSeen
 
             else
                 Ui.none
@@ -2921,26 +2912,12 @@ viewReady model readyData =
                         , onResetFeedbackPrompts = ResetFeedbackPrompts
                         , deviceId = readyData.identity |> Maybe.map .publicKeyHash
                         , gitSha = model.gitSha
-                        , onNavigate = NavigateTo
+                        , onMarkChangelogSeen = MarkChangelogSeen
                         , pushServerUrl = PwaState.pushServerUrl model.pwaState
                         , pushUnreachable = PwaState.notificationUnavailable model.pwaState
                         , pushActive = PwaState.pushIsActive model.pwaState
                         }
                         model.aboutModel
-                    )
-
-        Changelog ->
-            noOverlay <|
-                UI.Shell.pageShell { title = T.changelogTitle i18n, onBack = GoBack }
-                    (Page.Changelog.view
-                        { i18n = i18n
-                        , onSuggest =
-                            if feedbackEnabled model then
-                                Just OpenFeedback
-
-                            else
-                                Nothing
-                        }
                     )
 
         Route.ErrorLog ->

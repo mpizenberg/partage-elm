@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const marketingCss = readFileSync("public/marketing.css", "utf8");
 const changelog = JSON.parse(readFileSync("changelog.json", "utf8"));
@@ -303,6 +303,27 @@ ${["/en/", "/fr/"]
   .join("\n")}
 </urlset>
 `;
+}
+
+// The app only needs the newest entry's date to raise its "what's new"
+// banner; the entries themselves live on the static pages. Rewriting the
+// module only when the date moves keeps watch builds from recompiling Elm on
+// every page render.
+const latestModule = `module Changelog.Latest exposing (date)
+
+{-| Generated from changelog.json by build-marketing.mjs. Do not edit.
+-}
+
+
+{-| The date of the newest public changelog entry.
+-}
+date : String
+date =
+    "${changelog[0].date}"
+`;
+if (!existsSync("src/Changelog/Latest.elm") || readFileSync("src/Changelog/Latest.elm", "utf8") !== latestModule) {
+  mkdirSync("src/Changelog", { recursive: true });
+  writeFileSync("src/Changelog/Latest.elm", latestModule);
 }
 
 for (const [language, page] of Object.entries(pages)) {

@@ -1,69 +1,14 @@
-module Changelog exposing (Entry, entries, hasUnseen, latest)
+module Changelog exposing (hasUnseen)
 
-{-| The user-facing history of the app.
+{-| Whether the app has news the reader hasn't seen.
 
-This is in-app release communication, not a record of every visible project
-change. An entry must help an existing user understand a changed app workflow,
-feature, behaviour, or handling of their data. Public-site marketing, discovery,
-operator tooling, deployment, and internal changes do not belong here.
-
-One entry per shipped batch, never one entry per commit. The date labels the
-entry and identifies it, so no two entries share one.
-
-One or two sentences, never more: the whole list is read in a single pass, and
-an entry that needs a paragraph is documentation in a changelog's clothes.
-
-Entries live in the translation files and therefore ship inside the bundle, so a
-client only ever reads about changes the build it is running actually has.
+The entries themselves live in `changelog.json` and render on the public
+static pages; the app only carries the newest entry's date (the generated
+`Changelog.Latest`) to decide whether to raise the banner.
 
 -}
 
-import Translations as T exposing (I18n)
-
-
-type alias Entry =
-    { date : String
-    , title : I18n -> String
-    , body : I18n -> String
-    }
-
-
-{-| Newest first.
--}
-entries : List Entry
-entries =
-    [ { date = "2026-08-27"
-      , title = T.changelogMigrationTitle
-      , body = T.changelogMigrationBody
-      }
-    , { date = "2026-08-23"
-      , title = T.changelogFeedbackTitle
-      , body = T.changelogFeedbackBody
-      }
-    , { date = "2026-08-22"
-      , title = T.changelogSyncMarkersTitle
-      , body = T.changelogSyncMarkersBody
-      }
-    , { date = "2026-08-19"
-      , title = T.changelogNotificationsTitle
-      , body = T.changelogNotificationsBody
-      }
-    , { date = "2026-07-28"
-      , title = T.changelogPaymentMethodsTitle
-      , body = T.changelogPaymentMethodsBody
-      }
-    , { date = "2026-07-22"
-      , title = T.changelogArchiveTitle
-      , body = T.changelogArchiveBody
-      }
-    ]
-
-
-{-| The date of the newest entry.
--}
-latest : String
-latest =
-    List.head entries |> Maybe.map .date |> Maybe.withDefault ""
+import Changelog.Latest
 
 
 {-| Whether anything was published after the last entry the reader saw. A marker
@@ -77,4 +22,4 @@ hasUnseen marker =
             False
 
         Just seen ->
-            seen < latest
+            seen < Changelog.Latest.date

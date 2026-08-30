@@ -2,11 +2,11 @@ module Page.About exposing (Model, Msg, Output(..), Stats, init, statsLoaded, up
 
 import FeatherIcons
 import Infra.UsageStats as UsageStats exposing (CostBreakdown)
-import Route exposing (Route)
 import Translations as T exposing (I18n, Language)
 import UI.Components
 import UI.Theme as Theme
 import Ui
+import Ui.Events
 import Ui.Font
 
 
@@ -98,7 +98,7 @@ view :
         , onResetFeedbackPrompts : msg
         , deviceId : Maybe String
         , gitSha : String
-        , onNavigate : Route -> msg
+        , onMarkChangelogSeen : msg
         , pushServerUrl : Maybe String
         , pushUnreachable : Bool
         , pushActive : Bool
@@ -108,7 +108,7 @@ view :
 view i18n config model =
     Ui.column [ Ui.spacing Theme.spacing.xl, Ui.width Ui.fill, Ui.paddingXY 0 Theme.spacing.md ]
         [ descriptionSection i18n
-        , pageLink config.onNavigate FeatherIcons.gift (T.changelogTitle i18n) Route.Changelog
+        , changelogLink i18n config.onMarkChangelogSeen
         , languageSection i18n config.onSwitchLanguage
         , notificationsSection i18n config
         , Ui.map config.toMsg (usageSection i18n model)
@@ -149,8 +149,11 @@ descriptionSection i18n =
 -- ELSEWHERE IN THE APP
 
 
-pageLink : (Route -> msg) -> FeatherIcons.Icon -> String -> Route -> Ui.Element msg
-pageLink onNavigate icon label route =
+{-| The changelog lives on the public static pages; a new tab keeps the
+running app's state, and the click doubles as the seen marker.
+-}
+changelogLink : I18n -> msg -> Ui.Element msg
+changelogLink i18n onOpen =
     Ui.row
         (Ui.centerX
             :: Ui.spacing Theme.spacing.xs
@@ -159,10 +162,11 @@ pageLink onNavigate icon label route =
             :: Ui.Font.color Theme.primary.text
             :: Ui.contentCenterY
             :: Ui.pointer
-            :: UI.Components.spaLinkAttrs (Route.toPath route) (onNavigate route)
+            :: Ui.Events.onClick onOpen
+            :: UI.Components.staticPageNewTabLinkAttrs (UI.Components.changelogPath i18n)
         )
-        [ UI.Components.featherIcon 16 icon
-        , Ui.text label
+        [ UI.Components.featherIcon 16 FeatherIcons.gift
+        , Ui.text (T.changelogTitle i18n)
         ]
 
 

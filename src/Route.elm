@@ -28,7 +28,6 @@ type Route
     | Receive
     | GroupRoute Group.Id GroupView
     | About
-    | Changelog
     | ErrorLog
     | NotFound
 
@@ -163,9 +162,6 @@ fromAppUrl appUrl =
         [ "about" ] ->
             About
 
-        [ "changelog" ] ->
-            Changelog
-
         [ "error-log" ] ->
             ErrorLog
 
@@ -274,9 +270,6 @@ toPathSegments route =
         About ->
             [ "about" ]
 
-        Changelog ->
-            [ "changelog" ]
-
         ErrorLog ->
             [ "error-log" ]
 
@@ -357,9 +350,6 @@ toPath route =
 
         About ->
             "/about"
-
-        Changelog ->
-            "/changelog"
 
         ErrorLog ->
             "/error-log"
