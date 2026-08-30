@@ -16,8 +16,8 @@ export default {
       {
         id: "the-trip-problem",
         title: "The trip problem",
-        body: `<p>One person fronts the house. Someone else books the car. Everyone buys groceries, rounds of drinks, museum tickets — and by day three the tally in somebody’s notes app has already given up.</p>
-<p>Partage replaces the tally with one shared group. Each person adds what they paid from their own phone, says who it was for, and the balances update for everyone. Uneven splits, transfers between friends, and shared income like a refunded deposit all fit — and every entry keeps its history, so “wait, was the ferry 80 or 90?” is answered by looking, not by arguing.</p>`,
+        body: `<p>One person fronts the house. Someone else books the car. Everyone buys groceries, rounds of drinks, museum tickets, and by day three you’ve given up keeping a straight record of the tally.</p>
+<p>Partage replaces the tally with one shared group. Each person adds what they paid from their own phone, says who it was for, and the balances update for everyone. Uneven splits, transfers between friends, and shared income like a refunded deposit all fit. Every entry keeps its history, so “wait, was the ferry 80 or 90?” is right there in the app.</p>`,
       },
       {
         id: "fewest-transfers",
@@ -28,13 +28,13 @@ export default {
       {
         id: "any-currency",
         title: "Several currencies, one group",
-        body: `<p>The flight is in euros, the hotel in pounds, the street food in local cash. Add each expense in the currency you actually paid in; a conversion rate is fetched for you — or entered by hand when you know better — and balances come out in the group’s currency. No side spreadsheet for the exchange rates.</p>`,
+        body: `<p>The flight is in euros, the hotel in pounds, the street food in local cash. Add each expense in the currency you actually paid in. A conversion rate is fetched automatically, or you enter it by hand, and balances come out in the group’s currency. No need for a side spreadsheet of exchange rates.</p>`,
       },
       {
         id: "offline-normal",
         title: "Offline is the normal case",
-        body: `<p>Trips are exactly where connectivity dies: the plane, the mountain road, the foreign SIM that ran out of data. Partage works offline as a matter of course — everything lives on your device, entries are added without a connection, and devices sync up whenever one of them is back online. Nobody is blocked because the person who paid is in a dead zone.</p>
-<p>And because groups are end-to-end encrypted with <a href="/en/bill-splitting-without-an-account/">no account to create</a>, the friend who “doesn’t install apps” can join from a browser with one link. What the trip cost, and who was on it, stays between you — <a href="/en/how-partage-encryption-works/">the server can’t read any of it</a>.</p>`,
+        body: `<p>Connectivity can be tough on a trip: the plane, the mountain road, the foreign SIM that ran out of data. Partage works offline. Everything lives on your device, entries are added without a connection, and devices sync up whenever you’re back online.</p>
+<p>And since groups are end-to-end encrypted with <a href="/en/bill-splitting-without-an-account/">no account to create</a>, your friend who “doesn’t install apps” can join from a browser with one link. What the trip cost, and who was on it, stays between you. <a href="/en/how-partage-encryption-works/">The server can’t read any of it</a>.</p>`,
       },
     ],
   },
@@ -52,8 +52,8 @@ export default {
       {
         id: "le-probleme-du-voyage",
         title: "Le problème du voyage",
-        body: `<p>Une personne avance la location. Une autre paie la voiture. Tout le monde achète des courses, des tournées, des billets d’entrée — et au troisième jour, le récapitulatif dans les notes de quelqu’un a déjà rendu l’âme.</p>
-<p>Partage remplace le récapitulatif par un groupe commun. Chacun ajoute ses dépenses depuis son propre téléphone, précise pour qui c’était, et les soldes se mettent à jour pour tout le monde. Répartitions inégales, remboursements entre amis, recettes partagées comme une caution rendue : tout y trouve sa place — et chaque entrée garde son historique, donc « attends, le ferry c’était 80 ou 90 ? » se règle en regardant, pas en débattant.</p>`,
+        body: `<p>Une personne avance la location. Une autre paie la voiture. Tout le monde achète des courses, des tournées, des billets d’entrée, et au troisième jour vous avez renoncé à tenir le compte proprement.</p>
+<p>Partage remplace le récapitulatif par un groupe commun. Chacun ajoute ses dépenses depuis son propre téléphone, précise pour qui c’était, et les soldes se mettent à jour pour tout le monde. Répartitions inégales, remboursements entre amis, recettes partagées comme une caution rendue : tout y trouve sa place. Chaque entrée garde son historique, donc « attends, le ferry c’était 80 ou 90 ? » trouve sa réponse dans l’appli.</p>`,
       },
       {
         id: "minimum-de-virements",
@@ -64,13 +64,13 @@ export default {
       {
         id: "plusieurs-devises",
         title: "Plusieurs devises, un seul groupe",
-        body: `<p>Le vol en euros, l’hôtel en livres, la cantine de rue en espèces locales. Ajoutez chaque dépense dans la devise réellement payée ; un taux de conversion est récupéré pour vous — ou saisi à la main si vous savez mieux — et les soldes ressortent dans la devise du groupe. Pas de tableur à côté pour les taux de change.</p>`,
+        body: `<p>Le vol en euros, l’hôtel en livres, la cantine de rue en espèces locales. Ajoutez chaque dépense dans la devise réellement payée. Un taux de conversion est récupéré automatiquement, ou vous le saisissez à la main, et les soldes ressortent dans la devise du groupe. Pas besoin de tableur à côté pour les taux de change.</p>`,
       },
       {
         id: "hors-ligne-par-defaut",
         title: "Le hors-ligne est le cas normal",
-        body: `<p>C’est précisément en voyage que la connexion lâche : l’avion, la route de montagne, la carte SIM étrangère à court de données. Partage fonctionne hors-ligne par construction — tout vit sur votre appareil, les dépenses s’ajoutent sans connexion, et les appareils se synchronisent dès que l’un d’eux repasse en ligne. Personne n’est bloqué parce que celui qui a payé est en zone blanche.</p>
-<p>Et comme les groupes sont chiffrés de bout en bout et <a href="/fr/partage-de-frais-sans-compte/">sans compte à créer</a>, l’ami qui « n’installe pas d’applis » rejoint depuis un navigateur avec un simple lien. Ce que le voyage a coûté, et qui en était, reste entre vous — <a href="/fr/comment-partage-chiffre-vos-donnees/">le serveur ne peut rien en lire</a>.</p>`,
+        body: `<p>La connexion est vite capricieuse en voyage : l’avion, la route de montagne, la carte SIM étrangère à court de données. Partage fonctionne hors-ligne. Tout vit sur votre appareil, les dépenses s’ajoutent sans connexion, et les appareils se synchronisent dès que vous repassez en ligne.</p>
+<p>Et comme les groupes sont chiffrés de bout en bout et <a href="/fr/partage-de-frais-sans-compte/">sans compte à créer</a>, votre ami qui « n’installe pas d’applis » rejoint depuis un navigateur avec un simple lien. Ce que le voyage a coûté, et qui en était, reste entre vous. <a href="/fr/comment-partage-chiffre-vos-donnees/">Le serveur ne peut rien en lire</a>.</p>`,
       },
     ],
   },
