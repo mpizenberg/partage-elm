@@ -108,6 +108,7 @@ const pages = {
     changelogTitle: "Partage changelog — What’s new",
     changelogDescription:
       "New features and improvements in Partage, the private, offline-capable bill-splitting app — updated with every release.",
+    changelogTagline: "Every new feature and improvement, newest first.",
     suggestTitle: "What should we build next?",
     suggestButton: "Send an idea",
     home: "Home",
@@ -167,6 +168,7 @@ const pages = {
     changelogTitle: "Changelog de Partage — Nouveautés",
     changelogDescription:
       "Nouvelles fonctionnalités et améliorations de Partage, l’application privée de partage de frais — mis à jour à chaque version.",
+    changelogTagline: "Toutes les nouveautés et améliorations, les plus récentes en premier.",
     suggestTitle: "On construit quoi ensuite ?",
     suggestButton: "Proposer une idée",
     home: "Accueil",
@@ -319,6 +321,7 @@ ${head(language, "changelog/", { title: page.changelogTitle, description: page.c
             <header class="hero">
                 <img class="logo" src="/icon.svg" width="96" height="96" alt="" />
                 <h1>${page.whatsNew}</h1>
+                <p class="tagline">${page.changelogTagline}</p>
                 <a class="button" href="/groups">${page.open}</a>
                 ${languageNav(language, "changelog/")}
             </header>

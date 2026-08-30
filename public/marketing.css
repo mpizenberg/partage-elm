@@ -260,3 +260,14 @@ footer .icon {
         grid-template-columns: 1fr;
     }
 }
+
+/* Four frames at their natural width plus three gaps (4 × 280px + 3 × 24px)
+   overflow the reading column, so a viewport with room for the strip gets it
+   in one line, broken out of that column and re-centred on the page. */
+@media (min-width: 1240px) {
+    .screenshots {
+        grid-template-columns: repeat(4, 280px);
+        width: 1192px;
+        margin-inline: calc(50% - 596px);
+    }
+}
