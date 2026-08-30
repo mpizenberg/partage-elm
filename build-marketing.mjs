@@ -6,8 +6,49 @@ const origin = "__CANONICAL_ORIGIN__";
 const fundingUrl = "https://github.com/sponsors/mpizenberg";
 const sourceUrl = "https://github.com/mpizenberg/partage-elm";
 
+// Feather icon shapes (MIT), inlined so the pages carry no icon runtime.
+// Same set the app uses through elm-feather.
+const icons = {
+  "lock":
+    '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  "key":
+    '<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>',
+  "wifi-off":
+    '<line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.58 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>',
+  "git-merge":
+    '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>',
+  "globe":
+    '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+  "clock": '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  "smartphone":
+    '<rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/>',
+  "heart":
+    '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
+  "filter": '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>',
+  "download":
+    '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+  "credit-card":
+    '<rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>',
+  "users":
+    '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  "trending-up": '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>',
+  "rotate-ccw": '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>',
+  "user-check":
+    '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/>',
+  "gift":
+    '<polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>',
+};
+
+function featherIcon(name) {
+  const shape = icons[name];
+  if (!shape) throw new Error(`unknown icon: ${name}`);
+  return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${shape}</svg>`;
+}
+
 const pages = {
   en: {
+    flag: "🇬🇧",
+    name: "English",
     title: "Partage — Private, local-first bill splitting",
     description:
       "Partage is a free, open-source bill-splitting app. End-to-end encrypted, works offline, no account needed.",
@@ -19,14 +60,14 @@ const pages = {
       "Splitting bills with friends should be simple, and stay between you and your friends. Partage is end-to-end encrypted, works offline, and syncs across devices when you want.",
     featuresTitle: "Features",
     features: [
-      "End-to-end encrypted",
-      "No account or password",
-      "Works offline, syncs when online",
-      "Smart settle-up with fewer transactions",
-      "Multiple currencies in one group",
-      "Full activity and edit history",
-      "Installable on any device",
-      "Open source, no ads, no user tracking",
+      ["lock", "End-to-end encrypted"],
+      ["key", "No account or password"],
+      ["wifi-off", "Works offline, syncs when online"],
+      ["git-merge", "Smart settle-up with fewer transactions"],
+      ["globe", "Multiple currencies in one group"],
+      ["clock", "Full activity and edit history"],
+      ["smartphone", "Installable on any device"],
+      ["heart", "Open source, no ads, no user tracking"],
     ],
     screenshotsTitle: "A look inside",
     screenshots: [
@@ -37,14 +78,14 @@ const pages = {
     ],
     detailsTitle: "Details that matter",
     details: [
-      "Filter by person, category, currency, or date",
-      "Free CSV export and complete JSON backup",
-      "Payment hints for common payment methods",
-      "Virtual members, merging, and retirement without lost history",
-      "Expenses, transfers, and income",
-      "Soft deletion with restore and field-level edit history",
-      "Per-member settle-up preferences",
-      "No daily limits, caps, or ads",
+      ["filter", "Filter by person, category, currency, or date"],
+      ["download", "Free CSV export and complete JSON backup"],
+      ["credit-card", "Payment hints for common payment methods"],
+      ["users", "Virtual members, merging, and retirement without lost history"],
+      ["trending-up", "Expenses, transfers, and income"],
+      ["rotate-ccw", "Soft deletion with restore and field-level edit history"],
+      ["user-check", "Per-member settle-up preferences"],
+      ["gift", "No daily limits, caps, or ads"],
     ],
     howTitle: "How it works",
     howBody:
@@ -65,6 +106,8 @@ const pages = {
     home: "Home",
   },
   fr: {
+    flag: "🇫🇷",
+    name: "Français",
     title: "Partage — Partage de frais privé et local-first",
     description:
       "Partage est une application libre et gratuite de partage de frais. Chiffrée de bout en bout, hors-ligne et sans compte.",
@@ -76,14 +119,14 @@ const pages = {
       "Partager les frais entre amis doit rester simple, et entre vous. Partage est chiffré de bout en bout, fonctionne hors-ligne et se synchronise entre appareils quand vous le souhaitez.",
     featuresTitle: "Fonctionnalités",
     features: [
-      "Chiffrement de bout en bout",
-      "Sans compte ni mot de passe",
-      "Hors-ligne, synchronisé en ligne",
-      "Remboursements optimisés",
-      "Plusieurs devises dans un groupe",
-      "Journal complet des modifications",
-      "Installable sur tout appareil",
-      "Open source, sans pub ni suivi individuel",
+      ["lock", "Chiffrement de bout en bout"],
+      ["key", "Sans compte ni mot de passe"],
+      ["wifi-off", "Hors-ligne, synchronisé en ligne"],
+      ["git-merge", "Remboursements optimisés"],
+      ["globe", "Plusieurs devises dans un groupe"],
+      ["clock", "Journal complet des modifications"],
+      ["smartphone", "Installable sur tout appareil"],
+      ["heart", "Open source, sans pub ni suivi individuel"],
     ],
     screenshotsTitle: "Aperçu de l’application",
     screenshots: [
@@ -94,14 +137,14 @@ const pages = {
     ],
     detailsTitle: "Les détails qui comptent",
     details: [
-      "Filtrer par personne, catégorie, devise ou date",
-      "Export CSV gratuit et sauvegarde JSON complète",
-      "Raccourcis pour les moyens de remboursement courants",
-      "Membres virtuels, fusion et retrait sans perte d’historique",
-      "Dépenses, transferts et revenus",
-      "Suppression réversible et historique détaillé",
-      "Préférences de remboursement par membre",
-      "Sans limite journalière, plafond ni publicité",
+      ["filter", "Filtrer par personne, catégorie, devise ou date"],
+      ["download", "Export CSV gratuit et sauvegarde JSON complète"],
+      ["credit-card", "Raccourcis pour les moyens de remboursement courants"],
+      ["users", "Membres virtuels, fusion et retrait sans perte d’historique"],
+      ["trending-up", "Dépenses, transferts et revenus"],
+      ["rotate-ccw", "Suppression réversible et historique détaillé"],
+      ["user-check", "Préférences de remboursement par membre"],
+      ["gift", "Sans limite journalière, plafond ni publicité"],
     ],
     howTitle: "Comment ça marche",
     howBody:
@@ -124,7 +167,7 @@ const pages = {
 };
 
 function list(items) {
-  return items.map((item) => `                    <li>${item}</li>`).join("\n");
+  return items.map(([icon, label]) => `                    <li>${featherIcon(icon)}${label}</li>`).join("\n");
 }
 
 function screenshots(items) {
@@ -175,11 +218,14 @@ ${marketingCss}
     </head>`;
 }
 
-function languageNav(language, subPath) {
+function languageNav(current, subPath) {
+  const links = Object.entries(pages).map(
+    ([language, page]) =>
+      `<a href="/${language}/${subPath}"${language === current ? ' aria-current="page"' : ""}>` +
+      `<span aria-hidden="true">${page.flag}</span> ${page.name}</a>`,
+  );
   return `<nav class="languages" aria-label="Language · Langue">
-                    <a href="/en/${subPath}"${language === "en" ? ' aria-current="page"' : ""}>English</a>
-                    ·
-                    <a href="/fr/${subPath}"${language === "fr" ? ' aria-current="page"' : ""}>Français</a>
+                    ${links.join("\n                    ·\n                    ")}
                 </nav>`;
 }
 
@@ -225,7 +271,7 @@ ${list(page.details)}
             <section class="card support" aria-labelledby="funding">
                 <h2 id="funding">${page.fundingTitle}</h2>
                 <p>${page.fundingBody}</p>
-                <a class="button" href="${fundingUrl}" rel="noreferrer">${page.fundingCta}</a>
+                <a class="button" href="${fundingUrl}" rel="noreferrer">${featherIcon("heart")}${page.fundingCta}</a>
             </section>
             <footer>
                 <a href="/${language}/changelog/">${page.whatsNew}</a>
