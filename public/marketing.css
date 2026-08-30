@@ -87,6 +87,13 @@ h2 {
     background: var(--primary-dark);
 }
 
+button.button {
+    border: 0;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
 .languages {
     margin-top: 1rem;
     color: var(--text-subtle);
@@ -156,6 +163,32 @@ figcaption {
     color: var(--text-subtle);
     font-size: 0.875rem;
     text-align: center;
+}
+
+.entries {
+    display: grid;
+    gap: 1rem;
+}
+
+.entry {
+    padding: 1.25rem;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--white);
+}
+
+.entry h2 {
+    margin: 0;
+    font-size: 1.15rem;
+}
+
+.entry time {
+    color: var(--text-subtle);
+    font-size: 0.875rem;
+}
+
+.entry p {
+    margin: 0.4rem 0 0;
 }
 
 .support {

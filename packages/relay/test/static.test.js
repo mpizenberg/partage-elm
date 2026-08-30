@@ -14,10 +14,14 @@ function writeEntryFiles(dir) {
   );
   for (const language of ['en', 'fr']) {
     const languageDir = path.join(dir, language);
-    fs.mkdirSync(languageDir);
+    fs.mkdirSync(path.join(languageDir, 'changelog'), { recursive: true });
     fs.writeFileSync(
       path.join(languageDir, 'index.html'),
       `<html lang="${language}"><link rel="canonical" href="__CANONICAL_ORIGIN__/${language}/" /><span data-feedback-project="__FEEDBACK_PROJECT_ID__" hidden></span>${language} home</html>`,
+    );
+    fs.writeFileSync(
+      path.join(languageDir, 'changelog', 'index.html'),
+      `<html lang="${language}"><link rel="canonical" href="__CANONICAL_ORIGIN__/${language}/changelog/" /><span data-feedback-project="__FEEDBACK_PROJECT_ID__" hidden></span>${language} changelog</html>`,
     );
   }
 }
@@ -128,6 +132,30 @@ describe('static frontend serving', () => {
     );
   });
 
+  it('serves the localized changelog pages, never the raw template', async () => {
+    for (const language of ['en', 'fr']) {
+      const page = await fetch(`${relay.url}/${language}/changelog/`);
+      assert.equal(page.headers.get('content-language'), language);
+      const body = await page.text();
+      assert.ok(body.includes(`href="${relay.url}/${language}/changelog/"`));
+      assert.ok(!body.includes('__CANONICAL_ORIGIN__'));
+      assert.ok(!body.includes('__FEEDBACK_PROJECT_ID__'));
+    }
+    const trailing = await fetch(`${relay.url}/en/changelog`, { redirect: 'manual' });
+    assert.equal(trailing.status, 301);
+    assert.equal(trailing.headers.get('location'), '/en/changelog/');
+  });
+
+  it('negotiates the changelog language', async () => {
+    const french = await fetch(`${relay.url}/changelog`, {
+      headers: { 'accept-language': 'fr' },
+      redirect: 'manual',
+    });
+    assert.equal(french.status, 302);
+    assert.equal(french.headers.get('location'), '/fr/changelog/');
+    assert.match(french.headers.get('vary'), /Accept-Language/);
+  });
+
   it('negotiates the static home language', async () => {
     const french = await fetch(`${relay.url}/`, {
       headers: { 'accept-language': 'en;q=0.5, fr-FR;q=0.9' },
@@ -160,6 +188,7 @@ describe('static frontend serving', () => {
       '/sitemap.xml',
       '/',
       '/en/',
+      '/en/changelog/',
       '/join/zryq1q3a58m535p',
     ]) {
       const res = await fetch(`${relay.url}${path}`);
@@ -262,14 +291,16 @@ describe('static home feedback control', () => {
       ...config,
     });
     const bodies = await Promise.all(
-      ['en', 'fr'].map(async (language) => (await fetch(`${relay.url}/${language}/`)).text()),
+      ['/en/', '/fr/', '/en/changelog/', '/fr/changelog/'].map(
+        async (page) => (await fetch(`${relay.url}${page}`)).text(),
+      ),
     );
     await relay.close();
     fs.rmSync(dir, { recursive: true });
     return bodies;
   };
 
-  it('carries the configured project id into both homes', async () => {
+  it('carries the configured project id into the homes and changelogs', async () => {
     for (const body of await serveHome({ feedbackProjectId: 'proj_123' })) {
       assert.match(body, /data-feedback-project="proj_123"/);
     }

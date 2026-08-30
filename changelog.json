@@ -1,0 +1,68 @@
+[
+  {
+    "date": "2026-08-27",
+    "en": {
+      "title": "Partage is migrating to onpartage.eu",
+      "body": "Partage's new home is onpartage.eu; partage-beta.dk.zidev.ovh no longer records changes. The migration only takes a minute."
+    },
+    "fr": {
+      "title": "Partage migre vers onpartage.eu",
+      "body": "La nouvelle adresse de Partage est onpartage.eu ; partage-beta.dk.zidev.ovh n'enregistre plus les changements. La migration ne prend qu'une minute."
+    }
+  },
+  {
+    "date": "2026-08-23",
+    "en": {
+      "title": "Tell us what's wrong, from any screen",
+      "body": "A small tab on the right edge opens a feedback form on every screen: a button that's hard to see, an idea. It sends what you type and which page you were on."
+    },
+    "fr": {
+      "title": "Dis-nous ce qui cloche, depuis n'importe quel écran",
+      "body": "Un petit onglet sur le bord droit ouvre un formulaire de retour sur chaque écran : un bouton mal visible, une idée. Il envoie ce que tu écris et la page où tu étais."
+    }
+  },
+  {
+    "date": "2026-08-22",
+    "en": {
+      "title": "See what hasn't synced yet",
+      "body": "Entries and activity items you add while offline now carry a \"Not synced\" mark until the relay has them. It clears on its own once the change goes through, so you can tell at a glance what still lives only on this device."
+    },
+    "fr": {
+      "title": "Vois ce qui n'est pas encore synchronisé",
+      "body": "Les entrées et les éléments d'activité ajoutés hors ligne portent désormais la mention « Non synchronisé » tant que le relais ne les a pas reçus. Elle disparaît d'elle-même une fois le changement transmis : tu vois d'un coup d'œil ce qui n'existe encore que sur cet appareil."
+    }
+  },
+  {
+    "date": "2026-08-19",
+    "en": {
+      "title": "Notifications when a group changes",
+      "body": "Turn notifications on group by group and your device tells you when someone adds or edits something, with the text encrypted end to end. Groups with activity you haven't opened are now marked on the home screen."
+    },
+    "fr": {
+      "title": "Notifications quand un groupe change",
+      "body": "Active les notifications groupe par groupe et ton appareil te prévient quand quelqu'un ajoute ou modifie quelque chose, le texte étant chiffré de bout en bout. Les groupes où il s'est passé quelque chose que tu n'as pas ouvert sont maintenant signalés sur l'écran d'accueil."
+    }
+  },
+  {
+    "date": "2026-07-28",
+    "en": {
+      "title": "Wise and Cash App",
+      "body": "Both joined the payment handles you can save on a member profile, so settling up points at the app you actually use."
+    },
+    "fr": {
+      "title": "Wise et Cash App",
+      "body": "Ils rejoignent les coordonnées de paiement que tu peux enregistrer sur un profil de membre, pour que les remboursements pointent vers l'app que tu utilises vraiment."
+    }
+  },
+  {
+    "date": "2026-07-22",
+    "en": {
+      "title": "Archive a group you're done with",
+      "body": "An archived group turns read-only and stops syncing, so a finished trip leaves the active list and stops taking room on the relay. Unarchive it whenever you need it back."
+    },
+    "fr": {
+      "title": "Archive un groupe terminé",
+      "body": "Un groupe archivé passe en lecture seule et arrête de se synchroniser : un voyage fini quitte la liste active et cesse d'occuper de la place sur le relais. Tu peux le désarchiver quand tu veux."
+    }
+  }
+]

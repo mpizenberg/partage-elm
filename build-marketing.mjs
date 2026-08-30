@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const marketingCss = readFileSync("public/marketing.css", "utf8");
+const changelog = JSON.parse(readFileSync("changelog.json", "utf8"));
 const origin = "__CANONICAL_ORIGIN__";
 const fundingUrl = "https://github.com/sponsors/mpizenberg";
 const sourceUrl = "https://github.com/mpizenberg/partage-elm";
@@ -55,6 +56,13 @@ const pages = {
     about: "App information and local usage",
     source: "Source code",
     feedback: "Send feedback",
+    whatsNew: "What’s new",
+    changelogTitle: "Partage changelog — What’s new",
+    changelogDescription:
+      "New features and improvements in Partage, the private, offline-capable bill-splitting app — updated with every release.",
+    suggestTitle: "What should we build next?",
+    suggestButton: "Send an idea",
+    home: "Home",
   },
   fr: {
     title: "Partage — Partage de frais privé et local-first",
@@ -105,6 +113,13 @@ const pages = {
     about: "Informations sur l’app et usage local",
     source: "Code source",
     feedback: "Envoyer un retour",
+    whatsNew: "Nouveautés",
+    changelogTitle: "Changelog de Partage — Nouveautés",
+    changelogDescription:
+      "Nouvelles fonctionnalités et améliorations de Partage, l’application privée de partage de frais — mis à jour à chaque version.",
+    suggestTitle: "On construit quoi ensuite ?",
+    suggestButton: "Proposer une idée",
+    home: "Accueil",
   },
 };
 
@@ -123,33 +138,55 @@ function screenshots(items) {
     .join("\n");
 }
 
-function render(language, page) {
-  return `<!doctype html>
-<html lang="${language}">
-    <head>
+function escapeHtml(text) {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+// The subPath distinguishes the localized homes ("") from deeper localized
+// pages ("changelog/"); x-default points at the language-negotiating URL.
+function head(language, subPath, { title, description }) {
+  return `    <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <meta name="theme-color" content="#E8725C" />
-        <title>${page.title}</title>
-        <meta name="description" content="${page.description}" />
-        <link rel="canonical" href="${origin}/${language}/" />
-        <link rel="alternate" hreflang="en" href="${origin}/en/" />
-        <link rel="alternate" hreflang="fr" href="${origin}/fr/" />
-        <link rel="alternate" hreflang="x-default" href="${origin}/" />
+        <title>${title}</title>
+        <meta name="description" content="${description}" />
+        <link rel="canonical" href="${origin}/${language}/${subPath}" />
+        <link rel="alternate" hreflang="en" href="${origin}/en/${subPath}" />
+        <link rel="alternate" hreflang="fr" href="${origin}/fr/${subPath}" />
+        <link rel="alternate" hreflang="x-default" href="${origin}/${subPath.replace(/\/$/, "")}" />
         <meta property="og:type" content="website" />
-        <meta property="og:title" content="${page.title}" />
-        <meta property="og:description" content="${page.description}" />
+        <meta property="og:title" content="${title}" />
+        <meta property="og:description" content="${description}" />
         <meta property="og:image" content="${origin}/icon-512.png" />
-        <meta property="og:url" content="${origin}/${language}/" />
+        <meta property="og:url" content="${origin}/${language}/${subPath}" />
         <meta name="twitter:card" content="summary" />
-        <meta name="twitter:title" content="${page.title}" />
-        <meta name="twitter:description" content="${page.description}" />
+        <meta name="twitter:title" content="${title}" />
+        <meta name="twitter:description" content="${description}" />
         <meta name="twitter:image" content="${origin}/icon-512.png" />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <style>
 ${marketingCss}
         </style>
-    </head>
+    </head>`;
+}
+
+function languageNav(language, subPath) {
+  return `<nav class="languages" aria-label="Language · Langue">
+                    <a href="/en/${subPath}"${language === "en" ? ' aria-current="page"' : ""}>English</a>
+                    ·
+                    <a href="/fr/${subPath}"${language === "fr" ? ' aria-current="page"' : ""}>Français</a>
+                </nav>`;
+}
+
+function render(language, page) {
+  return `<!doctype html>
+<html lang="${language}">
+${head(language, "", page)}
     <body>
         <main class="page">
             <header class="hero">
@@ -157,11 +194,7 @@ ${marketingCss}
                 <h1>${page.heading}</h1>
                 <p class="tagline">${page.tagline}</p>
                 <a class="button" href="/groups">${page.open}</a>
-                <nav class="languages" aria-label="Language · Langue">
-                    <a href="/en/"${language === "en" ? ' aria-current="page"' : ""}>English</a>
-                    ·
-                    <a href="/fr/"${language === "fr" ? ' aria-current="page"' : ""}>Français</a>
-                </nav>
+                ${languageNav(language, "")}
             </header>
             <section aria-labelledby="why">
                 <h2 id="why">${page.whyTitle}</h2>
@@ -195,6 +228,8 @@ ${list(page.details)}
                 <a class="button" href="${fundingUrl}" rel="noreferrer">${page.fundingCta}</a>
             </section>
             <footer>
+                <a href="/${language}/changelog/">${page.whatsNew}</a>
+                ·
                 <a href="/about">${page.about}</a>
                 ·
                 <a href="${sourceUrl}" rel="noreferrer">${page.source}</a>
@@ -209,8 +244,52 @@ ${list(page.details)}
 `;
 }
 
+function entryArticles(language) {
+  const label = new Intl.DateTimeFormat(language, { dateStyle: "long", timeZone: "UTC" });
+  return changelog
+    .map(
+      (entry) => `                <article class="entry" id="${entry.date}">
+                    <h2>${escapeHtml(entry[language].title)}</h2>
+                    <p><time datetime="${entry.date}">${label.format(new Date(entry.date))}</time></p>
+                    <p>${escapeHtml(entry[language].body)}</p>
+                </article>`,
+    )
+    .join("\n");
+}
+
+function renderChangelog(language, page) {
+  return `<!doctype html>
+<html lang="${language}">
+${head(language, "changelog/", { title: page.changelogTitle, description: page.changelogDescription })}
+    <body>
+        <main class="page">
+            <header class="hero">
+                <img class="logo" src="/icon.svg" width="96" height="96" alt="" />
+                <h1>${page.whatsNew}</h1>
+                <a class="button" href="/groups">${page.open}</a>
+                ${languageNav(language, "changelog/")}
+            </header>
+            <section class="card support" data-feedback-project="__FEEDBACK_PROJECT_ID__" hidden>
+                <h2>${page.suggestTitle}</h2>
+                <button type="button" class="button">${page.suggestButton}</button>
+            </section>
+            <section class="entries">
+${entryArticles(language)}
+            </section>
+            <footer>
+                <a href="/${language}/">${page.home}</a>
+                ·
+                <a href="${sourceUrl}" rel="noreferrer">${page.source}</a>
+            </footer>
+        </main>
+        <script src="/marketing.js" defer></script>
+    </body>
+</html>
+`;
+}
+
 for (const [language, page] of Object.entries(pages)) {
-  const directory = `dist/${language}`;
-  mkdirSync(directory, { recursive: true });
-  writeFileSync(`${directory}/index.html`, render(language, page));
+  mkdirSync(`dist/${language}/changelog`, { recursive: true });
+  writeFileSync(`dist/${language}/index.html`, render(language, page));
+  writeFileSync(`dist/${language}/changelog/index.html`, renderChangelog(language, page));
 }
