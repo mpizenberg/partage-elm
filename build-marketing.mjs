@@ -35,6 +35,13 @@ const icons = {
   "rotate-ccw": '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>',
   "user-check":
     '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/>',
+  "github":
+    '<path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>',
+  "home":
+    '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+  "info":
+    '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+  "message-square": '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
   "gift":
     '<polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>',
 };
@@ -274,13 +281,13 @@ ${list(page.details)}
                 <a class="button" href="${fundingUrl}" rel="noreferrer">${featherIcon("heart")}${page.fundingCta}</a>
             </section>
             <footer>
-                <a href="/${language}/changelog/">${page.whatsNew}</a>
+                <a href="/${language}/changelog/">${featherIcon("gift")}${page.whatsNew}</a>
                 ·
-                <a href="/about">${page.about}</a>
+                <a href="/about">${featherIcon("info")}${page.about}</a>
                 ·
-                <a href="${sourceUrl}" rel="noreferrer">${page.source}</a>
+                <a href="${sourceUrl}" rel="noreferrer">${featherIcon("github")}${page.source}</a>
                 <span class="feedback" data-feedback-project="__FEEDBACK_PROJECT_ID__" hidden>
-                    <button type="button">${page.feedback}</button>
+                    <button type="button">${featherIcon("message-square")}${page.feedback}</button>
                 </span>
             </footer>
         </main>
@@ -323,9 +330,9 @@ ${head(language, "changelog/", { title: page.changelogTitle, description: page.c
 ${entryArticles(language)}
             </section>
             <footer>
-                <a href="/${language}/">${page.home}</a>
+                <a href="/${language}/">${featherIcon("home")}${page.home}</a>
                 ·
-                <a href="${sourceUrl}" rel="noreferrer">${page.source}</a>
+                <a href="${sourceUrl}" rel="noreferrer">${featherIcon("github")}${page.source}</a>
             </footer>
         </main>
         <script src="/marketing.js" defer></script>

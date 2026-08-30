@@ -221,8 +221,20 @@ footer {
     text-align: center;
 }
 
+footer a,
+.feedback button {
+    display: inline-flex;
+    gap: 0.4rem;
+    align-items: center;
+}
+
 footer a {
     margin-inline: 0.35rem;
+}
+
+footer .icon {
+    width: 16px;
+    height: 16px;
 }
 
 /* An author-level `display` would override the user agent's `[hidden]` rule and
