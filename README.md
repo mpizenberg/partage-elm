@@ -84,6 +84,7 @@ src/              Elm source (Domain, Page, Infra, ...)
 vendor/           Vendored Elm packages
 packages/relay/   Minimal relay backend (Apache-2.0)
 public/           app shell, static-home assets, manifest, icons, JS glue
+marketing/        static-site page modules and demo-video tooling
 translations/     travelm-agency translation files
 tests/            elm-test suites
 review/           elm-review configuration
