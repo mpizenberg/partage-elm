@@ -315,12 +315,12 @@ inviteSection i18n toMsg model config groupName =
                 , Ui.Font.color Theme.base.textSubtle
                 ]
                 (Ui.text (T.inviteLinkHint i18n))
-            , Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+            , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
                 [ copyBtn link (T.inviteLinkCopy i18n)
                 , shareBtn link groupName (T.inviteLinkShare i18n)
-                , UI.Components.btnOutline [ Ui.width Ui.shrink ]
+                , UI.Components.btnOutline [ Ui.width Ui.shrink, Ui.Font.noWrap ]
                     { label = "QR"
-                    , icon = Just (UI.Components.featherIcon 16 FeatherIcons.grid)
+                    , icon = Just (Ui.el [ Ui.width Ui.shrink ] (UI.Components.featherIcon 16 FeatherIcons.grid))
                     , onPress = toMsg ToggleQrCode
                     }
                 ]
@@ -340,6 +340,7 @@ copyBtn : String -> String -> Ui.Element msg
 copyBtn copyText label =
     Ui.row
         (Ui.width Ui.shrink
+            :: Ui.Font.noWrap
             :: Ui.inFront
                 (Ui.el [ Ui.width Ui.fill, Ui.height Ui.fill ]
                     (Ui.html
@@ -356,7 +357,7 @@ copyBtn copyText label =
                 )
             :: UI.Components.btnOutlineAttrs
         )
-        [ UI.Components.featherIcon 16 FeatherIcons.copy
+        [ Ui.el [ Ui.width Ui.shrink ] (UI.Components.featherIcon 16 FeatherIcons.copy)
         , Ui.text label
         ]
 
@@ -376,8 +377,8 @@ shareBtn shareUrl shareTitle label =
             [ Ui.layout (Ui.default |> Ui.withNoStylesheet)
                 []
                 (Ui.row
-                    (Ui.width Ui.shrink :: UI.Components.btnOutlineAttrs)
-                    [ UI.Components.featherIcon 16 FeatherIcons.share2
+                    (Ui.width Ui.shrink :: Ui.Font.noWrap :: UI.Components.btnOutlineAttrs)
+                    [ Ui.el [ Ui.width Ui.shrink ] (UI.Components.featherIcon 16 FeatherIcons.share2)
                     , Ui.text label
                     ]
                 )
