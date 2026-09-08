@@ -229,6 +229,7 @@ entryDetailDeleteButton = Supprimer
 entryDetailRestoreButton = Restaurer
 entryDetailDate = Date
 entryDetailPaidBy = Payé par
+entryDetailCurrentUser = (toi)
 entryDetailSplitAmong = Partagé entre
 entryDetailSplitEqual = Partage égal · { $count ->
     [0] { $count } part

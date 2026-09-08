@@ -229,6 +229,7 @@ entryDetailDeleteButton = Delete
 entryDetailRestoreButton = Restore
 entryDetailDate = Date
 entryDetailPaidBy = Paid by
+entryDetailCurrentUser = (you)
 entryDetailSplitAmong = Split among
 entryDetailSplitEqual = Equal split · { $count ->
     [1] { $count } share

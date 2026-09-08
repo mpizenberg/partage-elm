@@ -1175,7 +1175,7 @@ defaultCurrencyAmountRow i18n groupDefaultCurrency entryCurrency maybeAmount =
     else
         case maybeAmount of
             Just amount ->
-                [ detailRow
+                [ inlineDetailRow
                     (T.newEntryDefaultCurrencyAmountLabel (Currency.currencyCode groupDefaultCurrency) i18n)
                     ("≈ " ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) amount groupDefaultCurrency)
                 ]
@@ -1194,6 +1194,24 @@ detailRow label value =
             (Ui.text label)
         , Ui.el
             [ Ui.Font.size Theme.font.md
+            , Ui.Font.weight Theme.fontWeight.medium
+            ]
+            (Ui.text value)
+        ]
+
+
+inlineDetailRow : String -> String -> Ui.Element msg
+inlineDetailRow label value =
+    Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
+        [ Ui.el
+            [ Ui.width Ui.fill
+            , Ui.Font.size Theme.font.sm
+            , Ui.Font.color Theme.base.textSubtle
+            ]
+            (Ui.text label)
+        , Ui.el
+            [ Ui.width Ui.shrink
+            , Ui.Font.size Theme.font.md
             , Ui.Font.weight Theme.fontWeight.medium
             ]
             (Ui.text value)
@@ -1380,6 +1398,15 @@ allocationRow env data =
         ]
         [ Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
             [ Ui.el [ Ui.Font.size Theme.font.md ] (Ui.text (env.resolveName data.memberId))
+            , if isCurrentMember then
+                Ui.el
+                    [ Ui.Font.size Theme.font.sm
+                    , Ui.Font.color Theme.base.textSubtle
+                    ]
+                    (Ui.text (T.entryDetailCurrentUser env.i18n))
+
+              else
+                Ui.none
             , case data.detail of
                 Just rowDetail ->
                     Ui.el
@@ -1397,14 +1424,14 @@ allocationRow env data =
 
 allocationAmounts : I18n -> Currency.Currency -> Currency.Currency -> Int -> Maybe Int -> Ui.Element msg
 allocationAmounts i18n groupCurrency entryCurrency amount maybeEquivalent =
-    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.shrink, Ui.alignRight ]
+    Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.shrink, Ui.alignRight, Ui.contentCenterY ]
         [ Ui.el [ Ui.Font.size Theme.font.md ]
             (Ui.text (Format.formatCentsWithCurrency (T.currentLanguage i18n) amount entryCurrency))
         , if entryCurrency /= groupCurrency then
             case maybeEquivalent of
                 Just equivalent ->
                     Ui.el
-                        [ Ui.Font.size Theme.font.xs
+                        [ Ui.Font.size Theme.font.sm
                         , Ui.Font.color Theme.base.textSubtle
                         ]
                         (Ui.text ("≈ " ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) equivalent groupCurrency))
