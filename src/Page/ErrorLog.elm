@@ -66,7 +66,7 @@ debugReportSection config =
 
             Nothing ->
                 Ui.none
-        , Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
+        , Ui.row [ Ui.wrap, Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
             [ copyReportButton reportJson (T.errorLogCopyReport config.i18n)
             , shareReportButton reportJson (T.errorLogShareReport config.i18n)
             ]
@@ -81,7 +81,8 @@ debugReportSection config =
 copyReportButton : String -> String -> Ui.Element msg
 copyReportButton copyText label =
     Ui.row
-        (Ui.width Ui.fill
+        (Ui.width Ui.shrink
+            :: Ui.Font.noWrap
             :: Ui.inFront
                 (Ui.el [ Ui.width Ui.fill, Ui.height Ui.fill ]
                     (Ui.html
@@ -98,7 +99,7 @@ copyReportButton copyText label =
                 )
             :: UI.Components.btnOutlineAttrs
         )
-        [ UI.Components.featherIcon 16 FeatherIcons.copy
+        [ Ui.el [ Ui.width Ui.shrink ] (UI.Components.featherIcon 16 FeatherIcons.copy)
         , Ui.text label
         ]
 
@@ -113,8 +114,8 @@ shareReportButton shareText label =
             [ Ui.layout (Ui.default |> Ui.withNoStylesheet)
                 []
                 (Ui.row
-                    (Ui.width Ui.shrink :: UI.Components.btnOutlineAttrs)
-                    [ UI.Components.featherIcon 16 FeatherIcons.share2
+                    (Ui.width Ui.shrink :: Ui.Font.noWrap :: UI.Components.btnOutlineAttrs)
+                    [ Ui.el [ Ui.width Ui.shrink ] (UI.Components.featherIcon 16 FeatherIcons.share2)
                     , Ui.text label
                     ]
                 )
