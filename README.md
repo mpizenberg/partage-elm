@@ -6,11 +6,24 @@
 
 Partage is a fully encrypted, local-first bill-splitting application for trusted groups (friends, family, roommates). It runs as an installable Progressive Web App and works offline.
 
+<p align="center">
+  <strong><a href="https://onpartage.eu/en/">Try Partage</a></strong>
+  · <a href="https://onpartage.eu/en/how-partage-encryption-works/">How encryption works</a>
+  · <a href="docs/DEPLOY.md">Self-hosting guide</a>
+</p>
+
 - **Privacy-first.** All sensitive data is end-to-end encrypted in the browser. The server only relays ciphertext.
 - **Local-first.** Data is stored in IndexedDB and synced opportunistically when online.
 - **No accounts.** Identity is a locally-generated ECDSA P-256 keypair. No email, no password.
 - **Immutable audit trail.** Entries are versioned via an event log; modifications and deletions preserve history.
 - **Deterministic convergence.** Concurrent edits across devices replay into identical state.
+
+<p align="center">
+  <img src="public/screenshot-balance.webp" alt="Group balances and settlement plan" width="210">
+  <img src="public/screenshot-activity.webp" alt="Immutable group activity history" width="210">
+  <img src="public/screenshot-multicurrency.webp" alt="A multi-currency entry" width="210">
+  <img src="public/screenshot-invite.webp" alt="Encrypted invitation link and QR code" width="210">
+</p>
 
 ## Features
 
@@ -95,6 +108,6 @@ docs/             Specification and deployment docs
 
 The Partage frontend is licensed under the **Mozilla Public License 2.0** — see [`LICENSE`](LICENSE).
 
-The `packages/relay` subproject is licensed under Apache-2.0 (see its own `package.json`).
+The `packages/relay` subproject is licensed under **Apache-2.0** — see [`packages/relay/LICENSE`](packages/relay/LICENSE).
 
 This project depends on third-party Elm and JavaScript libraries under BSD-3-Clause, MIT, and MPL-2.0 licenses; their copyright notices are preserved in their respective sources.
