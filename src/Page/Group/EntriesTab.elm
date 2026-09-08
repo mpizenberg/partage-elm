@@ -792,7 +792,17 @@ entryCardView env { entry, isDeleted } =
                     ]
 
                 Nothing ->
-                    []
+                    if
+                        env.maybeUserRootId
+                            |> Maybe.map (\memberId -> List.member memberId (Entry.involvedMembers entry))
+                            |> Maybe.withDefault False
+                    then
+                        [ Ui.borderWith { left = 4, top = Theme.border, right = Theme.border, bottom = Theme.border }
+                        , Ui.borderColor Theme.base.text
+                        ]
+
+                    else
+                        []
 
         headerEl : Ui.Element Msg
         headerEl =
