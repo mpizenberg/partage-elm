@@ -1,4 +1,4 @@
-module Domain.Balance exposing (MemberBalance, Status(..), computeBalances, computeExpenseShares, status)
+module Domain.Balance exposing (MemberBalance, Status(..), computeBalances, computeBeneficiarySplit, computeExpenseShares, status)
 
 {-| Balance computation from ledger entries with integer arithmetic.
 -}
@@ -209,7 +209,9 @@ entryDefaultCurrencyAmount entry =
             Maybe.withDefault data.amount data.defaultCurrencyAmount
 
 
-{-| Split beneficiary amounts using shares-based or exact split.
+{-| Allocate a total among beneficiaries using the same deterministic rounding
+as the ledger. Share-based allocations are returned in member-id order; exact
+allocations retain their input order.
 -}
 computeBeneficiarySplit : Int -> List Beneficiary -> List ( Member.Id, Int )
 computeBeneficiarySplit totalAmount beneficiaries =

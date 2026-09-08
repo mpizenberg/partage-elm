@@ -158,7 +158,15 @@ simpleSplitTests =
 sharesRemainderTests : Test
 sharesRemainderTests =
     describe "Shares remainder distribution"
-        [ test "total owed equals total amount with 3-way split" <|
+        [ test "public allocation matches the ledger's deterministic remainder" <|
+            \_ ->
+                Balance.computeBeneficiarySplit 1000
+                    [ ShareBeneficiary { memberId = "carol", shares = 1 }
+                    , ShareBeneficiary { memberId = "bob", shares = 1 }
+                    , ShareBeneficiary { memberId = "alice", shares = 1 }
+                    ]
+                    |> Expect.equal [ ( "alice", 334 ), ( "bob", 333 ), ( "carol", 333 ) ]
+        , test "total owed equals total amount with 3-way split" <|
             \_ ->
                 let
                     entry =

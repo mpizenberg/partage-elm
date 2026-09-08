@@ -32,6 +32,7 @@ Page.Group.NewEntry instead.
 -}
 
 import Dict exposing (Dict)
+import Domain.Balance as Balance
 import Domain.Currency as Currency exposing (Currency)
 import Domain.Date exposing (Date)
 import Domain.Entry as Entry
@@ -442,9 +443,17 @@ beneficiaryRow i18n data member =
                             totalAmountCents =
                                 Form.get .amount data.form |> Field.toMaybe |> Maybe.withDefault 0
 
+                            allocatedAmounts : Dict Member.Id Int
+                            allocatedAmounts =
+                                data.beneficiaries
+                                    |> Dict.toList
+                                    |> List.map (\( memberId, memberShares ) -> Entry.ShareBeneficiary { memberId = memberId, shares = memberShares })
+                                    |> Balance.computeBeneficiarySplit totalAmountCents
+                                    |> Dict.fromList
+
                             cents : Int
                             cents =
-                                (totalAmountCents * shares) // totalShares
+                                Dict.get member.rootId allocatedAmounts |> Maybe.withDefault 0
                         in
                         Ui.el
                             [ Ui.Font.size Theme.font.sm
