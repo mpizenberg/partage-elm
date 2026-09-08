@@ -3,6 +3,7 @@ import changelog from "./marketing/changelog.mjs";
 import home from "./marketing/home.mjs";
 import encryption from "./marketing/topics/encryption.mjs";
 import noAccount from "./marketing/topics/no-account.mjs";
+import openSource from "./marketing/topics/open-source.mjs";
 import trips from "./marketing/topics/trips.mjs";
 
 const marketingCss = readFileSync("public/marketing.css", "utf8");
@@ -10,7 +11,7 @@ const origin = "__CANONICAL_ORIGIN__";
 const fundingUrl = "https://github.com/sponsors/mpizenberg";
 const sourceUrl = "https://github.com/mpizenberg/partage-elm";
 
-const pages = [home, changelog, trips, noAccount, encryption];
+const pages = [home, changelog, trips, noAccount, encryption, openSource];
 
 const languages = {
   en: { flag: "🇬🇧", name: "English" },
