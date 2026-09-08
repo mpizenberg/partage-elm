@@ -1,4 +1,4 @@
-module Page.Group.BalanceTab exposing (Config, Model, Msg(..), Output(..), init, update, view)
+module Page.Group.BalanceTab exposing (Config, Model, Msg(..), Output(..), init, selectedSettlement, update, view)
 
 {-| Balance tab showing per-member balances and settlement plan.
 -}
@@ -28,13 +28,20 @@ import Ui.Input
 type Model
     = Model
         { expandedMember : Maybe Member.Id
-        , selectedSettlement : Maybe Int
+        , settlementSelection : SettlementSelection
         }
+
+
+type SettlementSelection
+    = AutomaticallySelectOutgoing
+    | SelectedSettlement Settlement.Transaction
+    | SettlementsCollapsed
 
 
 type Msg
     = ToggleMember Member.Id
-    | ToggleSettlement Int
+    | SelectSettlement Settlement.Transaction
+    | CollapseSettlements
     | RecordTransfer Settlement.Transaction
 
 
@@ -44,7 +51,7 @@ type Output
 
 init : Model
 init =
-    Model { expandedMember = Nothing, selectedSettlement = Nothing }
+    Model { expandedMember = Nothing, settlementSelection = AutomaticallySelectOutgoing }
 
 
 update : Msg -> Model -> ( Model, Maybe Output )
@@ -63,23 +70,45 @@ update msg (Model data) =
             , Nothing
             )
 
-        ToggleSettlement idx ->
-            ( Model
-                { data
-                    | selectedSettlement =
-                        if data.selectedSettlement == Just idx then
-                            Nothing
+        SelectSettlement transaction ->
+            ( Model { data | settlementSelection = SelectedSettlement transaction }
+            , Nothing
+            )
 
-                        else
-                            Just idx
-                }
+        CollapseSettlements ->
+            ( Model { data | settlementSelection = SettlementsCollapsed }
             , Nothing
             )
 
         RecordTransfer transaction ->
-            ( Model { data | selectedSettlement = Nothing }
+            ( Model { data | settlementSelection = SettlementsCollapsed }
             , Just (RecordTransferOutput transaction)
             )
+
+
+{-| Resolve the one settlement row that should be expanded. Before the user
+interacts, this is their first outgoing payment; explicit selection or collapse
+then remains authoritative as the plan changes.
+-}
+selectedSettlement : Maybe Member.Id -> List Settlement.Transaction -> Model -> Maybe Settlement.Transaction
+selectedSettlement maybeUserRootId transactions (Model data) =
+    case data.settlementSelection of
+        AutomaticallySelectOutgoing ->
+            maybeUserRootId
+                |> Maybe.andThen
+                    (\userRootId ->
+                        List.Extra.find (\transaction -> transaction.from == userRootId) transactions
+                    )
+
+        SelectedSettlement transaction ->
+            if List.member transaction transactions then
+                Just transaction
+
+            else
+                Nothing
+
+        SettlementsCollapsed ->
+            Nothing
 
 
 {-| Configuration for callbacks used by the balance tab.
@@ -108,7 +137,7 @@ view i18n config maybeUserRootId (Model data) state =
             (List.filterMap identity
                 [ Maybe.map (\uid -> yourBalanceCard i18n uid state) maybeUserRootId
                 , Just (otherMembersSection i18n config data.expandedMember maybeUserRootId state)
-                , Just (settlementSection i18n config maybeUserRootId data.selectedSettlement state)
+                , Just (settlementSection i18n config maybeUserRootId (Model data) state)
                 , Maybe.map (\uid -> preferencesSection i18n config uid state) maybeUserRootId
                 ]
             )
@@ -338,8 +367,8 @@ transferActionBtn i18n href onPress =
 -- SETTLEMENT SECTION
 
 
-settlementSection : I18n -> Config msg -> Maybe Member.Id -> Maybe Int -> GroupState -> Ui.Element msg
-settlementSection i18n config maybeUserRootId selectedSettlement state =
+settlementSection : I18n -> Config msg -> Maybe Member.Id -> Model -> GroupState -> Ui.Element msg
+settlementSection i18n config maybeUserRootId model state =
     let
         transactions : List Settlement.Transaction
         transactions =
@@ -354,14 +383,20 @@ settlementSection i18n config maybeUserRootId selectedSettlement state =
             resolveName =
                 GroupState.resolveMemberName state
 
+            selectedTransaction : Maybe Settlement.Transaction
+            selectedTransaction =
+                selectedSettlement maybeUserRootId transactions model
+
             settlementRow : Int -> Settlement.Transaction -> List (Ui.Element msg)
-            settlementRow idx tx =
-                let
-                    isSelected : Bool
-                    isSelected =
-                        selectedSettlement == Just idx
-                in
-                settlementItem i18n config resolveName maybeUserRootId (idx > 0) isSelected idx tx state
+            settlementRow idx transaction =
+                settlementItem i18n
+                    config
+                    resolveName
+                    maybeUserRootId
+                    (idx > 0)
+                    (selectedTransaction == Just transaction)
+                    transaction
+                    state
         in
         Ui.column []
             [ UI.Components.sectionLabel (T.balanceSettlementPlan i18n)
@@ -370,8 +405,8 @@ settlementSection i18n config maybeUserRootId selectedSettlement state =
             ]
 
 
-settlementItem : I18n -> Config msg -> (Member.Id -> String) -> Maybe Member.Id -> Bool -> Bool -> Int -> Settlement.Transaction -> GroupState -> List (Ui.Element msg)
-settlementItem i18n config resolveName maybeUserRootId showTopBorder isSelected idx t state =
+settlementItem : I18n -> Config msg -> (Member.Id -> String) -> Maybe Member.Id -> Bool -> Bool -> Settlement.Transaction -> GroupState -> List (Ui.Element msg)
+settlementItem i18n config resolveName maybeUserRootId showTopBorder isSelected t state =
     let
         isCurrentUser : Bool
         isCurrentUser =
@@ -404,7 +439,15 @@ settlementItem i18n config resolveName maybeUserRootId showTopBorder isSelected 
         headerRow : Ui.Element msg
         headerRow =
             Ui.row
-                [ Ui.Input.button (config.toMsg (ToggleSettlement idx))
+                [ Ui.Input.button
+                    (config.toMsg
+                        (if isSelected then
+                            CollapseSettlements
+
+                         else
+                            SelectSettlement t
+                        )
+                    )
                 , Ui.paddingXY Theme.spacing.lg Theme.spacing.md
                 , Ui.pointer
                 , Ui.contentCenterY
