@@ -44,7 +44,7 @@ export default {
 <li>try the app on a browser or device I may have missed, and report confusing behaviour, accessibility gaps, or PWA rough edges;</li>
 <li>work on the Elm domain, the <code>elm-ui</code> interface, or the tests that connect them;</li>
 <li>review the cryptography, event replay, relay boundary, or self-hosting documentation; or</li>
-<li>improve the documentation and English or French wording.</li>
+<li>translate Partage into another language, or improve the documentation and existing English or French wording.</li>
 </ul>
 <p>I currently maintain Partage, so a precise question or a small focused contribution is genuinely useful; it does not have to arrive as a finished redesign. The <a href="https://github.com/mpizenberg/partage-elm#getting-started" rel="noreferrer">README gets the local stack running</a>, CI checks formatting, <code>elm-review</code>, and the test suites, and bugs, questions, and pull requests are welcome in the <a href="https://github.com/mpizenberg/partage-elm/issues" rel="noreferrer">issue tracker</a>.</p>`,
       },
@@ -98,7 +98,7 @@ export default {
 <li>tester l’application sur un navigateur ou un appareil qui m’a échappé, puis signaler un comportement déroutant, un problème d’accessibilité ou un défaut d’intégration de la PWA ;</li>
 <li>travailler sur le domaine Elm, l’interface <code>elm-ui</code> ou les tests qui les relient ;</li>
 <li>relire le chiffrement, le rejeu des événements, la frontière du relais ou la documentation d’auto-hébergement ;</li>
-<li>améliorer la documentation et les textes français ou anglais.</li>
+<li>traduire Partage dans une nouvelle langue, ou améliorer la documentation et les textes français ou anglais existants.</li>
 </ul>
 <p>Je maintiens actuellement Partage : une question précise ou une petite contribution ciblée est donc réellement utile, sans devoir arriver sous la forme d’une refonte complète. Le <a href="https://github.com/mpizenberg/partage-elm#getting-started" rel="noreferrer">README permet de lancer l’environnement local</a>, l’intégration continue vérifie le formatage, <code>elm-review</code> et les suites de tests, et les bugs, questions et pull requests sont les bienvenus dans le <a href="https://github.com/mpizenberg/partage-elm/issues" rel="noreferrer">gestionnaire de tickets</a>.</p>`,
       },
