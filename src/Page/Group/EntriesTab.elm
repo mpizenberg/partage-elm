@@ -5,6 +5,7 @@ and inline expandable entry details.
 -}
 
 import Dict
+import Domain.Balance as Balance
 import Domain.Currency as Currency
 import Domain.Date as Date exposing (Date)
 import Domain.Entry as Entry
@@ -378,7 +379,7 @@ view i18n config maybeUserRootId today (Model data) state =
                 (groupedByDate
                     { i18n = i18n
                     , groupDefaultCurrency = groupDefaultCurrency
-                    , isMember = maybeUserRootId /= Nothing
+                    , maybeUserRootId = maybeUserRootId
                     , resolveName = resolveName
                     , entryLinkHref = config.entryLinkHref
                     , expandedEntries = data.expandedEntries
@@ -712,7 +713,7 @@ dateFilterSection i18n activeRanges =
 type alias CardEnv =
     { i18n : I18n
     , groupDefaultCurrency : Currency.Currency
-    , isMember : Bool
+    , maybeUserRootId : Maybe Member.Id
     , resolveName : Member.Id -> String
     , entryLinkHref : Entry.Id -> String
     , expandedEntries : Set Entry.Id
@@ -821,7 +822,7 @@ entryCardView env { entry, isDeleted } =
                   else
                     Ui.none
                 , if isExpanded then
-                    entryDetail env.i18n env.groupDefaultCurrency env.isMember env.resolveName (env.entryLinkHref entryId) entryId entry isDeleted env.confirmingAction
+                    entryDetail env (env.entryLinkHref entryId) entryId entry isDeleted
 
                   else
                     Ui.none
@@ -1048,77 +1049,86 @@ recipientText resolveName beneficiaries =
 -- ENTRY DETAIL (expanded)
 
 
-entryDetail : I18n -> Currency.Currency -> Bool -> (Member.Id -> String) -> String -> Entry.Id -> Entry.Entry -> Bool -> Maybe ( Entry.Id, ConfirmAction ) -> Ui.Element Msg
-entryDetail i18n groupDefaultCurrency isMember resolveName linkHref entryId entry isDeleted confirmingAction =
+entryDetail : CardEnv -> String -> Entry.Id -> Entry.Entry -> Bool -> Ui.Element Msg
+entryDetail env linkHref entryId entry isDeleted =
+    let
+        memberActions : List (Ui.Element Msg)
+        memberActions =
+            case env.maybeUserRootId of
+                Just _ ->
+                    [ UI.Components.horizontalSeparator
+                    , secondaryActionButtons env.i18n linkHref entryId
+                    , UI.Components.horizontalSeparator
+                    , actionButtons env.i18n
+                        entryId
+                        isDeleted
+                        (case env.confirmingAction of
+                            Just ( id, action ) ->
+                                if id == entryId then
+                                    Just action
+
+                                else
+                                    Nothing
+
+                            Nothing ->
+                                Nothing
+                        )
+                    ]
+
+                Nothing ->
+                    []
+    in
     Ui.column
         [ Ui.paddingTop Theme.spacing.md
         , Ui.spacing Theme.spacing.md
         ]
-        [ entryContent i18n groupDefaultCurrency resolveName entry
-        , if isMember then
-            Ui.row [ Ui.spacing Theme.spacing.sm ]
-                [ copyLinkBtn linkHref (T.entryDetailCopyLink i18n)
-                , UI.Components.btnOutline [ Ui.width Ui.shrink ]
-                    { label = T.entryDetailDuplicateButton i18n
-                    , icon = Just (UI.Components.featherIcon 16 FeatherIcons.copy)
-                    , onPress = ClickDuplicate entryId
-                    }
-                ]
-
-          else
-            Ui.none
-        , if isMember then
-            actionButtons i18n
-                entryId
-                isDeleted
-                (case confirmingAction of
-                    Just ( id, action ) ->
-                        if id == entryId then
-                            Just action
-
-                        else
-                            Nothing
-
-                    Nothing ->
-                        Nothing
-                )
-
-          else
-            Ui.none
-        ]
+        (entryContent env entry :: memberActions)
 
 
-entryContent : I18n -> Currency.Currency -> (Member.Id -> String) -> Entry.Entry -> Ui.Element msg
-entryContent i18n groupDefaultCurrency resolveName entry =
+entryContent : CardEnv -> Entry.Entry -> Ui.Element msg
+entryContent env entry =
     case entry.kind of
         Entry.Expense data ->
-            expenseContent i18n groupDefaultCurrency resolveName data
+            expenseContent env data
 
         Entry.Transfer data ->
-            transferContent i18n groupDefaultCurrency resolveName data
+            transferContent env.i18n env.groupDefaultCurrency env.resolveName data
 
         Entry.Income data ->
-            incomeContent i18n groupDefaultCurrency resolveName data
+            incomeContent env data
 
 
-expenseContent : I18n -> Currency.Currency -> (Member.Id -> String) -> Entry.ExpenseData -> Ui.Element msg
-expenseContent i18n groupDefaultCurrency resolveName data =
+expenseContent : CardEnv -> Entry.ExpenseData -> Ui.Element msg
+expenseContent env data =
+    let
+        metadataRows : List (Ui.Element msg)
+        metadataRows =
+            List.concat
+                [ optionalRow (T.entryDetailLocation env.i18n) data.location
+                , optionalRow (T.entryDetailNotes env.i18n) data.notes
+                , attachmentRows env.i18n data.attachments
+                ]
+
+        metadataSection : List (Ui.Element msg)
+        metadataSection =
+            if List.isEmpty metadataRows then
+                []
+
+            else
+                [ Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ] metadataRows ]
+
+        sections : List (Ui.Element msg)
+        sections =
+            List.concat
+                [ defaultCurrencyAmountRow env.i18n env.groupDefaultCurrency data.currency data.defaultCurrencyAmount
+                , [ payersSection env data
+                  , beneficiariesSection env data
+                  ]
+                , metadataSection
+                ]
+    in
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
-        (List.concat
-            [ [ detailRow (T.newEntryDescriptionLabel i18n) data.description
-              , detailRow (T.entryDetailDate i18n) (Date.toString data.date)
-              , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount data.currency)
-              ]
-            , defaultCurrencyAmountRow i18n groupDefaultCurrency data.defaultCurrencyAmount
-            , [ detailRow (T.entryDetailPaidBy i18n) (payerNames resolveName data.payers)
-              , beneficiariesSection i18n data.currency resolveName data.beneficiaries
-              ]
-            , detailCategoryRow i18n data.category
-            , optionalRow (T.entryDetailLocation i18n) data.location
-            , optionalRow (T.entryDetailNotes i18n) data.notes
-            , attachmentRows i18n data.attachments
-            ]
-        )
+        (List.intersperse UI.Components.horizontalSeparator sections)
 
 
 transferContent : I18n -> Currency.Currency -> (Member.Id -> String) -> Entry.TransferData -> Ui.Element msg
@@ -1129,7 +1139,7 @@ transferContent i18n groupDefaultCurrency resolveName data =
             , [ detailRow (T.entryDetailDate i18n) (Date.toString data.date)
               , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount data.currency)
               ]
-            , defaultCurrencyAmountRow i18n groupDefaultCurrency data.defaultCurrencyAmount
+            , defaultCurrencyAmountRow i18n groupDefaultCurrency data.currency data.defaultCurrencyAmount
             , [ detailRow (T.entryDetailFrom i18n) (resolveName data.from)
               , detailRow (T.entryDetailTo i18n) (resolveName data.to)
               ]
@@ -1139,37 +1149,39 @@ transferContent i18n groupDefaultCurrency resolveName data =
         )
 
 
-incomeContent : I18n -> Currency.Currency -> (Member.Id -> String) -> Entry.IncomeData -> Ui.Element msg
-incomeContent i18n groupDefaultCurrency resolveName data =
+incomeContent : CardEnv -> Entry.IncomeData -> Ui.Element msg
+incomeContent env data =
     Ui.column [ Ui.spacing Theme.spacing.md, Ui.width Ui.fill ]
         (List.concat
-            [ [ detailRow (T.newEntryDescriptionLabel i18n) data.description
-              , detailRow (T.entryDetailDate i18n) (Date.toString data.date)
-              , detailRow (T.newEntryAmountLabel i18n) (Format.formatCentsWithCurrency (T.currentLanguage i18n) data.amount data.currency)
+            [ [ detailRow (T.newEntryDescriptionLabel env.i18n) data.description
+              , detailRow (T.entryDetailDate env.i18n) (Date.toString data.date)
+              , detailRow (T.newEntryAmountLabel env.i18n) (Format.formatCentsWithCurrency (T.currentLanguage env.i18n) data.amount data.currency)
               ]
-            , defaultCurrencyAmountRow i18n groupDefaultCurrency data.defaultCurrencyAmount
-            , [ detailRow (T.entryDetailReceivedBy i18n) (resolveName data.receivedBy)
-              , beneficiariesSection i18n data.currency resolveName data.beneficiaries
+            , defaultCurrencyAmountRow env.i18n env.groupDefaultCurrency data.currency data.defaultCurrencyAmount
+            , [ detailRow (T.entryDetailReceivedBy env.i18n) (env.resolveName data.receivedBy)
+              , beneficiariesSection env data
               ]
-            , optionalRow (T.entryDetailNotes i18n) data.notes
-            , attachmentRows i18n data.attachments
+            , optionalRow (T.entryDetailNotes env.i18n) data.notes
+            , attachmentRows env.i18n data.attachments
             ]
         )
 
 
-defaultCurrencyAmountRow : I18n -> Currency.Currency -> Maybe Int -> List (Ui.Element msg)
-defaultCurrencyAmountRow i18n groupDefaultCurrency maybeAmount =
-    case maybeAmount of
-        Just amount ->
-            [ Ui.el
-                [ Ui.Font.size Theme.font.sm
-                , Ui.Font.color Theme.base.textSubtle
-                ]
-                (Ui.text ("≈ " ++ Format.formatCents (T.currentLanguage i18n) amount groupDefaultCurrency))
-            ]
+defaultCurrencyAmountRow : I18n -> Currency.Currency -> Currency.Currency -> Maybe Int -> List (Ui.Element msg)
+defaultCurrencyAmountRow i18n groupDefaultCurrency entryCurrency maybeAmount =
+    if entryCurrency == groupDefaultCurrency then
+        []
 
-        Nothing ->
-            []
+    else
+        case maybeAmount of
+            Just amount ->
+                [ detailRow
+                    (T.newEntryDefaultCurrencyAmountLabel (Currency.currencyCode groupDefaultCurrency) i18n)
+                    ("≈ " ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) amount groupDefaultCurrency)
+                ]
+
+            Nothing ->
+                []
 
 
 detailRow : String -> String -> Ui.Element msg
@@ -1215,65 +1227,194 @@ attachmentRows i18n attachments =
         ]
 
 
-payerNames : (Member.Id -> String) -> List Entry.Payer -> String
-payerNames resolveName payers =
-    payers
-        |> List.map (\p -> resolveName p.memberId)
-        |> String.join ", "
+payersSection : CardEnv -> Entry.ExpenseData -> Ui.Element msg
+payersSection env data =
+    let
+        equivalentAmounts : Dict.Dict Member.Id Int
+        equivalentAmounts =
+            if data.currency == env.groupDefaultCurrency then
+                Dict.empty
+
+            else
+                data.defaultCurrencyAmount
+                    |> Maybe.map (\amount -> Balance.computePayerSplit amount data.payers |> Dict.fromList)
+                    |> Maybe.withDefault Dict.empty
+
+        payerRow : Entry.Payer -> Ui.Element msg
+        payerRow payer =
+            allocationRow env
+                { memberId = payer.memberId
+                , detail = Nothing
+                , amount = payer.amount
+                , currency = data.currency
+                , equivalent = Dict.get payer.memberId equivalentAmounts
+                }
+    in
+    allocationSection (T.entryDetailPaidBy env.i18n)
+        Nothing
+        (List.map payerRow data.payers)
 
 
-beneficiariesSection : I18n -> Currency.Currency -> (Member.Id -> String) -> List Entry.Beneficiary -> Ui.Element msg
-beneficiariesSection i18n currency resolveName beneficiaries =
+beneficiariesSection : CardEnv -> { a | amount : Int, currency : Currency.Currency, defaultCurrencyAmount : Maybe Int, beneficiaries : List Entry.Beneficiary } -> Ui.Element msg
+beneficiariesSection env data =
+    let
+        amounts : Dict.Dict Member.Id Int
+        amounts =
+            Balance.computeBeneficiarySplit data.amount data.beneficiaries |> Dict.fromList
+
+        equivalentAmounts : Dict.Dict Member.Id Int
+        equivalentAmounts =
+            if data.currency == env.groupDefaultCurrency then
+                Dict.empty
+
+            else
+                data.defaultCurrencyAmount
+                    |> Maybe.map (\amount -> Balance.computeBeneficiarySplit amount data.beneficiaries |> Dict.fromList)
+                    |> Maybe.withDefault Dict.empty
+
+        beneficiaryRow : Entry.Beneficiary -> Ui.Element msg
+        beneficiaryRow beneficiary =
+            case beneficiary of
+                Entry.ShareBeneficiary beneficiaryData ->
+                    allocationRow env
+                        { memberId = beneficiaryData.memberId
+                        , detail = Just ("×" ++ String.fromInt beneficiaryData.shares)
+                        , amount = Dict.get beneficiaryData.memberId amounts |> Maybe.withDefault 0
+                        , currency = data.currency
+                        , equivalent = Dict.get beneficiaryData.memberId equivalentAmounts
+                        }
+
+                Entry.ExactBeneficiary beneficiaryData ->
+                    allocationRow env
+                        { memberId = beneficiaryData.memberId
+                        , detail = Nothing
+                        , amount = Dict.get beneficiaryData.memberId amounts |> Maybe.withDefault 0
+                        , currency = data.currency
+                        , equivalent = Dict.get beneficiaryData.memberId equivalentAmounts
+                        }
+    in
+    allocationSection (T.entryDetailSplitAmong env.i18n)
+        (Just (beneficiarySplitLabel env.i18n data.beneficiaries))
+        (List.map beneficiaryRow data.beneficiaries)
+
+
+beneficiarySplitLabel : I18n -> List Entry.Beneficiary -> String
+beneficiarySplitLabel i18n beneficiaries =
+    case beneficiaries of
+        (Entry.ShareBeneficiary first) :: rest ->
+            let
+                shares : List Int
+                shares =
+                    first.shares
+                        :: List.filterMap
+                            (\beneficiary ->
+                                case beneficiary of
+                                    Entry.ShareBeneficiary data ->
+                                        Just data.shares
+
+                                    Entry.ExactBeneficiary _ ->
+                                        Nothing
+                            )
+                            rest
+
+                count : String
+                count =
+                    String.fromInt (List.sum shares)
+            in
+            if List.all ((==) first.shares) shares then
+                T.entryDetailSplitEqual count i18n
+
+            else
+                T.entryDetailSplitShares count i18n
+
+        (Entry.ExactBeneficiary _) :: _ ->
+            T.newEntrySplitExact i18n
+
+        [] ->
+            ""
+
+
+allocationSection : String -> Maybe String -> List (Ui.Element msg) -> Ui.Element msg
+allocationSection label maybeDetail rows =
     Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ]
-        [ Ui.el
-            [ Ui.Font.size Theme.font.sm
-            , Ui.Font.color Theme.base.textSubtle
+        [ Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.fill ]
+            [ Ui.el
+                [ Ui.Font.size Theme.font.sm
+                , Ui.Font.color Theme.base.textSubtle
+                ]
+                (Ui.text label)
+            , case maybeDetail of
+                Just sectionDetail ->
+                    Ui.el
+                        [ Ui.Font.size Theme.font.xs
+                        , Ui.Font.color Theme.base.textSubtle
+                        ]
+                        (Ui.text sectionDetail)
+
+                Nothing ->
+                    Ui.none
             ]
-            (Ui.text (T.entryDetailSplitAmong i18n))
-        , Ui.row [ Ui.spacing Theme.spacing.sm, Ui.wrap ]
-            (List.map (beneficiaryItem i18n currency resolveName) beneficiaries
-                |> List.intersperse (Ui.text "·")
-            )
+        , Ui.column [ Ui.spacing Theme.spacing.sm, Ui.width Ui.fill ] rows
         ]
 
 
-beneficiaryItem : I18n -> Currency.Currency -> (Member.Id -> String) -> Entry.Beneficiary -> Ui.Element msg
-beneficiaryItem i18n currency resolveName beneficiary =
-    case beneficiary of
-        Entry.ShareBeneficiary data ->
-            Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.shrink ]
-                [ Ui.el [ Ui.Font.size Theme.font.md ] (Ui.text (resolveName data.memberId))
-                , if data.shares > 1 then
+allocationRow :
+    CardEnv
+    -> { memberId : Member.Id, detail : Maybe String, amount : Int, currency : Currency.Currency, equivalent : Maybe Int }
+    -> Ui.Element msg
+allocationRow env data =
+    let
+        isCurrentMember : Bool
+        isCurrentMember =
+            env.maybeUserRootId == Just data.memberId
+    in
+    Ui.row
+        [ Ui.width Ui.fill
+        , Ui.spacing Theme.spacing.sm
+        , Ui.contentCenterY
+        , if isCurrentMember then
+            Ui.Font.weight Theme.fontWeight.bold
+
+          else
+            Ui.Font.weight Theme.fontWeight.medium
+        ]
+        [ Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
+            [ Ui.el [ Ui.Font.size Theme.font.md ] (Ui.text (env.resolveName data.memberId))
+            , case data.detail of
+                Just rowDetail ->
                     Ui.el
                         [ Ui.Font.size Theme.font.sm
                         , Ui.Font.color Theme.base.textSubtle
                         ]
-                        (Ui.text ("×" ++ String.fromInt data.shares))
+                        (Ui.text rowDetail)
 
-                  else
+                Nothing ->
                     Ui.none
-                ]
-
-        Entry.ExactBeneficiary data ->
-            Ui.row [ Ui.spacing Theme.spacing.sm, Ui.width Ui.shrink ]
-                [ Ui.el [ Ui.Font.size Theme.font.md ] (Ui.text (resolveName data.memberId))
-                , Ui.el
-                    [ Ui.Font.size Theme.font.sm
-                    , Ui.Font.color Theme.base.textSubtle
-                    , Ui.alignBottom
-                    ]
-                    (Ui.text (Format.formatCents (T.currentLanguage i18n) data.amount currency))
-                ]
+            ]
+        , allocationAmounts env.i18n env.groupDefaultCurrency data.currency data.amount data.equivalent
+        ]
 
 
-detailCategoryRow : I18n -> Maybe Entry.Category -> List (Ui.Element msg)
-detailCategoryRow i18n maybeCategory =
-    case maybeCategory of
-        Just category ->
-            [ detailRow (T.entryDetailCategory i18n) (Categories.label i18n category) ]
+allocationAmounts : I18n -> Currency.Currency -> Currency.Currency -> Int -> Maybe Int -> Ui.Element msg
+allocationAmounts i18n groupCurrency entryCurrency amount maybeEquivalent =
+    Ui.column [ Ui.spacing Theme.spacing.xs, Ui.width Ui.shrink, Ui.alignRight ]
+        [ Ui.el [ Ui.Font.size Theme.font.md ]
+            (Ui.text (Format.formatCentsWithCurrency (T.currentLanguage i18n) amount entryCurrency))
+        , if entryCurrency /= groupCurrency then
+            case maybeEquivalent of
+                Just equivalent ->
+                    Ui.el
+                        [ Ui.Font.size Theme.font.xs
+                        , Ui.Font.color Theme.base.textSubtle
+                        ]
+                        (Ui.text ("≈ " ++ Format.formatCentsWithCurrency (T.currentLanguage i18n) equivalent groupCurrency))
 
-        Nothing ->
-            []
+                Nothing ->
+                    Ui.none
+
+          else
+            Ui.none
+        ]
 
 
 actionButtons : I18n -> Entry.Id -> Bool -> Maybe ConfirmAction -> Ui.Element Msg
@@ -1360,28 +1501,53 @@ defaultButtons i18n entryId isDeleted =
 
 
 
--- COPY LINK BUTTON
+-- SECONDARY ACTIONS
 
 
-{-| Copy-to-clipboard button using the copy-button web component.
+secondaryActionButtons : I18n -> String -> Entry.Id -> Ui.Element Msg
+secondaryActionButtons i18n linkHref entryId =
+    Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm ]
+        [ copyLinkBtn linkHref (T.entryDetailCopyLink i18n)
+        , Ui.row
+            (Ui.Input.button (ClickDuplicate entryId) :: secondaryActionAttrs)
+            [ UI.Components.featherIcon 16 FeatherIcons.copy
+            , Ui.text (T.entryDetailDuplicateButton i18n)
+            ]
+        ]
+
+
+secondaryActionAttrs : List (Ui.Attribute msg)
+secondaryActionAttrs =
+    [ Ui.width Ui.fill
+    , Ui.spacing Theme.spacing.sm
+    , Ui.contentCenterX
+    , Ui.contentCenterY
+    , Ui.padding Theme.spacing.sm
+    , Ui.Font.size Theme.font.sm
+    , Ui.Font.weight Theme.fontWeight.medium
+    , Ui.Font.color Theme.base.textSubtle
+    , Ui.pointer
+    ]
+
+
+{-| Copy-to-clipboard action using the copy-button web component.
 -}
 copyLinkBtn : String -> String -> Ui.Element msg
 copyLinkBtn copyText label =
     Ui.row
-        (Ui.width Ui.shrink
-            :: Ui.inFront
-                (Ui.html
-                    (Html.node "copy-button"
-                        [ Html.Attributes.attribute "data-copy" copyText
-                        , Html.Attributes.style "display" "block"
-                        , Html.Attributes.style "width" "100%"
-                        , Html.Attributes.style "height" "100%"
-                        , Html.Attributes.style "cursor" "pointer"
-                        ]
-                        []
-                    )
+        (Ui.inFront
+            (Ui.html
+                (Html.node "copy-button"
+                    [ Html.Attributes.attribute "data-copy" copyText
+                    , Html.Attributes.style "display" "block"
+                    , Html.Attributes.style "width" "100%"
+                    , Html.Attributes.style "height" "100%"
+                    , Html.Attributes.style "cursor" "pointer"
+                    ]
+                    []
                 )
-            :: UI.Components.btnOutlineAttrs
+            )
+            :: secondaryActionAttrs
         )
         [ UI.Components.featherIcon 16 FeatherIcons.link
         , Ui.text label

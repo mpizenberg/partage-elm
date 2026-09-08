@@ -230,6 +230,16 @@ entryDetailRestoreButton = Restaurer
 entryDetailDate = Date
 entryDetailPaidBy = Payé par
 entryDetailSplitAmong = Partagé entre
+entryDetailSplitEqual = Partage égal · { $count ->
+    [0] { $count } part
+    [1] { $count } part
+   *[other] { $count } parts
+ }
+entryDetailSplitShares = Par parts · { $count ->
+    [0] { $count } part
+    [1] { $count } part
+   *[other] { $count } parts
+ }
 entryDetailCategory = Catégorie
 entryDetailLocation = Lieu
 entryDetailNotes = Notes

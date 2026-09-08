@@ -246,7 +246,14 @@ transferTests =
 multiCurrencyTests : Test
 multiCurrencyTests =
     describe "Multi-currency"
-        [ describe "expense with defaultCurrencyAmount"
+        [ test "public payer allocation preserves the converted total" <|
+            \_ ->
+                Balance.computePayerSplit 1201
+                    [ { memberId = "bob", amount = 400 }
+                    , { memberId = "alice", amount = 600 }
+                    ]
+                    |> Expect.equal [ ( "alice", 721 ), ( "bob", 480 ) ]
+        , describe "expense with defaultCurrencyAmount"
             (let
                 entry =
                     makeExpenseEntry "entry1"

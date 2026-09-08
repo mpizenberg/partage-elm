@@ -1,4 +1,4 @@
-module Domain.Balance exposing (MemberBalance, Status(..), computeBalances, computeBeneficiarySplit, computeExpenseShares, status)
+module Domain.Balance exposing (MemberBalance, Status(..), computeBalances, computeBeneficiarySplit, computeExpenseShares, computePayerSplit, status)
 
 {-| Balance computation from ledger entries with integer arithmetic.
 -}
@@ -147,23 +147,11 @@ computeEntryPaid entry =
     in
     case entry.kind of
         Expense data ->
-            let
-                payerTotal : Int
-                payerTotal =
-                    List.foldl (\p acc -> acc + p.amount) 0 data.payers
-            in
-            if data.defaultCurrencyAmount /= Nothing && payerTotal > 0 then
-                -- Multi-currency: proportional conversion
-                distributeProportionally
-                    totalAmount
-                    (List.map (\p -> ( p.memberId, p.amount )) data.payers)
-                    payerTotal
+            if data.defaultCurrencyAmount /= Nothing then
+                computePayerSplit totalAmount data.payers
 
             else
-                -- Same currency: direct amounts
-                List.map
-                    (\p -> ( p.memberId, p.amount ))
-                    data.payers
+                List.map (\p -> ( p.memberId, p.amount )) data.payers
 
         Transfer data ->
             [ ( data.from, totalAmount ) ]
@@ -207,6 +195,28 @@ entryDefaultCurrencyAmount entry =
 
         Income data ->
             Maybe.withDefault data.amount data.defaultCurrencyAmount
+
+
+{-| Allocate a total proportionally among payers from their exact contribution
+amounts. This converts payer amounts to a group's default-currency total while
+preserving the ledger's deterministic remainder handling.
+-}
+computePayerSplit : Int -> List { a | memberId : Member.Id, amount : Int } -> List ( Member.Id, Int )
+computePayerSplit totalAmount payers =
+    let
+        payerAmounts : List ( Member.Id, Int )
+        payerAmounts =
+            List.map (\payer -> ( payer.memberId, payer.amount )) payers
+
+        payerTotal : Int
+        payerTotal =
+            List.sum (List.map Tuple.second payerAmounts)
+    in
+    if payerTotal > 0 && payerTotal /= totalAmount then
+        distributeProportionally totalAmount payerAmounts payerTotal
+
+    else
+        payerAmounts
 
 
 {-| Allocate a total among beneficiaries using the same deterministic rounding

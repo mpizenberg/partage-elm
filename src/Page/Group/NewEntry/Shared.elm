@@ -422,10 +422,6 @@ beneficiaryRow i18n data member =
         isSelected =
             Dict.member member.rootId data.beneficiaries
 
-        shares : Int
-        shares =
-            Dict.get member.rootId data.beneficiaries |> Maybe.withDefault 0
-
         totalShares : Int
         totalShares =
             Dict.values data.beneficiaries |> List.sum
@@ -468,7 +464,7 @@ beneficiaryRow i18n data member =
         rightControl =
             case data.splitMode of
                 ShareSplit ->
-                    shareStepper member.rootId shares
+                    shareStepper member.rootId (Dict.get member.rootId data.beneficiaries |> Maybe.withDefault 0)
 
                 ExactSplit ->
                     if isSelected then
