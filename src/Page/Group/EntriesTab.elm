@@ -1248,9 +1248,13 @@ attachmentRows i18n attachments =
 payersSection : CardEnv -> Entry.ExpenseData -> Ui.Element msg
 payersSection env data =
     let
+        showAmounts : Bool
+        showAmounts =
+            List.length data.payers > 1
+
         equivalentAmounts : Dict.Dict Member.Id Int
         equivalentAmounts =
-            if data.currency == env.groupDefaultCurrency then
+            if not showAmounts || data.currency == env.groupDefaultCurrency then
                 Dict.empty
 
             else
@@ -1263,7 +1267,12 @@ payersSection env data =
             allocationRow env
                 { memberId = payer.memberId
                 , detail = Nothing
-                , amount = payer.amount
+                , amount =
+                    if showAmounts then
+                        Just payer.amount
+
+                    else
+                        Nothing
                 , currency = data.currency
                 , equivalent = Dict.get payer.memberId equivalentAmounts
                 }
@@ -1297,7 +1306,7 @@ beneficiariesSection env data =
                     allocationRow env
                         { memberId = beneficiaryData.memberId
                         , detail = Just ("×" ++ String.fromInt beneficiaryData.shares)
-                        , amount = Dict.get beneficiaryData.memberId amounts |> Maybe.withDefault 0
+                        , amount = Just (Dict.get beneficiaryData.memberId amounts |> Maybe.withDefault 0)
                         , currency = data.currency
                         , equivalent = Dict.get beneficiaryData.memberId equivalentAmounts
                         }
@@ -1306,7 +1315,7 @@ beneficiariesSection env data =
                     allocationRow env
                         { memberId = beneficiaryData.memberId
                         , detail = Nothing
-                        , amount = Dict.get beneficiaryData.memberId amounts |> Maybe.withDefault 0
+                        , amount = Just (Dict.get beneficiaryData.memberId amounts |> Maybe.withDefault 0)
                         , currency = data.currency
                         , equivalent = Dict.get beneficiaryData.memberId equivalentAmounts
                         }
@@ -1378,7 +1387,7 @@ allocationSection label maybeDetail rows =
 
 allocationRow :
     CardEnv
-    -> { memberId : Member.Id, detail : Maybe String, amount : Int, currency : Currency.Currency, equivalent : Maybe Int }
+    -> { memberId : Member.Id, detail : Maybe String, amount : Maybe Int, currency : Currency.Currency, equivalent : Maybe Int }
     -> Ui.Element msg
 allocationRow env data =
     let
@@ -1407,11 +1416,12 @@ allocationRow env data =
             Ui.Font.weight Theme.fontWeight.medium
         ]
         [ Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
-            [ Ui.el [ Ui.Font.size Theme.font.md ] (Ui.text memberName)
+            [ Ui.el [ Ui.width Ui.fill, Ui.Font.size Theme.font.md ] (Ui.text memberName)
             , case data.detail of
                 Just rowDetail ->
                     Ui.el
-                        [ Ui.Font.size Theme.font.sm
+                        [ Ui.width Ui.shrink
+                        , Ui.Font.size Theme.font.sm
                         , Ui.Font.color Theme.base.textSubtle
                         ]
                         (Ui.text rowDetail)
@@ -1419,7 +1429,12 @@ allocationRow env data =
                 Nothing ->
                     Ui.none
             ]
-        , allocationAmounts env.i18n env.groupDefaultCurrency data.currency data.amount data.equivalent
+        , case data.amount of
+            Just amount ->
+                allocationAmounts env.i18n env.groupDefaultCurrency data.currency amount data.equivalent
+
+            Nothing ->
+                Ui.none
         ]
 
 
