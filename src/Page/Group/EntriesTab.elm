@@ -1385,6 +1385,16 @@ allocationRow env data =
         isCurrentMember : Bool
         isCurrentMember =
             env.maybeUserRootId == Just data.memberId
+
+        memberName : String
+        memberName =
+            env.resolveName data.memberId
+                ++ (if isCurrentMember then
+                        " " ++ T.entryDetailCurrentUser env.i18n
+
+                    else
+                        ""
+                   )
     in
     Ui.row
         [ Ui.width Ui.fill
@@ -1397,16 +1407,7 @@ allocationRow env data =
             Ui.Font.weight Theme.fontWeight.medium
         ]
         [ Ui.row [ Ui.width Ui.fill, Ui.spacing Theme.spacing.sm, Ui.contentCenterY ]
-            [ Ui.el [ Ui.Font.size Theme.font.md ] (Ui.text (env.resolveName data.memberId))
-            , if isCurrentMember then
-                Ui.el
-                    [ Ui.Font.size Theme.font.sm
-                    , Ui.Font.color Theme.base.textSubtle
-                    ]
-                    (Ui.text (T.entryDetailCurrentUser env.i18n))
-
-              else
-                Ui.none
+            [ Ui.el [ Ui.Font.size Theme.font.md ] (Ui.text memberName)
             , case data.detail of
                 Just rowDetail ->
                     Ui.el
