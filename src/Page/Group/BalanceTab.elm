@@ -1,4 +1,4 @@
-module Page.Group.BalanceTab exposing (Config, Model, Msg, init, update, view)
+module Page.Group.BalanceTab exposing (Config, Model, Msg(..), Output(..), init, update, view)
 
 {-| Balance tab showing per-member balances and settlement plan.
 -}
@@ -35,6 +35,11 @@ type Model
 type Msg
     = ToggleMember Member.Id
     | ToggleSettlement Int
+    | RecordTransfer Settlement.Transaction
+
+
+type Output
+    = RecordTransferOutput Settlement.Transaction
 
 
 init : Model
@@ -42,11 +47,11 @@ init =
     Model { expandedMember = Nothing, selectedSettlement = Nothing }
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Maybe Output )
 update msg (Model data) =
     case msg of
         ToggleMember memberId ->
-            Model
+            ( Model
                 { data
                     | expandedMember =
                         if data.expandedMember == Just memberId then
@@ -55,9 +60,11 @@ update msg (Model data) =
                         else
                             Just memberId
                 }
+            , Nothing
+            )
 
         ToggleSettlement idx ->
-            Model
+            ( Model
                 { data
                     | selectedSettlement =
                         if data.selectedSettlement == Just idx then
@@ -66,13 +73,19 @@ update msg (Model data) =
                         else
                             Just idx
                 }
+            , Nothing
+            )
+
+        RecordTransfer transaction ->
+            ( Model { data | selectedSettlement = Nothing }
+            , Just (RecordTransferOutput transaction)
+            )
 
 
 {-| Configuration for callbacks used by the balance tab.
 -}
 type alias Config msg =
-    { onRecordTransfer : Settlement.Transaction -> msg
-    , onSavePreferences : { memberRootId : Member.Id, preferredRecipients : List Member.Id } -> msg
+    { onSavePreferences : { memberRootId : Member.Id, preferredRecipients : List Member.Id } -> msg
     , onNewTransfer : { toMemberId : Member.Id, amountCents : Int } -> msg
     , newTransferHref : String
     , toMsg : Msg -> msg
@@ -460,7 +473,7 @@ settlementDetail i18n config isMember resolveName t state =
         , if isMember then
             UI.Components.btnPrimary []
                 { label = T.settlementRecordTransfer i18n
-                , onPress = config.onRecordTransfer t
+                , onPress = config.toMsg (RecordTransfer t)
                 }
 
           else

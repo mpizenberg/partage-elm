@@ -47,7 +47,6 @@ import Domain.GroupState as GroupState
 import Domain.Member as Member
 import Domain.MemberMerge as Merge
 import Domain.MigrationCuration as MigrationCuration
-import Domain.Settlement as Settlement
 import Domain.SuspicionAudit as SuspicionAudit exposing (Finding)
 import Domain.TamperSignals as TamperSignals exposing (TamperSignals)
 import ErrorLog
@@ -298,7 +297,6 @@ type
       -- Group pages
     | EditGroupMetadataMsg Page.Group.EditGroupMetadata.Msg
     | RejoinMsg Page.JoinGroup.Msg
-    | SettleTransaction Settlement.Transaction
     | SaveSettlementPreferences { memberRootId : Member.Id, preferredRecipients : List Member.Id }
     | ToggleNotification
     | UnarchiveGroup
@@ -596,7 +594,20 @@ update config msg model =
                     ( modelWithTab, Cmd.none, [] )
 
         BalanceTabMsg subMsg ->
-            ( { model | balanceTabModel = Page.Group.BalanceTab.update subMsg model.balanceTabModel }, Cmd.none, [] )
+            let
+                ( newBalanceTabModel, maybeOutput ) =
+                    Page.Group.BalanceTab.update subMsg model.balanceTabModel
+
+                modelWithTab : Model
+                modelWithTab =
+                    { model | balanceTabModel = newBalanceTabModel }
+            in
+            case maybeOutput of
+                Just output ->
+                    handleBalanceTabOutput config modelWithTab output
+
+                Nothing ->
+                    ( modelWithTab, Cmd.none, [] )
 
         ActivityTabMsg subMsg ->
             ( { model | activityTabModel = Page.Group.ActivityTab.update subMsg model.activityTabModel }, Cmd.none, [] )
@@ -790,29 +801,6 @@ update config msg model =
 
                 _ ->
                     ( modelWithPage, Cmd.none, [] )
-
-        SettleTransaction tx ->
-            case model.workspace of
-                WorkspaceLoaded loaded ->
-                    let
-                        output : NewEntryShared.Output
-                        output =
-                            NewEntryShared.TransferOutput
-                                { description = Nothing
-                                , amountCents = tx.amount
-                                , currency = loaded.summary.defaultCurrency
-                                , defaultCurrencyAmount = Nothing
-                                , fromMemberId = tx.from
-                                , toMemberId = tx.to
-                                , notes = Nothing
-                                , date = Date.posixToDate config.timeZone config.currentTime
-                                , attachments = []
-                                }
-                    in
-                    runSubmit (OnEntrySaved loaded.summary.id) config model (\ctx -> GroupOps.newEntry ctx loaded output)
-
-                _ ->
-                    ( model, Cmd.none, [] )
 
         SaveSettlementPreferences prefData ->
             case model.workspace of
@@ -1820,6 +1808,31 @@ submitModifyEntry ctx loaded original rewritten =
             Entry.replace original.meta newEntryId rewritten.kind
     in
     GroupOps.eventWithId { ctx | idState = idStateAfter } loaded (Event.EntryModified modifiedEntry)
+
+
+handleBalanceTabOutput : UpdateConfig -> Model -> Page.Group.BalanceTab.Output -> ( Model, Cmd Msg, List Output )
+handleBalanceTabOutput config model output =
+    case ( output, model.workspace ) of
+        ( Page.Group.BalanceTab.RecordTransferOutput transaction, WorkspaceLoaded loaded ) ->
+            let
+                entryOutput : NewEntryShared.Output
+                entryOutput =
+                    NewEntryShared.TransferOutput
+                        { description = Nothing
+                        , amountCents = transaction.amount
+                        , currency = loaded.summary.defaultCurrency
+                        , defaultCurrencyAmount = Nothing
+                        , fromMemberId = transaction.from
+                        , toMemberId = transaction.to
+                        , notes = Nothing
+                        , date = Date.posixToDate config.timeZone config.currentTime
+                        , attachments = []
+                        }
+            in
+            runSubmit (OnEntrySaved loaded.summary.id) config model (\ctx -> GroupOps.newEntry ctx loaded entryOutput)
+
+        _ ->
+            ( model, Cmd.none, [] )
 
 
 handleEntriesTabOutput : UpdateConfig -> Model -> Page.Group.EntriesTab.Output -> ( Model, Cmd Msg, List Output )
@@ -3549,8 +3562,7 @@ tabContent config maybeUserRootId loaded model =
     case model.activeTab of
         BalanceTab ->
             Page.Group.BalanceTab.view config.i18n
-                { onRecordTransfer = \tx -> config.toMsg (SettleTransaction tx)
-                , onSavePreferences = \prefData -> config.toMsg (SaveSettlementPreferences prefData)
+                { onSavePreferences = \prefData -> config.toMsg (SaveSettlementPreferences prefData)
                 , onNewTransfer = \payData -> config.toMsg (RequestTransfer payData)
                 , newTransferHref = Route.toPath (GroupRoute loaded.summary.id NewEntry)
                 , toMsg = config.toMsg << BalanceTabMsg
