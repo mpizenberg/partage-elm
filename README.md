@@ -7,7 +7,7 @@
 Partage is a fully encrypted, local-first bill-splitting application for trusted groups (friends, family, roommates). It runs as an installable Progressive Web App and works offline.
 
 <p align="center">
-  <strong><a href="https://onpartage.eu/en/">Try Partage</a></strong>
+  <strong><a href="https://onpartage.eu/">Try Partage</a></strong>
   · <a href="https://onpartage.eu/en/how-partage-encryption-works/">How encryption works</a>
   · <a href="docs/DEPLOY.md">Self-hosting guide</a>
 </p>
