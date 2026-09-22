@@ -1,5 +1,7 @@
 # Simplification backlog
 
+- **`pnpm test` is not standalone from a clean checkout:** Elm tests require ignored generated `src/Translations.elm` and `src/Changelog/Latest.elm`, while the service-worker JS test requires the ignored compiled `dist/elm.js`; only `pnpm build && pnpm test` works. Either make the test script build its prerequisites or document and encode a narrower test boundary when the build scripts next change.
+
 - **The vendored service-worker generator only routes by path prefix:** a static `/` beside an SPA cannot be excluded exactly without making every app route network-only, so `build-sw.mjs` inserts one asserted exact-root branch. Add exact-path strategies upstream and delete the insertion when service-worker routing is next touched.
 - **Summary durability failures:** Ordinary active-group summary saves publish optimistic workspace/catalog state but ignore IndexedDB failure, so memory can remain ahead of durable state until reload. Define one rollback, retry, or visible-failure policy without weakening the serialized mutation queue.
 - **First imported group persistence:** Compressed-file import bypasses `requestPersistOnFirstGroup` even though the helper's contract says create, import, and join should ask the browser to protect the origin after the first group. Route successful import through the same policy.
